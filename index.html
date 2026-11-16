@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Ridgeline</title>
+  <meta name="description" content="A 1v1 long-range sniper duel in the browser." />
+  <meta name="theme-color" content="#120f2e" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Ridgeline" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
+  </script>
+  <script src="vendor/peerjs.min.js"></script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- ===================== MENU ===================== -->
+  <div id="menu" class="screen on">
+    <div class="menu-bg"></div>
+    <div class="menu-grid">
+    <div class="menu-card">
+      <div class="brand">
+        <div class="kicker"><span>// TACTICAL DUEL</span><span>v1.0</span></div>
+        <h1>RIDGELINE</h1>
+        <p class="tag">One valley. Two rifles. Eight hundred metres.</p>
+      </div>
+
+      <label class="field callsign"><span>Callsign</span><input id="in-name" maxlength="14" placeholder="Ghost" autocomplete="off" /></label>
+      <div id="panel-main" class="panel on">
+        <button id="btn-host" class="primary">Host a match</button>
+        <button id="btn-join-open">Join with code</button>
+        <button id="btn-practice" class="ghost">Practice range</button>
+        <details class="settings">
+          <summary>Settings</summary>
+          <label class="field"><span>Time of day <em>(host picks)</em></span>
+            <select id="in-pal"><option value="dusk">Dusk</option><option value="golden">Golden hour</option></select></label>
+          <label class="field"><span>Graphics</span>
+            <select id="in-quality"><option value="auto">Auto</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+          <label class="field"><span>Sensitivity <em id="sens-val">1.0</em></span><input id="in-sens" type="range" min="0.3" max="2.5" step="0.05" value="1" /></label>
+          <label class="check"><input id="in-invert" type="checkbox" /> Invert look</label>
+          <label class="check"><input id="in-toggle" type="checkbox" /> Toggle scope (instead of hold)</label>
+        </details>
+        <details class="controls">
+          <summary>How to play</summary>
+          <p>You and your friend start on opposite ridgelines, ~800 m apart. One life per round. First to 4 rounds wins.</p>
+          <ul>
+            <li><b>Bullets drop and drift.</b> Set your zero (Q/E) to the range, read the wind from flags, smoke and drifting embers, and lead moving targets.</li>
+            <li><b>Scope glint</b> gives you away when you're scoped in and pointed at them. 12× glints most, 4× least.</li>
+            <li><b>Listen.</b> A near miss gives you a sharp <i>crack</i>, then the rifle's <i>boom</i> follows. The longer the gap, the further away they are (sound moves ~340 m/s).</li>
+            <li><b>Uplinks A·B·C</b> (town, dam, ski lift): stand in the ring for 8 s. Capturing one pings your enemy's position 3 times. If time runs out, most uplinks wins.</li>
+            <li>Trees hide you but don't stop bullets. Rocks, walls and buildings do.</li>
+          </ul>
+          <table>
+            <tr><td>Move / sprint</td><td>WASD · Shift</td></tr>
+            <tr><td>Fire / scope</td><td>Left / right mouse</td></tr>
+            <tr><td>Zoom 4·8·12×</td><td>Mouse wheel</td></tr>
+            <tr><td>Hold breath</td><td>Shift while scoped</td></tr>
+            <tr><td>Zero −/+</td><td>Q / E</td></tr>
+            <tr><td>Crouch / prone / jump</td><td>C / Z / Space</td></tr>
+            <tr><td>Rangefinder / reload</td><td>F / R</td></tr>
+          </table>
+        </details>
+      </div>
+
+      <div id="panel-host" class="panel">
+        <p class="hint">Send this to your friend:</p>
+        <div class="code" id="host-code">-----</div>
+        <div class="row">
+          <button id="btn-share" class="primary">Share invite link</button>
+          <button id="btn-copy">Copy</button>
+        </div>
+        <p class="hint small" id="host-status">Setting up…</p>
+        <button id="btn-host-go">Enter the valley while you wait</button>
+        <button class="ghost back">Back</button>
+      </div>
+
+      <div id="panel-join" class="panel">
+        <label class="field"><span>Game code</span><input id="in-code" maxlength="5" placeholder="ABCDE" autocomplete="off" autocapitalize="characters" /></label>
+        <button id="btn-join" class="primary">Join</button>
+        <p class="hint small" id="join-status"></p>
+        <button class="ghost back">Back</button>
+      </div>
+
+      <div id="panel-loading" class="panel">
+        <div class="spinner"></div>
+        <p class="hint" id="loading-text">Building the valley…</p>
+      </div>
+    </div>
+    <section class="brief">
+      <div class="brief-head"><span>// AO BRIEFING — VARGA VALLEY</span><span id="brief-coord">GRID 34T · 1:12 000</span></div>
+      <div class="map-wrap"><canvas id="map"></canvas><div class="sweep"></div></div>
+      <div class="brief-stats">
+        <div><b>~790 M</b><span>ridge to ridge</span></div>
+        <div><b>3</b><span>uplinks</span></div>
+        <div><b>FT4</b><span>rounds to win</span></div>
+        <div><b>1</b><span>life per round</span></div>
+      </div>
+    </section>
+    </div>
+    <p class="foot">Headphones recommended · desktop, phone & tablet</p>
+  </div>
+
+  <!-- ===================== HUD ===================== -->
+  <div id="hud">
+    <canvas id="scope"></canvas>
+    <div id="h-scopeinfo"></div>
+    <div class="frame"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
+    <div class="top">
+      <div class="timer-row"><span class="lbl" id="h-round"></span><span class="timer" id="h-timer"></span><span class="lbl" id="h-phase"></span></div>
+      <canvas id="compass"></canvas>
+      <div id="h-uplinks"></div>
+    </div>
+    <div class="scorebox" id="h-score"></div>
+    <div id="h-ping"></div>
+    <div id="h-practice"><span>RANGE</span> Steel targets 150–850 m · <b>N</b> new wind · headshots past 250 m earn a bullet-cam</div>
+    <div class="crosshair"></div>
+    <div id="h-hit"></div>
+    <div id="h-dmg"></div>
+    <div id="h-dmgdir"></div>
+    <div id="h-center"><div id="h-msg"></div><div id="h-sub"></div></div>
+    <div id="h-hint"></div>
+    <div id="h-markers"></div>
+    <div class="vitals">
+      <div class="lbl">INTEGRITY <span id="h-hpnum">100</span></div>
+      <div class="hp" id="h-hp"></div>
+      <div class="lbl dim" id="h-stance"></div>
+    </div>
+    <div class="weapon">
+      <div class="lbl dim">SR-7 · 8.6 MM</div>
+      <div class="ammo" id="h-ammo"></div>
+      <div class="lbl" id="h-zero"></div>
+    </div>
+    <div id="h-breath"><div id="h-breath-fill"></div></div>
+    <div class="replay-tag">● REPLAY</div>
+  </div>
+
+  <!-- ===================== TOUCH ===================== -->
+  <div id="touch">
+    <div class="stick"><div class="knob"></div></div>
+    <div class="tb fire" data-act="fire">FIRE</div>
+    <div class="tb scope" data-act="scope">SCOPE</div>
+    <div class="tb zin" data-act="zoomin">+</div>
+    <div class="tb zout" data-act="zoomout">−</div>
+    <div class="tb breath" data-act="breath">HOLD<br />BREATH</div>
+    <div class="tb crouch" data-act="crouch">CRCH</div>
+    <div class="tb prone" data-act="prone">PRN</div>
+    <div class="tb jump" data-act="jump">JMP</div>
+    <div class="tb sprint" data-act="sprint">RUN</div>
+    <div class="tb reload" data-act="reload">R</div>
+    <div class="tb range" data-act="range">RNG</div>
+    <div class="tb zup" data-act="zeroup">Z+</div>
+    <div class="tb zdn" data-act="zerodown">Z−</div>
+  </div>
+
+  <div id="h-card"></div>
+
+  <div id="pause" class="screen">
+    <div class="menu-card small">
+      <h2>PAUSED</h2>
+      <button id="btn-resume" class="primary">Resume</button>
+      <label class="field"><span>Sensitivity <em id="sens-val2">1.0</em></span><input id="in-sens2" type="range" min="0.3" max="2.5" step="0.05" value="1" /></label>
+      <button class="ghost" onclick="location.href=location.pathname">Leave match</button>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
