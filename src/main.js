@@ -7,16 +7,18 @@ import { drawMap } from './briefmap.js';
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
 const LOCAL = params.has('local'); // two tabs on one machine (testing)
+// Opened as a standalone file (file://): invite links can't point anywhere, so share the code instead.
+const FILE_MODE = location.protocol === 'file:';
 
 const store = {
   get(k, d) {
     try {
-      const v = localStorage.getItem('ridgeline.' + k);
+      const v = localStorage.getItem('draxxed.' + k);
       return v === null ? d : JSON.parse(v);
     } catch { return d; }
   },
   set(k, v) {
-    try { localStorage.setItem('ridgeline.' + k, JSON.stringify(v)); } catch {}
+    try { localStorage.setItem('draxxed.' + k, JSON.stringify(v)); } catch {}
   },
 };
 
@@ -192,15 +194,17 @@ function inviteLink() {
 
 $('btn-share').onclick = async () => {
   const link = inviteLink();
+  if (FILE_MODE && !navigator.share) return copy(`Join my Draxxed Sklounst match — code ${hostCode}`);
   if (navigator.share) {
-    try { await navigator.share({ title: 'Ridgeline', text: `Join my sniper duel — code ${hostCode}`, url: link }); return; } catch {}
+    const text = `Join my Draxxed Sklounst match — code ${hostCode}`;
+    try { await navigator.share(FILE_MODE ? { title: 'Draxxed Sklounst', text } : { title: 'Draxxed Sklounst', text, url: link }); return; } catch {}
   }
   copy(link);
 };
-$('btn-copy').onclick = () => copy(inviteLink());
+$('btn-copy').onclick = () => copy(FILE_MODE ? hostCode : inviteLink());
 function copy(text) {
   (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
-    () => ($('host-status').textContent = 'Invite link copied!'),
+    () => ($('host-status').textContent = 'Copied to clipboard!'),
     () => prompt('Copy this link:', text),
   );
 }

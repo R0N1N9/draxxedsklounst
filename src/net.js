@@ -81,7 +81,7 @@ export class Net {
 
   _local(code, host) {
     return new Promise((resolve) => {
-      this.bc = new BroadcastChannel('ridgeline-' + code);
+      this.bc = new BroadcastChannel('draxxed-' + code);
       this.bc.onmessage = (e) => {
         const m = e.data;
         if (m.t === '_hello' && host && !this.open) {

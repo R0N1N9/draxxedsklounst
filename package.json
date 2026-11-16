@@ -1,0 +1,12 @@
+{
+  "name": "draxxed-sklounst",
+  "private": true,
+  "version": "1.0.0",
+  "description": "1v1 long-range sniper duel in the browser",
+  "scripts": {
+    "build:single": "node tools/build-single.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0"
+  }
+}

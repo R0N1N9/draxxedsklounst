@@ -66,5 +66,5 @@ export const UPLINK = {
 export const NET = {
   stateHz: 20,
   interpDelay: 0.11, // seconds
-  peerPrefix: 'ridgeline-v1-',
+  peerPrefix: 'draxxed-sklounst-v1-',
 };
