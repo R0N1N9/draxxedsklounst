@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Operator Model Viewer</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0d0e17; overflow: hidden; font-family: ui-monospace, Menlo, monospace; color: #e8e6f0; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    .lbl { position: fixed; bottom: 18px; font-size: 11px; letter-spacing: 0.25em; color: #f2b35b; transform: translateX(-50%); }
+    .hint { position: fixed; top: 14px; left: 16px; font-size: 11px; letter-spacing: 0.15em; color: rgba(232,230,240,.55); }
+  </style>
+  <script type="importmap">
+    { "imports": { "three": "../vendor/three.module.js", "three/addons/": "../vendor/addons/" } }
+  </script>
+</head>
+<body>
+  <div class="hint">// OPERATOR — STANDING · KNEELING · PRONE · drag to orbit</div>
+  <div class="lbl" style="left:20%">STANDING</div>
+  <div class="lbl" style="left:50%">KNEELING</div>
+  <div class="lbl" style="left:80%">PRONE</div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { Avatar } from '../src/avatar.js';
+    import { hazeUniforms } from '../src/atmosphere.js';
+
+    const params = new URLSearchParams(location.search);
+    hazeUniforms.uHazeColor.value.set('#5b4a76');
+    hazeUniforms.uHazeSunColor.value.set('#d9806c');
+    hazeUniforms.uHazeDensity.value = 0.0;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#1a1828');
+    const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.05, 100);
+    scene.add(new THREE.HemisphereLight('#c4c0e0', '#4a4552', 3.4));
+    const key = new THREE.DirectionalLight('#ffdcc4', 3.6);
+    key.position.set(-4, 3, -2);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    Object.assign(key.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4 });
+    scene.add(key);
+    const rim = new THREE.DirectionalLight('#8fb4ff', 2.0);
+    rim.position.set(3, 2, 4);
+    scene.add(rim);
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(8, 48).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#2c2f26' }));
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const poses = [
+      { st: 0, x: 1.6, pitch: 0.0 },
+      { st: 1, x: 0, pitch: 0.0 },
+      { st: 2, x: -1.6, pitch: 0.02 },
+    ];
+    const avatars = poses.map((p, i) => {
+      const a = new Avatar(i === 1 ? '#40c8d8' : '#e0a040', 7 + i);
+      a.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      scene.add(a.root);
+      a.update(0, { p: new THREE.Vector3(p.x, 0, p.st === 2 ? 0.3 : 0), yaw: 0, pitch: p.pitch, st: p.st, moving: false });
+      return a;
+    });
+
+    let yaw = parseFloat(params.get('yaw') || '0.55'), pitch = parseFloat(params.get('pitch') || '0.18');
+    let dist = parseFloat(params.get('dist') || '6.2');
+    const target = new THREE.Vector3(parseFloat(params.get('tx') || '0'), parseFloat(params.get('ty') || '0.75'), parseFloat(params.get('tz') || '0'));
+    let drag = null;
+    addEventListener('pointerdown', (e) => (drag = { x: e.clientX, y: e.clientY }));
+    addEventListener('pointerup', () => (drag = null));
+    addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      yaw -= (e.clientX - drag.x) * 0.006;
+      pitch = Math.max(-0.2, Math.min(1.2, pitch + (e.clientY - drag.y) * 0.004));
+      drag = { x: e.clientX, y: e.clientY };
+    });
+    addEventListener('wheel', (e) => (dist = Math.max(1.2, Math.min(14, dist * (1 + e.deltaY * 0.001)))));
+    addEventListener('resize', () => {
+      cam.aspect = innerWidth / innerHeight;
+      cam.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+    renderer.setAnimationLoop(() => {
+      cam.aspect = innerWidth / innerHeight;
+      cam.updateProjectionMatrix();
+      cam.position.set(target.x + Math.sin(yaw) * Math.cos(pitch) * -dist, target.y + Math.sin(pitch) * dist, target.z - Math.cos(yaw) * Math.cos(pitch) * dist);
+      cam.lookAt(target);
+      renderer.render(scene, cam);
+    });
+    window.__ready = true;
+  </script>
+</body>
+</html>
