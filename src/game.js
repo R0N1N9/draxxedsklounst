@@ -18,9 +18,13 @@ import { Audio } from './audio.js';
 import { Replay, sampleHist, pushHist } from './killcam.js';
 import { segSegClosest, clamp, mulberry32 } from './util.js';
 import { crestAt } from './terrain.js';
+import { BotPeer } from './bot.js';
+import { Sandbox } from './sandbox.js';
+import { PALETTES as PALS } from './atmosphere.js';
 
 const ACCENTS = ['#e0a040', '#40c8d8'];
 const ZOOM_GLINT = { 4: 0.32, 8: 0.68, 12: 1.0 };
+const UAV_INTERVAL = 60;
 const PART_NAMES = { head: 'HEADSHOT', torso: 'BODY SHOT', legs: 'LEG SHOT' };
 
 // Final look: silhouette ink lines from depth, split-tone grade, vignette, grain, damage tint.
@@ -77,9 +81,15 @@ const GradeShader = {
 };
 
 export class Game {
-  constructor({ mode, net, quality, paletteKey, name, settings, hostCode }) {
+  constructor({ mode, net, quality, paletteKey, name, settings, hostCode, difficulty }) {
+    // 'ai' and 'sandbox' run as a host whose "peer" is the local AI.
+    this.offline = mode === 'ai' || mode === 'sandbox' ? mode : null;
+    if (this.offline) mode = 'host';
     this.mode = mode; // 'practice' | 'host' | 'guest'
+    this.difficulty = difficulty || 'normal';
     this.net = net;
+    this.paused = false;
+    this.timeScale = 1;
     this.quality = quality;
     this.paletteKey = paletteKey;
     this.palette = PALETTES[paletteKey];
@@ -133,7 +143,8 @@ export class Game {
     this._buildViewmodel();
 
     // Match state
-    this.phase = mode === 'practice' ? 'practice' : 'wait';
+    this.phase = mode === 'practice' ? 'practice' : this.offline === 'sandbox' ? 'sandbox' : 'wait';
+    this.uavT = UAV_INTERVAL;
     this.phaseT = 0;
     this.round = 0;
     this.scores = [0, 0];
@@ -160,8 +171,14 @@ export class Game {
     this.footT = 0;
 
     this.targets = [];
+    if (this.offline) this.net = new BotPeer(this, { difficulty: this.difficulty, behaviour: this.offline === 'sandbox' ? 'passive' : 'hostile' });
     if (mode === 'practice') this._setupPractice();
     else this._setupNet();
+    if (this.offline === 'sandbox') {
+      this._spawnTargets();
+      this.wind.set(Math.random() * Math.PI * 2, 3, Math.random() * 100);
+      this.sandbox = new Sandbox(this);
+    }
 
     this._spawnFree();
     this.hud.show(true);
@@ -248,6 +265,11 @@ export class Game {
 
   _setupPractice() {
     this.wind.set(Math.random() * Math.PI * 2, 2 + Math.random() * 4, Math.random() * 100);
+    this._spawnTargets();
+    this.hud.el.practice.classList.add('on');
+  }
+
+  _spawnTargets() {
     const steel = withHaze(new THREE.MeshLambertMaterial({ color: '#3e3c44', flatShading: true }), { key: 'steel' });
     const paint = withHaze(new THREE.MeshLambertMaterial({ color: '#d8d0c0', flatShading: true }), { key: 'paint' });
     const spots = [
@@ -275,15 +297,19 @@ export class Game {
     };
     for (const [x, z] of spots) mk(x, z, false);
     mk(0, 100, true);
-    this.hud.el.practice.classList.add('on');
   }
 
   _setupNet() {
     const n = this.net;
     n.on('open', () => {
       n.send({ t: 'hello', name: this.name, pal: this.paletteKey });
-      if (this.mode === 'host') {
-        this.hud.message('OPPONENT CONNECTED', 'Match starting…', 2.5);
+      if (this.offline === 'sandbox') {
+        this.sides = [-1, 1];
+        this.remoteAlive = true;
+        n.sandboxSpawn(1);
+        this.hud.message('SANDBOX', 'Press B (or TOOLS) for the tools panel', 3);
+      } else if (this.mode === 'host') {
+        this.hud.message(this.offline ? 'AI OPPONENT READY' : 'OPPONENT CONNECTED', 'Match starting…', 2.5);
         setTimeout(() => this._hostStartRound(), 1500);
       }
     });
@@ -297,6 +323,14 @@ export class Game {
       document.exitPointerLock && document.exitPointerLock();
     });
     n.on('s', (m) => this._onRemoteState(m));
+    n.on('respawn', () => {
+      this.remoteDeadLock = false;
+      this.remoteAlive = true;
+      this.remoteHp = 100;
+      this.remoteHist.length = 0;
+      this.killShown = null;
+    });
+    n.on('uav', () => this._onUav());
     n.on('shot', (m) => this._onRemoteShot(m));
     n.on('hit', (m) => this._onHitByRemote(m));
     n.on('died', (m) => this._onRemoteDied(m));
@@ -373,7 +407,17 @@ export class Game {
   }
 
   _hostTick(dt) {
-    if (this.mode !== 'host' || this.phase === 'wait' || this.phase === 'match') return;
+    if (this.phase === 'live' || this.phase === 'sandbox') {
+      this.uavT -= dt;
+      if (this.uavT <= 0) {
+        this.uavT = UAV_INTERVAL;
+        if (this.mode === 'host') {
+          this.net.send({ t: 'uav' });
+          this._onUav();
+        }
+      }
+    }
+    if (this.mode !== 'host' || this.phase === 'wait' || this.phase === 'match' || this.phase === 'sandbox') return;
     this.phaseT -= dt;
     this.syncT -= dt;
     if (this.syncT <= 0) {
@@ -413,6 +457,7 @@ export class Game {
     if (m.fresh) this._resetForRound();
     if (m.phase === 'live' && prevPhase !== 'live') {
       this.roundTime = 0;
+      this.uavT = UAV_INTERVAL;
       this.hud.message('WEAPONS HOT', 'Find them before they find you.', 2.5);
       this.audio.beep(null, true);
     }
@@ -514,7 +559,7 @@ export class Game {
   _onHitByRemote(m) {
     const P = this.player;
     if (!P.alive) return;
-    P.hp -= m.dmg;
+    if (!(this.sandbox && this.sandbox.god)) P.hp -= m.dmg;
     const shot = this.remoteShots.get(m.id);
     if (shot) {
       const dx = shot.o.x - P.pos.x, dz = shot.o.z - P.pos.z;
@@ -528,6 +573,7 @@ export class Game {
       this.net.send({ t: 'died', id: m.id, part: m.part, dist: m.dist, ip: m.ip });
       this._sendState(true);
       if (this.mode === 'host') this._hostEndRound(1 - this.me, 'kill', { part: m.part, dist: m.dist });
+      if (!shot && this.offline === 'sandbox') setTimeout(() => this._sandboxRespawn(), 2500);
       if (shot) {
         this.replay.start({
           mode: 'victim',
@@ -535,7 +581,7 @@ export class Game {
           victimHist: this.selfHist.slice(),
           shot,
           impact: new THREE.Vector3(...m.ip),
-          onDone: () => this._showPendingCard(),
+          onDone: () => (this.offline === 'sandbox' ? this._sandboxRespawn() : this._showPendingCard()),
         });
         this._replayLabel(`KILLED BY ${this.oppName.toUpperCase()}`, `${PART_NAMES[m.part]} · ${Math.round(m.dist)} m`);
       }
@@ -543,6 +589,20 @@ export class Game {
       P.wounded = true;
       this.hud.message('HIT', `${PART_NAMES[m.part] || ''} — you're wounded. Move!`, 2);
     }
+  }
+
+  _sandboxRespawn() {
+    this._spawnFree();
+    this.hud.message('RESPAWNED', '', 1.5);
+  }
+
+  _onUav() {
+    this.uavT = UAV_INTERVAL;
+    this.hud.message('UAV SWEEP', 'Enemy position marked — and yours is too', 2.5);
+    this.audio.ping();
+    if (!this.remoteAlive || !this.remoteHist.length) return;
+    const s = sampleHist(this.remoteHist, this.now - NET.interpDelay);
+    this.hud.addMarker(s.p.clone().add(new THREE.Vector3(0, 1.2, 0)), 'UAV', 'enemy', 4);
   }
 
   _onRemoteDied(m) {
@@ -630,12 +690,11 @@ export class Game {
   _targetsForHit() {
     // Capsules the local player's bullets can hit right now.
     const list = [];
-    if (this.mode === 'practice') {
-      for (const t of this.targets) {
-        if (t.swing > 0) continue;
-        worldCapsules(t.pos, t.yaw, 0).forEach((c) => { c.owner = t; list.push(c); });
-      }
-    } else if (this.remoteAlive && this.remoteHist.length) {
+    for (const t of this.targets) {
+      if (t.swing > 0) continue;
+      worldCapsules(t.pos, t.yaw, 0).forEach((c) => { c.owner = t; list.push(c); });
+    }
+    if (this.mode !== 'practice' && this.remoteAlive && this.remoteHist.length) {
       const s = sampleHist(this.remoteHist, this.now - NET.interpDelay);
       if (s) worldCapsules(s.p, s.yaw, s.st).forEach((c) => { c.owner = 'remote'; list.push(c); });
     }
@@ -687,6 +746,7 @@ export class Game {
         if (b.age > BALLISTICS.maxLife || b.p.y < -200) dead = true;
       }
       this.effects.moveTracer(b.tracer, b.p, b.v);
+      if (this.sandbox && b.local) this.sandbox.trace(b, dead);
       if (dead) {
         this.effects.killTracer(b.tracer);
         this.bullets.splice(i, 1);
@@ -698,7 +758,7 @@ export class Game {
     const shot = this.myShots.get(b.id);
     const dist = shot ? shot.o.distanceTo(ip) : 0;
     const head = cap.part === 'head';
-    if (this.mode === 'practice') {
+    if (cap.owner !== 'remote') {
       const t = cap.owner;
       t.swing = 0.0001;
       this.audio.plateHit(ip, dist / 343);
@@ -750,14 +810,24 @@ export class Game {
   // -------------------------------------------------------------------------
   _frame() {
     let dt = Math.min(this.clock.getDelta(), 0.05);
+    // Offline modes really pause; online matches keep running underneath the menu.
+    if (this.paused && this.mode !== 'guest' && (this.offline || this.mode === 'practice')) {
+      this.input.endFrame();
+      if (this.composer) this.composer.render(0);
+      else this.renderer.render(this.scene, this.camera);
+      return;
+    }
+    dt *= this.timeScale;
     this.now += dt;
     this._adaptResolution(dt);
     const a = this.input.actions;
     const P = this.player;
     const live = this.phase === 'live';
     const canMove = this.phase !== 'end' && this.phase !== 'match';
-    const canFire = live || this.phase === 'practice' || this.phase === 'wait';
-    if (live || this.phase === 'practice' || this.phase === 'wait') this.roundTime += dt;
+    const free = this.phase === 'practice' || this.phase === 'wait' || this.phase === 'sandbox';
+    const canFire = live || free;
+    if (live || free) this.roundTime += dt;
+    if (this.mode === 'guest' && (live || this.phase === 'sandbox')) this.uavT -= dt;
     if (this.mode === 'guest' && this.phase !== 'match') this.phaseT = Math.max(0, this.phaseT - dt);
     this._hostTick(dt);
     if (this.net) this.net.tick(dt);
@@ -768,10 +838,16 @@ export class Game {
     }
 
     const replaying = this.replay.active;
+    if (this.sandbox) this.sandbox.preUpdate(dt, a);
     if (!replaying && P.alive) {
+      const flyFrom = this.sandbox && this.sandbox.fly ? P.pos.clone() : null;
       P.update(dt, a, this.world, { canMove });
+      if (flyFrom) this.sandbox.flyMove(dt, flyFrom);
       if (a.fire && canFire) {
-        if (P.canFire()) this._fire();
+        if (P.canFire()) {
+          this._fire();
+          if (this.sandbox && this.sandbox.infAmmo) { P.ammo = WEAPON.mag; P.reserve = WEAPON.reserve; }
+        }
         else if (P.ammo === 0 && P.reloadT <= 0) {
           this.audio.click();
           if (P.reserve > 0) P.reloadT = WEAPON.reloadTime;
@@ -838,6 +914,7 @@ export class Game {
       u.uTime.value = this.now;
       u.uRes.value.set(this.renderer.domElement.width, this.renderer.domElement.height);
     }
+    if (this.sandbox) this.sandbox.update(dt);
     this.input.endFrame();
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);
@@ -896,7 +973,7 @@ export class Game {
       const st = this.uplinkState[i];
       st.enemyHacking = this.remoteHack === i && this.remoteAlive && live;
       const near = P.alive && Math.hypot(P.pos.x - u.pos.x, P.pos.z - u.pos.z) < UPLINK.radius && Math.abs(P.pos.y - u.pos.y) < 3;
-      const canHack = (live || this.phase === 'practice') && near && st.owner !== this.me;
+      const canHack = (live || this.phase === 'practice' || this.phase === 'sandbox') && near && st.owner !== this.me;
       if (canHack) {
         this.hacking = i;
         st.progress += dt;
@@ -904,7 +981,11 @@ export class Game {
         if (this.beepT <= 0) { this.beepT = 0.8; this.audio.beep(u.pos, false); }
         if (st.progress >= UPLINK.hackTime) {
           st.progress = 0;
-          if (this.mode === 'host') this._hostCapture(i, 0);
+          if (this.phase === 'sandbox') {
+            st.owner = this.me;
+            this.net.send({ t: 'reveal', who: 0, i });
+            this._onReveal({ who: 0, i });
+          } else if (this.mode === 'host') this._hostCapture(i, 0);
           else if (this.mode === 'guest') this.net.send({ t: 'cap', i });
           else { st.owner = this.me; this.hud.message(`UPLINK ${u.name} SECURED`, 'In a match this pings your opponent 3 times.', 3); }
         }
@@ -990,6 +1071,7 @@ export class Game {
   // HUD text helpers
   timerText() {
     if (this.phase === 'practice') return 'RANGE';
+    if (this.phase === 'sandbox') return 'SANDBOX';
     if (this.phase === 'wait') return '--:--';
     if (this.phase === 'match') return 'FINAL';
     const t = Math.max(0, Math.ceil(this.phaseT));
@@ -998,6 +1080,7 @@ export class Game {
   roundText() {
     if (this.phase === 'practice') return 'SOLO';
     if (this.phase === 'wait') return 'LOBBY';
+    if (this.phase === 'sandbox') return 'B · TOOLS';
     return `RND ${String(this.round).padStart(2, '0')}`;
   }
   phaseText() {
@@ -1005,6 +1088,7 @@ export class Game {
       const s = this.practiceStats;
       return s ? `${s.hits} HITS · BEST ${s.best}M` : 'NO HITS';
     }
+    if (this.phase === 'live' || this.phase === 'sandbox') return `UAV IN ${Math.max(0, Math.ceil(this.uavT))}S`;
     return { wait: 'STANDBY', insert: 'INSERTION', live: 'WEAPONS HOT', end: 'ROUND OVER', match: 'MATCH OVER' }[this.phase] || '';
   }
 }

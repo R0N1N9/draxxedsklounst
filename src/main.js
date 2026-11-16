@@ -111,6 +111,7 @@ async function startGame(mode, opts = {}) {
     name: callsign(),
     settings: { ...settings, audio },
     hostCode: opts.code,
+    difficulty: opts.difficulty,
   });
   if (opts.oppName) game.oppName = opts.oppName;
   window.__game = game;
@@ -125,15 +126,26 @@ async function startGame(mode, opts = {}) {
 function wirePause() {
   const pause = $('pause');
   const touch = game.input.touch;
+  const offline = game.offline || game.mode === 'practice';
+  $('pause-note').textContent = offline ? 'Game paused.' : 'Online match — the game keeps running while you are in this menu.';
+  const show = (on) => {
+    pause.classList.toggle('on', on);
+    game.paused = on;
+  };
   document.addEventListener('pointerlockchange', () => {
     if (touch) return;
     const locked = document.pointerLockElement === game.renderer.domElement;
     const cardOpen = $('h-card').classList.contains('on') && $('h-card').querySelector('button');
-    pause.classList.toggle('on', !locked && !cardOpen);
+    show(!locked && !cardOpen && !game.toolsOpen);
   });
+  $('tb-pause').addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); show(true); }, { passive: false });
   $('btn-resume').onclick = () => {
-    pause.classList.remove('on');
+    show(false);
     game.input.requestLock();
+  };
+  $('btn-exit').onclick = () => {
+    if (game.net && game.net.close) game.net.close();
+    location.href = location.pathname;
   };
   $('in-sens2').value = settings.sensitivity;
   $('sens-val2').textContent = (+settings.sensitivity).toFixed(2);
@@ -143,7 +155,44 @@ function wirePause() {
     $('sens-val2').textContent = settings.sensitivity.toFixed(2);
     store.set('sens', settings.sensitivity);
   };
+  $('in-invert2').checked = settings.invertY;
+  $('in-invert2').onchange = (e) => {
+    store.set('invert', (settings.invertY = e.target.checked));
+    game.input.invertY = settings.invertY;
+  };
+  $('in-toggle2').checked = settings.scopeToggle;
+  $('in-toggle2').onchange = (e) => {
+    store.set('toggle', (settings.scopeToggle = e.target.checked));
+    game.input.scopeToggle = settings.scopeToggle;
+  };
 }
+
+// Vs AI
+const AI_DESC = {
+  easy: 'Slow to spot you, loose aim, ignores most wind.',
+  normal: 'Reads glint and muzzle flash, leads moving targets, decent wind calls.',
+  hard: 'Fast, precise, punishes glint and careless movement. Relocates after shooting.',
+};
+let aiDiff = store.get('aidiff', 'normal');
+const syncDiff = () => {
+  document.querySelectorAll('#ai-diff button').forEach((b) => b.classList.toggle('on', b.dataset.d === aiDiff));
+  $('ai-desc').textContent = AI_DESC[aiDiff];
+};
+document.querySelectorAll('#ai-diff button').forEach((b) => (b.onclick = () => { aiDiff = b.dataset.d; store.set('aidiff', aiDiff); syncDiff(); }));
+syncDiff();
+$('btn-ai-open').onclick = () => showPanel('panel-ai');
+$('btn-ai').onclick = () => {
+  audio.unlock();
+  goFullscreen();
+  startGame('ai', { difficulty: aiDiff });
+};
+
+// Sandbox
+$('btn-sandbox').onclick = () => {
+  audio.unlock();
+  goFullscreen();
+  startGame('sandbox', { difficulty: aiDiff });
+};
 
 // Practice
 $('btn-practice').onclick = () => {

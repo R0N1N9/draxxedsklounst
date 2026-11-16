@@ -125,7 +125,7 @@ export class Hud {
     this.el.timer.textContent = g.timerText();
     this.el.round.textContent = g.roundText();
     this.el.phase.textContent = g.phaseText();
-    this.el.ping.textContent = g.net && g.net.open ? `LINK ${Math.round(g.net.rtt)} MS` : '';
+    this.el.ping.textContent = g.net && g.net.open && !g.net.isBot ? `LINK ${Math.round(g.net.rtt)} MS` : '';
     this._score(g);
     // Vitals
     const hp = Math.max(0, player.hp);

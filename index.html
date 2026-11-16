@@ -40,7 +40,11 @@
       <div id="panel-main" class="panel on">
         <button id="btn-host" class="primary">Host a match</button>
         <button id="btn-join-open">Join with code</button>
-        <button id="btn-practice" class="ghost">Practice range</button>
+        <button id="btn-ai-open">Vs AI</button>
+        <div class="row">
+          <button id="btn-practice" class="ghost">Practice range</button>
+          <button id="btn-sandbox" class="ghost">Sandbox</button>
+        </div>
         <details class="settings">
           <summary>Settings</summary>
           <label class="field"><span>Time of day <em>(host picks)</em></span>
@@ -89,6 +93,16 @@
         <label class="field"><span>Game code</span><input id="in-code" maxlength="5" placeholder="ABCDE" autocomplete="off" autocapitalize="characters" /></label>
         <button id="btn-join" class="primary">Join</button>
         <p class="hint small" id="join-status"></p>
+        <button class="ghost back">Back</button>
+      </div>
+
+      <div id="panel-ai" class="panel">
+        <p class="hint">A full match against an AI sniper: same rounds, uplinks, UAV sweeps and killcams.</p>
+        <div class="seg" id="ai-diff">
+          <button data-d="easy">Recruit</button><button data-d="normal" class="on">Veteran</button><button data-d="hard">Elite</button>
+        </div>
+        <p class="hint small" id="ai-desc"></p>
+        <button id="btn-ai" class="primary">Deploy</button>
         <button class="ghost back">Back</button>
       </div>
 
@@ -161,16 +175,20 @@
     <div class="tb range" data-act="range">RNG</div>
     <div class="tb zup" data-act="zeroup">Z+</div>
     <div class="tb zdn" data-act="zerodown">Z−</div>
+    <div class="tb pause" id="tb-pause">II</div>
   </div>
 
   <div id="h-card"></div>
 
   <div id="pause" class="screen">
     <div class="menu-card small">
-      <h2>PAUSED</h2>
+      <h2>// PAUSED</h2>
+      <p class="hint small" id="pause-note"></p>
       <button id="btn-resume" class="primary">Resume</button>
       <label class="field"><span>Sensitivity <em id="sens-val2">1.0</em></span><input id="in-sens2" type="range" min="0.3" max="2.5" step="0.05" value="1" /></label>
-      <button class="ghost" onclick="location.href=location.pathname">Leave match</button>
+      <label class="check"><input id="in-invert2" type="checkbox" /> Invert look</label>
+      <label class="check"><input id="in-toggle2" type="checkbox" /> Toggle scope</label>
+      <button id="btn-exit">Exit to main menu</button>
     </div>
   </div>
 

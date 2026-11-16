@@ -8,12 +8,24 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 2. **Host a match** shows a 5-letter code. Tap **Share invite link** and send it to your friend.
 3. Your friend opens the link, enters a callsign, and taps **Join**. The match starts automatically.
 
+**Vs AI** is a full match against an AI sniper (Recruit, Veteran or Elite), with the same rounds, uplinks, UAV sweeps and killcams as an online match. The AI spots you from movement, stance, scope glint and muzzle flash, leads moving targets, partly corrects for wind, relocates after shooting, and goes for uplinks when it's losing on time.
+
+**Sandbox** is a free-play testing mode. Press **B** (or **TOOLS** on touch) to open the tools panel, which has:
+
+- teleports to the ridges and each uplink;
+- AI controls: off, passive or hostile, skill level, and a button that moves the AI to wherever you're aiming;
+- wind direction and speed, and time of day;
+- god mode, infinite ammo and fly mode;
+- bullet-trajectory traces that label each impact with its drop;
+- hitbox wireframes and quarter-speed slow motion.
+
 **Practice range** is a solo mode with steel targets from 150 to 850 m and a moving target. Use it to learn drop, wind and zeroing.
 
 ### Rules
 
 - Both players start on opposite ridgelines, about 800 m apart. Spawns are random among three points per ridge, and sides swap every round.
 - You get one life per round. First to 4 rounds wins.
+- **UAV sweep**: every 60 s of live play, both players see the other's position for a few seconds.
 - **Uplinks A / B / C** are in the town, on the dam and at the ski-lift station. Stand in the ring for 8 s to capture one. A capture pings your enemy's position three times. If time runs out, whoever holds the most uplinks wins the round.
 - Every kill plays a **killcam** (through the shooter's scope) and then a slow-motion **bullet-cam**.
 
@@ -37,6 +49,8 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 | Zero − / + | Q / E | Z− / Z+ |
 | Crouch / prone / jump | C / Z / Space | CRCH / PRN / JMP |
 | Rangefinder / reload | F / R | RNG / R |
+| Pause menu | Esc | II |
+| Sandbox tools | B | TOOLS |
 
 ## Single-file version
 
@@ -73,6 +87,8 @@ Resolution also scales dynamically to hold the frame rate. You can override the 
 | `src/world.js`, `src/terrain.js` | The valley: terrain, town, dam, ski lift, ridges, vegetation, flags |
 | `src/atmosphere.js` | Dusk and golden-hour palettes, height-based haze, sky |
 | `src/ballistics.js` | Projectile integration, wind, zero tables |
+| `src/bot.js` | AI opponent (plugs in where the network peer would) |
+| `src/sandbox.js` | Sandbox tools panel |
 | `src/killcam.js` | Replay histories, killcam and bullet-cam |
 | `src/hud.js`, `style.css` | HUD, scope reticle, compass |
 | `src/briefmap.js` | Topographic briefing map drawn from the real terrain |
