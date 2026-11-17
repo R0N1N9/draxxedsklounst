@@ -159,6 +159,52 @@ export class Input {
     root.addEventListener('touchend', end);
     root.addEventListener('touchcancel', end);
     this.touchRoot = root;
+    const relayout = () => requestAnimationFrame(() => this.layoutTouch());
+    addEventListener('resize', relayout);
+    addEventListener('orientationchange', relayout);
+    relayout();
+  }
+
+  // Place controls on arcs around where each thumb naturally rests, inset from the
+  // corners and clear of notches / rounded corners.
+  layoutTouch() {
+    const root = this.touchRoot;
+    if (!root) return;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);visibility:hidden';
+    document.body.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    const safe = { t: parseFloat(cs.paddingTop) || 0, r: parseFloat(cs.paddingRight) || 0, b: parseFloat(cs.paddingBottom) || 0, l: parseFloat(cs.paddingLeft) || 0 };
+    probe.remove();
+    const W = innerWidth, H = innerHeight;
+    const s = Math.min(1, H / 390); // scale the rings down a little on short screens
+    const place = (sel, x, y) => {
+      const el = root.querySelector(sel);
+      if (!el) return;
+      el.classList.add('placed');
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+    };
+    const arc = (cx, cy, r, deg) => [cx + Math.cos((deg * Math.PI) / 180) * r * s, cy - Math.sin((deg * Math.PI) / 180) * r * s];
+    // Right thumb: FIRE at rest, inner ring for aiming controls, outer ring for rifle setup.
+    const fx = W - safe.r - 128 * s, fy = H - safe.b - 108 * s;
+    place('.fire-r', fx, fy);
+    place('.tb.scope', ...arc(fx, fy, 100, 186));
+    place('.tb.zin', ...arc(fx, fy, 104, 118));
+    place('.tb.zout', ...arc(fx, fy, 104, 147));
+    place('.tb.reload', ...arc(fx, fy, 100, 84));
+    place('.tb.jump', ...arc(fx, fy, 96, 46));
+    place('.tb.zdn', ...arc(fx, fy, 176, 176));
+    place('.tb.zup', ...arc(fx, fy, 176, 153));
+    place('.tb.rng', ...arc(fx, fy, 176, 130));
+    place('.tb.swp', ...arc(fx, fy, 176, 107));
+    // Left thumb: fixed stick, with fire / breath / stance on an arc above-right of it.
+    const sx = safe.l + 120 * s, sy = H - safe.b - 108 * s;
+    place('.stick', sx, sy);
+    place('.fire-l', ...arc(sx, sy, 128, 14));
+    place('.tb.breath', ...arc(sx, sy, 124, 52));
+    place('.tb.crouch', ...arc(sx, sy, 118, 92));
+    place('.tb.prone', ...arc(sx, sy, 122, 128));
   }
 
   // ---- Gyro aiming ------------------------------------------------------------

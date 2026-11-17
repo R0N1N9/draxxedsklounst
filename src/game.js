@@ -885,7 +885,8 @@ export class Game {
       const flyFrom = this.sandbox && this.sandbox.fly ? P.pos.clone() : null;
       P.update(dt, a, this.world, { canMove });
       if (flyFrom) this.sandbox.flyMove(dt, flyFrom);
-      if (a.fire && canFire) {
+      if (a.fire && canFire && P.sprinting) this.hud.message('', 'Stop sprinting to fire', 0.8);
+      else if (a.fire && canFire) {
         if (P.canFire()) {
           this._fire();
           if (this.sandbox && this.sandbox.infAmmo) P.refill();
@@ -988,7 +989,7 @@ export class Game {
       def: P.def,
       scopeT: P.scopeT,
       speed: P.speed,
-      sprint: P.speed > 5.5,
+      sprint: P.sprinting,
       bobPhase: P.bobPhase,
       cycleT: P.cycleT,
       reloadT: P.reloadT,

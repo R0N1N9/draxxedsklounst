@@ -26,6 +26,7 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 - Both players start on opposite ridgelines, about 800 m apart. Spawns are random among three points per ridge, and sides swap every round.
 - You get one life per round. First to 4 rounds wins.
 - **Predator UAV**: a drone circles high over the valley. Every 60 s of live play it pings both players in red on each other's HUD. For 8 s afterwards you can press **U** to tune into its live thermal feed of the enemy. A UAV jammer blocks the ping and the feed.
+- **No shooting or reloading while sprinting.** Walking and standing are fine, and starting a sprint cancels a reload.
 - **Weapons**: pick your rifle in the loadout. Everyone also carries an **M18 pistol** (17+1, one spare magazine) for close range. Every weapon starts with **one in the chamber**: a reload before you're empty keeps it, while a reload from empty is slower because you have to chamber a round.
   - **Mk22 MRAD** (default): bolt-action .300 PRC, 7+1. One-shot headshots, two body shots, slow bolt throw, 4/8/12× scope.
   - **M110A1 DMR**: semi-auto 7.62, 20+1, about 3 shots a second. Headshots still kill; three body shots. Its smaller 4/8× scope glints less.
@@ -48,11 +49,11 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 
 ### Touch controls
 
-- A fixed joystick sits bottom-left; push it fully forward to sprint. The left thumb also has a second **FIRE** and a **BREATH** toggle, so either thumb can aim while the other fires.
+- Controls sit in arcs around where each thumb rests, inset from the corners and clear of notches. A fixed joystick sits bottom-left; push it fully forward to sprint. Zero −/+, Range and the weapon swap sit in an outer ring around the right-hand FIRE button. The left thumb also has a second **FIRE** and a **BREATH** toggle, so either thumb can aim while the other fires.
 - Drag anywhere that isn't a button to aim. Left and right thumbs each have their own sensitivity in Settings.
 - **SCOPE** and **BREATH** are toggles. Breath releases itself when you unscope or run out of air.
 - **Gyro aiming** (Settings): Off, When scoped (default on phones) or Always, with its own sensitivity and invert. It needs HTTPS, so it works from the hosted page, not an opened file. iPhones ask for motion permission the first time.
-- Pills along the top hold the less frequent actions: zero, rangefinder, rifle/pistol swap, your tools (with charges), kit, Predator feed and the menu.
+- Pills along the top hold your tools (with charges), kit, the Predator feed and the menu.
 
 ### Controls
 

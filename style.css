@@ -366,3 +366,9 @@ body.touch .crosshair { width: 4px; height: 4px; margin: -2px 0 0 -2px; }
 body.touch #h-scopeinfo { bottom: 74px; }
 body.touch #h-breath { bottom: 98px; }
 body.touch #h-hint { bottom: 30%; }
+
+/* Arc layout (positions set by Input.layoutTouch) */
+#touch .placed { right: auto !important; bottom: auto !important; transform: translate(-50%, -50%); }
+#touch .tb.sm.zdn, #touch .tb.sm.zup, #touch .tb.sm.rng, #touch .tb.sm.swp { border-color: rgba(98, 217, 232, 0.5); }
+#touch .tb.sm.swp span { font-size: 7px; }
+.tbar-r { width: auto; }

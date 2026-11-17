@@ -202,7 +202,7 @@ export class Hud {
     }
     const sw = document.getElementById('pill-swap');
     if (sw) {
-      const lbl = g.player.slot === 0 ? 'PISTOL ⇄' : 'RIFLE ⇄';
+      const lbl = g.player.slot === 0 ? 'PISTOL' : 'RIFLE';
       if (sw.textContent !== lbl) sw.textContent = lbl;
       const pf = document.getElementById('pill-feed');
       pf.classList.toggle('live', T.feedWindow > 0 || T.feed > 0);
