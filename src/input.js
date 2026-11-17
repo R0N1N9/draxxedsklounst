@@ -15,6 +15,13 @@ export class Input {
     this.invertY = false;
     this.scopeToggle = false;
     this.scopeLatched = false;
+    this.breathLatched = false;
+    this.touchSensL = 1;
+    this.touchSensR = 1;
+    this.gyroMode = 'off';
+    this.gyroSens = 1;
+    this.gyroInvertY = false;
+    this.isScoped = false;
     this.locked = false;
     this._bindKeyboard();
     if (this.touch) this._bindTouch(touchRoot);
@@ -70,19 +77,28 @@ export class Input {
     }
   }
 
+  // Touch: fixed joystick bottom-left; any touch that isn't on a control aims (either thumb,
+  // each with its own sensitivity); buttons are listed in index.html with data-act.
   _bindTouch(root) {
     root.classList.add('on');
     const stick = root.querySelector('.stick');
     const knob = root.querySelector('.knob');
-    let moveId = null, lookId = null, origin = null, lastLook = null;
-    const R = 55;
-    const startMove = (t) => {
-      moveId = t.identifier;
-      origin = { x: t.clientX, y: t.clientY };
-      stick.style.left = `${origin.x}px`;
-      stick.style.top = `${origin.y}px`;
-      stick.classList.add('active');
-      knob.style.transform = 'translate(-50%,-50%)';
+    let moveId = null;
+    const looks = new Map(); // touch id -> { x, y, side }
+    const R = 56;
+    const stickCenter = () => {
+      const r = stick.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, reach: r.width * 0.75 };
+    };
+    const setStick = (t) => {
+      const c = stickCenter();
+      let dx = t.clientX - c.x, dy = t.clientY - c.y;
+      const d = Math.hypot(dx, dy);
+      if (d > R) { dx *= R / d; dy *= R / d; }
+      this.move.x = dx / R;
+      this.move.y = dy / R;
+      knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      stick.classList.toggle('run', this.move.y < -0.9);
     };
     root.addEventListener('touchstart', (e) => {
       if (!this.enabled) return;
@@ -94,29 +110,30 @@ export class Input {
           this.keys.add('T:' + act);
           btn.classList.add('down');
           btn._tid = t.identifier;
+          if (navigator.vibrate && act === 'fire') navigator.vibrate(8);
           continue;
         }
-        if (t.clientX < innerWidth * 0.4 && moveId === null) startMove(t);
-        else if (lookId === null) {
-          lookId = t.identifier;
-          lastLook = { x: t.clientX, y: t.clientY };
+        const c = stickCenter();
+        if (moveId === null && Math.hypot(t.clientX - c.x, t.clientY - c.y) < c.reach) {
+          moveId = t.identifier;
+          stick.classList.add('active');
+          setStick(t);
+        } else {
+          looks.set(t.identifier, { x: t.clientX, y: t.clientY, side: t.clientX < innerWidth / 2 ? 'L' : 'R' });
         }
       }
       e.preventDefault();
     }, { passive: false });
     root.addEventListener('touchmove', (e) => {
       for (const t of e.changedTouches) {
-        if (t.identifier === moveId) {
-          let dx = t.clientX - origin.x, dy = t.clientY - origin.y;
-          const d = Math.hypot(dx, dy);
-          if (d > R) { dx *= R / d; dy *= R / d; }
-          this.move.x = dx / R;
-          this.move.y = dy / R;
-          knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-        } else if (t.identifier === lookId) {
-          this.look.x += (t.clientX - lastLook.x) * 2.2;
-          this.look.y += (t.clientY - lastLook.y) * 2.2;
-          lastLook = { x: t.clientX, y: t.clientY };
+        if (t.identifier === moveId) setStick(t);
+        else if (looks.has(t.identifier)) {
+          const l = looks.get(t.identifier);
+          const k = 2.2 * (l.side === 'L' ? this.touchSensL : this.touchSensR);
+          this.look.x += (t.clientX - l.x) * k;
+          this.look.y += (t.clientY - l.y) * k;
+          l.x = t.clientX;
+          l.y = t.clientY;
         }
       }
       e.preventDefault();
@@ -126,8 +143,10 @@ export class Input {
         if (t.identifier === moveId) {
           moveId = null;
           this.move.x = this.move.y = 0;
-          stick.classList.remove('active');
-        } else if (t.identifier === lookId) lookId = null;
+          stick.classList.remove('active', 'run');
+          knob.style.transform = 'translate(-50%,-50%)';
+        }
+        looks.delete(t.identifier);
         root.querySelectorAll('[data-act]').forEach((b) => {
           if (b._tid === t.identifier) {
             b.classList.remove('down');
@@ -139,6 +158,43 @@ export class Input {
     };
     root.addEventListener('touchend', end);
     root.addEventListener('touchcancel', end);
+    this.touchRoot = root;
+  }
+
+  // ---- Gyro aiming ------------------------------------------------------------
+  // Must be called from a user gesture on iOS (permission prompt).
+  requestGyro() {
+    if (this.gyroMode === 'off') return;
+    // Listen right away; on iOS events only start flowing once permission is granted.
+    if (!this._gyroBound) {
+      this._gyroBound = true;
+      addEventListener('devicemotion', (e) => this._onMotion(e));
+    }
+    const DM = window.DeviceMotionEvent;
+    if (DM && typeof DM.requestPermission === 'function' && !this._gyroAsked) {
+      this._gyroAsked = true;
+      DM.requestPermission().catch(() => { this._gyroAsked = false; });
+    }
+  }
+
+  _onMotion(e) {
+    const r = e.rotationRate;
+    if (!r || !this.enabled || this.gyroMode === 'off') return;
+    if (this.gyroMode === 'scoped' && !this.isScoped) return;
+    let dt = e.interval || 16;
+    dt = dt > 1 ? dt / 1000 : dt; // ms (spec) or seconds (older Safari)
+    const toRad = Math.PI / 180;
+    const ang = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+    const a = ((ang % 360) + 360) % 360;
+    // Map device rotation rates to screen yaw/pitch for the current orientation.
+    let yawRate, pitchRate;
+    if (a === 90) { yawRate = -(r.beta || 0); pitchRate = -(r.gamma || 0); }
+    else if (a === 270) { yawRate = r.beta || 0; pitchRate = r.gamma || 0; }
+    else { yawRate = -(r.gamma || 0); pitchRate = r.beta || 0; }
+    // Convert radians of real rotation into look units (1:1 unscoped at sensitivity 1).
+    const k = (dt * toRad * this.gyroSens) / 0.0022;
+    this.look.x += yawRate * k;
+    this.look.y += pitchRate * -k * (this.gyroInvertY ? -1 : 1);
   }
 
   held(code) {
@@ -173,10 +229,11 @@ export class Input {
       if (p('Scope')) this.scopeLatched = !this.scopeLatched;
       scopeHeld = this.scopeLatched;
     } else scopeHeld = this.mouseScope;
+    if (p('breath')) this.breathLatched = !this.breathLatched;
     return {
       mx, my,
-      sprint: k('ShiftLeft') || k('ShiftRight') || k('T:sprint'),
-      breath: k('ShiftLeft') || k('ShiftRight') || k('T:breath'),
+      sprint: k('ShiftLeft') || k('ShiftRight') || k('T:sprint') || this.move.y < -0.9,
+      breath: k('ShiftLeft') || k('ShiftRight') || this.breathLatched,
       fire: p('Fire') || p('fire'),
       scope: scopeHeld,
       zoomIn: p('ZoomIn') || p('zoomin') || p('Equal'),
@@ -204,5 +261,14 @@ export class Input {
 
   resetScope() {
     this.scopeLatched = false;
+    this.breathLatched = false;
+  }
+
+  // Reflect toggle states on the touch buttons.
+  syncToggles() {
+    if (!this.touchRoot) return;
+    for (const b of this.touchRoot.querySelectorAll('[data-toggle]')) {
+      b.classList.toggle('on', b.dataset.toggle === 'scope' ? this.scopeLatched : this.breathLatched);
+    }
   }
 }

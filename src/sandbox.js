@@ -85,10 +85,10 @@ export class Sandbox {
     // Touch: a TOOLS button since there's no B key.
     if (game.input.touch) {
       const t = document.createElement('div');
-      t.className = 'tb tools';
-      t.textContent = 'TOOLS';
+      t.className = 'pill';
+      t.textContent = 'SANDBOX';
       t.addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this.toggle(); }, { passive: false });
-      document.getElementById('touch').appendChild(t);
+      document.querySelector('#touch .tbar-l').appendChild(t);
     }
   }
 

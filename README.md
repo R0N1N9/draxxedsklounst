@@ -46,6 +46,14 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 - **Sound**: a near miss gives a supersonic *crack*, followed by the muzzle *boom* travelling at about 343 m/s. The gap between them tells you the range.
 - Trees conceal you but don't stop bullets. Rocks, walls and buildings do.
 
+### Touch controls
+
+- A fixed joystick sits bottom-left; push it fully forward to sprint. The left thumb also has a second **FIRE** and a **BREATH** toggle, so either thumb can aim while the other fires.
+- Drag anywhere that isn't a button to aim. Left and right thumbs each have their own sensitivity in Settings.
+- **SCOPE** and **BREATH** are toggles. Breath releases itself when you unscope or run out of air.
+- **Gyro aiming** (Settings): Off, When scoped (default on phones) or Always, with its own sensitivity and invert. It needs HTTPS, so it works from the hosted page, not an opened file. iPhones ask for motion permission the first time.
+- Pills along the top hold the less frequent actions: zero, rangefinder, rifle/pistol swap, your tools (with charges), kit, Predator feed and the menu.
+
 ### Controls
 
 | Action | Keyboard / mouse | Touch |

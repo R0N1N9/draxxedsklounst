@@ -55,6 +55,12 @@
           <label class="field"><span>Sensitivity <em id="sens-val">1.0</em></span><input id="in-sens" type="range" min="0.3" max="2.5" step="0.05" value="1" /></label>
           <label class="check"><input id="in-invert" type="checkbox" /> Invert look</label>
           <label class="check"><input id="in-toggle" type="checkbox" /> Toggle scope (instead of hold)</label>
+          <label class="field"><span>Touch look · right thumb <em data-v="touchSensR"></em></span><input data-setting="touchSensR" type="range" min="0.3" max="3" step="0.05" /></label>
+          <label class="field"><span>Touch look · left thumb <em data-v="touchSensL"></em></span><input data-setting="touchSensL" type="range" min="0.3" max="3" step="0.05" /></label>
+          <label class="field"><span>Gyro aim <em>(phones &amp; tablets)</em></span><select data-setting="gyroMode"><option value="off">Off</option><option value="scoped">When scoped</option><option value="always">Always</option></select></label>
+          <label class="field"><span>Gyro sensitivity <em data-v="gyroSens"></em></span><input data-setting="gyroSens" type="range" min="0.2" max="3" step="0.05" /></label>
+          <label class="check"><input data-setting="gyroInvertY" type="checkbox" /> Invert gyro up/down</label>
+
         </details>
         <details class="controls">
           <summary>How to play</summary>
@@ -173,26 +179,27 @@
 
   <!-- ===================== TOUCH ===================== -->
   <div id="touch">
-    <div class="stick"><div class="knob"></div></div>
-    <div class="tb fire" data-act="fire">FIRE</div>
-    <div class="tb scope" data-act="scope">SCOPE</div>
-    <div class="tb zin" data-act="zoomin">+</div>
-    <div class="tb zout" data-act="zoomout">−</div>
-    <div class="tb breath" data-act="breath">HOLD<br />BREATH</div>
-    <div class="tb crouch" data-act="crouch">CRCH</div>
-    <div class="tb prone" data-act="prone">PRN</div>
-    <div class="tb jump" data-act="jump">JMP</div>
-    <div class="tb sprint" data-act="sprint">RUN</div>
-    <div class="tb reload" data-act="reload">R</div>
-    <div class="tb range" data-act="range">RNG</div>
-    <div class="tb zup" data-act="zeroup">Z+</div>
-    <div class="tb zdn" data-act="zerodown">Z−</div>
-    <div class="tb pause" id="tb-pause">II</div>
-    <div class="tb scoutb" data-act="scout">TOOL<br />T</div>
-    <div class="tb tactb" data-act="tactical">TOOL<br />G</div>
-    <div class="tb lob" data-act="loadout">KIT</div>
-    <div class="tb feedb" data-act="feed">FEED</div>
-    <div class="tb swapb" data-act="swap">1 / 2</div>
+    <div class="stick"><div class="ring"></div><div class="knob"></div><span class="lbl-run">RUN ▲</span></div>
+    <!-- Left thumb -->
+    <div class="tb big fire fire-l" data-act="fire"><i>◉</i><span>FIRE</span></div>
+    <div class="tb mid breath" data-act="breath" data-toggle="breath"><i>≋</i><span>BREATH</span></div>
+    <div class="tb sm crouch" data-act="crouch"><i>▾</i><span>CROUCH</span></div>
+    <div class="tb sm prone" data-act="prone"><i>▁</i><span>PRONE</span></div>
+    <!-- Right thumb -->
+    <div class="tb big fire fire-r" data-act="fire"><i>◉</i><span>FIRE</span></div>
+    <div class="tb mid scope" data-act="scope" data-toggle="scope"><i>⊕</i><span>SCOPE</span></div>
+    <div class="tb sm zin" data-act="zoomin"><i>＋</i><span>ZOOM</span></div>
+    <div class="tb sm zout" data-act="zoomout"><i>－</i><span>ZOOM</span></div>
+    <div class="tb sm reload" data-act="reload"><i>↻</i><span>RELOAD</span></div>
+    <div class="tb sm jump" data-act="jump"><i>⤒</i><span>JUMP</span></div>
+    <!-- Top rows: less frequent actions -->
+    <div class="tbar tbar-r">
+      <div class="pill" data-act="zerodown">ZERO −</div><div class="pill" data-act="zeroup">ZERO +</div><div class="pill" data-act="range">RANGE</div>
+      <div class="pill" data-act="swap" id="pill-swap">RIFLE ⇄</div><div class="pill tool" data-act="scout" id="pill-scout">TOOL</div><div class="pill tool" data-act="tactical" id="pill-tact">TOOL</div>
+    </div>
+    <div class="tbar tbar-l">
+      <div class="pill" id="tb-pause">❚❚ MENU</div><div class="pill" data-act="loadout">KIT</div><div class="pill" data-act="feed" id="pill-feed">FEED</div>
+    </div>
   </div>
 
   <div id="h-card"></div>
@@ -205,6 +212,12 @@
       <label class="field"><span>Sensitivity <em id="sens-val2">1.0</em></span><input id="in-sens2" type="range" min="0.3" max="2.5" step="0.05" value="1" /></label>
       <label class="check"><input id="in-invert2" type="checkbox" /> Invert look</label>
       <label class="check"><input id="in-toggle2" type="checkbox" /> Toggle scope</label>
+      <label class="field"><span>Touch look · right thumb <em data-v="touchSensR"></em></span><input data-setting="touchSensR" type="range" min="0.3" max="3" step="0.05" /></label>
+      <label class="field"><span>Touch look · left thumb <em data-v="touchSensL"></em></span><input data-setting="touchSensL" type="range" min="0.3" max="3" step="0.05" /></label>
+      <label class="field"><span>Gyro aim <em>(phones &amp; tablets)</em></span><select data-setting="gyroMode"><option value="off">Off</option><option value="scoped">When scoped</option><option value="always">Always</option></select></label>
+      <label class="field"><span>Gyro sensitivity <em data-v="gyroSens"></em></span><input data-setting="gyroSens" type="range" min="0.2" max="3" step="0.05" /></label>
+      <label class="check"><input data-setting="gyroInvertY" type="checkbox" /> Invert gyro up/down</label>
+
       <button id="btn-exit">Exit to main menu</button>
     </div>
   </div>

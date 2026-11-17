@@ -49,7 +49,50 @@ const settings = {
   invertY: store.get('invert', false),
   scopeToggle: store.get('toggle', 'ontouchstart' in window),
   loadout: store.get('loadout', null),
+  touchSensR: store.get('touchSensR', 1),
+  touchSensL: store.get('touchSensL', 1),
+  gyroMode: store.get('gyroMode', 'ontouchstart' in window ? 'scoped' : 'off'),
+  gyroSens: store.get('gyroSens', 1),
+  gyroInvertY: store.get('gyroInvertY', false),
 };
+
+// Generic binding for [data-setting] controls (menu + pause menu share keys).
+const LIVE_KEYS = ['touchSensR', 'touchSensL', 'gyroMode', 'gyroSens', 'gyroInvertY'];
+function applyInputSettings() {
+  if (!game) return;
+  for (const k of LIVE_KEYS) game.input[k] = settings[k];
+  if (settings.gyroMode !== 'off') game.input.requestGyro();
+}
+function syncSettingUI() {
+  document.querySelectorAll('[data-setting]').forEach((el) => {
+    const v = settings[el.dataset.setting];
+    if (el.type === 'checkbox') el.checked = !!v;
+    else el.value = v;
+  });
+  document.querySelectorAll('[data-v]').forEach((el) => {
+    const v = settings[el.dataset.v];
+    if (typeof v === 'number') el.textContent = v.toFixed(2);
+  });
+}
+document.querySelectorAll('[data-setting]').forEach((el) => {
+  const on = () => {
+    const k = el.dataset.setting;
+    settings[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : el.value;
+    store.set(k, settings[k]);
+    if (k === 'gyroMode') primeGyro();
+    syncSettingUI();
+    applyInputSettings();
+  };
+  el.addEventListener('input', on);
+  el.addEventListener('change', on);
+});
+syncSettingUI();
+
+// iOS only grants motion access from a user gesture; call this from click/tap handlers.
+function primeGyro() {
+  const DM = window.DeviceMotionEvent;
+  if (settings.gyroMode !== 'off' && DM && typeof DM.requestPermission === 'function') DM.requestPermission().catch(() => {});
+}
 settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); };
 
 // ---- Menu wiring ----
@@ -120,6 +163,7 @@ async function startGame(mode, opts = {}) {
   window.__game = game;
   $('menu').classList.remove('on');
   $('touch').classList.add('active');
+  applyInputSettings();
   document.body.classList.toggle('touch', game.input.touch);
   game.input.enabled = true;
   game.input.requestLock();
@@ -143,6 +187,8 @@ function wirePause() {
   });
   $('tb-pause').addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); show(true); }, { passive: false });
   $('btn-resume').onclick = () => {
+    primeGyro();
+    applyInputSettings();
     show(false);
     game.input.requestLock();
   };
@@ -192,6 +238,7 @@ syncDiff();
 $('btn-ai-open').onclick = () => showPanel('panel-ai');
 $('btn-ai').onclick = () => {
   audio.unlock();
+  primeGyro();
   goFullscreen();
   startGame('ai', { difficulty: aiDiff });
 };
@@ -199,6 +246,7 @@ $('btn-ai').onclick = () => {
 // Sandbox
 $('btn-sandbox').onclick = () => {
   audio.unlock();
+  primeGyro();
   goFullscreen();
   startGame('sandbox', { difficulty: aiDiff });
 };
@@ -206,6 +254,7 @@ $('btn-sandbox').onclick = () => {
 // Practice
 $('btn-practice').onclick = () => {
   audio.unlock();
+  primeGyro();
   goFullscreen();
   startGame('practice');
 };
@@ -214,6 +263,7 @@ $('btn-practice').onclick = () => {
 let hostCode = null;
 $('btn-host').onclick = async () => {
   audio.unlock();
+  primeGyro();
   showPanel('panel-host');
   net = new Net();
   $('host-status').textContent = 'Setting up…';
@@ -273,6 +323,7 @@ function enterAsHost() {
 }
 $('btn-host-go').onclick = () => {
   audio.unlock();
+  primeGyro();
   enterAsHost();
 };
 
@@ -283,6 +334,7 @@ $('btn-join-open').onclick = () => {
 };
 $('btn-join').onclick = async () => {
   audio.unlock();
+  primeGyro();
   const code = $('in-code').value.trim().toUpperCase();
   if (code.length < 4) { $('join-status').textContent = 'Enter the 5-letter code.'; return; }
   $('join-status').textContent = 'Connecting…';

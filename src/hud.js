@@ -192,6 +192,20 @@ export class Hud {
     if (html !== this._toolsHtml) {
       this._toolsHtml = html;
       document.getElementById('h-tools').innerHTML = html;
+      const ps = document.getElementById('pill-scout'), pt = document.getElementById('pill-tact'), sw = document.getElementById('pill-swap');
+      if (ps) {
+        ps.textContent = `${TOOL_SHORT[L.scout]} ×${C[L.scout] ?? 0}`;
+        pt.textContent = `${TOOL_SHORT[L.tactical]} ×${C[L.tactical] ?? 0}`;
+        ps.classList.toggle('empty', !C[L.scout]);
+        pt.classList.toggle('empty', !C[L.tactical]);
+      }
+    }
+    const sw = document.getElementById('pill-swap');
+    if (sw) {
+      const lbl = g.player.slot === 0 ? 'PISTOL ⇄' : 'RIFLE ⇄';
+      if (sw.textContent !== lbl) sw.textContent = lbl;
+      const pf = document.getElementById('pill-feed');
+      pf.classList.toggle('live', T.feedWindow > 0 || T.feed > 0);
     }
     const dr = T.drone, el = document.getElementById('h-drone');
     const feed = T.feed > 0;

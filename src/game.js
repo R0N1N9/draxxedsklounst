@@ -971,6 +971,10 @@ export class Game {
       u.uRes.value.set(this.renderer.domElement.width, this.renderer.domElement.height);
     }
     if (this.sandbox) this.sandbox.update(dt);
+    // Touch toggles: breath releases itself when you unscope or run out of air.
+    this.input.isScoped = P.scoped;
+    if (this.input.breathLatched && (!P.scoped || P.breathLock > 0)) this.input.breathLatched = false;
+    this.input.syncToggles();
     this.input.endFrame();
     if (this.composer) this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);
