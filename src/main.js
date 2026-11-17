@@ -3,6 +3,7 @@ import { Audio } from './audio.js';
 import { randomCode } from './util.js';
 import { PALETTES } from './atmosphere.js';
 import { drawMap } from './briefmap.js';
+import { renderLoadout } from './loadout.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -47,7 +48,9 @@ const settings = {
   sensitivity: store.get('sens', 1),
   invertY: store.get('invert', false),
   scopeToggle: store.get('toggle', 'ontouchstart' in window),
+  loadout: store.get('loadout', null),
 };
+settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); };
 
 // ---- Menu wiring ----
 $('in-name').value = settings.name;
@@ -166,6 +169,12 @@ function wirePause() {
     game.input.scopeToggle = settings.scopeToggle;
   };
 }
+
+// Loadout (menu)
+$('btn-loadout').onclick = () => {
+  showPanel('panel-loadout');
+  renderLoadout($('menu-loadout'), settings.loadout, (lo) => settings.saveLoadout(lo));
+};
 
 // Vs AI
 const AI_DESC = {

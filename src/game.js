@@ -20,6 +20,8 @@ import { segSegClosest, clamp, mulberry32 } from './util.js';
 import { crestAt } from './terrain.js';
 import { BotPeer } from './bot.js';
 import { Sandbox } from './sandbox.js';
+import { ToolSystem, setThermal } from './tools.js';
+import { LoadoutPanel } from './loadout.js';
 import { PALETTES as PALS } from './atmosphere.js';
 
 const ACCENTS = ['#e0a040', '#40c8d8'];
@@ -39,11 +41,13 @@ const GradeShader = {
     uAmount: { value: 0.35 },
     uDamage: { value: 0 },
     uOutline: { value: 1 },
+    uThermal: { value: 0 },
+    uStatic: { value: 0 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform sampler2D tDepth;
-    uniform float uNear, uFar, uTime, uAmount, uDamage, uOutline; uniform vec2 uRes;
+    uniform float uNear, uFar, uTime, uAmount, uDamage, uOutline, uThermal, uStatic; uniform vec2 uRes;
     varying vec2 vUv;
     float lin(vec2 uv) {
       float z = texture2D(tDepth, uv).x * 2.0 - 1.0;
@@ -64,6 +68,23 @@ const GradeShader = {
       c.rgb = mix(c.rgb, c.rgb * 0.18 + vec3(0.006, 0.005, 0.012), edge * 0.85);
       // Grade: slight desaturation, cool shadows / warm highlights.
       float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      if (uThermal > 0.5) {
+        // Drone thermal: the world is cold slate, warm bodies and lit windows burn white-orange.
+        float cold = smoothstep(0.0, 0.6, l);
+        vec3 th = mix(vec3(0.015, 0.02, 0.05), vec3(0.16, 0.18, 0.26), cold);
+        th = mix(th, vec3(1.4, 0.7, 0.25), smoothstep(1.1, 2.0, l));
+        th = mix(th, vec3(2.4, 2.3, 2.1), smoothstep(2.4, 4.5, l));
+        float sc = sin(vUv.y * uRes.y * 1.5) * 0.02;
+        // Long-range feed: heavier static, rolling bands and the odd tear line.
+        float row = floor(vUv.y * uRes.y / 3.0);
+        float n = hash(vec2(row, floor(uTime * 24.0))) - 0.5;
+        float px2 = hash(vUv * uRes + fract(uTime * 7.0) * 113.0) - 0.5;
+        float band = smoothstep(0.96, 1.0, sin(vUv.y * 6.0 - uTime * 1.7));
+        float tear = step(0.985, hash(vec2(row * 0.37, floor(uTime * 8.0))));
+        th += uStatic * (px2 * 0.09 + n * 0.04 + band * 0.05 + tear * 0.3);
+        gl_FragColor = vec4(th + sc, 1.0);
+        return;
+      }
       c.rgb = mix(vec3(l), c.rgb, 0.88);
       vec3 cool = vec3(0.9, 0.96, 1.12), warm = vec3(1.07, 1.0, 0.9);
       c.rgb *= mix(cool, warm, smoothstep(0.03, 0.6, l));
@@ -171,6 +192,8 @@ export class Game {
     this.footT = 0;
 
     this.targets = [];
+    this.tools = new ToolSystem(this);
+    this.loadoutPanel = new LoadoutPanel(this, settings.saveLoadout);
     if (this.offline) this.net = new BotPeer(this, { difficulty: this.difficulty, behaviour: this.offline === 'sandbox' ? 'passive' : 'hostile' });
     if (mode === 'practice') this._setupPractice();
     else this._setupNet();
@@ -301,6 +324,7 @@ export class Game {
 
   _setupNet() {
     const n = this.net;
+    this.tools.bindNet(n);
     n.on('open', () => {
       n.send({ t: 'hello', name: this.name, pal: this.paletteKey });
       if (this.offline === 'sandbox') {
@@ -478,6 +502,7 @@ export class Game {
     this.pings.length = 0;
     this.hud.clearMarkers();
     this.hud.card('');
+    this.tools.reset();
     this.remoteHp = 100;
     this.remoteAlive = true;
     this.remoteDeadLock = false;
@@ -541,6 +566,7 @@ export class Game {
     if (m.al === 0) this.remoteAlive = false;
     else if (!this.remoteDeadLock && this.phase !== 'end' && this.phase !== 'match') this.remoteAlive = true;
     this.remoteHack = m.hk;
+    this.tools.onRemoteState(m);
   }
 
   _onRemoteShot(m) {
@@ -548,12 +574,12 @@ export class Game {
     this.remoteShots.set(m.id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: m.wt });
     this._spawnBullet(o, v, false, m.id, m.wt);
     const dir = v.clone().normalize();
-    this.effects.muzzle(o, dir);
+    if (!m.sup) this.effects.muzzle(o, dir);
     const d = o.distanceTo(this.camera.position);
-    this.audio.shotDistant(o, d / 343);
-    // Prone shots kick up a dust cloud: another tell.
+    this.audio.shotDistant(o, d / 343, !!m.sup);
+    // Prone shots kick up a dust cloud: another tell (not with a suppressor).
     const last = this.remoteHist[this.remoteHist.length - 1];
-    if (last && last.st === 2) this.effects.puff(o.clone().add(new THREE.Vector3(0, -0.2, 0)), 'dust', 2.2, 2.0);
+    if (last && last.st === 2 && !m.sup) this.effects.puff(o.clone().add(new THREE.Vector3(0, -0.2, 0)), 'dust', 2.2, 2.0);
   }
 
   _onHitByRemote(m) {
@@ -598,8 +624,13 @@ export class Game {
 
   _onUav() {
     this.uavT = UAV_INTERVAL;
-    this.hud.message('UAV SWEEP', 'Enemy position marked — and yours is too', 2.5);
+    const iJam = this.tools.jammer;
+    if (iJam) this.tools.jammer = false;
+    const theyJam = !!this.tools.remote.jm;
+    this.hud.message('UAV SWEEP', theyJam ? 'Target JAMMED — no fix on the enemy' : iJam ? 'Enemy marked · your jammer kept you hidden' : 'Enemy position marked — and yours is too', 2.8);
     this.audio.ping();
+    if (theyJam) { this.tools.remote.jm = 0; return; }
+    this.tools.openFeed();
     if (!this.remoteAlive || !this.remoteHist.length) return;
     const s = sampleHist(this.remoteHist, this.now - NET.interpDelay);
     this.hud.addMarker(s.p.clone().add(new THREE.Vector3(0, 1.2, 0)), 'UAV', 'enemy', 4);
@@ -658,6 +689,7 @@ export class Game {
       hp: Math.max(0, Math.round(P.hp)),
       al: P.alive ? 1 : 0,
       mv: P.moving ? 1 : 0,
+      ...this.tools.stateFields(),
     });
   }
 
@@ -673,17 +705,18 @@ export class Game {
     const P = this.player;
     const o = P.eyePos(new THREE.Vector3());
     const dir = P.muzzleDir(new THREE.Vector3());
-    const v = dir.clone().multiplyScalar(BALLISTICS.muzzle);
+    const sup = this.tools.has('suppressor');
+    const v = dir.clone().multiplyScalar(this.tools.muzzle);
     const id = ++this.shotId * 2 + this.me;
     this.myShots.set(id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: this.roundTime });
     // Start the visible bullet slightly ahead so it doesn't spawn inside the camera.
     this._spawnBullet(o, v, true, id, this.roundTime);
     P.fireKick();
-    this.audio.shotLocal();
+    this.audio.shotLocal(sup);
     if (P.ammo > 0) this.audio.bolt(0.35);
     const vmPos = new THREE.Vector3(0.2, -0.17, -1.4).applyMatrix4(this.camera.matrixWorld);
-    if (P.scopeT < 0.5) this.effects.muzzle(vmPos, dir);
-    if (this.net && this.net.open) this.net.send({ t: 'shot', id, o: o.toArray().map((x) => Math.round(x * 1000) / 1000), v: v.toArray().map((x) => Math.round(x * 100) / 100), wt: this.roundTime });
+    if (P.scopeT < 0.5 && !sup) this.effects.muzzle(vmPos, dir);
+    if (this.net && this.net.open) this.net.send({ t: 'shot', id, sup: sup ? 1 : 0, o: o.toArray().map((x) => Math.round(x * 1000) / 1000), v: v.toArray().map((x) => Math.round(x * 100) / 100), wt: this.roundTime });
     this.vmKick = 1;
   }
 
@@ -694,6 +727,7 @@ export class Game {
       if (t.swing > 0) continue;
       worldCapsules(t.pos, t.yaw, 0).forEach((c) => { c.owner = t; list.push(c); });
     }
+    if (this.mode !== 'practice') this.tools.hitCapsules(list);
     if (this.mode !== 'practice' && this.remoteAlive && this.remoteHist.length) {
       const s = sampleHist(this.remoteHist, this.now - NET.interpDelay);
       if (s) worldCapsules(s.p, s.yaw, s.st).forEach((c) => { c.owner = 'remote'; list.push(c); });
@@ -758,6 +792,10 @@ export class Game {
     const shot = this.myShots.get(b.id);
     const dist = shot ? shot.o.distanceTo(ip) : 0;
     const head = cap.part === 'head';
+    if (cap.owner === 'decoy' || cap.owner === 'dart' || cap.owner === 'drone') {
+      this.tools.onToolHit(cap, shot ? shot.o : ip);
+      return;
+    }
     if (cap.owner !== 'remote') {
       const t = cap.owner;
       t.swing = 0.0001;
@@ -839,7 +877,22 @@ export class Game {
 
     const replaying = this.replay.active;
     if (this.sandbox) this.sandbox.preUpdate(dt, a);
-    if (!replaying && P.alive) {
+    const loadoutOk = this.phase === 'insert' || this.phase === 'wait' || this.phase === 'practice' || this.phase === 'sandbox';
+    if (a.loadout && loadoutOk && !this.tools.drone) this.loadoutPanel.toggle();
+    if (this.tools.drone && (!P.alive || replaying)) this.tools.endDrone('');
+    if (this.tools.feed > 0 && (!P.alive || replaying)) this.tools.endFeed();
+    if (a.feed && P.alive && !replaying) {
+      if (this.tools.feed > 0) this.tools.endFeed();
+      else if (this.tools.startFeed()) this.hud.message('', 'Predator feed — U to exit', 1.5);
+    }
+    if (!replaying && P.alive && this.tools.feed > 0) {
+      // Watching the feed: your body stays where it is.
+    } else if (!replaying && P.alive && this.tools.drone) {
+      this.tools.updateDrone(dt, a);
+      if (a.scout) this.tools.useScout();
+    } else if (!replaying && P.alive) {
+      if (canFire && a.scout) this.tools.useScout();
+      if (canFire && a.tactical) this.tools.useTactical();
       const flyFrom = this.sandbox && this.sandbox.fly ? P.pos.clone() : null;
       P.update(dt, a, this.world, { canMove });
       if (flyFrom) this.sandbox.flyMove(dt, flyFrom);
@@ -862,6 +915,7 @@ export class Game {
     }
     this._updateUplinks(dt, live);
     this._updateBullets(dt);
+    this.tools.update(dt);
     this._updatePractice(dt);
     this._updateRemote(dt);
     this._updatePings();
@@ -874,7 +928,18 @@ export class Game {
     }
 
     // Camera
-    if (!replaying) {
+    const feedView = this.tools.feed > 0 && !replaying;
+    const droneView = (!!this.tools.drone || feedView) && !replaying;
+    if (droneView !== this._thermalOn || (droneView && this.tools.remote.tp !== this._thermalTp)) {
+      this._thermalOn = droneView;
+      this._thermalTp = this.tools.remote.tp;
+      setThermal(this.remote.root, droneView && !this.tools.remote.tp);
+    }
+    if (feedView) {
+      this.tools.applyFeedCamera(this.camera);
+    } else if (droneView) {
+      this.tools.applyDroneCamera(this.camera);
+    } else if (!replaying) {
       P.eyePos(this.camera.position);
       const s = P.sway();
       this.camera.rotation.set(P.pitch - s.y, P.yaw + s.x, 0, 'YXZ');
@@ -912,6 +977,8 @@ export class Game {
       u.uNear.value = this.camera.near;
       u.uFar.value = this.camera.far;
       u.uTime.value = this.now;
+      u.uThermal.value = this.tools.thermalActive() && !replaying ? 1 : 0;
+      u.uStatic.value = this.tools.feed > 0 && !replaying ? 1 : 0;
       u.uRes.value.set(this.renderer.domElement.width, this.renderer.domElement.height);
     }
     if (this.sandbox) this.sandbox.update(dt);
@@ -923,7 +990,7 @@ export class Game {
   _updateViewmodel(dt, replaying) {
     const P = this.player;
     const vm = this.viewmodel;
-    vm.visible = !replaying && P.alive && P.scopeT < 0.6;
+    vm.visible = !replaying && P.alive && P.scopeT < 0.6 && !this.tools.thermalActive();
     this.vmKick = Math.max(0, (this.vmKick || 0) - dt * 5);
     const bob = Math.sin((P.bobPhase || 0)) * 0.012 * Math.min(P.speed / 4, 1.4);
     const reload = P.reloadT > 0 ? Math.sin(clamp(P.reloadT / WEAPON.reloadTime, 0, 1) * Math.PI) : 0;
@@ -944,7 +1011,7 @@ export class Game {
     // Scope glint: bright when they're scoped in and pointing at you.
     let glint = 0;
     const sp = scopePoint(s.p, s.yaw, s.pitch, s.st);
-    if (visible && this.remoteAlive && s.sc) {
+    if (visible && this.remoteAlive && s.sc && !this.tools.remote.kf && !this.tools.smokeBlocks(this.camera.position, sp)) {
       const toMe = this.camera.position.clone().sub(sp).normalize();
       const aim = new THREE.Vector3(-Math.sin(s.yaw) * Math.cos(s.pitch), Math.sin(s.pitch), -Math.cos(s.yaw) * Math.cos(s.pitch));
       const facing = Math.max(0, aim.dot(toMe));
@@ -1041,7 +1108,7 @@ export class Game {
     let h = '';
     if (this.phase === 'wait' && this.mode === 'host') h = `Waiting for your friend… code <b>${this.hostCode}</b> — roam the valley meanwhile`;
     else if (this.phase === 'wait') h = 'Connecting…';
-    else if (this.phase === 'insert') h = `Insertion — weapons cold · ${Math.ceil(this.phaseT)}`;
+    else if (this.phase === 'insert') h = `Insertion — weapons cold · ${Math.ceil(this.phaseT)} · <b>L</b> loadout`;
     else if (this.hacking >= 0) h = `HACKING UPLINK ${this.world.uplinks[this.hacking].name}… ${Math.round((this.uplinkState[this.hacking].progress / UPLINK.hackTime) * 100)}%`;
     else if (!P.alive && !this.replay.active) h = 'You are down — next round soon';
     else if (P.ammo === 0 && P.reserve === 0) h = 'Out of ammo';

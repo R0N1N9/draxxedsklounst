@@ -95,7 +95,7 @@ export class Sandbox {
   toggle(force) {
     this.open = force ?? !this.open;
     this.panel.classList.toggle('on', this.open);
-    this.g.toolsOpen = this.open;
+    this.g.toolsOpen = this.open || (this.g.loadoutPanel && this.g.loadoutPanel.open);
     if (this.open) document.exitPointerLock && document.exitPointerLock();
     else this.g.input.requestLock();
   }

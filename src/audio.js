@@ -127,11 +127,11 @@ export class Audio {
   }
 
   // Your own rifle: loud, close, with the valley echoing it back.
-  shotLocal() {
+  shotLocal(suppressed = false) {
     if (!this.ctx) return;
     const t = this.now;
     const bus = this.ctx.createGain();
-    bus.gain.value = 1;
+    bus.gain.value = suppressed ? 0.35 : 1;
     bus.connect(this.master);
     bus.connect(this.reverb);
     this._noiseBurst(bus, t, 0.5, 'bandpass', 1800, 0.6, 1.1, 0.18);
@@ -140,12 +140,12 @@ export class Audio {
   }
 
   // Distant muzzle report, arriving after the sound travel delay.
-  shotDistant(pos, delay) {
+  shotDistant(pos, delay, suppressed = false) {
     if (!this.ctx) return;
     const t = this.now + delay;
-    const p = this._panner(pos, 60);
+    const p = this._panner(pos, suppressed ? 8 : 60);
     const bus = this.ctx.createGain();
-    bus.gain.value = 1.6;
+    bus.gain.value = suppressed ? 0.5 : 1.6;
     bus.connect(p);
     const rv = this.ctx.createGain();
     rv.gain.value = 0.5;
@@ -294,6 +294,58 @@ export class Audio {
     const t = this.ctx.currentTime;
     this.windGain.gain.setTargetAtTime(0.02 + speed * 0.012, t, 0.5);
     this.windFilter.frequency.setTargetAtTime(250 + speed * 60, t, 0.5);
+  }
+
+  // Persistent positional loops (e.g. drone rotor buzz).
+  startLoop(key, pos, type, gain = 0.4) {
+    if (!this.ctx) return;
+    this.loops ||= {};
+    if (this.loops[key]) return;
+    const ctx = this.ctx;
+    const p = this._panner(pos, 12);
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 900;
+    f.Q.value = 0.8;
+    const trem = ctx.createGain();
+    trem.gain.value = 0.7;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 23;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.3;
+    lfo.connect(lfoGain).connect(trem.gain);
+    const oscs = [178, 183, 356].map((fr) => {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = fr;
+      o.connect(f);
+      o.start();
+      return o;
+    });
+    f.connect(trem).connect(g).connect(p);
+    lfo.start();
+    this.loops[key] = { p, oscs, lfo, g };
+  }
+
+  updateLoop(key, pos) {
+    const l = this.loops && this.loops[key];
+    if (!l) return;
+    if (l.p.positionX) {
+      l.p.positionX.value = pos.x;
+      l.p.positionY.value = pos.y;
+      l.p.positionZ.value = pos.z;
+    } else l.p.setPosition(pos.x, pos.y, pos.z);
+  }
+
+  stopLoop(key) {
+    const l = this.loops && this.loops[key];
+    if (!l) return;
+    l.oscs.forEach((o) => o.stop());
+    l.lfo.stop();
+    l.p.disconnect();
+    delete this.loops[key];
   }
 
   setMuffled(on) {

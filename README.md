@@ -25,7 +25,12 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 
 - Both players start on opposite ridgelines, about 800 m apart. Spawns are random among three points per ridge, and sides swap every round.
 - You get one life per round. First to 4 rounds wins.
-- **UAV sweep**: every 60 s of live play, both players see the other's position for a few seconds.
+- **Predator UAV**: a drone circles high over the valley. Every 60 s of live play it pings both players in red on each other's HUD. For 8 s afterwards you can press **U** to tune into its live thermal feed of the enemy. A UAV jammer blocks the ping and the feed.
+- **Loadout**: before the match (main menu → Loadout) and during each round's insertion (**L**), pick one tool per slot:
+  - **Scout (T):** Spotting drone (fly a thermal quadcopter for 25 s; loud and shootable) or Recon dart ×2 (fired up to ~400 m; pings enemies moving within 45 m for 40 s; blinks, beeps and is shootable).
+  - **Stealth (passive):** Thermal poncho (hidden from thermal; 20% slower, no sprint), Suppressor (no flash, quiet; 12% slower bullets), Anti-glint cover (no glint; narrower, darker scope) or UAV jammer (hides you from one UAV sweep).
+  - **Tactical (G):** Smoke grenades ×2 (25 s screen that blocks sight, not bullets) or Decoy (a fake prone sniper with a fake glint; shooting it reveals where you fired from).
+- The AI gets a random loadout each round and uses its tools: it flies drones, plants darts, smokes when it relocates, leaves decoys behind, and shoots down drones that come close.
 - **Uplinks A / B / C** are in the town, on the dam and at the ski-lift station. Stand in the ring for 8 s to capture one. A capture pings your enemy's position three times. If time runs out, whoever holds the most uplinks wins the round.
 - Every kill plays a **killcam** (through the shooter's scope) and then a slow-motion **bullet-cam**.
 
@@ -49,6 +54,9 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 | Zero − / + | Q / E | Z− / Z+ |
 | Crouch / prone / jump | C / Z / Space | CRCH / PRN / JMP |
 | Rangefinder / reload | F / R | RNG / R |
+| Scout / tactical tool | T / G | TOOL T / TOOL G |
+| Loadout (insertion) | L | KIT |
+| Predator feed | U | FEED |
 | Pause menu | Esc | II |
 | Sandbox tools | B | TOOLS |
 
@@ -88,6 +96,7 @@ Resolution also scales dynamically to hold the frame rate. You can override the 
 | `src/atmosphere.js` | Dusk and golden-hour palettes, height-based haze, sky |
 | `src/ballistics.js` | Projectile integration, wind, zero tables |
 | `src/bot.js` | AI opponent (plugs in where the network peer would) |
+| `src/tools.js`, `src/loadout.js` | Loadout tools, Predator UAV, loadout picker |
 | `src/sandbox.js` | Sandbox tools panel |
 | `src/killcam.js` | Replay histories, killcam and bullet-cam |
 | `src/hud.js`, `style.css` | HUD, scope reticle, compass |

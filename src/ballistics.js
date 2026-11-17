@@ -42,13 +42,14 @@ const calm = { at: (t, out) => out.set(0, 0) };
 
 // Elevation (radians above line of sight) needed to hit at a given distance in calm air.
 const zeroCache = new Map();
-export function zeroAngle(dist) {
-  if (zeroCache.has(dist)) return zeroCache.get(dist);
+export function zeroAngle(dist, muzzle = BALLISTICS.muzzle) {
+  const key = dist + ':' + muzzle;
+  if (zeroCache.has(key)) return zeroCache.get(key);
   let ang = 0;
   const p = new THREE.Vector3(), v = new THREE.Vector3();
   for (let iter = 0; iter < 6; iter++) {
     p.set(0, 0, 0);
-    v.set(Math.cos(ang), Math.sin(ang), 0).multiplyScalar(BALLISTICS.muzzle);
+    v.set(Math.cos(ang), Math.sin(ang), 0).multiplyScalar(muzzle);
     let t = 0;
     while (p.x < dist && t < 6) {
       stepProjectile(p, v, 1 / 240, calm, t);
@@ -56,7 +57,7 @@ export function zeroAngle(dist) {
     }
     ang += Math.atan2(-p.y, dist);
   }
-  zeroCache.set(dist, ang);
+  zeroCache.set(key, ang);
   return ang;
 }
 

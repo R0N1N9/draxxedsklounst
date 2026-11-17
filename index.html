@@ -41,6 +41,7 @@
         <button id="btn-host" class="primary">Host a match</button>
         <button id="btn-join-open">Join with code</button>
         <button id="btn-ai-open">Vs AI</button>
+        <button id="btn-loadout">Loadout</button>
         <div class="row">
           <button id="btn-practice" class="ghost">Practice range</button>
           <button id="btn-sandbox" class="ghost">Sandbox</button>
@@ -94,6 +95,12 @@
         <button id="btn-join" class="primary">Join</button>
         <p class="hint small" id="join-status"></p>
         <button class="ghost back">Back</button>
+      </div>
+
+      <div id="panel-loadout" class="panel">
+        <p class="hint small">One tool per slot. You can also change it during each round's insertion (L).</p>
+        <div id="menu-loadout" class="lo-body"></div>
+        <button class="primary back">Done</button>
       </div>
 
       <div id="panel-ai" class="panel">
@@ -151,10 +158,12 @@
       <div class="lbl dim" id="h-stance"></div>
     </div>
     <div class="weapon">
+      <div id="h-tools"></div>
       <div class="lbl dim">SR-7 · 8.6 MM</div>
       <div class="ammo" id="h-ammo"></div>
       <div class="lbl" id="h-zero"></div>
     </div>
+    <div id="h-drone"></div>
     <div id="h-breath"><div id="h-breath-fill"></div></div>
     <div class="replay-tag">● REPLAY</div>
   </div>
@@ -176,6 +185,10 @@
     <div class="tb zup" data-act="zeroup">Z+</div>
     <div class="tb zdn" data-act="zerodown">Z−</div>
     <div class="tb pause" id="tb-pause">II</div>
+    <div class="tb scoutb" data-act="scout">TOOL<br />T</div>
+    <div class="tb tactb" data-act="tactical">TOOL<br />G</div>
+    <div class="tb lob" data-act="loadout">KIT</div>
+    <div class="tb feedb" data-act="feed">FEED</div>
   </div>
 
   <div id="h-card"></div>

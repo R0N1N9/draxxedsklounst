@@ -88,7 +88,7 @@ export class LocalPlayer {
   // Direction the bullet leaves the barrel: aim + zero elevation.
   muzzleDir(out = new THREE.Vector3()) {
     const s = this.sway();
-    const yaw = this.yaw + s.x, pitch = this.pitch - s.y + zeroAngle(this.zero);
+    const yaw = this.yaw + s.x, pitch = this.pitch - s.y + zeroAngle(this.zero, this.muzzle || undefined);
     return out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
   }
 
@@ -152,10 +152,11 @@ export class LocalPlayer {
 
     // --- Movement
     let speed = this.stance === 2 ? PLAYER.prone : this.stance === 1 ? PLAYER.crouch : PLAYER.walk;
-    const sprinting = a.sprint && !this.scoped && this.stance === 0 && a.my < -0.3;
+    const sprinting = a.sprint && !this.scoped && this.stance === 0 && a.my < -0.3 && !this.noSprint;
     if (sprinting) speed = PLAYER.sprint;
     if (this.scoped) speed *= 0.5;
     if (this.wounded) speed *= 0.75;
+    if (this.speedMul) speed *= this.speedMul;
     if (!canMove) speed = 0;
     const sn = Math.sin(this.yaw), cs = Math.cos(this.yaw);
     const wx = (a.mx * cs + a.my * sn) * speed;

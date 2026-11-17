@@ -8,6 +8,7 @@ import { stepProjectile } from './ballistics.js';
 import { worldCapsules } from './avatar.js';
 import { segSegClosest, clamp } from './util.js';
 import { crestAt, DAM_X } from './terrain.js';
+import { randomLoadout, SUPPRESSED_MUZZLE, TOOLS } from './tools.js';
 
 export const DIFFICULTY = {
   easy: { name: 'RECRUIT', err: 3.0e-3, react: 3.0, settle: 2.6, detect: 0.45, lead: 0.5, wind: 0.3, prone: false },
@@ -103,7 +104,15 @@ export class BotPeer {
         this.scoped = false;
         break;
       case 'uav':
-        if (this.player && this.player.al && this.behaviour === 'hostile') this._learn(this.player.p, 0.7);
+        if (this.jammer) this.jammer = false;
+        if (this.player && this.player.al && !this.player.jm && this.behaviour === 'hostile') this._learn(this.player.p, 0.7);
+        break;
+      case 'decoyhit':
+        // The player shot our decoy: we now know where they fired from.
+        if (this.behaviour === 'hostile') this._learn(new THREE.Vector3(...m.o), 1.0);
+        break;
+      case 'dronehit':
+        this.drone = null;
         break;
       case 'reveal':
         if (m.who === 1 && this.player) this._learn(this.player.p, 0.9);
@@ -157,11 +166,25 @@ export class BotPeer {
     this.hackT = 0;
     this.yaw = this.side < 0 ? Math.PI : 0;
     this.pitch = -0.04;
+    this.scanBase = this.yaw;
+    this.scanPhase = Math.random() * 10;
     this.stance = 0;
     this.scoped = false;
     this.wounded = false;
+    this.loadout = randomLoadout();
+    this.charges = {};
+    for (const k of Object.values(this.loadout)) this.charges[k] = TOOLS[k].charges ?? 1;
+    this.jammer = this.loadout.stealth === 'jammer';
+    this.drone = null;
+    this.toolT = 20 + Math.random() * 40;
+    this.prevNest = null;
+    this.target = null;
     this._pickNest();
     this.state = 'toNest';
+  }
+
+  get muzzle() {
+    return this.loadout && this.loadout.stealth === 'suppressor' ? SUPPRESSED_MUZZLE : BALLISTICS.muzzle;
   }
 
   // Sandbox: (re)spawn on a ridge without a round message.
@@ -185,7 +208,7 @@ export class BotPeer {
       const dtp = Math.max(this.t - this.player.t, 1e-3);
       this.playerVel.lerp(p.clone().sub(this.player.p).divideScalar(dtp), 0.3);
     }
-    this.player = { p, yaw: m.y, pitch: m.pi, st: m.st, sc: m.sc, z: m.z, al: m.al, mv: m.mv, t: this.t };
+    this.player = { p, yaw: m.y, pitch: m.pi, st: m.st, sc: m.sc, z: m.z, al: m.al, mv: m.mv, t: this.t, kf: m.kf, tp: m.tp, jm: m.jm };
   }
 
   _onPlayerShot(m) {
@@ -239,7 +262,7 @@ export class BotPeer {
   _pickNest() {
     const forward = Math.random() < 0.3;
     for (let tries = 0; tries < 12; tries++) {
-      const x = clamp(this.pos.x + (Math.random() - 0.5) * 500, -620, 620);
+      const x = clamp(this.pos.x + (Math.random() - 0.5) * 300, -620, 620);
       const z = this.side * (crestAt(x) - (forward ? 40 + Math.random() * 40 : 6 + Math.random() * 8));
       const n = this.g.world.terrain.normalAt(x, z);
       if (n.y < 0.8) continue;
@@ -252,6 +275,14 @@ export class BotPeer {
 
   _relocate(urgent) {
     if (!this.alive) return;
+    this.prevNest = this.nest ? this.nest.clone() : null;
+    if (urgent && this.loadout && this.loadout.tactical === 'smoke' && this.charges.smoke > 0 && Math.random() < 0.7) {
+      this.charges.smoke--;
+      const p = this.pos.clone().add(new THREE.Vector3(-Math.sin(this.yaw) * 6, 0, -Math.cos(this.yaw) * 6));
+      p.y = this.g.world.heightAt(p.x, p.z);
+      this._emit({ t: 'smoke', p: p.toArray() });
+    }
+    this.target = null;
     this._pickNest();
     this.state = 'toNest';
     this.shotsHere = 0;
@@ -301,7 +332,7 @@ export class BotPeer {
     const aim = target.clone();
     const p = new THREE.Vector3(), v = new THREE.Vector3();
     for (let iter = 0; iter < 4; iter++) {
-      v.copy(aim).sub(eye).normalize().multiplyScalar(BALLISTICS.muzzle);
+      v.copy(aim).sub(eye).normalize().multiplyScalar(this.muzzle);
       p.copy(eye);
       const horiz = Math.hypot(target.x - eye.x, target.z - eye.z);
       let t = 0;
@@ -331,11 +362,12 @@ export class BotPeer {
     yaw += gauss() * spread;
     pitch += gauss() * spread;
     const dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
-    const v = dir.multiplyScalar(BALLISTICS.muzzle);
+    const v = dir.multiplyScalar(this.muzzle);
     const id = ++this.shotId * 2 + 1;
     const wt = this.g.roundTime;
+    const sup = this.loadout.stealth === 'suppressor' ? 1 : 0;
     this.bullets.push({ p: eye.clone(), v: v.clone(), prev: eye.clone(), age: 0, id, wt, o: eye.clone() });
-    this._emit({ t: 'shot', id, o: eye.toArray(), v: v.toArray(), wt });
+    this._emit({ t: 'shot', id, sup, o: eye.toArray(), v: v.toArray(), wt });
     this.boltT = WEAPON.boltTime + 0.3 + Math.random() * 0.6;
     this.shotsHere++;
   }
@@ -343,6 +375,9 @@ export class BotPeer {
   _updateBullets(dt) {
     const P = this.player;
     const caps = P && P.al ? worldCapsules(P.p, P.yaw, P.st) : [];
+    const T = this.g.tools;
+    for (const d of T.decoys) if (d.mine) T.decoyCapsules(d).forEach((c) => { c.decoy = d; caps.push(c); });
+    if (T.drone) caps.push({ part: 'drone', a: T.drone.pos.clone(), b: T.drone.pos.clone(), r: 0.5 });
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const b = this.bullets[i];
       let dead = false, rem = dt;
@@ -358,7 +393,16 @@ export class BotPeer {
           if (r.d2 <= c.r * c.r && (!hit || r.s < hit.s)) hit = { s: r.s, c };
         }
         const wh = this.g.world.raycast(b.prev, b.p);
-        if (hit && (!wh || hit.s <= wh.t)) {
+        if (hit && (!wh || hit.s <= wh.t) && (hit.c.decoy || hit.c.part === 'drone')) {
+          if (hit.c.part === 'drone') this._emit({ t: 'dronehit' });
+          else {
+            this._emit({ t: 'decoyhit', id: hit.c.decoy.id, o: b.o.toArray() });
+            this.target = null;
+            this.awareness = 0.3;
+            this.known = null;
+          }
+          dead = true;
+        } else if (hit && (!wh || hit.s <= wh.t)) {
           const ip = b.prev.clone().lerp(b.p, hit.s);
           const part = hit.c.part;
           const dmg = DAMAGE[part === 'legs' ? 'limb' : part];
@@ -384,7 +428,8 @@ export class BotPeer {
     head.y += BODY_H[P.st] * 0.75;
     const dist = eye.distanceTo(head);
     const los = this.g.world.raycast(eye, head, true);
-    const visible = !los || los.t > 0.985;
+    const visible = (!los || los.t > 0.985) && !this.g.tools.smokeBlocks(eye, head);
+    this._perceiveDecoys(eye, step);
     if (!visible) {
       this.awareness = Math.max(0, this.awareness - step * 0.08);
       return;
@@ -397,7 +442,7 @@ export class BotPeer {
     if (P.mv) rate *= 2.2;
     rate *= clamp(260 / dist, 0.18, 3);
     // Their scope glint, if they're glassing us.
-    if (P.sc) {
+    if (P.sc && !P.kf) {
       const aim = new THREE.Vector3(-Math.sin(P.yaw) * Math.cos(P.pitch), Math.sin(P.pitch), -Math.cos(P.yaw) * Math.cos(P.pitch));
       const toBot = eye.clone().sub(head).normalize();
       const facing = Math.pow(Math.max(0, aim.dot(toBot)), 70);
@@ -409,6 +454,90 @@ export class BotPeer {
       this.known = P.p.clone();
       this.knownT = this.lastSeen = this.t;
     }
+  }
+
+  _perceiveDecoys(eye, step) {
+    for (const d of this.g.tools.decoys) {
+      if (!d.mine) continue;
+      const c = d.p.clone().add(new THREE.Vector3(0, 0.3, 0));
+      const los = this.g.world.raycast(eye, c, true);
+      if ((los && los.t < 0.985) || this.g.tools.smokeBlocks(eye, c)) continue;
+      const dist = eye.distanceTo(c);
+      const aim = new THREE.Vector3(-Math.sin(d.yaw), 0, -Math.cos(d.yaw));
+      const toBot = eye.clone().sub(c).normalize();
+      let rate = 0.35 * this.d.detect * 0.28 * clamp(260 / dist, 0.18, 3);
+      rate += Math.pow(Math.max(0, aim.dot(toBot)), 18) * 1.4 * this.d.detect;
+      d.botAw = (d.botAw || 0) + rate * step;
+      if (d.botAw >= 1 && !this.target && this.awareness < 1) {
+        this.target = d;
+        this.known = d.p.clone();
+        this.awareness = 1;
+        this.knownT = this.lastSeen = this.t;
+      }
+    }
+    if (this.target && !this.g.tools.decoys.includes(this.target)) this.target = null;
+    if (this.target) this.lastSeen = this.t;
+  }
+
+  // Drones, darts, smoke and decoys.
+  _useTools(dt, live, hostile) {
+    const T = this.g.tools, P = this.player;
+    // Shoot down the player's drone if it comes close and we can see it.
+    if (hostile && T.drone && this.state !== 'toNest' && this.boltT <= 0) {
+      const eye = this._eye();
+      const dp = T.drone.pos;
+      if (dp.distanceTo(eye) < 230) {
+        const los = this.g.world.raycast(eye, dp, true);
+        if (!los) {
+          const d = dp.clone().sub(eye);
+          const err = this._turnTo(Math.atan2(-d.x, -d.z), Math.atan2(d.y, Math.hypot(d.x, d.z)), 2, dt);
+          this.droneAimT = (this.droneAimT || 0) + dt;
+          if (err < 0.01 && this.droneAimT > 1.5) { this._fire(); this.droneAimT = 0; }
+          return true; // busy with the drone this frame
+        }
+      }
+    }
+    this.droneAimT = 0;
+    if (!live || !hostile) return false;
+    // Our own drone: fly toward where we think they are and look for heat.
+    if (this.drone) {
+      const dr = this.drone;
+      const goal = this.known ? this.known.clone() : new THREE.Vector3(this.pos.x, 0, -this.side * 380);
+      goal.y = this.g.world.heightAt(goal.x, goal.z) + 40;
+      const to = goal.sub(dr.pos);
+      const L = to.length();
+      if (L > 1) dr.pos.addScaledVector(to, Math.min(1, (14 * dt) / L));
+      dr.battery -= dt;
+      dr.scanT = (dr.scanT || 0) - dt;
+      if (dr.scanT <= 0 && P && P.al && !P.tp) {
+        dr.scanT = 0.5;
+        const hd = Math.hypot(P.p.x - dr.pos.x, P.p.z - dr.pos.z);
+        const head = P.p.clone().add(new THREE.Vector3(0, 1, 0));
+        if (hd < 140 && !this.g.world.raycast(dr.pos, head, true) && !T.smokeBlocks(dr.pos, head)) this._learn(P.p, 0.6);
+      }
+      if (dr.battery <= 0) this.drone = null;
+    }
+    this.toolT -= dt;
+    if (this.toolT <= 0 && this.state === 'overwatch') {
+      this.toolT = 30 + Math.random() * 40;
+      if (this.loadout.scout === 'drone' && this.charges.drone > 0 && !this.drone) {
+        this.charges.drone--;
+        this.drone = { pos: this._eye().add(new THREE.Vector3(0, 4, 0)), battery: 25 };
+      } else if (this.loadout.scout === 'dart' && this.charges.dart > 0) {
+        this.charges.dart--;
+        const tx = clamp((this.known ? this.known.x : this.pos.x) + (Math.random() - 0.5) * 200, -600, 600);
+        const tz = this.known ? this.known.z : -this.side * (60 + Math.random() * 200);
+        const p = new THREE.Vector3(tx, this.g.world.heightAt(tx, tz), tz);
+        this._emit({ t: 'dart', id: ++this.shotId * 2 + 1, p: p.toArray() });
+      }
+    }
+    // Our darts ping the player when they move nearby.
+    this.dartT = (this.dartT || 0) - dt;
+    if (this.dartT <= 0 && P && P.al && P.mv) {
+      this.dartT = 1.5;
+      for (const d of T.darts) if (!d.mine && d.p.distanceTo(P.p) < 45) this._learn(P.p, 0.5);
+    }
+    return false;
   }
 
   // ---- Brain ---------------------------------------------------------------
@@ -431,6 +560,7 @@ export class BotPeer {
       this.reactRelocate = 0;
       this._relocate(true);
     }
+    if (this._useTools(dt, live, hostile)) return;
     const engaged = hostile && this.awareness >= 1 && this.t - this.lastSeen < 2.5;
     if (engaged && this.state !== 'engage' && this.state !== 'toNest') {
       this.state = 'engage';
@@ -458,6 +588,11 @@ export class BotPeer {
         else if (arrived) {
           this.state = 'overwatch';
           this.urgent = false;
+          // Leave a decoy at the spot we just abandoned.
+          if (this.prevNest && this.loadout.tactical === 'decoy' && this.charges.decoy > 0 && this.behaviour === 'hostile') {
+            this.charges.decoy--;
+            this._emit({ t: 'decoy', id: ++this.shotId * 2 + 1, p: this.prevNest.toArray(), yaw: this.side < 0 ? Math.PI : 0 });
+          }
           this.scanBase = this.side < 0 ? Math.PI : 0;
           this.scanPhase = Math.random() * 10;
         }
@@ -492,9 +627,15 @@ export class BotPeer {
           break;
         }
         const P = this.player;
-        const target = P.p.clone();
-        target.y += BODY_H[P.st] * (P.st === 2 ? 0.4 : 0.62);
-        const sol = this._solve(target, this.playerVel);
+        let target, vel = this.playerVel;
+        if (this.target) {
+          target = this.target.p.clone().add(new THREE.Vector3(0, 0.25, 0));
+          vel = new THREE.Vector3();
+        } else {
+          target = P.p.clone();
+          target.y += BODY_H[P.st] * (P.st === 2 ? 0.4 : 0.62);
+        }
+        const sol = this._solve(target, vel);
         const err = this._turnTo(sol.yaw, sol.pitch, 1.4, dt);
         this.settleT -= dt;
         if (err < 0.004 && this.settleT <= 0 && this.boltT <= 0) {
@@ -574,6 +715,10 @@ export class BotPeer {
       hp: Math.max(0, Math.round(this.hp)),
       al: this.alive ? 1 : 0,
       mv: this.moving ? 1 : 0,
+      kf: this.loadout && this.loadout.stealth === 'killflash' ? 1 : 0,
+      tp: this.loadout && this.loadout.stealth === 'poncho' ? 1 : 0,
+      jm: this.jammer ? 1 : 0,
+      dr: this.drone && this.alive ? this.drone.pos.toArray() : 0,
     });
   }
 

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { UPLINK, ROUND, WEAPON } from './config.js';
+import { TOOLS } from './tools.js';
+const TOOL_SHORT = Object.fromEntries(Object.entries(TOOLS).map(([k, t]) => [k, t.short]));
 
 const $ = (id) => document.getElementById(id);
 const MONO = "'JetBrains Mono', ui-monospace, Menlo, monospace";
@@ -151,7 +153,8 @@ export class Hud {
       el.className = 'uplink' + (u.owner === g.me ? ' mine' : u.owner === 1 - g.me ? ' theirs' : '') + (u.enemyHacking ? ' alert' : '') + (g.hacking === i ? ' hacking' : '');
       el.querySelector('.prog').style.strokeDashoffset = `${100 * (1 - u.progress / UPLINK.hackTime)}`;
     });
-    this._drawScope(g.replay.active ? { scopeT: g.replay.scopeView ? 1 : 0 } : player, camera);
+    this._tools(g);
+    this._drawScope(g.replay.active ? { scopeT: g.replay.scopeView ? 1 : 0 } : g.tools && g.tools.drone ? { scopeT: 0 } : player, camera);
     this._drawCompass(player, g);
     const v = new THREE.Vector3();
     for (let i = this.markers.length - 1; i >= 0; i--) {
@@ -165,6 +168,39 @@ export class Hud {
       m.el.style.transform = `translate(${x}px, ${y}px)`;
       m.el.style.opacity = Math.min(1, (m.life - m.age) * 1.5);
       m.el.querySelector('b').textContent = `${m.label} ${Math.round(m.pos.distanceTo(camera.position))}M`;
+    }
+  }
+
+  _tools(g) {
+    const T = g.tools;
+    if (!T) return;
+    const L = T.loadout, C = T.charges;
+    const chip = (key, tool) => {
+      const n = C[tool] ?? 0;
+      return `<span class="chip${n ? '' : ' empty'}"><kbd>${key}</kbd>${TOOL_SHORT[tool]} ×${n}</span>`;
+    };
+    const stealth = L.stealth === 'jammer' ? `${TOOL_SHORT.jammer} ${T.jammer ? 'READY' : 'USED'}` : TOOL_SHORT[L.stealth];
+    const html = chip('T', L.scout) + chip('G', L.tactical) + `<span class="chip passive">${stealth}</span>`;
+    if (html !== this._toolsHtml) {
+      this._toolsHtml = html;
+      document.getElementById('h-tools').innerHTML = html;
+    }
+    const dr = T.drone, el = document.getElementById('h-drone');
+    const feed = T.feed > 0;
+    el.classList.toggle('on', !!dr || feed);
+    this.root.classList.toggle('droneview', !!dr || feed);
+    if (feed) {
+      const tgt = T.feedTarget;
+      const rng = tgt ? Math.round(T.predatorPos(g.roundTime).distanceTo(tgt)) : 0;
+      el.innerHTML = `<b>● MQ-9 · LIVE FEED</b><span>TRACKING</span><span>SLANT ${rng}m</span><span>${Math.ceil(T.feed)}s</span><em>U exit</em>`;
+    } else if (T.feedWindow > 0) {
+      el.classList.add('on');
+      el.innerHTML = `<b>● PREDATOR FEED AVAILABLE</b><em>press U to tune in · ${Math.ceil(T.feedWindow)}s</em>`;
+    }
+    if (dr) {
+      const dist = Math.round(Math.hypot(dr.pos.x - g.player.pos.x, dr.pos.z - g.player.pos.z));
+      const alt = Math.round(dr.pos.y - g.world.heightAt(dr.pos.x, dr.pos.z));
+      el.innerHTML = `<b>● DRONE · THERMAL</b><span>BAT ${Math.ceil(dr.battery)}s</span><span>RNG ${dist}m</span><span>ALT ${alt}m</span><span>${dr.zoom > 1 ? '3×' : '1×'}</span><em>T return · click to mark</em>`;
     }
   }
 
@@ -195,7 +231,7 @@ export class Hud {
     const w = innerWidth, h = innerHeight;
     const dpr = Math.min(devicePixelRatio, 2);
     this.scope.style.opacity = Math.min(1, player.scopeT * 1.5);
-    const key = `${w}x${h}@${camera.fov.toFixed(2)}:${player.scopeT.toFixed(2)}`;
+    const key = `${w}x${h}@${camera.fov.toFixed(2)}:${player.scopeT.toFixed(2)}:${!!player.killflash}`;
     if (key === this.scopeKey) return;
     this.scopeKey = key;
     if (this.scope.width !== Math.round(w * dpr)) {
@@ -206,7 +242,7 @@ export class Hud {
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.clearRect(0, 0, w, h);
     const cx = w / 2, cy = h / 2;
-    const R = Math.min(w, h) * 0.48 * (0.9 + 0.1 * player.scopeT);
+    const R = Math.min(w, h) * 0.48 * (0.9 + 0.1 * player.scopeT) * (player.killflash ? 0.78 : 1);
     c.fillStyle = '#050508';
     c.beginPath();
     c.rect(0, 0, w, h);
@@ -221,6 +257,13 @@ export class Hud {
     c.beginPath();
     c.arc(cx, cy, R, 0, Math.PI * 2);
     c.fill();
+    if (player.killflash) {
+      // Honeycomb anti-reflection device: darker, slightly hazy image.
+      c.fillStyle = 'rgba(0,0,0,0.28)';
+      c.beginPath();
+      c.arc(cx, cy, R, 0, Math.PI * 2);
+      c.fill();
+    }
     c.lineWidth = 1;
     c.strokeStyle = 'rgba(140,170,255,0.18)';
     c.beginPath(); c.arc(cx, cy, R - 1.5, 0, Math.PI * 2); c.stroke();
