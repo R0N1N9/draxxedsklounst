@@ -781,7 +781,7 @@ export class Game {
     const shot = this.myShots.get(b.id);
     const dist = shot ? shot.o.distanceTo(ip) : 0;
     const head = cap.part === 'head';
-    if (cap.owner === 'decoy' || cap.owner === 'dart' || cap.owner === 'drone') {
+    if (cap.owner === 'decoy' || cap.owner === 'dart' || cap.owner === 'drone' || cap.owner === 'hunter') {
       this.tools.onToolHit(cap, shot ? shot.o : ip);
       return;
     }

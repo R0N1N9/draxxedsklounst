@@ -12,6 +12,7 @@ import { RIFLES } from './weapons.js';
 
 export const TOOLS = {
   drone: { slot: 'scout', name: 'Spotting drone', short: 'DRONE', charges: 1, desc: 'Fly a thermal quadcopter for 25 s, up to 500 m out. Loud, and it can be shot down. Your body stays put while you fly.' },
+  hunter: { slot: 'scout', name: 'Hunter drone', short: 'HUNTER', charges: 1, desc: 'Fixed-wing loitering drone. Flies where you aim (up to ~450 m), circles, and locks onto the enemy when it sees them — marking them for you every second. 40 s. Audible, visible, shootable; smoke and the thermal poncho break its lock.' },
   dart: { slot: 'scout', name: 'Recon dart', short: 'DART', charges: 2, desc: 'Fire a sensor up to ~400 m. For 40 s it pings any enemy moving within 45 m. It blinks and beeps, and can be shot out.' },
   poncho: { slot: 'stealth', name: 'Thermal poncho', short: 'PONCHO', desc: 'Invisible to thermal drones. You move 20% slower and can\'t sprint.' },
   suppressor: { slot: 'stealth', name: 'Suppressor', short: 'SUPPRESSOR', desc: 'No muzzle flash or dust, much quieter report. Bullets 12% slower: more drop and wind drift.' },
@@ -40,6 +41,116 @@ export function randomLoadout() {
     return keys[Math.floor(Math.random() * keys.length)];
   };
   return { rifle: RIFLES[Math.floor(Math.random() * RIFLES.length)], scout: pick('scout'), stealth: pick('stealth'), tactical: pick('tactical') };
+}
+
+// Fixed-wing loitering drone flight + search, shared by players and the AI.
+export class HunterFlight {
+  constructor(world, pos, heading, dist) {
+    this.w = world;
+    this.pos = pos.clone();
+    this.heading = heading;
+    this.dist = dist;
+    this.travel = 0;
+    this.phase = 'cruise';
+    this.center = null;
+    this.ang = 0;
+    this.life = 40;
+    this.locked = false;
+    this.lostT = 0;
+    this.searchT = 0;
+    this.target = null;
+    this.speed = 34;
+    this.bank = 0;
+  }
+
+  // seek(pos) returns the enemy's position if the drone can see them right now, else null.
+  update(dt, seek) {
+    this.life -= dt;
+    const R = 60;
+    const prevHeading = this.heading;
+    if (this.phase === 'cruise') {
+      const dx = -Math.sin(this.heading), dz = -Math.cos(this.heading);
+      this.pos.x += dx * this.speed * dt;
+      this.pos.z += dz * this.speed * dt;
+      this.travel += this.speed * dt;
+      if (this.travel >= this.dist || Math.abs(this.pos.x) > 900 || Math.abs(this.pos.z) > 650) {
+        this.phase = 'loiter';
+        // Circle centre sits off the left wing so the turn starts smoothly.
+        this.center = new THREE.Vector3(this.pos.x - Math.cos(this.heading) * R, 0, this.pos.z + Math.sin(this.heading) * R);
+        this.ang = Math.atan2(this.pos.z - this.center.z, this.pos.x - this.center.x);
+      }
+    } else {
+      if (this.locked && this.target) this.center.lerp(new THREE.Vector3(this.target.x, 0, this.target.z), Math.min(1, dt * 0.9));
+      this.center.x = clamp(this.center.x, -900, 900);
+      this.center.z = clamp(this.center.z, -650, 650);
+      this.ang += (this.speed / R) * dt;
+      const tx = this.center.x + Math.cos(this.ang) * R, tz = this.center.z + Math.sin(this.ang) * R;
+      this.heading = Math.atan2(-(tx - this.pos.x), -(tz - this.pos.z));
+      this.pos.x += (tx - this.pos.x) * Math.min(1, dt * 3);
+      this.pos.z += (tz - this.pos.z) * Math.min(1, dt * 3);
+    }
+    const alt = this.w.heightAt(this.pos.x, this.pos.z) + 70;
+    this.pos.y += (alt - this.pos.y) * Math.min(1, dt * 0.8);
+    let dh = this.heading - prevHeading;
+    dh = Math.atan2(Math.sin(dh), Math.cos(dh));
+    this.bank += (clamp(dh / Math.max(dt, 1e-3) * 0.6, -0.7, 0.7) - this.bank) * Math.min(1, dt * 4);
+    this.searchT -= dt;
+    let event = null;
+    if (this.searchT <= 0) {
+      this.searchT = 0.4;
+      const t = seek(this.pos);
+      if (t) {
+        if (!this.locked) event = 'lock';
+        this.locked = true;
+        this.lostT = 0;
+        this.target = t.clone();
+        if (this.phase === 'cruise') {
+          this.phase = 'loiter';
+          this.center = new THREE.Vector3(t.x, 0, t.z);
+          this.ang = Math.atan2(this.pos.z - t.z, this.pos.x - t.x);
+        }
+      } else if (this.locked) {
+        this.lostT += 0.4;
+        if (this.lostT > 4) { this.locked = false; event = 'lost'; }
+      }
+    }
+    return event;
+  }
+}
+
+// Visual model (fixed wing, pusher prop) for either side.
+export function buildHunterModel(accent) {
+  const g = new THREE.Group();
+  const m = new THREE.MeshLambertMaterial({ color: 0x3a3c40 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 1.7, 8).rotateX(Math.PI / 2), m);
+  g.add(body);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), m);
+  nose.position.z = -0.85;
+  g.add(nose);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.04, 0.32), m);
+  wing.position.set(0, 0.05, -0.1);
+  g.add(wing);
+  for (const s of [-1, 1]) {
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.03, 0.22), m);
+    tail.position.set(s * 0.22, 0.14, 0.72);
+    tail.rotation.z = s * 0.6;
+    g.add(tail);
+  }
+  const prop = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.01, 14).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x777780, transparent: true, opacity: 0.35 }));
+  prop.position.z = 0.9;
+  g.add(prop);
+  const lights = [];
+  for (const [c, x] of [[0xff3020, -1.4], [0x30ff60, 1.4], [accent, 0]]) {
+    const l = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: c, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    l.position.set(x, 0.05, x ? -0.1 : 0.3);
+    l.scale.setScalar(1.2);
+    g.add(l);
+    lights.push(l);
+  }
+  g.rotation.order = 'YXZ';
+  g.userData.lights = lights;
+  g.visible = false;
+  return g;
 }
 
 export const SUPPRESSED_MUZZLE = Math.round(BALLISTICS.muzzle * 0.88);
@@ -74,13 +185,17 @@ export class ToolSystem {
     this.darts = [];
     this.flying = []; // grenades / darts in flight (mine)
     this.drone = null; // my drone
-    this.remote = { kf: 0, tp: 0, jm: 0, dr: null };
+    this.remote = { kf: 0, tp: 0, jm: 0, dr: null, hd: null };
     this.nextId = 1;
     this.loadout = validLoadout(game.settings && game.settings.loadout);
     game.player.rifleKey = this.loadout.rifle;
     game.player.equip();
     this._buildRemoteDrone();
     this._buildPredator();
+    this.hunterMesh = buildHunterModel(0x62d9e8);
+    this.remoteHunterMesh = buildHunterModel(0xff5d55);
+    this.scene.add(this.hunterMesh, this.remoteHunterMesh);
+    this.hunter = null;
     this.feedWindow = 0;
     this.feed = 0;
     this.reset();
@@ -106,6 +221,7 @@ export class ToolSystem {
     }
     this.jammer = this.has('jammer');
     if (this.drone) this.endDrone('');
+    if (this.hunter) this.endHunter('');
     this._applyPlayerMods();
   }
 
@@ -140,6 +256,7 @@ export class ToolSystem {
       tp: this.has('poncho') ? 1 : 0,
       jm: this.jammer ? 1 : 0,
       dr: d ? [Math.round(d.pos.x * 10) / 10, Math.round(d.pos.y * 10) / 10, Math.round(d.pos.z * 10) / 10] : 0,
+      hd: this.hunter ? [Math.round(this.hunter.pos.x * 10) / 10, Math.round(this.hunter.pos.y * 10) / 10, Math.round(this.hunter.pos.z * 10) / 10, Math.round(this.hunter.heading * 100) / 100, this.hunter.locked ? 1 : 0, Math.round(this.hunter.bank * 100) / 100] : 0,
     };
   }
 
@@ -148,6 +265,7 @@ export class ToolSystem {
     this.remote.tp = m.tp | 0;
     this.remote.jm = m.jm | 0;
     this.remote.dr = Array.isArray(m.dr) ? new THREE.Vector3(m.dr[0], m.dr[1], m.dr[2]) : null;
+    this.remote.hd = Array.isArray(m.hd) ? { pos: new THREE.Vector3(m.hd[0], m.hd[1], m.hd[2]), heading: m.hd[3], locked: !!m.hd[4], bank: m.hd[5] || 0 } : null;
   }
 
   // ---- Activation -----------------------------------------------------------
@@ -158,6 +276,19 @@ export class ToolSystem {
       if (!this.charges.drone) return this._empty('No drone left this round');
       this.charges.drone--;
       this._startDrone();
+    } else if (t === 'hunter') {
+      if (this.hunter) return this._empty('Hunter already airborne');
+      if (!this.charges.hunter) return this._empty('No hunter drone left');
+      this.charges.hunter--;
+      const P = this.g.player;
+      const o = P.eyePos(new THREE.Vector3());
+      const d = P.aimDir(new THREE.Vector3());
+      const hit = this.g.world.raycast(o, o.clone().addScaledVector(d, 600), true);
+      const dist = clamp(hit ? hit.t * 600 : 450, 250, 450);
+      this.hunter = new HunterFlight(this.g.world, o.add(new THREE.Vector3(0, 2, 0)), P.yaw, dist);
+      this.markT = 0;
+      this.g.audio.startLoop('myhunter', this.hunter.pos, 'drone', 0.18);
+      this.g.hud.message('HUNTER LAUNCHED', `Flying ${Math.round(dist)} m out, then hunting`, 2.2);
     } else if (t === 'dart') {
       if (!this.charges.dart) return this._empty('No darts left');
       this.charges.dart--;
@@ -228,6 +359,7 @@ export class ToolSystem {
       if (d) this._removeDart(d, d.mine ? 'Your recon dart was shot out' : '');
     });
     n.on('dronehit', () => this.endDrone('DRONE SHOT DOWN'));
+    n.on('hunterhit', () => this.endHunter('HUNTER SHOT DOWN'));
   }
 
   // ---- Smoke ------------------------------------------------------------------
@@ -310,6 +442,14 @@ export class ToolSystem {
     this.g.input.resetScope();
     this.g.hud.message('DRONE UP', 'Thermal view · WASD fly · Space/X altitude · T return', 2.5);
     this.g.audio.startLoop('mydrone', pos, 'drone', 0.25);
+  }
+
+  endHunter(msg) {
+    if (!this.hunter) return;
+    this.hunter = null;
+    this.hunterMesh.visible = false;
+    this.g.audio.stopLoop('myhunter');
+    if (msg) this.g.hud.message(msg, '', 2);
   }
 
   endDrone(msg) {
@@ -402,6 +542,7 @@ export class ToolSystem {
       const c = d.p.clone().add(new THREE.Vector3(0, 0.25, 0));
       list.push({ part: 'dart', a: c, b: c.clone(), r: 0.35, owner: 'dart', ref: d });
     }
+    if (this.remote.hd) list.push({ part: 'hunter', a: this.remote.hd.pos.clone(), b: this.remote.hd.pos.clone(), r: 0.9, owner: 'hunter' });
     if (this.remote.dr) list.push({ part: 'drone', a: this.remote.dr.clone(), b: this.remote.dr.clone(), r: 0.5, owner: 'drone' });
     return list;
   }
@@ -418,6 +559,10 @@ export class ToolSystem {
       this._removeDart(cap.ref, '');
       g.net.send({ t: 'darthit', id: cap.ref.id });
       g.hud.message('', 'Recon dart destroyed', 1.5);
+    } else if (cap.owner === 'hunter') {
+      g.net.send({ t: 'hunterhit' });
+      this.remote.hd = null;
+      g.hud.message('', 'Enemy hunter drone shot down', 1.8);
     } else if (cap.owner === 'drone') {
       g.net.send({ t: 'dronehit' });
       this.remote.dr = null;
@@ -504,6 +649,56 @@ export class ToolSystem {
         }
       }
       if (d.age > DART.life) this._removeDart(d, '');
+    }
+    // Hunter drones (mine flies here; the enemy's follows their state).
+    if (this.hunter) {
+      const h = this.hunter;
+      const ev = h.update(dt, (pos) => {
+        if (!g.remoteAlive || !g.remoteHist.length || this.remote.tp) return null;
+        const s = sampleHist(g.remoteHist, g.now - 0.11);
+        if (Math.hypot(s.p.x - pos.x, s.p.z - pos.z) > 160) return null;
+        const head = s.p.clone().add(new THREE.Vector3(0, 1, 0));
+        if (g.world.raycast(pos, head, true) || this.smokeBlocks(pos, head)) return null;
+        return s.p;
+      });
+      if (ev === 'lock') { g.hud.message('HUNTER LOCKED', 'Enemy marked while it keeps eyes on them', 2.2); g.audio.ping(); }
+      if (ev === 'lost') g.hud.message('', 'Hunter lost the target — searching', 1.8);
+      if (h.locked) {
+        this.markT -= dt;
+        if (this.markT <= 0 && g.remoteHist.length) {
+          this.markT = 1;
+          const s = sampleHist(g.remoteHist, g.now - 0.11);
+          g.hud.addMarker(s.p.clone().add(new THREE.Vector3(0, 1.2, 0)), 'HUNTER', 'enemy', 1.3);
+        }
+      }
+      this.hunterMesh.visible = true;
+      this.hunterMesh.position.copy(h.pos);
+      this.hunterMesh.rotation.set(0, h.heading, h.bank);
+      g.audio.updateLoop('myhunter', h.pos);
+      if (h.life <= 0) this.endHunter('HUNTER OUT OF FUEL');
+    }
+    const rh = this.remote.hd;
+    this.remoteHunterMesh.visible = !!rh;
+    if (rh) {
+      const mesh = this.remoteHunterMesh;
+      mesh.position.lerp(rh.pos, mesh.userData.seen ? Math.min(1, dt * 6) : 1);
+      mesh.userData.seen = true;
+      mesh.rotation.set(0, rh.heading, rh.bank);
+      g.audio.startLoop('enemyhunter', rh.pos, 'drone', 0.35);
+      g.audio.updateLoop('enemyhunter', mesh.position);
+      this.warnT = (this.warnT || 0) - dt;
+      if (rh.locked && g.player.alive && this.warnT <= 0) {
+        this.warnT = 3;
+        g.hud.message('', '⚠ Enemy hunter drone is tracking you — break line of sight or shoot it down', 2.5);
+      }
+    } else {
+      this.remoteHunterMesh.userData.seen = false;
+      g.audio.stopLoop('enemyhunter');
+    }
+    for (const mesh of [this.hunterMesh, this.remoteHunterMesh]) {
+      if (!mesh.visible) continue;
+      mesh.userData.lights.forEach((l, k) => (l.material.opacity = (g.now * 1.5 + k * 0.33) % 1 < 0.25 ? 1 : 0.15));
+      screenSprite(mesh.userData.lights[2], cam, 0.006);
     }
     // Predator orbit.
     const pr = this.predator;

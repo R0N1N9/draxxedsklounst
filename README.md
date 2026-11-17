@@ -31,7 +31,9 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
   - **Mk22 MRAD** (default): bolt-action .300 PRC, 7+1. One-shot headshots, two body shots, slow bolt throw, 4/8/12× scope.
   - **M110A1 DMR**: semi-auto 7.62, 20+1, about 3 shots a second. Headshots still kill; three body shots. Its smaller 4/8× scope glints less.
 - **Loadout**: before the match (main menu → Loadout) and during each round's insertion (**L**), pick one tool per slot:
-  - **Scout (T):** Spotting drone (fly a thermal quadcopter for 25 s; loud and shootable) or Recon dart ×2 (fired up to ~400 m; pings enemies moving within 45 m for 40 s; blinks, beeps and is shootable).
+  - **Scout (T):** Hunter drone, Spotting drone or Recon dart.
+    - **Hunter drone:** a fixed-wing loitering drone. It flies 250–450 m in the direction you aim, then circles and searches about 160 m around itself. When it sees the enemy it locks on, follows them, and marks them on your HUD every second. If it loses sight for 4 s, it goes back to searching. It lasts 40 s. It's audible and visible, the enemy is warned when it locks, and it can be shot down. Smoke and the thermal poncho break the lock.
+    - Spotting drone: fly a thermal quadcopter for 25 s; loud and shootable. Recon dart ×2 (fired up to ~400 m; pings enemies moving within 45 m for 40 s; blinks, beeps and is shootable).
   - **Stealth (passive):** Thermal poncho (hidden from thermal; 20% slower, no sprint), Suppressor (no flash, quiet; 12% slower bullets), Anti-glint cover (no glint; narrower, darker scope) or UAV jammer (hides you from one UAV sweep).
   - **Tactical (G):** Smoke grenades ×2 (25 s screen that blocks sight, not bullets) or Decoy (a fake prone sniper with a fake glint; shooting it reveals where you fired from).
 - The AI gets a random loadout each round and uses its tools: it flies drones, plants darts, smokes when it relocates, leaves decoys behind, and shoots down drones that come close.
