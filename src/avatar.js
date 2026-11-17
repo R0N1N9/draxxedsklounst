@@ -359,6 +359,17 @@ export class Avatar {
     arm([0.19, -0.03, 0.12], [0.27, -0.12, -0.02], [0.07, 0.02, 0.0], 1);
     arm([-0.19, -0.03, 0.12], [-0.17, -0.14, -0.22], [0.05, 0.05, -0.36], -1);
     this.root.add(this.aim);
+    // Sidearm, shown instead of the rifle when drawn.
+    const pistol = new THREE.Group();
+    pistol.add(mesh(new THREE.BoxGeometry(0.03, 0.03, 0.18), P.steel));
+    const pg = mesh(new THREE.BoxGeometry(0.03, 0.1, 0.045), '#8a7758');
+    pg.position.set(0, -0.06, 0.06);
+    pg.rotation.x = 0.2;
+    pistol.add(pg);
+    pistol.position.set(0.04, 0.0, -0.4);
+    pistol.visible = false;
+    this.pistol = pistol;
+    this.aim.add(pistol);
 
     this.walkPhase = 0;
   }
@@ -377,6 +388,8 @@ export class Avatar {
     const ap = AIM_POS[st];
     this.aim.position.set(ap[0], ap[1], ap[2]);
     this.aim.rotation.x = s.pitch;
+    this.rifle.visible = !s.w;
+    this.pistol.visible = !!s.w;
     const kL = this.legL.userData.knee, kR = this.legR.userData.knee;
     this.rifle.userData.bipod.rotation.x = st === 2 ? 0.15 : 1.45;
     this.legL.rotation.z = this.legR.rotation.z = 0;

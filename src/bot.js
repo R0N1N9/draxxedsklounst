@@ -8,7 +8,8 @@ import { stepProjectile } from './ballistics.js';
 import { worldCapsules } from './avatar.js';
 import { segSegClosest, clamp } from './util.js';
 import { crestAt, DAM_X } from './terrain.js';
-import { randomLoadout, SUPPRESSED_MUZZLE, TOOLS } from './tools.js';
+import { randomLoadout, TOOLS } from './tools.js';
+import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
 
 export const DIFFICULTY = {
   easy: { name: 'RECRUIT', err: 3.0e-3, react: 3.0, settle: 2.6, detect: 0.45, lead: 0.5, wind: 0.3, prone: false },
@@ -173,7 +174,7 @@ export class BotPeer {
     this.wounded = false;
     this.loadout = randomLoadout();
     this.charges = {};
-    for (const k of Object.values(this.loadout)) this.charges[k] = TOOLS[k].charges ?? 1;
+    for (const slot of ['scout', 'stealth', 'tactical']) this.charges[this.loadout[slot]] = TOOLS[this.loadout[slot]].charges ?? 1;
     this.jammer = this.loadout.stealth === 'jammer';
     this.drone = null;
     this.toolT = 20 + Math.random() * 40;
@@ -183,8 +184,13 @@ export class BotPeer {
     this.state = 'toNest';
   }
 
+  get wdef() {
+    return this.pistol ? WEAPONS.m18 : WEAPONS[(this.loadout && this.loadout.rifle) || 'mk22'];
+  }
+
   get muzzle() {
-    return this.loadout && this.loadout.stealth === 'suppressor' ? SUPPRESSED_MUZZLE : BALLISTICS.muzzle;
+    const d = this.wdef;
+    return !this.pistol && this.loadout && this.loadout.stealth === 'suppressor' ? Math.round(d.muzzle * SUPPRESSOR_FACTOR) : d.muzzle;
   }
 
   // Sandbox: (re)spawn on a ridge without a round message.
@@ -358,17 +364,18 @@ export class BotPeer {
   _fire() {
     const eye = this._eye();
     let yaw = this.yaw, pitch = this.pitch;
-    const spread = this.d.err * (this.wounded ? 1.6 : 1) * (this.player && this.player.mv ? 1.3 : 1) * (this.stance === 2 ? 1 : 1.4);
+    const spread = (this.pistol ? 5e-3 : this.d.err * (this.loadout.rifle === 'dmr' ? 1.25 : 1)) * (this.wounded ? 1.6 : 1) * (this.player && this.player.mv ? 1.3 : 1) * (this.stance === 2 ? 1 : 1.4);
     yaw += gauss() * spread;
     pitch += gauss() * spread;
     const dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
     const v = dir.multiplyScalar(this.muzzle);
     const id = ++this.shotId * 2 + 1;
     const wt = this.g.roundTime;
-    const sup = this.loadout.stealth === 'suppressor' ? 1 : 0;
-    this.bullets.push({ p: eye.clone(), v: v.clone(), prev: eye.clone(), age: 0, id, wt, o: eye.clone() });
-    this._emit({ t: 'shot', id, sup, o: eye.toArray(), v: v.toArray(), wt });
-    this.boltT = WEAPON.boltTime + 0.3 + Math.random() * 0.6;
+    const def = this.wdef;
+    const sup = !this.pistol && this.loadout.stealth === 'suppressor' ? 1 : 0;
+    this.bullets.push({ p: eye.clone(), v: v.clone(), prev: eye.clone(), age: 0, id, wt, o: eye.clone(), def });
+    this._emit({ t: 'shot', id, wk: def.key, sup, o: eye.toArray(), v: v.toArray(), wt });
+    this.boltT = def.kind === 'bolt' ? def.cycle + 0.3 + Math.random() * 0.6 : def.cycle + (this.pistol ? 0.25 : 0.45) + Math.random() * 0.4;
     this.shotsHere++;
   }
 
@@ -405,7 +412,7 @@ export class BotPeer {
         } else if (hit && (!wh || hit.s <= wh.t)) {
           const ip = b.prev.clone().lerp(b.p, hit.s);
           const part = hit.c.part;
-          const dmg = DAMAGE[part === 'legs' ? 'limb' : part];
+          const dmg = b.def.damage[part];
           this._emit({ t: 'hit', id: b.id, part, dmg, dist: Math.round(b.o.distanceTo(ip)), ip: ip.toArray() });
           dead = true;
         } else if (wh) dead = true;
@@ -560,6 +567,7 @@ export class BotPeer {
       this.reactRelocate = 0;
       this._relocate(true);
     }
+    if (this.state !== 'engage') this.pistol = false;
     if (this._useTools(dt, live, hostile)) return;
     const engaged = hostile && this.awareness >= 1 && this.t - this.lastSeen < 2.5;
     if (engaged && this.state !== 'engage' && this.state !== 'toNest') {
@@ -635,10 +643,12 @@ export class BotPeer {
           target = P.p.clone();
           target.y += BODY_H[P.st] * (P.st === 2 ? 0.4 : 0.62);
         }
+        // Close in? Switch to the pistol.
+        this.pistol = !this.target && P.p.distanceTo(this.pos) < 30;
         const sol = this._solve(target, vel);
         const err = this._turnTo(sol.yaw, sol.pitch, 1.4, dt);
         this.settleT -= dt;
-        if (err < 0.004 && this.settleT <= 0 && this.boltT <= 0) {
+        if (err < (this.pistol ? 0.02 : 0.004) && (this.settleT <= 0 || this.pistol) && this.boltT <= 0) {
           // Never fire into the dirt in front of us: if the line is blocked, move.
           const blocked = this.g.world.raycast(this._eye(), target, true);
           if (blocked && blocked.t < 0.97) {
@@ -715,6 +725,8 @@ export class BotPeer {
       hp: Math.max(0, Math.round(this.hp)),
       al: this.alive ? 1 : 0,
       mv: this.moving ? 1 : 0,
+      w: this.pistol ? 1 : 0,
+      rt: (this.loadout && this.loadout.rifle) || 'mk22',
       kf: this.loadout && this.loadout.stealth === 'killflash' ? 1 : 0,
       tp: this.loadout && this.loadout.stealth === 'poncho' ? 1 : 0,
       jm: this.jammer ? 1 : 0,

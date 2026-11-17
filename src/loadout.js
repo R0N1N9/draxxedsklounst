@@ -1,10 +1,14 @@
 // Loadout picker: one tool per slot. Used inline in the main menu and as an in-game overlay.
 import { TOOLS, SLOTS, validLoadout } from './tools.js';
+import { WEAPONS, RIFLES } from './weapons.js';
 
 export function renderLoadout(el, loadout, onChange) {
   let lo = validLoadout(loadout);
   const draw = () => {
-    el.innerHTML = SLOTS.map((s) => {
+    const rifles = `<div class="lo-slot"><div class="lo-head"><span>Rifle</span><em>+ M18 pistol (key 2)</em></div>
+      <div class="lo-opts">${RIFLES.map((k) => { const w = WEAPONS[k]; return `<button class="lo-opt${lo.rifle === k ? ' on' : ''}" data-slot="rifle" data-tool="${k}">
+        <b>${w.name} <i>${w.caliber} · ${w.mag}+1</i></b><span>${w.desc}</span></button>`; }).join('')}</div></div>`;
+    el.innerHTML = rifles + SLOTS.map((s) => {
       const opts = Object.entries(TOOLS).filter(([, t]) => t.slot === s.key);
       return `<div class="lo-slot"><div class="lo-head"><span>${s.label}</span><em>${s.keyHint === 'passive' ? 'always on' : 'key ' + s.keyHint}</em></div>
         <div class="lo-opts">${opts.map(([k, t]) => `<button class="lo-opt${lo[s.key] === k ? ' on' : ''}" data-slot="${s.key}" data-tool="${k}">

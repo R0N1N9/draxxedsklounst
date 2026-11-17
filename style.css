@@ -341,3 +341,9 @@ body.touch #h-practice { display: none; }
 .tb.tactb { right: 262px; bottom: 176px; width: 48px; height: 48px; font-size: 9px; line-height: 1.2; }
 .tb.lob { left: 30px; top: 170px; width: 56px; height: 40px; font-size: 10px; }
 .tb.feedb { left: 30px; top: 220px; width: 56px; height: 40px; font-size: 10px; }
+
+.ammo .pips .ch { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--ink-dim); align-self: center; }
+.ammo .pips .ch.on { background: var(--amber); border-color: var(--amber); }
+.ammo .pips .sep { width: 1px; height: 22px; background: var(--line); margin: 0 3px; }
+.ammo .pips b { font-family: var(--mono); font-size: 24px; font-weight: 600; line-height: 22px; }
+.tb.swapb { right: 82px; bottom: 288px; width: 46px; height: 40px; font-size: 10px; }

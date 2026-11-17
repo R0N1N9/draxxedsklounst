@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PLAYER, WEAPON, MAP } from './config.js';
 import { clamp, lerp, noise2 } from './util.js';
 import { zeroAngle } from './ballistics.js';
+import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
 
 const HEIGHTS = [1.8, 1.25, 0.55];
 const EYES = [PLAYER.eyeStand, PLAYER.eyeCrouch, PLAYER.eyeProne];
@@ -16,7 +17,89 @@ export class LocalPlayer {
     this.stance = 0;
     this.eye = PLAYER.eyeStand;
     this.onGround = true;
+    this.rifleKey = 'mk22';
     this.reset(new THREE.Vector3(), 0);
+  }
+
+  // ---- Weapons ---------------------------------------------------------------
+  // Each weapon: rounds in the magazine, one in the chamber, spare rounds.
+  equip(rifleKey = this.rifleKey) {
+    this.rifleKey = WEAPONS[rifleKey] && WEAPONS[rifleKey].slot === 'rifle' ? rifleKey : 'mk22';
+    const mk = (key) => {
+      const d = WEAPONS[key];
+      return { def: d, mag: d.mag, chamber: 1, reserve: d.mag * d.spareMags, zoomIdx: d.zooms.length - 1, zero: d.fixedZero || 400 };
+    };
+    this.arms = [mk(this.rifleKey), mk('m18')];
+    this.slot = 0;
+    this.pendingSlot = -1;
+    this.switchT = 0;
+    this.cycleT = 0;
+    this.reloadT = 0;
+    this.reloadDur = 1;
+    this.reloadEmpty = false;
+  }
+
+  get w() {
+    return this.arms[this.slot];
+  }
+  get def() {
+    return this.w.def;
+  }
+  get ammo() {
+    return this.w.mag + this.w.chamber;
+  }
+  get reserve() {
+    return this.w.reserve;
+  }
+  get zoomIdx() {
+    return this.w.zoomIdx;
+  }
+  set zoomIdx(v) {
+    this.w.zoomIdx = v;
+  }
+  get zero() {
+    return this.w.zero;
+  }
+  set zero(v) {
+    if (!this.def.fixedZero) this.w.zero = v;
+  }
+  // Bolt throw in progress (bolt guns only).
+  get boltT() {
+    return this.def.kind === 'bolt' ? this.cycleT : 0;
+  }
+  get switching() {
+    return this.switchT > 0;
+  }
+  // Muzzle velocity of the weapon in hand (suppressor only fits the rifle).
+  get muzzle() {
+    const d = this.def;
+    return d.slot === 'rifle' && this.suppressed ? Math.round(d.muzzle * SUPPRESSOR_FACTOR) : d.muzzle;
+  }
+
+  refill() {
+    for (const w of this.arms) {
+      w.mag = w.def.mag;
+      w.chamber = 1;
+      w.reserve = w.def.mag * w.def.spareMags;
+    }
+  }
+
+  startReload() {
+    const w = this.w;
+    if (this.reloadT > 0 || this.switchT > 0 || w.reserve <= 0 || w.mag >= w.def.mag) return false;
+    this.reloadEmpty = w.chamber === 0;
+    this.reloadDur = this.reloadEmpty ? w.def.reloadEmpty : w.def.reload;
+    this.reloadT = this.reloadDur;
+    this.cycleT = 0;
+    return true;
+  }
+
+  switchTo(slot) {
+    if (slot === this.slot || this.switchT > 0 || !this.alive) return;
+    this.pendingSlot = slot;
+    this.switchT = 0.7;
+    this.reloadT = 0;
+    this.cycleT = 0;
   }
 
   reset(spawn, yaw) {
@@ -30,12 +113,7 @@ export class LocalPlayer {
     this.alive = true;
     this.scoped = false;
     this.scopeT = 0;
-    this.zoomIdx = 2;
-    this.zero = 300;
-    this.ammo = WEAPON.mag;
-    this.reserve = WEAPON.reserve;
-    this.boltT = 0;
-    this.reloadT = 0;
+    this.equip();
     this.rangeT = 0;
     this.range = null;
     this.rangeShow = 0;
@@ -51,11 +129,12 @@ export class LocalPlayer {
   }
 
   get zoom() {
-    return WEAPON.zooms[this.zoomIdx];
+    return this.def.zooms[Math.min(this.zoomIdx, this.def.zooms.length - 1)];
   }
 
   fov() {
     const base = WEAPON.baseFov;
+    if (!this.def.scope) return lerp(base, this.def.adsFov, this.scopeT);
     const z = this.zoom;
     const scoped = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(base / 2)) / z));
     return lerp(base, scoped, this.scopeT);
@@ -67,7 +146,7 @@ export class LocalPlayer {
 
   // Sway offset in radians (yaw, pitch).
   sway(out = { x: 0, y: 0 }) {
-    let amp = SWAY[this.stance] * 0.001;
+    let amp = SWAY[this.stance] * 0.001 * this.def.sway;
     if (this.moving) amp *= 2.4;
     if (this.wounded) amp *= 1.6;
     if (this.holding) amp *= 0.12;
@@ -88,12 +167,12 @@ export class LocalPlayer {
   // Direction the bullet leaves the barrel: aim + zero elevation.
   muzzleDir(out = new THREE.Vector3()) {
     const s = this.sway();
-    const yaw = this.yaw + s.x, pitch = this.pitch - s.y + zeroAngle(this.zero, this.muzzle || undefined);
+    const yaw = this.yaw + s.x, pitch = this.pitch - s.y + zeroAngle(this.zero, this.muzzle);
     return out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
   }
 
   canFire() {
-    return this.alive && this.boltT <= 0 && this.reloadT <= 0 && this.ammo > 0;
+    return this.alive && this.cycleT <= 0 && this.reloadT <= 0 && this.switchT <= 0 && this.w.chamber > 0;
   }
 
   update(dt, a, world, opts) {
@@ -115,10 +194,14 @@ export class LocalPlayer {
     }
 
     // --- Scope
-    const wantScope = a.scope && this.alive && this.reloadT <= 0;
+    const wantScope = a.scope && this.alive && this.reloadT <= 0 && this.switchT <= 0;
+    // Weapon select: 1 / 2, or the wheel when not scoped.
+    if (a.slot1) this.switchTo(0);
+    if (a.slot2) this.switchTo(1);
+    if (a.swap || (!this.scoped && (a.zoomIn || a.zoomOut) && !a.touchZoom)) this.switchTo(1 - this.slot);
     this.scoped = wantScope;
     this.scopeT = clamp(this.scopeT + (wantScope ? dt / 0.18 : -dt / 0.12), 0, 1);
-    if (a.zoomIn && this.scoped) this.zoomIdx = Math.min(this.zoomIdx + 1, WEAPON.zooms.length - 1);
+    if (a.zoomIn && this.scoped) this.zoomIdx = Math.min(this.zoomIdx + 1, this.def.zooms.length - 1);
     if (a.zoomOut && this.scoped) this.zoomIdx = Math.max(this.zoomIdx - 1, 0);
     if (a.zeroUp) this.zero = Math.min(this.zero + WEAPON.zeroStep, WEAPON.zeroMax);
     if (a.zeroDown) this.zero = Math.max(this.zero - WEAPON.zeroStep, WEAPON.zeroMin);
@@ -135,20 +218,39 @@ export class LocalPlayer {
     }
 
     // --- Weapon timers
-    this.boltT = Math.max(0, this.boltT - dt);
+    if (this.switchT > 0) {
+      const before = this.switchT;
+      this.switchT -= dt;
+      if (before > 0.35 && this.switchT <= 0.35 && this.pendingSlot >= 0) {
+        this.slot = this.pendingSlot;
+        this.pendingSlot = -1;
+      }
+      if (this.switchT < 0) this.switchT = 0;
+    }
+    if (this.cycleT > 0) {
+      this.cycleT -= dt;
+      // A bolt gun chambers the next round at the end of the throw.
+      if (this.cycleT <= 0) {
+        this.cycleT = 0;
+        const w = this.w;
+        if (w.chamber === 0 && w.mag > 0) { w.mag--; w.chamber = 1; }
+      }
+    }
     this.rangeT = Math.max(0, this.rangeT - dt);
     this.rangeShow = Math.max(0, this.rangeShow - dt);
     this.recoil = Math.max(0, this.recoil - dt * this.recoil * 6 - dt * 0.004);
     if (this.reloadT > 0) {
       this.reloadT -= dt;
       if (this.reloadT <= 0) {
-        const need = WEAPON.mag - this.ammo;
-        const take = Math.min(need, this.reserve);
-        this.ammo += take;
-        this.reserve -= take;
+        this.reloadT = 0;
+        const w = this.w;
+        const take = Math.min(w.def.mag - w.mag, w.reserve);
+        w.mag += take;
+        w.reserve -= take;
+        if (w.chamber === 0 && w.mag > 0) { w.mag--; w.chamber = 1; }
       }
     }
-    if (a.reload && this.ammo < WEAPON.mag && this.reserve > 0 && this.reloadT <= 0) this.reloadT = WEAPON.reloadTime;
+    if (a.reload) this.startReload();
 
     // --- Movement
     let speed = this.stance === 2 ? PLAYER.prone : this.stance === 1 ? PLAYER.crouch : PLAYER.walk;
@@ -209,9 +311,12 @@ export class LocalPlayer {
   }
 
   fireKick() {
-    this.ammo--;
-    this.boltT = WEAPON.boltTime;
-    this.recoil = 0.022 * (this.stance === 2 ? 0.6 : 1);
-    this.holding = false;
+    const w = this.w, d = w.def;
+    w.chamber = 0;
+    this.cycleT = d.cycle;
+    // Semi-autos chamber the next round straight away.
+    if (d.kind === 'semi' && w.mag > 0) { w.mag--; w.chamber = 1; }
+    this.recoil = d.recoil * (this.stance === 2 ? 0.6 : 1);
+    if (d.kind === 'bolt') this.holding = false;
   }
 }

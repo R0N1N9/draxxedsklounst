@@ -134,16 +134,24 @@ export class Hud {
     const segs = Math.ceil(hp / 10);
     this.hpSegs.forEach((s, i) => (s.className = i < segs ? (hp <= 30 ? 'on low' : 'on') : ''));
     this.el.hpNum.textContent = String(Math.round(hp)).padStart(3, '0');
-    const ak = `${player.ammo}/${player.reserve}/${player.reloadT > 0}/${player.boltT > 0}`;
+    const W = player.w, D = player.def;
+    const ak = `${D.key}/${W.mag}/${W.chamber}/${W.reserve}/${player.reloadT > 0}/${player.boltT > 0}/${player.switchT > 0}`;
     if (ak !== this._ammoKey) {
       this._ammoKey = ak;
-      let pips = '';
-      for (let i = 0; i < WEAPON.mag; i++) pips += `<i class="${i < player.ammo ? 'on' : ''}"></i>`;
-      this.el.ammo.innerHTML = player.reloadT > 0
-        ? `<em>RELOADING</em>`
-        : `<span class="pips${player.boltT > 0 ? ' cyc' : ''}">${pips}</span><span class="res">${String(player.reserve).padStart(2, '0')}</span>`;
+      const chamber = `<i class="ch${W.chamber ? ' on' : ''}" title="chambered"></i>`;
+      let mag;
+      if (D.mag <= 10) {
+        mag = '';
+        for (let i = 0; i < D.mag; i++) mag += `<i class="${i < W.mag ? 'on' : ''}"></i>`;
+      } else mag = `<b>${String(W.mag).padStart(2, '0')}</b>`;
+      this.el.ammo.innerHTML = player.switchT > 0
+        ? `<em>SWITCHING</em>`
+        : player.reloadT > 0
+        ? `<em>${player.reloadEmpty ? 'RELOAD · CHAMBERING' : 'RELOADING'}</em>`
+        : `<span class="pips${player.boltT > 0 ? ' cyc' : ''}">${chamber}<span class="sep"></span>${mag}</span><span class="res">${String(W.reserve).padStart(2, '0')}</span>`;
+      document.getElementById('h-wname').textContent = `${D.name} · ${D.caliber}`.toUpperCase();
     }
-    this.el.zero.textContent = `ZERO ${player.zero} M · ${player.zoom}×`;
+    this.el.zero.textContent = D.scope ? `ZERO ${player.zero} M · ${player.zoom}×` : 'IRON SIGHTS · 1 / 2 SWAP';
     this.el.stance.textContent = ['STANDING', 'CROUCHED', 'PRONE'][player.stance] + (player.wounded ? ' · WOUNDED' : '');
     this.el.breath.classList.toggle('on', player.scopeT > 0.9);
     this.el.breathFill.style.transform = `scaleX(${player.breath})`;
@@ -154,7 +162,7 @@ export class Hud {
       el.querySelector('.prog').style.strokeDashoffset = `${100 * (1 - u.progress / UPLINK.hackTime)}`;
     });
     this._tools(g);
-    this._drawScope(g.replay.active ? { scopeT: g.replay.scopeView ? 1 : 0 } : g.tools && g.tools.drone ? { scopeT: 0 } : player, camera);
+    this._drawScope(g.replay.active ? { scopeT: g.replay.scopeView ? 1 : 0 } : (g.tools && g.tools.thermalActive()) || !player.def.scope ? { scopeT: 0 } : player, camera);
     this._drawCompass(player, g);
     const v = new THREE.Vector3();
     for (let i = this.markers.length - 1; i >= 0; i--) {

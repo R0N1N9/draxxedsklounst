@@ -127,11 +127,11 @@ export class Audio {
   }
 
   // Your own rifle: loud, close, with the valley echoing it back.
-  shotLocal(suppressed = false) {
+  shotLocal(suppressed = false, pistol = false) {
     if (!this.ctx) return;
     const t = this.now;
     const bus = this.ctx.createGain();
-    bus.gain.value = suppressed ? 0.35 : 1;
+    bus.gain.value = suppressed ? 0.35 : pistol ? 0.55 : 1;
     bus.connect(this.master);
     bus.connect(this.reverb);
     this._noiseBurst(bus, t, 0.5, 'bandpass', 1800, 0.6, 1.1, 0.18);

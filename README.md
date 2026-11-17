@@ -26,6 +26,9 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 - Both players start on opposite ridgelines, about 800 m apart. Spawns are random among three points per ridge, and sides swap every round.
 - You get one life per round. First to 4 rounds wins.
 - **Predator UAV**: a drone circles high over the valley. Every 60 s of live play it pings both players in red on each other's HUD. For 8 s afterwards you can press **U** to tune into its live thermal feed of the enemy. A UAV jammer blocks the ping and the feed.
+- **Weapons**: pick your rifle in the loadout. Everyone also carries an **M18 pistol** (17+1, one spare magazine) for close range. Every weapon starts with **one in the chamber**: a reload before you're empty keeps it, while a reload from empty is slower because you have to chamber a round.
+  - **Mk22 MRAD** (default): bolt-action .300 PRC, 7+1. One-shot headshots, two body shots, slow bolt throw, 4/8/12× scope.
+  - **M110A1 DMR**: semi-auto 7.62, 20+1, about 3 shots a second. Headshots still kill; three body shots. Its smaller 4/8× scope glints less.
 - **Loadout**: before the match (main menu → Loadout) and during each round's insertion (**L**), pick one tool per slot:
   - **Scout (T):** Spotting drone (fly a thermal quadcopter for 25 s; loud and shootable) or Recon dart ×2 (fired up to ~400 m; pings enemies moving within 45 m for 40 s; blinks, beeps and is shootable).
   - **Stealth (passive):** Thermal poncho (hidden from thermal; 20% slower, no sprint), Suppressor (no flash, quiet; 12% slower bullets), Anti-glint cover (no glint; narrower, darker scope) or UAV jammer (hides you from one UAV sweep).
@@ -54,6 +57,7 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 | Zero − / + | Q / E | Z− / Z+ |
 | Crouch / prone / jump | C / Z / Space | CRCH / PRN / JMP |
 | Rangefinder / reload | F / R | RNG / R |
+| Rifle / pistol | 1 / 2 (or wheel when not scoped) | 1 / 2 |
 | Scout / tactical tool | T / G | TOOL T / TOOL G |
 | Loadout (insertion) | L | KIT |
 | Predator feed | U | FEED |
@@ -96,6 +100,7 @@ Resolution also scales dynamically to hold the frame rate. You can override the 
 | `src/atmosphere.js` | Dusk and golden-hour palettes, height-based haze, sky |
 | `src/ballistics.js` | Projectile integration, wind, zero tables |
 | `src/bot.js` | AI opponent (plugs in where the network peer would) |
+| `src/weapons.js`, `src/viewmodel.js` | Weapon stats; first-person weapons and arm rig with animations |
 | `src/tools.js`, `src/loadout.js` | Loadout tools, Predator UAV, loadout picker |
 | `src/sandbox.js` | Sandbox tools panel |
 | `src/killcam.js` | Replay histories, killcam and bullet-cam |

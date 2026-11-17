@@ -22,6 +22,8 @@ import { BotPeer } from './bot.js';
 import { Sandbox } from './sandbox.js';
 import { ToolSystem, setThermal } from './tools.js';
 import { LoadoutPanel } from './loadout.js';
+import { ViewModel } from './viewmodel.js';
+import { WEAPONS } from './weapons.js';
 import { PALETTES as PALS } from './atmosphere.js';
 
 const ACCENTS = ['#e0a040', '#40c8d8'];
@@ -258,24 +260,7 @@ export class Game {
   }
 
   _buildViewmodel() {
-    const g = new THREE.Group();
-    const m = (c) => new THREE.MeshLambertMaterial({ color: c, flatShading: true, emissive: c, emissiveIntensity: 0.12 });
-    const metal = m('#3a3a42'), wood = m('#4e5040'), glove = m('#3d3a30'), lens = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.15, 0.1, 0.35) });
-    const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); g.add(o); return o; };
-    add(new THREE.BoxGeometry(0.04, 0.055, 0.8), metal, 0, 0, -0.42);
-    add(new THREE.CylinderGeometry(0.011, 0.011, 0.55, 8).rotateX(Math.PI / 2), metal, 0, 0.01, -1.05);
-    add(new THREE.CylinderGeometry(0.02, 0.02, 0.12, 8).rotateX(Math.PI / 2), metal, 0, 0.01, -1.36);
-    add(new THREE.BoxGeometry(0.055, 0.1, 0.34), wood, 0, -0.035, 0.08);
-    add(new THREE.CylinderGeometry(0.026, 0.034, 0.34, 10).rotateX(Math.PI / 2), metal, 0, 0.075, -0.25);
-    add(new THREE.BoxGeometry(0.012, 0.18, 0.012), metal, 0.0, -0.11, -0.62).rotation.x = -0.4;
-    this.vmBolt = add(new THREE.BoxGeometry(0.06, 0.02, 0.02), metal, 0.05, 0.03, -0.05);
-    add(new THREE.BoxGeometry(0.08, 0.08, 0.14), glove, -0.02, -0.06, -0.55);
-    add(new THREE.BoxGeometry(0.08, 0.1, 0.12), glove, 0.03, -0.07, -0.02);
-    g.position.set(0.2, -0.19, -0.35);
-    g.scale.setScalar(0.62);
-    g.traverse((o) => (o.renderOrder = 10));
-    this.viewmodel = g;
-    this.camera.add(g);
+    this.viewmodel = new ViewModel(this.camera);
   }
 
   _spawnFree() {
@@ -566,6 +551,8 @@ export class Game {
     if (m.al === 0) this.remoteAlive = false;
     else if (!this.remoteDeadLock && this.phase !== 'end' && this.phase !== 'match') this.remoteAlive = true;
     this.remoteHack = m.hk;
+    this.remoteWpn = m.w | 0;
+    this.remoteRifle = m.rt || 'mk22';
     this.tools.onRemoteState(m);
   }
 
@@ -576,7 +563,7 @@ export class Game {
     const dir = v.clone().normalize();
     if (!m.sup) this.effects.muzzle(o, dir);
     const d = o.distanceTo(this.camera.position);
-    this.audio.shotDistant(o, d / 343, !!m.sup);
+    this.audio.shotDistant(o, d / 343, !!m.sup || m.wk === 'm18');
     // Prone shots kick up a dust cloud: another tell (not with a suppressor).
     const last = this.remoteHist[this.remoteHist.length - 1];
     if (last && last.st === 2 && !m.sup) this.effects.puff(o.clone().add(new THREE.Vector3(0, -0.2, 0)), 'dust', 2.2, 2.0);
@@ -689,6 +676,8 @@ export class Game {
       hp: Math.max(0, Math.round(P.hp)),
       al: P.alive ? 1 : 0,
       mv: P.moving ? 1 : 0,
+      w: P.slot,
+      rt: P.rifleKey,
       ...this.tools.stateFields(),
     });
   }
@@ -705,19 +694,19 @@ export class Game {
     const P = this.player;
     const o = P.eyePos(new THREE.Vector3());
     const dir = P.muzzleDir(new THREE.Vector3());
-    const sup = this.tools.has('suppressor');
-    const v = dir.clone().multiplyScalar(this.tools.muzzle);
+    const def = P.def;
+    const sup = this.tools.has('suppressor') && def.slot === 'rifle';
+    const v = dir.clone().multiplyScalar(P.muzzle);
     const id = ++this.shotId * 2 + this.me;
-    this.myShots.set(id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: this.roundTime });
+    this.myShots.set(id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: this.roundTime, wk: def.key });
     // Start the visible bullet slightly ahead so it doesn't spawn inside the camera.
     this._spawnBullet(o, v, true, id, this.roundTime);
     P.fireKick();
-    this.audio.shotLocal(sup);
-    if (P.ammo > 0) this.audio.bolt(0.35);
-    const vmPos = new THREE.Vector3(0.2, -0.17, -1.4).applyMatrix4(this.camera.matrixWorld);
-    if (P.scopeT < 0.5 && !sup) this.effects.muzzle(vmPos, dir);
-    if (this.net && this.net.open) this.net.send({ t: 'shot', id, sup: sup ? 1 : 0, o: o.toArray().map((x) => Math.round(x * 1000) / 1000), v: v.toArray().map((x) => Math.round(x * 100) / 100), wt: this.roundTime });
-    this.vmKick = 1;
+    this.audio.shotLocal(sup, def.slot === 'pistol');
+    if (def.kind === 'bolt' && P.ammo > 0) this.audio.bolt(0.35);
+    if ((P.scopeT < 0.5 || !def.scope) && !sup) this.effects.muzzle(this.viewmodel.muzzleWorld(), dir);
+    this.viewmodel.fired();
+    if (this.net && this.net.open) this.net.send({ t: 'shot', id, wk: def.key, sup: sup ? 1 : 0, o: o.toArray().map((x) => Math.round(x * 1000) / 1000), v: v.toArray().map((x) => Math.round(x * 100) / 100), wt: this.roundTime });
   }
 
   _targetsForHit() {
@@ -811,7 +800,7 @@ export class Game {
       }
       return;
     }
-    const dmg = DAMAGE[cap.part === 'legs' ? 'limb' : cap.part];
+    const dmg = (WEAPONS[shot && shot.wk] || WEAPONS.mk22).damage[cap.part];
     this.net.send({ t: 'hit', id: b.id, part: cap.part, dmg, dist: Math.round(dist), ip: ip.toArray().map((x) => Math.round(x * 100) / 100) });
     this.audio.hitConfirm(head, 0);
     this.hud.hitMarker(head);
@@ -899,11 +888,11 @@ export class Game {
       if (a.fire && canFire) {
         if (P.canFire()) {
           this._fire();
-          if (this.sandbox && this.sandbox.infAmmo) { P.ammo = WEAPON.mag; P.reserve = WEAPON.reserve; }
+          if (this.sandbox && this.sandbox.infAmmo) P.refill();
         }
-        else if (P.ammo === 0 && P.reloadT <= 0) {
+        else if (P.w.chamber === 0 && P.cycleT <= 0 && P.reloadT <= 0 && P.switchT <= 0) {
           this.audio.click();
-          if (P.reserve > 0) P.reloadT = WEAPON.reloadTime;
+          P.startReload();
         }
       }
       if (a.range) this._rangefind();
@@ -944,7 +933,7 @@ export class Game {
       const s = P.sway();
       this.camera.rotation.set(P.pitch - s.y, P.yaw + s.x, 0, 'YXZ');
       this.camera.fov = P.fov();
-      this.camera.near = P.scopeT > 0.5 ? 1.0 : 0.1;
+      this.camera.near = P.scopeT > 0.5 && P.def.scope ? 1.0 : 0.05;
       this.camera.updateProjectionMatrix();
     } else {
       this.camera.near = 0.05;
@@ -989,16 +978,21 @@ export class Game {
 
   _updateViewmodel(dt, replaying) {
     const P = this.player;
-    const vm = this.viewmodel;
-    vm.visible = !replaying && P.alive && P.scopeT < 0.6 && !this.tools.thermalActive();
-    this.vmKick = Math.max(0, (this.vmKick || 0) - dt * 5);
-    const bob = Math.sin((P.bobPhase || 0)) * 0.012 * Math.min(P.speed / 4, 1.4);
-    const reload = P.reloadT > 0 ? Math.sin(clamp(P.reloadT / WEAPON.reloadTime, 0, 1) * Math.PI) : 0;
-    const bolt = P.boltT > 0 && P.boltT < WEAPON.boltTime - 0.3 ? Math.sin(((WEAPON.boltTime - 0.3 - P.boltT) / (WEAPON.boltTime - 0.3)) * Math.PI) : 0;
-    const s = P.scopeT;
-    vm.position.set(0.21 * (1 - s) + bob, -0.2 * (1 - s) - 0.07 * s - reload * 0.2 + Math.abs(bob) * 0.5, -0.28 + this.vmKick * 0.06);
-    vm.rotation.set(this.vmKick * 0.12 + reload * 0.6, 0, bolt * 0.25 + reload * 0.4);
-    this.vmBolt.position.z = -0.05 + bolt * 0.12;
+    const scopedRifle = P.def.scope && P.scopeT > 0.6;
+    this.viewmodel.visible = !replaying && P.alive && !scopedRifle && !this.tools.thermalActive();
+    this.viewmodel.update(dt, {
+      def: P.def,
+      scopeT: P.scopeT,
+      speed: P.speed,
+      sprint: P.speed > 5.5,
+      bobPhase: P.bobPhase,
+      cycleT: P.cycleT,
+      reloadT: P.reloadT,
+      reloadDur: P.reloadDur,
+      reloadEmpty: P.reloadEmpty,
+      switchT: P.switchT,
+      empty: P.w.chamber === 0 && P.def.kind === 'semi',
+    });
   }
 
   _updateRemote(dt) {
@@ -1007,15 +1001,16 @@ export class Game {
     const visible = !this.replay.active && (this.remoteAlive || this.phase === 'end');
     this.remote.setVisible(visible && this.remoteAlive);
     if (!s) return;
+    s.w = this.remoteWpn;
     this.remote.update(dt, s);
     // Scope glint: bright when they're scoped in and pointing at you.
     let glint = 0;
     const sp = scopePoint(s.p, s.yaw, s.pitch, s.st);
-    if (visible && this.remoteAlive && s.sc && !this.tools.remote.kf && !this.tools.smokeBlocks(this.camera.position, sp)) {
+    if (visible && this.remoteAlive && s.sc && !this.remoteWpn && !this.tools.remote.kf && !this.tools.smokeBlocks(this.camera.position, sp)) {
       const toMe = this.camera.position.clone().sub(sp).normalize();
       const aim = new THREE.Vector3(-Math.sin(s.yaw) * Math.cos(s.pitch), Math.sin(s.pitch), -Math.cos(s.yaw) * Math.cos(s.pitch));
       const facing = Math.max(0, aim.dot(toMe));
-      glint = Math.pow(facing, 70) * (ZOOM_GLINT[s.z] || 0.5) * this.palette.glint * (0.82 + 0.18 * Math.sin(this.now * 21));
+      glint = Math.pow(facing, 70) * (ZOOM_GLINT[s.z] || 0.5) * (WEAPONS[this.remoteRifle] || WEAPONS.mk22).glint * this.palette.glint * (0.82 + 0.18 * Math.sin(this.now * 21));
       // The sun behind the viewer makes it worse.
       glint *= 0.75 + 0.35 * Math.max(0, -toMe.dot(this.sunDir));
       sp.addScaledVector(toMe, 0.45);

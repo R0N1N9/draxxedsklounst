@@ -8,6 +8,7 @@ import { puffTexture, glowTexture, glintTexture } from './textures.js';
 import { screenSprite } from './effects.js';
 import { clamp, smoothstep, segSegClosest } from './util.js';
 import { sampleHist } from './killcam.js';
+import { RIFLES } from './weapons.js';
 
 export const TOOLS = {
   drone: { slot: 'scout', name: 'Spotting drone', short: 'DRONE', charges: 1, desc: 'Fly a thermal quadcopter for 25 s, up to 500 m out. Loud, and it can be shot down. Your body stays put while you fly.' },
@@ -24,10 +25,11 @@ export const SLOTS = [
   { key: 'stealth', label: 'Stealth', keyHint: 'passive' },
   { key: 'tactical', label: 'Tactical', keyHint: 'G' },
 ];
-export const DEFAULT_LOADOUT = { scout: 'dart', stealth: 'suppressor', tactical: 'smoke' };
+export const DEFAULT_LOADOUT = { rifle: 'mk22', scout: 'dart', stealth: 'suppressor', tactical: 'smoke' };
 
 export function validLoadout(lo) {
   const out = { ...DEFAULT_LOADOUT };
+  if (lo && RIFLES.includes(lo.rifle)) out.rifle = lo.rifle;
   if (lo) for (const s of SLOTS) if (TOOLS[lo[s.key]] && TOOLS[lo[s.key]].slot === s.key) out[s.key] = lo[s.key];
   return out;
 }
@@ -37,7 +39,7 @@ export function randomLoadout() {
     const keys = Object.keys(TOOLS).filter((k) => TOOLS[k].slot === slot);
     return keys[Math.floor(Math.random() * keys.length)];
   };
-  return { scout: pick('scout'), stealth: pick('stealth'), tactical: pick('tactical') };
+  return { rifle: RIFLES[Math.floor(Math.random() * RIFLES.length)], scout: pick('scout'), stealth: pick('stealth'), tactical: pick('tactical') };
 }
 
 export const SUPPRESSED_MUZZLE = Math.round(BALLISTICS.muzzle * 0.88);
@@ -75,6 +77,8 @@ export class ToolSystem {
     this.remote = { kf: 0, tp: 0, jm: 0, dr: null };
     this.nextId = 1;
     this.loadout = validLoadout(game.settings && game.settings.loadout);
+    game.player.rifleKey = this.loadout.rifle;
+    game.player.equip();
     this._buildRemoteDrone();
     this._buildPredator();
     this.feedWindow = 0;
@@ -85,6 +89,8 @@ export class ToolSystem {
   // ---- Loadout ------------------------------------------------------------
   setLoadout(lo) {
     this.loadout = validLoadout(lo);
+    this.g.player.rifleKey = this.loadout.rifle;
+    this.g.player.equip();
     this.resetMine();
   }
 
@@ -116,7 +122,7 @@ export class ToolSystem {
 
   _applyPlayerMods() {
     const P = this.g.player;
-    P.muzzle = this.has('suppressor') ? SUPPRESSED_MUZZLE : BALLISTICS.muzzle;
+    P.suppressed = this.has('suppressor');
     P.speedMul = this.has('poncho') ? 0.8 : 1;
     P.noSprint = this.has('poncho');
     P.killflash = this.has('killflash');
