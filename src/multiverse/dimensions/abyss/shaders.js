@@ -44,18 +44,23 @@ vec3 waterFog(vec3 col, vec3 p, float k) {
   return col * T + waterBg(dir, uCam.y + dir.y * min(d, 70.0) * 0.5) * (1.0 - T);
 }
 
+// Bilinear-filtered comparisons over two offset footprints: soft, stable edges with no
+// stair-steps (there is no hardware comparison sampler to lean on here).
+float shadowTap(vec2 uv, float z, float t) {
+  vec2 tc = uv / t - 0.5, f = fract(tc), b = (floor(tc) + 0.5) * t;
+  float a = step(z, texture2D(tShadow, b).r), c = step(z, texture2D(tShadow, b + vec2(t, 0.0)).r);
+  float d = step(z, texture2D(tShadow, b + vec2(0.0, t)).r), e = step(z, texture2D(tShadow, b + vec2(t, t)).r);
+  return mix(mix(a, c, f.x), mix(d, e, f.x), f.y);
+}
 float sunShadow(vec3 p, float bias) {
   vec4 s = uShadowMat * vec4(p, 1.0);
   if (s.x <= 0.0 || s.x >= 1.0 || s.y <= 0.0 || s.y >= 1.0) return 1.0;
   float z = s.z - bias, t = uShadowTexel;
 #ifdef LEAN
   return step(z, texture2D(tShadow, s.xy).r);
+#else
+  return (shadowTap(s.xy + vec2(-0.9, 0.4) * t, z, t) + shadowTap(s.xy + vec2(0.9, -0.4) * t, z, t)) * 0.5;
 #endif
-  float a = step(z, texture2D(tShadow, s.xy + vec2(-0.6, -1.4) * t).r);
-  float b = step(z, texture2D(tShadow, s.xy + vec2(1.4, -0.6) * t).r);
-  float c = step(z, texture2D(tShadow, s.xy + vec2(0.6, 1.4) * t).r);
-  float e = step(z, texture2D(tShadow, s.xy + vec2(-1.4, 0.6) * t).r);
-  return (a + b + c + e) * 0.25;
 }
 
 // Where this point's sunlight came through the surface, and the net the swell focused it
@@ -63,6 +68,9 @@ float sunShadow(vec3 p, float bias) {
 float caustics(vec3 p) {
   vec2 q = p.xz - uL.xz / uL.y * p.y;
   float t = uTime, blur = clamp(-p.y * 0.05 - 0.2, 0.0, 2.5);
+#ifdef LEAN
+  return texture2D(tCaustic, q * 0.052 + vec2(t * 0.013, t * 0.008)).r * 0.9;
+#endif
   float a = texture2D(tCaustic, q * 0.052 + vec2(t * 0.013, t * 0.008), blur).r;
   float b = texture2D(tCaustic, q * 0.067 + vec2(-t * 0.010, t * 0.014) + 0.37, blur).r;
   return a * b * 3.2 + (a + b) * 0.12;
@@ -70,12 +78,17 @@ float caustics(vec3 p) {
 
 vec3 lamps(vec3 p, vec3 n) {
   vec3 acc = vec3(0.0);
+#ifdef LEAN
+  for (int i = 0; i < 2; i++) { vec3 l = uLampPos[i] - p; float d2 = dot(l, l); acc += uLampCol[i] * 0.3 * smoothstep(0.3, 2.0, d2) / (1.0 + d2 * 0.08); }
+  return acc;
+#endif
   for (int i = 0; i < 2; i++) {
     vec3 l = uLampPos[i] - p;
     float d = length(l);
     l /= max(d, 1e-3);
     float cone = smoothstep(0.78, 0.95, dot(-l, uLampDir[i]));
-    acc += uLampCol[i] * (cone * 0.85 + 0.15) * max(dot(n, l) * 0.8 + 0.2, 0.0) * exp(-d * 0.06) / (1.0 + d * d * 0.045);
+    // (nothing within arm's reach takes its own lamp's light: no hot spot on the gun in your hands)
+    acc += uLampCol[i] * (cone * 0.85 + 0.15) * max(dot(n, l) * 0.8 + 0.2, 0.0) * exp(-d * 0.06) / (1.0 + d * d * 0.045) * smoothstep(0.5, 1.4, d);
   }
   return acc;
 }
@@ -86,7 +99,7 @@ vec3 ambientAt(vec3 n, float y) {
 
 // albedo lit by the sun (shadowed, with caustics), the water's ambient and the torches.
 vec3 litWater(vec3 albedo, vec3 p, vec3 n, float ao, float wrap, float cauK) {
-  float sh = sunShadow(p, 0.0016);
+  float sh = sunShadow(p + n * 0.09, 0.0012); // normal offset: no acne on the wall
   float ndl = max((dot(n, uL) + wrap) / (1.0 + wrap), 0.0);
   float cau = caustics(p) * smoothstep(-0.3, 0.7, n.y) * cauK;
   vec3 direct = sunAt(p.y) * sh * ndl * (0.5 + cau * 1.7);
@@ -181,14 +194,14 @@ void main() {
   float flt = smoothstep(0.55, 0.85, n.y);
   // sand: ripples across the current, combed by noise
   float rip = sin(vW.x * 1.7 + vW.z * 0.6 + big.r * 9.0) * 0.5 + 0.5;
-  vec3 sand = vec3(0.78, 0.7, 0.55) * (0.82 + rip * 0.16 + fine.b * 0.12);
+  vec3 sand = vec3(0.6, 0.55, 0.45) * (0.78 + rip * 0.2 + fine.b * 0.16);
   vec3 rock = mix(vec3(0.3, 0.27, 0.25), vec3(0.46, 0.4, 0.35), big.g) * (0.7 + fine.r * 0.5);
   // banded strata on the wall
   rock *= 0.85 + 0.2 * sin(vW.y * 2.3 + big.r * 6.0);
   float sandy = flt * smoothstep(0.35, 0.6, vC.r + big.a * 0.5 - 0.25);
   alb = mix(rock * vC.g * 1.3, sand, sandy);
   // encrusting life on the rock: green algae on top faces, purple coralline under
-  alb = mix(alb, vec3(0.2, 0.32, 0.12), (1.0 - sandy) * smoothstep(0.3, 0.8, n.y) * smoothstep(0.45, 0.7, big.r) * 0.6);
+  alb = mix(alb, vec3(0.2, 0.3, 0.13), (1.0 - sandy) * smoothstep(0.3, 0.8, n.y) * smoothstep(0.5, 0.75, big.r) * 0.45);
   alb = mix(alb, vec3(0.42, 0.18, 0.34), (1.0 - sandy) * smoothstep(0.55, 0.8, fine.g) * 0.35);
   ao = mix(0.55, 1.0, vC.b);
 #endif
@@ -207,7 +220,9 @@ void main() {
   alb *= 0.6 + 0.5 * fine.r;
   alb = mix(alb, vec3(0.36, 0.17, 0.07), smoothstep(0.45, 0.8, streak) * 0.75);
   alb = mix(alb, vec3(0.16, 0.26, 0.1), smoothstep(0.2, 0.8, n.y) * smoothstep(0.4, 0.62, big.r) * 0.85);
-  alb *= 0.85 + 0.15 * sin(vO.y * 9.0);
+  // planking: strakes down the hull, boards across the deck
+  float plank = mix(sin(vO.y * 9.0), sin(vO.x * 14.0), smoothstep(0.6, 0.9, abs(n.y)));
+  alb *= 0.82 + 0.18 * plank + 0.1 * smoothstep(0.92, 1.0, abs(plank)) * -1.0;
 #endif
   vec3 col = litWater(alb, vW, n, ao, 0.25, 1.0);
   gl_FragColor = vec4(waterFog(col, vW, 1.0), length(vW - uCam));
@@ -242,17 +257,21 @@ export function makeMaterials(THREE, U, lean) {
   // lean: the software-rasteriser build (one shadow tap, one detail tap)
   const shader = (o) => add(new THREE.ShaderMaterial({ ...o, defines: { ...(o.defines || {}), ...(lean ? { LEAN: 1 } : {}) }, uniforms: { ...U, ...(o.uniforms || {}) } }));
   const reef = (define, extra = {}) => shader({ vertexShader: REEF_VERT, fragmentShader: REEF_FRAG, defines: { [define]: 1, ...(extra.defines || {}) }, vertexColors: true, uniforms: { uSway: { value: new THREE.Vector4(extra.sway || 0, 0, 0, 0) } }, side: extra.side || THREE.FrontSide });
+  // the software build shares one program between rock, coral and wreck, and leaves out
+  // the fans and the net (a dozen fewer shaders to compile on a CPU)
+  const rock = reef('ROCK');
   return {
     all,
     add,
     shader,
+    lean: !!lean,
     terrain: reef('TERRAIN'),
-    rock: reef('ROCK'),
-    coral: reef('CORAL'),
-    coralSway: reef('CORAL', { defines: { SWAY: 1 }, sway: 0.05, side: THREE.DoubleSide }),
-    wreck: reef('WRECK', { side: THREE.DoubleSide }),
-    net: reef('WRECK', { defines: { NET: 1 }, side: THREE.DoubleSide }),
-    reefFan: reef('CORAL', { defines: { FAN: 1, SWAY: 1 }, sway: 0.08, side: THREE.DoubleSide }),
+    rock,
+    coral: lean ? rock : reef('CORAL'),
+    coralSway: lean ? rock : reef('CORAL', { defines: { SWAY: 1 }, sway: 0.05, side: THREE.DoubleSide }),
+    wreck: lean ? rock : reef('WRECK', { side: THREE.DoubleSide }),
+    net: lean ? null : reef('WRECK', { defines: { NET: 1 }, side: THREE.DoubleSide }),
+    reefFan: lean ? null : reef('CORAL', { defines: { FAN: 1, SWAY: 1 }, sway: 0.08, side: THREE.DoubleSide }),
     dispose() { for (const m of all) m.dispose(); all.length = 0; },
   };
 }

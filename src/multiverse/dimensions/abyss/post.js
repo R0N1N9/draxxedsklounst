@@ -57,7 +57,7 @@ void main() {
     vec2 q = p.xz - uL.xz / uL.y * p.y;
     float a = texture2D(tCaustic, q * 0.021 + vec2(uTime * 0.006, uTime * 0.004), 2.5).r;
     float b = texture2D(tNoise, q * 0.011 + vec2(-uTime * 0.004, uTime * 0.003)).r;
-    float shaft = smoothstep(0.12, 0.55, a * 1.6 * (0.55 + b));
+    float shaft = smoothstep(0.3, 0.8, a * 1.5 * (0.45 + b));
     float depth = exp(min(p.y, 0.0) * 0.045);
     sun += vec3(shaft * shadowAt(p) * depth * ext) * exp(min(p.y, 0.0) * vec3(0.06, 0.02, 0.012));
     for (int k = 0; k < 2; k++) {
@@ -67,7 +67,7 @@ void main() {
       lamp += uLampCol[k] * cone * ext / (1.0 + ld * ld * 0.07);
     }
   }
-  vec3 col = (sun * uSunCol * (0.006 + ph * 0.022) + lamp * 0.012) * stepL * uK * (1.0 - 0.7 * uDim);
+  vec3 col = (sun * uSunCol * vec3(0.78, 1.0, 1.06) * (0.0035 + ph * 0.013) + lamp * 0.012) * stepL * uK * (1.0 - 0.7 * uDim);
   gl_FragColor = vec4(col, 1.0);
 }`;
 const PREFILTER = HEAD + `
@@ -185,7 +185,8 @@ export function makePost(THREE, renderer, U, q) {
   const sunCam = new THREE.OrthographicCamera(-62, 62, 62, -62, 1, 260);
   sunCam.layers.set(1);
   const bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
-  let scale = q.scale, tier = q.tier;
+  let scale = q.scale, tier = q.tier, bloomDone = false;
+  const px = new Uint8Array(4);
 
   function setShadowSize(s) {
     if (s === shadowSize) return;
@@ -256,6 +257,15 @@ export function makePost(THREE, renderer, U, q) {
       if (hands) { renderer.clearDepth(); renderer.render(hands, camera); }
       renderer.autoClear = true;
       const w = scene.width, h = scene.height;
+      if (q.soft) {
+        // the software build: no shafts, no bloom — every extra pass is another pipeline a CPU
+        // has to build before the first frame, and several more milliseconds after it
+        fu.tBloom.value = fu.tWide.value = fu.tVol.value = null;
+        pass(mFinal, scene, ldr, w, h);
+        pass(mPresent, ldr, null, w, h);
+        renderer.autoClear = auto;
+        return;
+      }
       shaftU.uCamWorld.value.copy(camera.matrixWorld);
       shaftU.uProjInv.value.copy(camera.projectionMatrixInverse);
       pass(mShaft(tier), scene, vol, vol.width, vol.height);
@@ -263,22 +273,41 @@ export function makePost(THREE, renderer, U, q) {
       pass(mBlur, vol, volB, vol.width, vol.height);
       mBlur.uniforms.uDir.value.set(0, 1);
       pass(mBlur, volB, vol, vol.width, vol.height);
-      pass(mPre, scene, qa, w, h);
-      mBlur.uniforms.uDir.value.set(1, 0);
-      pass(mBlur, qa, qb, qa.width, qa.height);
-      mBlur.uniforms.uDir.value.set(0, 1);
-      pass(mBlur, qb, qa, qa.width, qa.height);
-      pass(mDown, qa, ea, qa.width, qa.height);
-      mBlur.uniforms.uDir.value.set(1.6, 0);
-      pass(mBlur, ea, eb, ea.width, ea.height);
-      mBlur.uniforms.uDir.value.set(0, 1.6);
-      pass(mBlur, eb, ea, ea.width, ea.height);
+      if (!q.soft || !bloomDone) {
+        // (the software build blooms once and keeps it: a CPU cannot spare five passes a frame)
+        bloomDone = true;
+        pass(mPre, scene, qa, w, h);
+        mBlur.uniforms.uDir.value.set(1, 0);
+        pass(mBlur, qa, qb, qa.width, qa.height);
+        mBlur.uniforms.uDir.value.set(0, 1);
+        pass(mBlur, qb, qa, qa.width, qa.height);
+        pass(mDown, qa, ea, qa.width, qa.height);
+        mBlur.uniforms.uDir.value.set(1.6, 0);
+        pass(mBlur, ea, eb, ea.width, ea.height);
+        mBlur.uniforms.uDir.value.set(0, 1.6);
+        pass(mBlur, eb, ea, ea.width, ea.height);
+        if (q.soft) { renderer.setRenderTarget(qa); renderer.clear(); renderer.setRenderTarget(ea); renderer.clear(); }
+      }
       fu.tBloom.value = qa.texture;
       fu.tWide.value = ea.texture;
       fu.tVol.value = vol.texture;
       pass(mFinal, scene, ldr, w, h);
       pass(mPresent, ldr, null, w, h);
       renderer.autoClear = auto;
+    },
+    // Wait for the GPU to finish the last frame (a one-pixel read of it). Only the software
+    // build does this: there drawing is far slower than the page, and frames queued faster
+    // than they execute pile up in memory until the tab dies.
+    sync() {
+      if (ldr.width < 8) return;
+      try { renderer.readRenderTargetPixels(ldr, 0, 0, 1, 1, px); } catch { /* lost context: nothing to wait for */ }
+    },
+    // the last graded frame again, with fresh grain: all a skipped frame costs (the canvas does
+    // not keep its picture between frames)
+    present() {
+      if (!ldr.width || ldr.width < 8) return;
+      pass(mPresent, ldr, null, ldr.width, ldr.height);
+      renderer.setRenderTarget(null);
     },
     dispose() {
       renderer.setRenderTarget(null);

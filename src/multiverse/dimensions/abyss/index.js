@@ -75,16 +75,17 @@ export default {
     const sim = makeKrakenSim(ctx.seed);
     // Quality: a software rasteriser gets the lean build; a GPU starts rich and the view's
     // governor steps down if frames run long.
-    const Q = { soft: false, tier: 0, scale: 1, shadow: 1024, fish: 260, snow: 2600, msaa: true };
+    const Q = { soft: false, tier: 0, scale: 1, shadow: 2048, fish: 260, snow: 2600, msaa: true };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.36, shadow: 512, fish: 140, snow: 900, msaa: false });
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.25, shadow: 512, fish: 60, snow: 700, msaa: false });
     } catch { /* masked: assume a GPU */ }
-    const tex = makeTextures(THREE, renderer);
+    if (globalThis.__abyssRich) Object.assign(Q, { soft: false, tier: 0, scale: 1, shadow: 2048, fish: 260, snow: 2600, msaa: false }); // (test stills only)
+    const tex = makeTextures(THREE, renderer, Q.soft);
     const U = makeShared(THREE, tex);
     const mats = makeMaterials(THREE, U, Q.soft);
     const scene = new THREE.Scene();
-    const reef = buildReef(THREE, W, mats, U, ctx.seed);
+    const reef = buildReef(THREE, W, mats, U, ctx.seed, Q.soft);
     scene.add(reef.group);
     const life = buildLife(THREE, mats, U, W, Q, heightAt);
     scene.add(life.group);
@@ -98,6 +99,7 @@ export default {
     const smoke = new Cloud(THREE, mats, Q.soft ? 160 : 320, 'SMOKE');
     const snow = makeSnow(THREE, mats, Q.snow);
     scene.add(bubbles.mesh, glow.mesh, smoke.mesh, snow.mesh);
+    snow.mesh.visible = !Q.soft;
 
     // ---- the two divers. Player 0 always takes spawn A (z < 0).
     const kit = makeDiverKit(THREE, mats);
@@ -197,7 +199,7 @@ export default {
           if (!s.on || s.stuck || s.owner === p.i) continue;
           const dx = p.x - s.x, dy = p.y - s.y, dz = p.z - s.z, sp = Math.hypot(s.vx, s.vy, s.vz) || 1;
           const along = (dx * s.vx + dy * s.vy + dz * s.vz) / sp;
-          if (along < 0 || along > 30) continue;
+          if (along < 0 || along > 20) continue;
           const miss = Math.hypot(dx - (s.vx / sp) * along, dy - (s.vy / sp) * along, dz - (s.vz / sp) * along);
           if (miss < 2.5) return s;
         }
@@ -223,7 +225,15 @@ export default {
     }
     function exhale(p, big) {
       eyeOf(p, e3);
+      // the regulator vents either side of the mouth and a little back: past your mask, not into it
+      const side = (p.breaths & 1 ? 1 : -1) * 0.32;
+      e3.x += Math.cos(p.yaw) * side + Math.sin(p.yaw) * 0.12; e3.z += -Math.sin(p.yaw) * side + Math.cos(p.yaw) * 0.12;
       puff(e3.x, e3.y - 0.1, e3.z, big ? 34 : 14, big ? 0.09 : 0.06, big ? 0.35 : 0.15);
+      // and the big wobbling domes that catch the light: what gives you away from 60 m off
+      for (let i = 0; i < (big ? 9 : 5); i++) {
+        bubbles.emit(e3.x + (Math.random() - 0.5) * 0.4, e3.y - 0.1 - i * 0.12, e3.z + (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.3, 0.9 + Math.random() * 0.5, (Math.random() - 0.5) * 0.3,
+          0.22 + Math.random() * 0.2, 0.03, 12, 1, 1, 1, 1, 0.5, 1.3);
+      }
       p.tell.x = p.x; p.tell.y = p.y; p.tell.z = p.z; p.tell.t = T;
       sfx.exhale(p.x, p.y, p.z, p === ME, big);
     }
@@ -309,7 +319,7 @@ export default {
           if (s.judge && foe.alive && ctx.phase === 'live') {
             capsule(foe);
             const u = segCap(s.x, s.y, s.z, mx, my, mz, capA, capB, HIT_R);
-            if (u >= 0 && u * len < best) { best = u * len; what = capT < 0.25 ? 'head' : 'diver'; }
+            if (u >= 0 && u * len < best) { best = u * len; what = capT < 0.05 && capD < 0.05 ? 'head' : 'diver'; }
           }
           for (const d of decoys) {
             if (!d.alive || d.owner === s.owner) continue;
@@ -369,7 +379,7 @@ export default {
     }
     function stickFree(s, x, y, z) { s.stuck = true; s.x = x; s.y = y; s.z = z; s.mesh.visible = false; }
     // segment o + m·u against a capsule a–b of radius r: first u in [0,1], or -1
-    let capT = 0;
+    let capT = 0, capD = 0;
     function segCap(ox, oy, oz, mx, my, mz, a, b, r) {
       let best = -1;
       for (let i = 0; i <= 6; i++) {
@@ -379,7 +389,7 @@ export default {
         const ex = ox + mx * u - cx, ey = oy + my * u - cy, ez = oz + mz * u - cz, d2 = ex * ex + ey * ey + ez * ez;
         if (d2 < r * r) {
           const back = Math.sqrt((r * r - d2) / l2), uu = Math.max(0, u - back);
-          if (best < 0 || uu < best) { best = uu; capT = w; }
+          if (best < 0 || uu < best) { best = uu; capT = w; capD = d2; }
         }
       }
       return best;
@@ -446,12 +456,13 @@ export default {
     }
 
     // ---- one diver, one frame
-    function humanCmd(p) {
-      const inp = ctx.input, c = p.cmd, z = view.zoom, k = LOOK * lerp(1, 0.42, z);
+    // `first`: a frame's look and button presses are spent once, however many slices it is cut into
+    function humanCmd(p, first) {
+      const inp = ctx.input, c = p.cmd, z = view.zoom, k = first ? LOOK * lerp(1, 0.42, z) : 0;
       c.mx = inp.moveX; c.my = inp.moveY;
       c.yaw = p.yaw - inp.lookX * k;
       c.pitch = clamp(p.pitch - inp.lookY * k, -1.35, 1.35);
-      c.fire = inp.firePressed; c.alt = inp.alt; c.a1 = inp.a1Pressed; c.a2 = inp.a2Pressed; c.jump = inp.jumpPressed;
+      c.fire = first && inp.firePressed; c.alt = inp.alt; c.a1 = first && inp.a1Pressed; c.a2 = first && inp.a2Pressed; c.jump = first && inp.jumpPressed;
       c.wish = null;
       return c;
     }
@@ -578,10 +589,10 @@ export default {
       view.killCam(v, ki);
     }
 
-    function frame(dt) {
+    function frame(dt, now, first) {
       const phase = ctx.phase;
       if (phase === 'intro') introT += dt;
-      T = phase === 'live' ? ctx.time : phase === 'over' ? T + dt : 0;
+      T = phase === 'live' ? now : phase === 'over' ? T + dt : 0;
       clock += dt;
       if (ctx.sudden && suddenAt < 0) { suddenAt = T; sfx.sudden(); sfx.music(true); view.note('THE KRAKEN IS CLOSING IN', 3); }
       // the animal: during the intro it is already moving, on its way to time 0
@@ -594,7 +605,7 @@ export default {
         if (p.remote) puppet(p, dt);
         else if (p.bot && phase === 'live' && p.alive) step(p, brain.think(p, P[1 - p.i], dt, p.cmd), dt);
         else if (p.bot) step(p, p.cmd, dt);
-        else step(p, humanCmd(p), dt);
+        else step(p, humanCmd(p, first), dt);
         if (p.dead >= 0) p.dead += dt;
       }
       if (phase !== 'intro') { stepSpears(dt); stepPings(dt); stepDecoys(dt); }
@@ -610,7 +621,6 @@ export default {
       smoke.update(dt, clock, false);
       glow.update(dt, clock, false);
       life.update(dt, clock, { divers: P.filter((p) => p.alive || p.dead < 3), extra: extra.slice(0, ne), glow, kraken: sim.S });
-
       view.update(dt, T, introT);
       sfx.update(dt, sim.distance(ME.x, ME.y, ME.z), sim.S.pass);
       // the network and the HUD
@@ -631,11 +641,19 @@ export default {
     });
 
     const inst = {
-      update(dt) { frame(dt); },
+      // The core clamps a frame's step but the round clock keeps real time: a client that draws
+      // slowly would swim in slow motion and fall behind its opponent. So a live frame simulates
+      // however long the clock says has passed, in slices (a person gets at most a third of a
+      // second made up — nobody should swim on blind through a hitch — a bot all of it).
+      update(dt) {
+        if (ctx.phase !== 'live') { frame(dt, T, true); return; }
+        const t0 = T, span = Math.max(0, ctx.time - t0), n = clamp(Math.ceil(span / 0.05), 1, ME.bot ? 60 : 6);
+        for (let i = 1; i <= n && (i === 1 || ctx.phase === 'live'); i++) frame(Math.min(span / n, 0.05), t0 + (span * i) / n, i === 1);
+      },
       render() { view.render(); },
       resize(w, h) { view.resize(w, h); },
       onPhase(phase) {
-        if (phase === 'intro') view.beginIntro();
+        if (phase === 'intro') { introT = 0; view.beginIntro(); }
         else if (phase === 'live') { sfx.music(false); view.goLive(); }
         else if (phase === 'over') {
           const r = ctx.result;

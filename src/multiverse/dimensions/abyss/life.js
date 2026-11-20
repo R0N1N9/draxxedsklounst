@@ -54,7 +54,7 @@ void main() {
 
 // A fish body along +z: a squashed spindle, a forked tail and a fin on top.
 function fishGeometry(THREE, deep) {
-  const g = new THREE.SphereGeometry(1, 12, 8);
+  const g = new THREE.SphereGeometry(1, 10, 6);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
@@ -256,7 +256,7 @@ export function buildLife(THREE, mats, U, W, Q, heightAt) {
   for (const s of schools) group.add(s.mesh);
 
   // ---- the turtle
-  const creature = (define, amp, freq) => mats.shader({ vertexShader: CREA_VERT, fragmentShader: CREA_FRAG, vertexColors: true, defines: define ? { [define]: 1 } : {}, uniforms: { uAmp: { value: amp }, uFreq: { value: freq } }, side: THREE.DoubleSide });
+  const creature = (define, amp, freq) => (mats.lean && (define = null), mats.shader({ vertexShader: CREA_VERT, fragmentShader: CREA_FRAG, vertexColors: true, defines: define ? { [define]: 1 } : {}, uniforms: { uAmp: { value: amp }, uFreq: { value: freq } }, side: THREE.DoubleSide }));
   const turtle = new THREE.Group();
   {
     const shell = new THREE.SphereGeometry(0.62, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -375,6 +375,9 @@ void main() {
   });
   // CREA_VERT reads `color`; the jelly material has none, so give the geometry a white one
   tint(THREE, jellyGeo, () => [1, 1, 1]);
+
+  // the software build keeps the shoals and the lights of the deep, and leaves out the rest
+  if (mats.lean) { turtle.visible = manta.visible = shark.visible = false; for (const m of jellyMeshes) m.visible = false; }
 
   // creature paths (decoration only)
   const tmp = { x: 0, y: 0, z: 0 };

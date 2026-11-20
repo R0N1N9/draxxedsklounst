@@ -14,9 +14,9 @@ const WORDS = {
   BLAM: ['BLAM!', '#fff27a', '#ff7a2e', '#e2413a'], KRAK: ['KRAK!', '#ffffff', '#ffd23f', null], PING: ['PING!', '#f2ffff', '#7df9ff', null],
   THUNK: ['THUNK!', '#ffe7b3', '#e0914d', null], BOINK: ['BOINK!', '#fff4d6', '#ff8fb0', null], WHIFF: ['WHIFF!', '#ffffff', '#cfe0ff', null],
   THUD: ['THUD!', '#ffe7b3', '#d9764a', null], POOF: ['POOF!', '#ffffff', '#d9c2ff', '#8e5bd6'], FWOOSH: ['FWOOSH!', '#fff27a', '#ff9d2e', null],
-  HUP: ['HUP!', '#ffffff', '#9dffd0', null], CHAK: ['CHK-CHAK!', '#ffffff', '#c9c2e6', null], RATTLE: ['RATTLE RATTLE', '#fff4d6', '#c9c2e6', null],
+  RATTLE: ['RATTLE RATTLE', '#fff4d6', '#c9c2e6', null],
   KAPOW: ['KA-POW!', '#fff27a', '#ff3d5e', '#ffd23f'], WHAM: ['WHAMMO!', '#fff27a', '#ff3d5e', '#7df9ff'], ZOK: ['ZOK!!', '#ffffff', '#ffd23f', '#e2413a'],
-  SKRITCH: ['SKRITCH…', '#dff0ff', '#8fc4ff', null], FLAP: ['FLAP FLAP', '#ffffff', '#e6dcff', null],
+  SKRITCH: ['SKRITCH…', '#dff0ff', '#8fc4ff', null],
 };
 
 // One word, set by hand: every letter a little off its neighbours, fat ink round a two-tone fill.
@@ -109,21 +109,21 @@ export function drawOverlay(g, S, L) {
     path(g, a.pts, a.n); g.strokeStyle = a.color; g.lineWidth = 4.5 * ui; g.stroke();
   }
   g.globalAlpha = 1;
-  // ---- where LEAP would take you ----
+  // ---- where LEAP would take you (the ring itself is drawn into the world) ----
   const lp = S.leap;
   if (lp.a > 0.01 && lp.n >= 2) {
     g.globalAlpha = lp.a * (lp.ready ? 1 : 0.4);
-    g.setLineDash([9 * ui, 9 * ui]);
+    g.setLineDash([12 * ui, 8 * ui]);
     g.lineDashOffset = -S.t * 40 * ui;
     g.lineCap = 'butt';
-    path(g, lp.pts, lp.n); g.strokeStyle = INK; g.lineWidth = 5.5 * ui; g.stroke();
-    path(g, lp.pts, lp.n); g.strokeStyle = PAPER; g.lineWidth = 2.5 * ui; g.stroke();
+    path(g, lp.pts, lp.n); g.strokeStyle = INK; g.lineWidth = 7.5 * ui; g.stroke();
+    path(g, lp.pts, lp.n); g.strokeStyle = lp.ready ? YEL : PAPER; g.lineWidth = 3.5 * ui; g.stroke();
     g.setLineDash([]);
-    const pulse = 1 + Math.sin(S.t * 6) * 0.08;
-    g.beginPath(); g.ellipse(lp.x, lp.y, lp.rx * pulse, lp.ry * pulse, 0, 0, TAU);
-    g.strokeStyle = INK; g.lineWidth = 6 * ui; g.stroke();
-    g.strokeStyle = lp.ready ? YEL : PAPER; g.lineWidth = 3 * ui; g.stroke();
-    if (lp.tag) inked(g, lp.tag, lp.x, lp.y - lp.ry - 13 * ui, Math.max(11, 15 * ui), YEL);
+    // the label sits over the ring when the landing is in view, else on the end of the arc that is
+    if (lp.tag) {
+      const k = (lp.n - 1) * 2, lx = lp.seen ? lp.x : lp.pts[k], ly = lp.seen ? lp.y - lp.ry - 16 * ui : lp.pts[k + 1] - 18 * ui;
+      inked(g, lp.tag, lx, ly, Math.max(12, 16 * ui), YEL);
+    }
     g.globalAlpha = 1;
   }
 
@@ -200,7 +200,8 @@ export function drawOverlay(g, S, L) {
   }
 
   // ---- narration: ammunition, the reload, the things a newcomer must be told ----
-  const cpx = Math.max(11, 16 * ui), midX = S.safeL + (w - S.safeL - S.safeR) / 2, lowY = h - 12 * ui - cpx * 1.75 - (S.touch ? 0 : 4);
+  // (on a narrow desktop window the core's ability chips run along the bottom: sit above them)
+  const cpx = Math.max(11, 16 * ui), midX = S.safeL + (w - S.safeL - S.safeR) / 2, lowY = h - 12 * ui - cpx * 1.75 - (S.touch ? 0 : w < 1000 ? 40 : 4);
   if (S.live && S.alive) {
     if (S.reload > 0) {
       const bw = caption(g, 'MEANWHILE… RELOADING', midX, lowY, cpx, { align: 'center', maxW: w - S.safeL - S.safeR - 16 });
@@ -229,14 +230,16 @@ export function drawOverlay(g, S, L) {
   // ---- the splash page ----
   const sp = S.splash;
   if (sp.a > 0) {
-    const word = L.sprites[sp.word], u = clamp(sp.t / 0.22, 0, 1), k = ease.outBack(u) * (1 + Math.max(0, sp.t - 0.22) * 0.05);
-    const tw = Math.min(w * 0.56, h * 0.95), sc = (tw / word.w) * k;
+    // The word lands beside the victim, never on them: the reader must see who took the hit.
+    const word = L.sprites[sp.word], u = clamp(sp.t / 0.22, 0, 1), k = ease.outBack(u) * (1 + Math.max(0, sp.t - 0.22) * 0.04);
+    const tw = Math.min(w * 0.5, h * 0.9), sc = (tw / word.w) * k;
+    const wx = clamp(sp.x + sp.side * w * 0.2, w * 0.3, w * 0.7), wy = clamp(sp.y - h * 0.24, h * 0.24, h * 0.42);
     g.globalAlpha = sp.a;
-    g.save(); g.translate(clamp(sp.x, w * 0.3, w * 0.7), clamp(sp.y - h * 0.1, h * 0.42, h * 0.58)); g.rotate(-0.1 + Math.sin(sp.t * 40) * 0.012 * Math.max(0, 1 - sp.t * 2));
+    g.save(); g.translate(wx, wy); g.rotate(-0.1 * sp.side + Math.sin(sp.t * 40) * 0.012 * Math.max(0, 1 - sp.t * 2));
     g.drawImage(word.canvas, -word.w * sc / 2, -word.h * sc / 2, word.w * sc, word.h * sc);
     g.restore();
-    if (sp.t > 0.5 && sp.caption) {
-      const cu = ease.outCubic(clamp((sp.t - 0.5) / 0.3, 0, 1)), px = Math.max(12, 19 * ui);
+    if (sp.t > 0.6 && sp.caption) {
+      const cu = ease.outCubic(clamp((sp.t - 0.6) / 0.3, 0, 1)), px = Math.max(12, 19 * ui);
       g.globalAlpha = sp.a * cu;
       caption(g, sp.caption, midX - (1 - cu) * 40, Math.min(h - S.safeB - px * 2.2, h * 0.76), px, { align: 'center', maxW: w * 0.9 });
     }

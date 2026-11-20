@@ -8,7 +8,7 @@
 // draws on a machine that has no GPU.
 import { clamp, lerp, damp, smoothstep, noise2 } from '../../kit.js';
 import { drawOverlay } from './overlay.js';
-import { KILL } from './game.js';
+import { KILL, SLOW } from './game.js';
 import { SUN } from './sky.js';
 
 const PROMPTS = {
@@ -24,7 +24,7 @@ export function makeView(ctx, THREE, renderer, W) {
   const camera = new THREE.PerspectiveCamera(52, ctx.width / Math.max(1, ctx.height), 0.3, 9000);
   camera.rotation.order = 'YXZ';
   const F = new THREE.Vector3(), Rt = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), sunDir = new THREE.Vector3(SUN.x, SUN.y, SUN.z);
-  const pA = new THREE.Vector3(), lA = new THREE.Vector3(), pB = new THREE.Vector3(), lB = new THREE.Vector3(), pC = new THREE.Vector3(), lC = new THREE.Vector3(), q1 = new THREE.Quaternion();
+  const pA = new THREE.Vector3(), lA = new THREE.Vector3(), pB = new THREE.Vector3(), lB = new THREE.Vector3(), pC = new THREE.Vector3(), lC = new THREE.Vector3(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion();
   const play = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, fov: 52, roll: 0, lift: 0 };
   const S = {
     w: 1, h: 1, t: 0, live: false, alive: true, under: false, brace: 0, rx: 0, ry: 0, spreadPx: 10, clear: false, wall: false, ready: true, cycle: 0,
@@ -82,7 +82,8 @@ export function makeView(ctx, THREE, renderer, W) {
     // fall, the splash, the bow. (High enough that no crest between hides it.)
     const v = k.v.body, hi = 6 + dist * 0.06;
     pA.set(w.x - ux * 14 + rx * 1.2, kc.y + hi, w.z - uz * 14 + rz * 1.2);
-    if (k.splashed) kc.look.lerp(tmp.set(k.x, k.y + 2.6, k.z), Math.min(1, dt * 4)); else kc.look.lerp(tmp.set(v.x, v.y + 0.4, v.z), Math.min(1, dt * 9));
+    // (on the choreography's own clock: the sea's slow motion must not leave the lens behind the body)
+    if (k.splashed) kc.look.lerp(tmp.set(k.x, k.y + 2.6, k.z), Math.min(1, (dt / SLOW) * 4)); else kc.look.set(v.x, v.y + 0.4, v.z);
     lA.copy(kc.look);
     const fA = clamp((2 * Math.atan(4.6 / (dist + 14)) * 180) / Math.PI, 3.2, 30);
     // B — round to the winner's side as they crouch and go: the header in profile
@@ -92,9 +93,11 @@ export function makeView(ctx, THREE, renderer, W) {
     // C — in behind them to the boil of foam where they went under, and through it
     pC.set(k.ex - ux * 3.4 + rx * 0.6, k.ey + 0.55, k.ez - uz * 3.4 + rz * 0.6);
     lC.set(k.ex + ux * 0.6, k.ey - 0.5, k.ez + uz * 0.6);
-    const ab = smoothstep(KILL.squat, KILL.jump + 0.1, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
+    // (A2: before going round, the lens opens out and tips down until the winner is in the foot
+    // of the frame watching the water close over the other one — then round to B)
+    const a2 = smoothstep(KILL.squat - 0.4, KILL.squat + 0.1, t), ab = smoothstep(KILL.squat + 0.05, KILL.jump + 0.12, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
+    const hA = 2 * pA.distanceTo(lA) * Math.tan((fA * Math.PI) / 360);
     pA.lerp(pB, ab).lerp(pC, bc);
-    lA.lerp(lB, ab).lerp(lC, bc);
     const floor = sea.height(pA.x, pA.z) + lerp(0.9, 0.3, bc);
     if (pA.y < floor) pA.y = floor;
     // From whichever lens this client had to the A shot in one move that never lets go of the
@@ -102,16 +105,23 @@ export function makeView(ctx, THREE, renderer, W) {
     // the winner) while the zoom holds them at the size they were — a crash zoom on the winner's
     // screen, a pull-back across the bay on the victim's.
     const e = smoothstep(0.05, 1.0, t);
-    const hA = 2 * pA.distanceTo(lA) * Math.tan((fA * Math.PI) / 360);
     camera.position.lerpVectors(kc.p0, pA, e);
     camera.position.y += Math.sin(Math.PI * e) * kc.arc;
     const fl2 = sea.height(camera.position.x, camera.position.z) + 0.3;
     if (camera.position.y < fl2) camera.position.y = fl2;
-    camera.lookAt(lA);
-    q1.copy(camera.quaternion);
-    camera.quaternion.copy(kc.q0).slerp(q1, smoothstep(0, 0.3, t));
+    // the lens pans from subject to subject (turning, not dragging a look-at point across the bay)
+    camera.lookAt(lA); q1.copy(camera.quaternion);
+    let f2 = 0;
+    if (a2 > 0) {
+      camera.lookAt(tmp2.set(w.x, kc.y + 1.5, w.z)); q2.copy(camera.quaternion);
+      f2 = clamp((q1.angleTo(q2) * 180) / Math.PI * 1.3 + 12, 24, 80);
+      q1.slerp(q2, 0.55 * a2);
+    }
+    if (ab > 0) { camera.lookAt(lB); q2.copy(camera.quaternion); q1.slerp(q2, ab); }
+    if (bc > 0) { camera.lookAt(lC); q2.copy(camera.quaternion); q1.slerp(q2, bc); }
+    camera.quaternion.copy(kc.q0).slerp(q1, smoothstep(0, 0.42, t));
     const fD = e < 1 ? clamp((2 * Math.atan(lerp(kc.h0, hA, e) / (2 * Math.max(1, camera.position.distanceTo(lA)))) * 180) / Math.PI, 2.5, 70) : fA;
-    camera.fov = lerp(lerp(fD, 46, ab), 60, bc);
+    camera.fov = lerp(lerp(lerp(fD, f2, a2), 46, ab), 60, bc);
     // the lens goes under: the waterline climbs the frame and stops a fifth of the way from the top
     const wl = t < KILL.sink ? -1 : lerp(-0.12, 0.775, smoothstep(KILL.sink, KILL.under, t)) + 0.012 * Math.min(1, Math.max(0, t - KILL.under) * 2);
     post.u.uWater.value.set(wl, 0.05 * Math.sin(t * 2.1), clamp((t - KILL.sink) * 2, 0, 1));
@@ -215,6 +225,14 @@ export function makeView(ctx, THREE, renderer, W) {
       raysK = ahead ? 1 - smoothstep(1.0, 2.0, Math.max(Math.abs(tmp.x), Math.abs(tmp.y))) : 0;
       const pu = post.u, under = me.dive > 0 && me.alive && phase === 'live';
       pu.uTime.value = wt;
+      // The eye adapts: a lens pointed down the sun's road (or at the sun) stops down, so a long
+      // lens into the glitter still shows what is standing in it instead of a white page.
+      {
+        const e = camera.matrixWorld.elements, fx0 = -e[8], fy0 = -e[9], fz0 = -e[10];
+        const road = fx0 * SUN.x - fy0 * SUN.y + fz0 * SUN.z, at = fx0 * SUN.x + fy0 * SUN.y + fz0 * SUN.z;
+        const tele = clamp((60 - camera.fov) / 45, 0.35, 1), glare = smoothstep(0.9, 0.995, Math.max(road, at)) * tele;
+        pu.uExposure.value = damp(pu.uExposure.value, 1 - 0.5 * glare, 3, dt);
+      }
       pu.uRays.value = raysK * 0.8;
       pu.uFlinch.value = me.alive && phase === 'live' ? me.flinch * 0.7 : 0;
       pu.uBrace.value = me.alive && phase === 'live' ? me.brace : 0;
@@ -294,6 +312,7 @@ export function makeView(ctx, THREE, renderer, W) {
         // frame is simply put back.
         if (stills++ > 0) return post.present();
         if (W.settle) W.settle(); // (a round that ends on a hitch still ends on its last frame)
+        fresh = false;
       } else {
         stills = 0;
         if (api.force > 0) api.force--; // (test scripts: draw now)
@@ -304,7 +323,7 @@ export function makeView(ctx, THREE, renderer, W) {
           // more than a sixth of the time go on drawing: the duel itself runs true.
           if (iv > 40) debt += iv - 17;
           if (iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
-          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && api.draws > 2) post.setScale(Math.min(0.72, post.scale * 1.08));
+          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && api.draws > 2) post.setScale(Math.min(0.5, post.scale * 1.08));
         }
       }
       if (W.stage) W.stage(api.draws);

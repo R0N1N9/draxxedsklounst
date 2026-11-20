@@ -14,6 +14,7 @@ export const CAR_N = 3, CAR_HW = 1.38, CAR_HD = 0.72, CAR_GAP = 3.15, LAP = 24; 
 export const POOL = { r0: 6.2, r1: 10.4 };  // the lamp's pool: full light inside r0, none past r1
 export const SPOT_R = 3.1;                  // a copter's spotlight on the floor
 export const TIDY = 5.5, ROLL_UP = 19, LAST = 5.2; // sudden death: the props go, then the rug rolls up to ±LAST
+export const MARBLE_R = 0.85, FLICK_DT = 1 / 30;   // the glass marble that gets flicked across the rug now and then; its timetable's step
 
 export const hit = { t: 0, nx: 0, nz: 0, s: null }; // result of the last cast
 
@@ -76,7 +77,7 @@ export function buildWorld(rng, names) {
     both(MAKE[kind], x + jx, z + jz, rot);
   });
   // Inside the loop, in the lamp light: a tower in the middle (it spells V S), dominoes either side.
-  const tower = add(block(LOOP.x, LOOP.z, rand(rng, 0.5, 1.0), 2));
+  const tower = add(block(LOOP.x, LOOP.z, rand(rng, 0.5, 1.07), 2)); // (45° ± 16°: the same both ways round)
   tower.tall = true;
   const inner = rng();
   if (inner < 0.7) both(dominoes, -5.3, LOOP.z + rand(rng, -0.3, 0.3), Math.PI / 2 + rand(rng, -0.25, 0.25));
@@ -99,16 +100,25 @@ export function buildWorld(rng, names) {
   };
   const tp = { x: 0, z: 0 };
 
+  // The marble: every so often someone off-screen flicks it across the rug. Its runs are planned
+  // below, from the seed, with the train where the clock will have it — so where the marble is
+  // stays a pure function of the clock, the same on both screens.
+  const marble = add(solid('marble', 0, 60, MARBLE_R * 0.8, MARBLE_R * 0.8, 0, MARBLE_R * 2, 'glass'));
+  const flicks = [];
+  let lastT = -1e9;
+
   // Car headlights from the street, through the blind: the times they sweep the room.
-  const sweeps = [];
+  // (the street is on either side of the house, round by round: neither sniper's half of the rug
+  // is the one the lights favour, and neither is the side the lamp leans to first)
+  const sweeps = [], side = rng() < 0.5 ? 1 : -1, sway = rng() < 0.5 ? 0 : Math.PI;
   for (let t = rand(rng, 7, 10); t < 140; t += rand(rng, 11, 16)) sweeps.push({ t, dir: rng() < 0.5 ? 1 : -1 });
-  const SWEEP = 3.4, HA = -0.42, hca = Math.cos(HA), hsa = Math.sin(HA);
+  const SWEEP = 3.4, HA = -0.42 * side, hca = Math.cos(HA), hsa = Math.sin(HA);
 
   // Cover posts for the bot: points just off the corners and faces of everything that stands still.
   const posts = [];
   const W = {
-    solids, rows, cars, statics, tower, sweeps, posts, names, trainDir: dir,
-    suddenAt: -1, lim: RUG_A - BODY_R - 0.2, spots: [{ on: 0, x: 0, z: 0 }, { on: 0, x: 0, z: 0 }], pool: { x: 0, z: 0.5 }, head: { p: 0, k: 0, ca: hca, sa: hsa },
+    solids, rows, cars, marble, statics, tower, sweeps, posts, names, trainDir: dir,
+    suddenAt: -1, lim: RUG_A - BODY_R - 0.2, spots: [{ on: 0, x: 0, z: 0 }, { on: 0, x: 0, z: 0 }], pool: { x: 0, z: 0.5 }, head: { p: 0, k: 0, ca: hca, sa: hsa, side },
 
     // Everything that moves by the clock: the train, the lamp's sway, the headlights, the tidy-up.
     setTime(T) {
@@ -118,13 +128,25 @@ export function buildWorld(rng, names) {
         loopAt(th, tp);
         place(c, tp.x, tp.z, Math.atan2(LOOP.b * Math.cos(th) * dir, -LOOP.a * Math.sin(th) * dir));
       }
-      W.pool.x = Math.sin(T * 0.23) * 2.6;
+      W.pool.x = Math.sin(T * 0.23 + sway) * 2.6;
       W.pool.z = 0.5 + Math.sin(T * 0.37 + 1) * 1.1;
       W.head.k = 0;
       for (let i = 0; i < sweeps.length; i++) {
         const u = (T - sweeps[i].t) / SWEEP;
         if (u > 0 && u < 1) { W.head.k = Math.sin(u * Math.PI) ** 0.5; W.head.p = (u * 2 - 1) * 34 * sweeps[i].dir; }
       }
+      // The marble: on its way, or at rest where its last run ended.
+      marble.on = false; W.clink = null;
+      for (let i = 0; i < flicks.length; i++) {
+        const f = flicks[i], u = (T - f.t) / FLICK_DT;
+        if (u < 0 || (u > f.n - 1 && !f.rest)) continue;
+        const k = Math.min(f.n - 2, Math.floor(u)), w = Math.min(1, u - k);
+        place(marble, lerp(f.xs[k], f.xs[k + 1], w), lerp(f.zs[k], f.zs[k + 1], w), 0);
+        marble.on = true; marble.moving = u < f.n - 1; marble.dist = lerp(f.ds[k], f.ds[k + 1], w);
+        marble.dx = f.xs[k + 1] - f.xs[k]; marble.dz = f.zs[k + 1] - f.zs[k];
+        for (let j = 0; j < f.hits.length; j += 3) if (f.hits[j] > lastT && f.hits[j] <= T) W.clink = { x: f.hits[j + 1], z: f.hits[j + 2] };
+      }
+      lastT = T;
       const ts = W.suddenAt >= 0 ? T - W.suddenAt : -1;
       if (ts >= 0) for (const o of solids) if (o.on && ts >= o.popAt) o.on = false;
       W.lim = ts < TIDY ? RUG_A - BODY_R - 0.2 : lerp(RUG_A - BODY_R - 0.2, LAST, clamp((ts - TIDY) / ROLL_UP, 0, 1));
@@ -133,7 +155,7 @@ export function buildWorld(rng, names) {
     beginSudden(T) {
       if (W.suddenAt >= 0) return;
       W.suddenAt = T;
-      for (const o of solids) o.popAt = o.kind === 'car' ? TIDY - 1.2 + o.id * 0.05 : lerp(TIDY - 1.6, 0.5, clamp(Math.abs(o.x) / 15, 0, 1)) + (o.x < 0 ? 0 : 0.12);
+      for (const o of solids) o.popAt = o.kind === 'car' ? TIDY - 1.2 + o.id * 0.05 : o.kind === 'marble' ? 0.3 : lerp(TIDY - 1.6, 0.5, clamp(Math.abs(o.x) / 15, 0, 1)) + (o.x < 0 ? 0 : 0.12);
     },
     suddenT(T) { return W.suddenAt >= 0 ? T - W.suddenAt : -1; },
 
@@ -187,7 +209,7 @@ export function buildWorld(rng, names) {
           p.x += (nx * o.c - nz * o.s) * push;
           p.z += (nx * o.s + nz * o.c) * push;
           moved = true;
-          if (o.kind === 'car') shoved = o;
+          if (o.kind === 'car' || o.kind === 'marble') shoved = o;
         }
         if (!moved) break;
       }
@@ -232,6 +254,48 @@ export function buildWorld(rng, names) {
       return clamp(Math.round(l / r.gap + (r.n - 1) / 2), r.lo, r.hi);
     },
   };
+
+  // Plan the marble's runs. It comes in from beyond the edge of the rug, rolls, slows, glances
+  // off whatever stands in its way (the train too, where the train will be by then), and
+  // either rolls off the rug again or comes to rest somewhere on it and stays: more cover.
+  // Dominoes do not stop it — it knocks them down as it goes (see index.js).
+  {
+    let rest = false;
+    const R = MARBLE_R;
+    for (let t = rand(rng, 11, 16); t < 140 && !rest; t += rand(rng, 13, 20)) {
+      const a = rng() * TAU, gx = rand(rng, -9, 9), gz = rand(rng, -4.5, 4.5), v0 = rand(rng, 8, 10.5);
+      let x = Math.cos(a) * (RUG_A + 1.5), z = Math.sin(a) * (RUG_B + 1.5), d = Math.hypot(gx - x, gz - z), vx = ((gx - x) / d) * v0, vz = ((gz - z) / d) * v0, dist = 0;
+      const xs = [x], zs = [z], ds = [0], hits = [];
+      for (let step = 1; step <= 14 / FLICK_DT; step++) {
+        const now = t + step * FLICK_DT;
+        W.setTime(now);
+        x += vx * FLICK_DT; z += vz * FLICK_DT; dist += Math.hypot(vx, vz) * FLICK_DT;
+        for (let i = 0; i < solids.length; i++) {
+          const o = solids[i];
+          if (o.kind === 'row' || o === marble || (i >= statics && o.kind !== 'car')) continue;
+          const rx = x - o.x, rz = z - o.z, lx = rx * o.c + rz * o.s, lz = -rx * o.s + rz * o.c;
+          const ex = lx - clamp(lx, -o.hw, o.hw), ez = lz - clamp(lz, -o.hd, o.hd), e2 = ex * ex + ez * ez;
+          if (e2 >= R * R) continue;
+          let nx, nz, push;
+          if (e2 > 1e-9) { const e = Math.sqrt(e2); nx = ex / e; nz = ez / e; push = R - e; } else if (o.hw - Math.abs(lx) < o.hd - Math.abs(lz)) { nx = Math.sign(lx) || 1; nz = 0; push = o.hw - Math.abs(lx) + R; } else { nx = 0; nz = Math.sign(lz) || 1; push = o.hd - Math.abs(lz) + R; }
+          const wx = nx * o.c - nz * o.s, wz = nx * o.s + nz * o.c, vn = vx * wx + vz * wz;
+          x += wx * push; z += wz * push;
+          if (vn < 0) { vx -= 1.55 * vn * wx; vz -= 1.55 * vn * wz; vx *= 0.88; vz *= 0.88; if (-vn > 1.5) hits.push(now, x - wx * R, z - wz * R); }
+        }
+        const k = Math.exp(-0.2 * FLICK_DT); vx *= k; vz *= k;
+        xs.push(x); zs.push(z); ds.push(dist);
+        const sp = Math.hypot(vx, vz);
+        if (sp < 0.7 && (x * x) / (RUG_A * RUG_A) + (z * z) / (RUG_B * RUG_B) < 0.9) {
+          // (never at rest on the rails: the train would have to drive through it)
+          const f = ((x - LOOP.x) / LOOP.a) ** 2 + ((z - LOOP.z) / LOOP.b) ** 2;
+          if (f > 0.62 && f < 1.45) { vx *= 0.75 / Math.max(sp, 1e-3); vz *= 0.75 / Math.max(sp, 1e-3); } else { rest = true; break; }
+        }
+        if ((x * x) / ((RUG_A + 2) ** 2) + (z * z) / ((RUG_B + 2) ** 2) > 1 && x * vx + z * vz > 0) break;
+      }
+      flicks.push({ t, n: xs.length, xs: new Float32Array(xs), zs: new Float32Array(zs), ds: new Float32Array(ds), hits, rest });
+    }
+  }
+  W.flicks = flicks;
 
   W.setTime(0);
   for (let i = 0; i < statics; i++) {

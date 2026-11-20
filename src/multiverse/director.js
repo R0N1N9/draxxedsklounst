@@ -9,7 +9,7 @@ import { MvInput } from './input.js';
 import { AudioKit } from './audiokit.js';
 import { MvHud } from './hud.js';
 import { Mux } from './transport.js';
-import { loadDimension, loadTransition, playableDimensions, playableTransitions, firstTransition, dimensionKind, chainOf, chainedDimensions, metaOf } from './registry.js';
+import { loadDimension, loadTransition, playableDimensions, playableTransitions, firstTransition, dimensionKind, chainOf, chainedDimensions, openerDimension, metaOf } from './registry.js';
 import { PLAYER_COLORS, DEFAULTS, BOT_SKILL } from './contract.js';
 import { mulberry32 } from '../util.js';
 import finale from './finale.js';
@@ -97,6 +97,7 @@ export class Director {
     this.off = new Set([...((o.off && o.off.dims) || []), ...((o.off && o.off.fx) || [])]);
     this.only = (!this.online && o.only) || null;
     this.revealed = !!this.only; // nothing to reveal when a world was picked by hand
+    this.queue = []; // worlds that must come next, ahead of the rotation
 
     this.score = [0, 0];
     this.round = 1;
@@ -181,6 +182,7 @@ export class Director {
     this.hud.setPlayers(this.players, this.me);
     this.hud.setScore(this.score, this.target);
     this._resetBags();
+    this._armOpener();
     if (this.online) this._wireNet();
 
     if (this.dev.fxlab) return this._startLab();
@@ -201,6 +203,17 @@ export class Director {
   // The worlds the rotation draws from: everything playable except worlds that are only
   // reached through their lead-in (see `then` in the registry).
   _usable(id) { return !this.broken.has(id) && !this.off.has(id); }
+
+  // The owner's showpiece (the surfing world and the underwater world it falls into) is
+  // guaranteed in the first match this device hosts: it is queued to follow the first kill,
+  // so even the shortest match plays both. Later matches and rematches meet it by chance.
+  _armOpener() {
+    if (!this.authority || !this.o.opener || this.only || this.first !== 'valley') return;
+    const id = openerDimension((x) => this._usable(x));
+    if (!id) return;
+    this.queue.push(id);
+    if (this.o.onOpener) this.o.onOpener();
+  }
 
   _rotation() {
     const ok = (id) => this._usable(id);
@@ -233,6 +246,13 @@ export class Director {
     if (this.dev.next.length) return this.dev.next.shift();
     if (this.only && !this.broken.has(this.only)) return this.only;
     const cur = this.mod && this.mod.id;
+    while (this.queue.length) {
+      const id = this.queue.shift();
+      if (!this._usable(id) || id === cur) continue;
+      this.dimBag = this.dimBag.filter((x) => x !== id);
+      this.prevDim = cur;
+      return id;
+    }
     const link = kill ? chainOf(cur, (id) => this._usable(id)) : null;
     if (link) {
       this.linkFx = link.fx;

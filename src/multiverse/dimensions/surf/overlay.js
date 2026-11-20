@@ -106,10 +106,11 @@ export function drawOverlay(g, S) {
   if (S.gauge && S.bars < 0.6) {
     // between the touch clusters if there is room for it (and the rounds and speed to its
     // left), otherwise lifted clear above them
+    // (on a desktop the core's row of ability chips takes the bottom right: about 440 px)
     const sf = S.safe, a = 1 - S.bars / 0.6, gw = clamp(w * 0.15, 104, 200), gh = 34 * u, need = gw + 120 * u;
-    const l0 = sf.left + 8, r0 = w - sf.right - 8, fits = r0 - l0 >= need;
-    const gx = fits ? clamp(w * 0.565 - gw / 2, l0 + need - gw, r0 - gw) : clamp(w * 0.5 - gw / 2 + 50 * u, l0, r0 - gw);
-    const gy = (fits ? h - S.pad - 6 : h - sf.bottom - 14) - gh, gc = gx + gw / 2;
+    const l0 = sf.left + 8, r0 = w - Math.max(sf.right, S.touch ? 0 : 448) - 8, fits = r0 - l0 >= need;
+    const gx = fits ? clamp(w * 0.565 - gw / 2, l0 + need - gw, r0 - gw) : clamp(w * 0.5 - gw / 2 + 50 * u, l0 + need - gw, w - sf.right - 8 - gw);
+    const gy = (fits ? h - S.pad - 6 : h - (S.touch ? sf.bottom : 50) - 14) - gh, gc = gx + gw / 2;
     g.globalAlpha = a;
     roundRect(g, gx - 6, gy - 6, gw + 12, gh + 12, 8);
     g.fillStyle = rgba(INK, 0.62); g.fill();

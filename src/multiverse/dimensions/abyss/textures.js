@@ -56,7 +56,7 @@ void main() {
   gl_FragColor = vec4(r, g, b, a);
 }`;
 
-export function makeTextures(THREE, renderer) {
+export function makeTextures(THREE, renderer, lean) {
   const mk = (size) => {
     const rt = new THREE.WebGLRenderTarget(size, size, {
       type: THREE.UnsignedByteType, depthBuffer: false, generateMipmaps: true,
@@ -65,7 +65,7 @@ export function makeTextures(THREE, renderer) {
     rt.texture.colorSpace = THREE.NoColorSpace;
     return rt;
   };
-  const caustic = mk(512), noise = mk(256);
+  const caustic = mk(lean ? 256 : 512), noise = mk(256);
   const prevTarget = renderer.getRenderTarget(), prevAuto = renderer.autoClear;
   renderer.autoClear = true;
   for (const [rt, frag] of [[caustic, CAUSTIC], [noise, NOISE]]) {

@@ -72,7 +72,7 @@ export default {
   aim: 'look',
   palette: { bg: '#0b2c3a', fg: '#fff1d6', accent: '#ff7a4d' },
   controls: { move: 'CARVE', aim: 'AIM', fire: 'FIRE', alt: 'BRACE', a1: 'DIVE', a2: 'SPRAY' },
-  hint: 'Wave crests block your shot — fire when you can see them.',
+  hint: 'The swell hides you both — shoot when they ride up into view.',
   altToggle: true,
   roundTime: ROUND,
   overTime: KILL.end,
@@ -85,7 +85,7 @@ export default {
     const Q = { soft: false, scale: 1 };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.52; }
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.36; }
     } catch { /* masked: assume a real GPU */ }
     if (globalThis.__surfRich) { Q.soft = false; Q.scale = 1; } // test scripts: the full build, whatever draws it
 
@@ -166,7 +166,8 @@ export default {
       // The hit: the board leaves, the rider starts to fall. (The water comes later.)
       wipeout(v) {
         const c = rgb[1 - v.i];
-        fx.star(v.x, v.y + 1, v.z, 8, 6 + c[0] * 6, 6 + c[1] * 6, 6 + c[2] * 6, 0.12);
+        const cd = Math.hypot(v.x - view.camera.position.x, v.z - view.camera.position.z);
+        fx.star(v.x, v.y + 1, v.z, 2 + Math.min(6, cd * 0.06), 6 + c[0] * 6, 6 + c[1] * 6, 6 + c[2] * 6, 0.12); // (a flare, not a white-out, when it is your own board)
         fx.confetti(v.x, v.y + 1, v.z, 26, [[2 + c[0] * 5, 2 + c[1] * 5, 2 + c[2] * 5], [3, 3, 3]]);
         fx.splash(v.x, v.y, v.z, 1.6, 9, 9);
         for (let i = 0; i < 16; i++) fx.drop(v.x, v.y + 0.3, v.z, rnd(3), 9 + Math.random() * 12, rnd(3), 1 + Math.random(), 0.1); // what the board took up with it
@@ -200,11 +201,17 @@ export default {
     const brain = makeBot(ctx, sea, world, game);
     for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = brain.create(p);
     const post = makePost(THREE, renderer, { msaa: !Q.soft, scale: Q.scale, lens: !Q.soft });
-    // A software rasteriser builds its shaders as it first draws with them: the cast and the
-    // spray join the picture one draw after the sea, the riders and the shore.
-    const stage = (draws) => { life.group.visible = fx.group.visible = !Q.soft || draws > 0; };
+    // A software rasteriser builds its shaders as it first draws with them, and stalls for the
+    // whole batch: the picture is assembled over the first draws (sea and sky, then the shore and
+    // the riders, then the cast, then the spray) so that no single stall is long.
+    const stage = (draws) => {
+      shore.group.visible = !Q.soft || draws > 0;
+      for (const m of models) m.root.visible = !Q.soft || draws > 0;
+      life.group.visible = !Q.soft || draws > 1;
+      fx.group.visible = !Q.soft || draws > 2;
+    };
     // If the clock ran ahead of the frames (a hitch), run the hand-off out before the round's last picture is taken.
-    const settle = () => { for (let i = 0; i < 200 && ctx.phase === 'over' && game.kill.on && game.kill.t < KILL.end - 0.02; i++) frame(0.05 * SLOW, T + 0.05 * SLOW, true); };
+    const settle = () => { for (let i = 0; i < 200 && ctx.phase === 'over' && game.kill.on && game.kill.t < KILL.end - 0.02; i++) frame(0.05 * SLOW, T + 0.05 * SLOW, true); present(); };
     view = makeView(ctx, THREE, renderer, { scene, sea, world, game, post, ocean, haze, Q, sfx, settle, stage });
 
     let T = -4.6, introRate = 1, introOn = false, suddenSeen = false, sprayAcc = [0, 0], wallAcc = 0, driftAcc = 0, wasTurn = 0, boilAcc = 0;
@@ -225,6 +232,8 @@ export default {
       const live = ctx.phase !== 'intro';
       for (const p of P) {
         const rd = riders[p.i], onWater = p.alive && p.dive <= 0 && !p.air;
+      // under the surface you are still on screen: a boil of bubbles and a pale shape track you
+      if (p.alive && p.dive > 0 && Math.random() < dt * 22) { const h = sea.height(p.x, p.z); fx.ring(p.x + rnd(0.4), h, p.z + rnd(0.4), 0.3, 1.6, 0.6, 0.8); fx.mist(p.x, h + 0.1, p.z, rnd(0.5), 0.6 + Math.random(), rnd(0.5), 0.45, 0.5, 1.4, 0.45, 2, 1); }
         rd.x = p.x; rd.z = p.z; rd.v = p.v; rd.on = onWater && p.v > 1.2;
         if (!onWater || p.v < 2) continue;
         const fxh = -Math.sin(p.hd), fzh = -Math.cos(p.hd), carve = Math.abs(p.turn);
@@ -291,10 +300,20 @@ export default {
       fx.star(lh.x, lh.y + 25.7, lh.z, 14 + 5 * Math.sin(view.wt * 1.1), 6, 4.2, 2, 0.05);
     }
 
+    // The rules run in every slice; what is seen and heard of them is brought up to date once,
+    // just before a frame is drawn (several updates can come between two renders: fast-forward,
+    // or a bot catching up with the round clock after a hitch).
+    let pend = 0, dirty = false;
     function frame(dt, now, first) {
       T = now;
       game.frame(dt, now, (p) => (p.bot ? brain.think(p, P[1 - p.i], dt, p.cmd) : humanCmd(p, first)));
       if (ctx.sudden && !suddenSeen) { suddenSeen = true; sfx.sudden(); view.note('THE SWELL DIES — NOWHERE LEFT TO HIDE', true, 4); }
+      pend += dt; dirty = true;
+    }
+    function present() {
+      if (!dirty) return;
+      const dt = Math.min(pend, 0.25);
+      pend = 0; dirty = false;
       view.update(dt, T);
       for (const p of P) models[p.i].update(p, sea, T);
       life.update(dt, T, view.camera);
@@ -302,14 +321,17 @@ export default {
       ambience(dt);
       fx.update(dt, view.camera, sea, riders);
       const m = me;
-      ctx.net.sendState({
-        x: +m.x.toFixed(2), z: +m.z.toFixed(2), y: +m.y.toFixed(2), hd: +m.hd.toFixed(3), yaw: +m.yaw.toFixed(3), pitch: +m.pitch.toFixed(3), v: +m.v.toFixed(1), ln: +m.lean.toFixed(2),
-        br: m.braced ? 1 : 0, dv: m.dive > 0 ? 1 : 0, ai: m.air ? 1 : 0, am: m.ammo, rl: m.reload > 0 ? 1 : 0, wh: +m.white.toFixed(2),
-      });
       ctx.hud.cooldown('fire', m.reload > 0 ? m.reload / R.reload : Math.max(0, m.bolt) / R.bolt);
       ctx.hud.charges('fire', m.ammo);
       ctx.hud.cooldown('a1', m.diveCd / R.diveCd);
       ctx.hud.cooldown('a2', m.sprayCd / R.sprayCd);
+    }
+    function send() {
+      const m = me;
+      ctx.net.sendState({
+        x: +m.x.toFixed(2), z: +m.z.toFixed(2), y: +m.y.toFixed(2), hd: +m.hd.toFixed(3), yaw: +m.yaw.toFixed(3), pitch: +m.pitch.toFixed(3), v: +m.v.toFixed(1), ln: +m.lean.toFixed(2),
+        br: m.braced ? 1 : 0, dv: m.dive > 0 ? 1 : 0, ai: m.air ? 1 : 0, am: m.ammo, rl: m.reload > 0 ? 1 : 0, wh: +m.white.toFixed(2),
+      });
     }
 
     const inst = {
@@ -327,8 +349,9 @@ export default {
           const rate = introOn ? introRate : T < -DEFAULTS.introTime - 0.6 ? 1 : 0.25;
           frame(dt, Math.min(T + dt * rate, -0.001), true);
         }
+        send();
       },
-      render() { view.render(); },
+      render() { present(); view.render(); },
       resize(w, h) { view.resize(w, h); },
       onPhase(phase) {
         if (phase === 'intro') { introOn = true; introRate = clamp(-T / DEFAULTS.introTime, 0.2, 2.5); view.beginIntro(); }
@@ -358,10 +381,11 @@ export default {
         shore.dispose();
         ocean.dispose();
         sky.dispose();
+        scene.traverse((o) => { if (o.isInstancedMesh) o.dispose(); }); // (their instance buffers: disposeTree frees only geometry and material)
         disposeTree(scene);
       },
     };
-    inst.dbg = { game, view, sea, world, fx, Q, SET }; // test scripts only
+    inst.dbg = { game, view, sea, world, fx, Q, SET, post, sky, ocean }; // test scripts only
     post.resize();
     return inst;
   },

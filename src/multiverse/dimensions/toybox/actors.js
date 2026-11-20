@@ -64,7 +64,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
     const plastic = room.patch(Q.rich
       ? new THREE.MeshPhysicalMaterial({ color: col, roughness: 0.4, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.25, emissive: col.clone().multiplyScalar(0.05) })
       : Q.pbr ? new THREE.MeshStandardMaterial({ color: col, roughness: 0.36, metalness: 0, emissive: col.clone().multiplyScalar(0.07) })
-        : new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(0.1) }));
+        : new THREE.MeshLambertMaterial({ color: col, vertexColors: true, emissive: col.clone().multiplyScalar(0.1) })); // (white vertex colours: it shares the toys' shader)
     // A soldier behind a block still shows, as a flat silhouette. The stencil keeps that
     // silhouette off the soldier's own body (its far arm is "behind" its chest too).
     plastic.stencilWrite = true; plastic.stencilRef = 1; plastic.stencilFunc = THREE.AlwaysStencilFunc; plastic.stencilZPass = THREE.ReplaceStencilOp;
@@ -200,7 +200,7 @@ void main() {
     ping(x, y, z, nx, nz, mat) {
       const wood = mat === 'wood';
       for (let k = 0; k < (wood ? 7 : 3); k++) sparks.emit(x, y, z, nx * (2 + R() * 5) + S() * 6, R() * 5, nz * (2 + R() * 5) + S() * 6, 0.14 + R() * 0.2, 0.2, 0.04, 3.6, 2.8, 1.5, 1, 12, 2);
-      const c = wood ? [0.82, 0.62, 0.36] : mat === 'soft' ? [0.9, 0.86, 0.74] : [0.93, 0.9, 0.82];
+      const c = wood ? [0.82, 0.62, 0.36] : mat === 'soft' ? [0.9, 0.86, 0.74] : mat === 'glass' ? [0.85, 0.96, 1.0] : [0.93, 0.9, 0.82];
       for (let k = 0; k < 9; k++) chips.emit(x, y, z, nx * (1 + R() * 4) + S() * 4, 2 + R() * 5, nz * (1 + R() * 4) + S() * 4, 0.5 + R() * 0.5, 0.11 + R() * 0.1, 0.06, c[0] * (0.7 + R() * 0.4), c[1] * (0.7 + R() * 0.4), c[2] * (0.7 + R() * 0.4), 1, 22, 0.6, true);
       puffs.emit(x + nx * 0.2, y, z + nz * 0.2, nx * 1.2, 0.8, nz * 1.2, 0.55, 0.5, 1.6, c[0], c[1], c[2], 0.32, -0.3, 2.2);
       sparks.emit(x, y, z, 0, 0, 0, 0.08, 1.6, 0.2, 3, 2.6, 2, 1, 0, 0);
@@ -349,8 +349,6 @@ void main() {
         }
       }
     },
-    // Put a soldier back together (never needed in a round, but the kill may be un-called online).
-    men, copters,
     dispose() { for (const x of own) x.dispose(); },
   };
   return fx;

@@ -207,7 +207,7 @@ export function buildWorld(rng) {
     for (let z = -42; z <= 42; z += 6) {
       const floor = heightAt(x, z);
       for (const up of [2.6, 6.5]) {
-        const y = Math.min(floor + up, -5.5);
+        const y = Math.min(floor + up, -7.5);
         if (y < ARENA.y0 + 3 || y - floor < 1.6) continue;
         const p = { x, y, z, cover: 0 };
         let blocked = false;

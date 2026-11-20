@@ -343,18 +343,20 @@ void main() {
   float t = uTime;
 #ifdef ARM
   vec4 nz = texture2D(tNoise, vec2(uv.x * 2.0, uv.y * 7.0));
-  float under = smoothstep(0.24, 0.06, abs(uv.x - 0.5));
+  float under = smoothstep(0.17, 0.05, abs(uv.x - 0.5));
   float top = smoothstep(0.2, 0.0, min(uv.x, 1.0 - uv.x));
 #else
   vec4 nz = texture2D(tNoise, vO.xz * 0.06 + vO.y * 0.02);
   float under = smoothstep(0.1, -0.6, vO.y / 3.0) * 0.0;
   float top = 0.0;
 #endif
-  vec3 skin = mix(vec3(0.26, 0.035, 0.05), vec3(0.6, 0.13, 0.1), smoothstep(0.35, 0.7, nz.r));
+  vec3 skin = mix(vec3(0.3, 0.03, 0.045), vec3(0.72, 0.16, 0.1), smoothstep(0.35, 0.7, nz.r));
+  // darker along the back, paler towards the belly: the shape reads even in the murk
+  skin *= mix(0.5, 1.0, smoothstep(-1.0, 1.0, -n.y));
   // chromatophores: speckles that flush darker and brighter, slowly
   float sp = texture2D(tNoise, uv * vec2(6.0, 30.0) + vec2(t * 0.013, -t * 0.02)).b;
   skin *= 0.7 + 0.6 * smoothstep(0.45, 0.65, sp);
-  skin = mix(skin, vec3(0.75, 0.62, 0.55), under * 0.75);
+  skin = mix(skin, vec3(0.78, 0.5, 0.46), under * 0.7);
   vec3 emit = vec3(0.0);
 #ifdef ARM
   // suckers: two rows of pale rings down the inside of each arm
@@ -362,25 +364,31 @@ void main() {
   float row = fract(uv.y * cnt + step(0.5, uv.x) * 0.5);
   float dd = length(vec2((row - 0.5) * 1.7, (abs(uv.x - 0.5) - 0.07) * 13.0));
   float ring = smoothstep(0.5, 0.38, dd) * under;
-  skin = mix(skin, vec3(0.9, 0.78, 0.72), ring * 0.9);
+  skin = mix(skin, vec3(0.92, 0.68, 0.62), ring * 0.85);
   skin *= 1.0 - smoothstep(0.24, 0.12, dd) * under * 0.6;
   // photophores along the top, a wave of light running out to the tips
   float dots = smoothstep(0.32, 0.12, length(vec2(fract(uv.y * 36.0) - 0.5, (min(uv.x, 1.0 - uv.x) - 0.04) * 9.0)));
   float wave = 0.25 + 0.75 * pow(0.5 + 0.5 * sin(uv.y * 18.0 - t * 2.6 + vO.x * 0.01), 3.0);
-  emit = vec3(0.45, 0.3, 1.5) * dots * wave * (1.0 - uv.y * 0.5);
+  emit = vec3(0.2, 0.42, 1.25) * dots * wave * (1.0 - uv.y * 0.5) * 0.8;
 #else
-  float spots = smoothstep(0.62, 0.7, nz.g) * smoothstep(0.3, 0.6, texture2D(tNoise, vO.xz * 0.21).b);
-  emit = vec3(0.4, 0.26, 1.3) * spots * (0.4 + 0.6 * sin(t * 1.7 + vO.z * 0.4) * 0.5 + 0.3);
+  // a scatter of small photophores down the mantle, pulsing in slow waves from the tip
+  vec2 cell = uv * vec2(46.0, 30.0);
+  vec2 cf = fract(cell) - 0.5;
+  float pick = step(0.72, fract(sin(dot(floor(cell), vec2(12.9898, 78.233))) * 43758.5453));
+  float spots = smoothstep(0.22, 0.06, length(cf)) * pick;
+  emit = vec3(0.22, 0.45, 1.3) * spots * (0.25 + 0.75 * pow(0.5 + 0.5 * sin(t * 1.4 - uv.y * 14.0), 2.0)) * 0.9;
 #endif
   emit *= uGlow;
   vec3 col = litWater(skin, vW, n, 1.0, 0.35, 0.8);
   // wet sheen and a rim of scattered light: the silhouette that reads in the murk
   float fr = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-  col += vec3(0.05, 0.2, 0.22) * fr * exp(min(vW.y, 0.0) * 0.03) * 1.4;
+  col += vec3(0.05, 0.2, 0.22) * fr * exp(min(vW.y, 0.0) * 0.03) * 0.7;
   vec3 h = normalize(uL + v);
   col += sunAt(vW.y) * pow(max(dot(n, h), 0.0), 60.0) * 0.35 * sunShadow(vW, 0.002);
   col += vec3(0.6, 0.1, 0.1) * uFlinch * 0.4;
-  col = waterFog(col, vW, 0.72);
+  // it holds its colour through more water than anything else: a dark crimson bulk against
+  // the light, not a ghost in the haze
+  col = waterFog(col, vW, 0.3);
   float d = length(vW - uCam);
   col += emit * exp(-d * 0.022);
   gl_FragColor = vec4(col, d);
@@ -478,7 +486,7 @@ class Tube {
 export function buildKraken(THREE, mats, U, sim) {
   const group = new THREE.Group();
   const shader = (frag, defines) => mats.shader({ vertexShader: SKIN_VERT, fragmentShader: frag, defines, uniforms: { uFlinch: { value: 0 }, uGlow: { value: 1 }, uBlink: { value: 0 } } });
-  const bodyMat = shader(SKIN_FRAG, {}), finMat = shader(SKIN_FRAG, { FIN: 1 }), armMat = shader(SKIN_FRAG, { ARM: 1 }), eyeMat = shader(EYE_FRAG, {});
+  const bodyMat = shader(SKIN_FRAG, {}), finMat = mats.lean ? bodyMat : shader(SKIN_FRAG, { FIN: 1 }), armMat = shader(SKIN_FRAG, { ARM: 1 }), eyeMat = shader(EYE_FRAG, {});
   finMat.side = THREE.DoubleSide;
   armMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch; finMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch;
   armMat.uniforms.uGlow = bodyMat.uniforms.uGlow; finMat.uniforms.uGlow = bodyMat.uniforms.uGlow;

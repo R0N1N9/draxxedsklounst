@@ -76,7 +76,11 @@ vec3 sky(vec3 d, vec2 fc) {
   // Clouds: long streaks, two flat tones and an ink line.
   if (e > 0.015) {
     vec2 cp = d.xz / (e + 0.22) * vec2(0.55, 1.5) + vec2(uTime * 0.006, 0.0);
-    float n = vnoise(cp) * 0.6 + vnoise(cp * 2.3 + 7.1) * 0.28 + vnoise(cp * 5.1 + 3.3) * 0.12;
+    #ifdef LITE
+      float n = vnoise(cp) * 0.66 + vnoise(cp * 2.3 + 7.1) * 0.34;
+    #else
+      float n = vnoise(cp) * 0.6 + vnoise(cp * 2.3 + 7.1) * 0.28 + vnoise(cp * 5.1 + 3.3) * 0.12;
+    #endif
     n *= smoothstep(0.015, 0.14, e);
     if (n > 0.6) col = n > 0.665 ? vec3(0.62, 0.24, 0.52) : vec3(1.0, 0.72, 0.5);
     col = mix(col, INK, (1.0 - smoothstep(0.0, 0.012, abs(n - 0.6))) * 0.85);
@@ -134,10 +138,11 @@ void main() {
     float k = uSplash.z * ((isSky || z > uSplash.w) ? 1.0 : 0.0);
     col = mix(col, b, k);
     hz *= 1.0 - k;
-    ink *= isSky ? 1.0 : 1.0;
   }
   col = mix(col, INK, ink * (1.0 - hz * 0.75));
-  col += texture2D(tBloom, vUv).rgb * 0.9;
+  #ifndef LITE
+    col += texture2D(tBloom, vUv).rgb * 0.9;
+  #endif
   // ---- speed lines: leaping, and the rush of the scope ----
   float rad = length(p * vec2(uAspect, 1.0));
   float lines = 0.0, lineTone = 0.0;
@@ -164,7 +169,11 @@ void main() {
     } else if (dq > -bw) col = INK;
   }
   // ---- paper ----
-  float g = vnoise(fc * 0.55 / uPx) * 0.6 + h21(floor(fc / uPx)) * 0.4;
+  #ifdef LITE
+    float g = h21(floor(fc / uPx));
+  #else
+    float g = vnoise(fc * 0.55 / uPx) * 0.6 + h21(floor(fc / uPx)) * 0.4;
+  #endif
   col *= 0.93 + 0.09 * g;
   col *= vec3(1.0, 0.985, 0.955);
   col *= 1.0 - 0.3 * smoothstep(0.75, 1.45, rad);
@@ -191,15 +200,18 @@ void main() {
   gl_FragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
 }`;
 
-// q: { scale (scene resolution relative to the drawing buffer), bloom, fxaa, prepass }
+// The lean build's page is drawn small; this only lays it on the screen.
+const BLIT = HEAD + 'void main() { gl_FragColor = vec4(texture2D(tSrc, vUv).rgb, 1.0); }';
+
+// q: { scale (page resolution relative to the drawing buffer), bloom, fxaa, lite (cheaper paper and clouds, no glow) }
 export function makePost(THREE, renderer, q) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const quad = new THREE.Mesh(geo, null);
   quad.frustumCulled = false;
-  const mat = (fragmentShader, uniforms) => new THREE.ShaderMaterial({
-    vertexShader: VERT, fragmentShader, depthTest: false, depthWrite: false, toneMapped: false,
+  const mat = (fragmentShader, uniforms, defines = {}) => new THREE.ShaderMaterial({
+    vertexShader: VERT, fragmentShader, defines, depthTest: false, depthWrite: false, toneMapped: false,
     uniforms: { tSrc: { value: null }, uTexel: { value: new THREE.Vector2() }, ...uniforms },
   });
   const u = {
@@ -208,15 +220,14 @@ export function makePost(THREE, renderer, q) {
     uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunR: { value: new THREE.Vector3(1, 0, 0) }, uSunU: { value: new THREE.Vector3(0, 0, 1) },
     uScope: { value: 0 }, uSpeed: { value: 0 }, uFlash: { value: 0 }, uSudden: { value: 0 }, uSplash: { value: new THREE.Vector4(0.5, 0.5, 0, 1e6) }, uSplashCol: { value: new THREE.Vector3(1, 0.3, 0.3) },
   };
-  const mDepth = new THREE.MeshBasicMaterial({ colorWrite: false });
-  const mPre = mat(PREFILTER), mBlur = mat(BLUR, { uDir: { value: new THREE.Vector2() } }), mComic = mat(COMIC, u), mPresent = mat(PRESENT);
+  const mPre = mat(PREFILTER), mBlur = mat(BLUR, { uDir: { value: new THREE.Vector2() } }), mComic = mat(COMIC, u, q.lite ? { LITE: '' } : {}), mPresent = mat(q.fxaa ? PRESENT : BLIT);
   const depth = new THREE.DepthTexture(4, 4);
   depth.type = THREE.UnsignedIntType;
   const scene = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: true, depthTexture: depth, magFilter: THREE.NearestFilter, minFilter: THREE.NearestFilter });
   const rt = (filter) => new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false, magFilter: filter, minFilter: filter });
   const qa = rt(THREE.LinearFilter), qb = rt(THREE.LinearFilter);
   const page = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });
-  const size = new THREE.Vector2(), m4 = new THREE.Matrix4();
+  const size = new THREE.Vector2(), m4 = new THREE.Matrix4(), px = new Uint8Array(4);
   const black = new THREE.Color(0, 0, 0);
   let scale = q.scale;
 
@@ -243,23 +254,14 @@ export function makePost(THREE, renderer, q) {
       u.uRes.value.set(w, h);
       u.uAspect.value = w / h;
       // Line weights and dot pitches are set for a 600-line page and scale with the real one.
-      u.uPx.value = Math.max(1, h / 600);
+      u.uPx.value = Math.max(0.75, h / 600);
     },
-    render(world, camera) {
+    /** wait: block until the page itself is printed (a software rasteriser: see view.js), before it is laid on the screen */
+    render(world, camera, wait) {
       const auto = renderer.autoClear;
       renderer.autoClear = true;
       renderer.setRenderTarget(scene);
       renderer.setClearColor(black, 1); // sky: no colour, "unlit", depth 1 — the pass paints it
-      if (q.prepass) {
-        // No GPU: lay the depth down first so every pixel is shaded once, however many walls
-        // stand behind one another. (Layer 1 holds what is cut out with discard.)
-        camera.layers.disable(1);
-        world.overrideMaterial = mDepth;
-        renderer.render(world, camera);
-        world.overrideMaterial = null;
-        camera.layers.enable(1);
-        renderer.autoClear = false;
-      }
       renderer.render(world, camera);
       const w = scene.width, h = scene.height;
       if (q.bloom) {
@@ -275,8 +277,10 @@ export function makePost(THREE, renderer, q) {
       u.uTanY.value = Math.tan((camera.fov * Math.PI) / 360);
       u.uPixAng.value = (2 * u.uTanY.value) / h;
       u.uCam.value.setFromMatrix4(m4.copy(camera.matrixWorld));
-      if (q.fxaa) { pass(mComic, scene, page, w, h); pass(mPresent, page, null, w, h); }
-      else pass(mComic, scene, null, w, h);
+      pass(mComic, scene, page, w, h);
+      // (read back from the small page, not the screen: that one is multisampled and would have to be resolved first)
+      if (wait) renderer.readRenderTargetPixels(page, 0, 0, 1, 1, px);
+      pass(mPresent, page, null, w, h);
       renderer.setRenderTarget(null);
       renderer.autoClear = auto;
     },
@@ -284,7 +288,7 @@ export function makePost(THREE, renderer, q) {
       renderer.setRenderTarget(null);
       for (const t of [scene, qa, qb, page]) t.dispose();
       depth.dispose();
-      for (const m of [mPre, mBlur, mComic, mPresent, mDepth]) m.dispose();
+      for (const m of [mPre, mBlur, mComic, mPresent]) m.dispose();
       geo.dispose();
     },
   };

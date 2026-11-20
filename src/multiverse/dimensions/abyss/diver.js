@@ -31,18 +31,19 @@ void main() {
   float spec = 0.15;
   if (vC.r < -2.5) { alb = vec3(0.9); emit = mix(uTeam, vec3(1.0), 0.6) * 3.0; }
   else if (vC.r < -1.5) { alb = vec3(0.02, 0.03, 0.04); spec = 1.6; }
-  else if (vC.r < -0.5) { alb = uTeam; emit = uTeam * 0.22 * uGlow; spec = 0.4; }
+  else if (vC.r < -0.5) { alb = uTeam; emit = uTeam * 0.4 * uGlow; spec = 0.4; }
+  else alb = mix(alb, uTeam * 0.5, 0.18); // the suit itself carries a little of the colour
   vec3 col = litWater(alb, vW, n, 1.0, 0.4, 0.7);
   vec3 h = normalize(uL + v);
   col += sunAt(vW.y) * pow(max(dot(n, h), 0.0), 40.0) * spec * sunShadow(vW, 0.002);
   // a rim of the diver's own colour: the shape reads against dark water
   float fr = pow(1.0 - max(dot(n, v), 0.0), 2.5);
-  col += uTeam * fr * 0.12 * uGlow;
+  col += uTeam * fr * 0.32 * uGlow;
   if (vC.r < -1.5 && vC.r > -2.5) col += waterBg(reflect(-v, n), vW.y) * 1.2 * (0.3 + fr);
   col = waterFog(col, vW, 0.9);
   col += emit * exp(-d * 0.02);
   // sonar: the whole diver outlined in their colour, through the murk
-  col += uTeam * (0.25 + fr * 2.2) * uGhost;
+  col += uTeam * (0.06 + fr * 1.1) * uGhost;
   gl_FragColor = vec4(col * uFade, d);
 }`;
 // Drawn over everything (no depth test) while a diver is pinged: their silhouette through rock.
@@ -56,9 +57,9 @@ uniform float uGhost;
 ${WATER_GLSL}
 void main() {
   vec3 n = normalize(vN), v = normalize(uCam - vW);
-  float fr = pow(1.0 - abs(dot(n, v)), 1.6);
+  float fr = pow(1.0 - abs(dot(n, v)), 2.2);
   float scan = 0.7 + 0.3 * sin(vW.y * 14.0 - uTime * 9.0);
-  gl_FragColor = vec4(uTeam * (0.15 + fr * 1.2) * scan * uGhost, 0.6 * uGhost);
+  gl_FragColor = vec4(uTeam * (0.03 + fr * 0.75) * scan * uGhost, 0.6 * uGhost);
 }`;
 
 function colored(THREE, g, r, gg, b) {
@@ -146,20 +147,23 @@ export function makeDiverKit(THREE, mats) {
     return keep(mergeInto(THREE, [colored(THREE, g, ...TEAM), box(THREE, 0.04, 0.03, 0.78, 0.1, -0.03, 0.39, [0.08, 0.08, 0.08]), box(THREE, 0.04, 0.03, 0.78, -0.1, -0.03, 0.39, [0.08, 0.08, 0.08])]));
   })();
   const gun = keep(mergeInto(THREE, [
-    cyl(THREE, 0.022, 0.022, 1.05, 0, 0, -0.5, [0.15, 0.13, 0.12], Math.PI / 2, 8), // barrel
-    box(THREE, 0.045, 0.06, 0.95, 0, -0.025, -0.5, [0.33, 0.22, 0.14]),               // wooden stock-rail
-    box(THREE, 0.035, 0.12, 0.05, 0, -0.08, 0.02, [0.12, 0.12, 0.12]),                // grip
-    cyl(THREE, 0.03, 0.03, 0.06, 0, 0.0, -1.03, [0.2, 0.2, 0.2]),                     // muzzle
+    cyl(THREE, 0.019, 0.019, 1.02, 0, 0, -0.5, [0.1, 0.11, 0.12], Math.PI / 2, 10),    // anodised barrel
+    box(THREE, 0.012, 0.008, 0.7, 0, 0.02, -0.45, TEAM),                               // a stripe of your colour
+    box(THREE, 0.026, 0.03, 0.9, 0, 0.022, -0.52, [0.16, 0.16, 0.17]),                 // the spear rail
+    box(THREE, 0.034, 0.13, 0.045, 0, -0.085, 0.03, [0.07, 0.07, 0.08]),              // grip
+    box(THREE, 0.006, 0.05, 0.08, 0, -0.045, -0.04, [0.3, 0.3, 0.32]),                // trigger guard
+    cyl(THREE, 0.034, 0.03, 0.08, 0, 0.004, -1.03, TEAM, Math.PI / 2, 10),             // the muzzle head
+    cyl(THREE, 0.024, 0.024, 0.16, 0, 0, 0.06, [0.08, 0.08, 0.09], Math.PI / 2, 10),   // butt
   ]));
   const spear = keep(mergeInto(THREE, [
-    cyl(THREE, 0.008, 0.008, 1.25, 0, 0.035, -0.58, STEEL, Math.PI / 2, 5),
-    (() => { const c = new THREE.ConeGeometry(0.018, 0.09, 6); c.rotateX(-Math.PI / 2); c.translate(0, 0.035, -1.24); return colored(THREE, c, 0.95, 0.95, 0.95); })(),
+    cyl(THREE, 0.0055, 0.0055, 1.25, 0, 0.042, -0.58, STEEL, Math.PI / 2, 5),
+    (() => { const c = new THREE.ConeGeometry(0.011, 0.08, 6); c.rotateX(-Math.PI / 2); c.translate(0, 0.042, -1.24); return colored(THREE, c, 0.95, 0.95, 0.95); })(),
   ]));
-  const band = keep(cyl(THREE, 0.012, 0.012, 1, 0, 0, -0.5, TEAM, Math.PI / 2, 5)); // a unit band, scaled into place
+  const band = keep(cyl(THREE, 0.0065, 0.0065, 1, 0, 0, -0.5, [0.05, 0.05, 0.055], Math.PI / 2, 5)); // a unit rubber, scaled into place
   const glove = keep(mergeInto(THREE, [
     (() => { const g = new THREE.SphereGeometry(0.05, 10, 8); g.scale(1, 0.75, 1.35); return colored(THREE, g, ...SUIT2); })(),
     box(THREE, 0.07, 0.035, 0.07, 0, 0.02, -0.06, SUIT2),
-    box(THREE, 0.06, 0.025, 0.05, 0, 0.03, 0.03, TEAM),
+    box(THREE, 0.062, 0.012, 0.018, 0, 0.022, 0.05, TEAM), // a cuff of your colour
   ]));
   const shader = (frag, o = {}) => mats.shader({ vertexShader: GEAR_VERT, fragmentShader: frag, vertexColors: true, uniforms: { uTeam: { value: new THREE.Color() }, uGhost: { value: 0 }, uGlow: { value: 1 }, uFade: { value: 1 } }, side: THREE.DoubleSide, ...o });
   return { geos, body, mask, upperArm, foreArm, thigh, calf, finBlade, gun, spear, band, glove, shader, dispose() { for (const g of geos) g.dispose(); } };
@@ -288,8 +292,8 @@ export function makeViewModel(THREE, kit, color) {
     pose(st) {
       // resting low on the right; raised and centred while you hold your breath
       const a = st.aim;
-      rig.position.set(lerp(0.17, 0.05, a) + st.sway.x * 0.6, lerp(-0.2, -0.125, a) + st.sway.y * 0.6 + st.bob * 0.01 - st.drop * 0.18, lerp(-0.25, -0.22, a) + st.kick * 0.12);
-      rig.rotation.set(lerp(0.02, 0.0, a) + st.kick * 0.18 - st.drop * 0.5, lerp(0.05, 0.012, a), lerp(-0.08, -0.02, a) - st.drop * 0.3);
+      rig.position.set(lerp(0.2, 0.06, a) + st.sway.x * 0.6, lerp(-0.23, -0.135, a) + st.sway.y * 0.6 + st.bob * 0.01 - st.drop * 0.18, lerp(-0.2, -0.2, a) + st.kick * 0.12);
+      rig.rotation.set(lerp(0.035, 0.004, a) + st.kick * 0.18 - st.drop * 0.5, lerp(0.075, 0.018, a), lerp(-0.1, -0.02, a) - st.drop * 0.3);
       gR.position.set(0, -0.075, 0.03);
       gR.rotation.set(0.2, 0, 0);
       // the reload: the left hand slides a spear home, then hauls each band back to its notch
@@ -304,8 +308,8 @@ export function makeViewModel(THREE, kit, color) {
         const done = st.load >= 1 || haul > (i + 1) * 0.5;
         const s = i ? 1 : -1;
         // a band runs from the muzzle to the notch on the spear when drawn, slack when not
-        const zEnd = done ? -0.32 : -0.92, y = done ? 0.045 : -0.03;
-        bands[i].position.set(s * 0.028, y, -1.02);
+        const zEnd = done ? -0.32 : -0.92, y = done ? 0.05 : -0.025;
+        bands[i].position.set(s * 0.024, y, -1.02);
         v.set(0, 0, zEnd + 1.02);
         bands[i].scale.set(1, 1, v.length());
         bands[i].position.z = -1.02;

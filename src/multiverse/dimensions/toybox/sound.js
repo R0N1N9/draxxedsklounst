@@ -37,6 +37,7 @@ export function makeSfx(ctx) {
       const p = P(x);
       if (mat === 'wood') { t({ freq: 1040 + Math.random() * 240, freqEnd: 620, type: 'triangle', dur: 0.09, gain: 0.3, pan: p }); t({ freq: 310, freqEnd: 240, type: 'sine', dur: 0.07, gain: 0.3, pan: p }); n({ dur: 0.03, gain: 0.3, filter: 'bandpass', freq: 2200, q: 2, pan: p }); }
       else if (mat === 'soft') { n({ dur: 0.1, gain: 0.5, filter: 'lowpass', freq: 500, freqEnd: 160, pan: p }); t({ freq: 120, freqEnd: 70, type: 'sine', dur: 0.1, gain: 0.3, pan: p }); }
+      else if (mat === 'glass') { t({ freq: 3100 + Math.random() * 400, freqEnd: 2900, type: 'sine', dur: 0.22, gain: 0.16, pan: p }); t({ freq: 4700, type: 'sine', dur: 0.12, gain: 0.06, pan: p }); n({ dur: 0.02, gain: 0.2, filter: 'highpass', freq: 5000, pan: p }); }
       else { t({ freq: 2300, freqEnd: 1700, type: 'square', dur: 0.03, gain: 0.12, pan: p }); n({ dur: 0.03, gain: 0.25, filter: 'highpass', freq: 3000, pan: p }); }
     },
     whiz(x) { n({ filter: 'bandpass', freq: 2600, freqEnd: 900, q: 3, dur: 0.18, gain: 0.3, attack: 0.01, pan: P(x) }); },
@@ -52,6 +53,9 @@ export function makeSfx(ctx) {
     shove(x) { t({ freq: 240, freqEnd: 150, type: 'triangle', dur: 0.08, gain: 0.25, pan: P(x) }); n({ dur: 0.05, gain: 0.25, filter: 'bandpass', freq: 1200, pan: P(x) }); },
     pop(x) { t({ freq: 520, freqEnd: 1300, type: 'sine', dur: 0.07, gain: 0.16, pan: P(x) }); n({ dur: 0.04, gain: 0.14, filter: 'highpass', freq: 3500, pan: P(x) }); },
     toot(x) { for (const [f, d] of [[659, 0], [784, 0], [659, 0.2], [784, 0.2]]) t({ freq: f, type: 'square', dur: 0.14, gain: 0.03, attack: 0.02, delay: d, pan: P(x) }); },
+    // the marble: a click as it is flicked, then glass rolling on wool
+    flick(x) { t({ freq: 2500, freqEnd: 1900, type: 'sine', dur: 0.06, gain: 0.12, pan: P(x) }); n({ dur: 0.03, gain: 0.15, filter: 'bandpass', freq: 3800, q: 2, pan: P(x) }); },
+    rumble(x) { n({ dur: 0.14, gain: 0.07, filter: 'lowpass', freq: 240 + Math.random() * 60, pan: P(x) }); },
     chuff(x) { n({ dur: 0.09, gain: 0.07, filter: 'bandpass', freq: 900, freqEnd: 500, q: 0.8, pan: P(x) }); },
     car(dir) { n({ dur: 3.4, gain: 0.2, filter: 'lowpass', freq: 260, freqEnd: 420, attack: 1.4, pan: -dir * 0.5 }); n({ dur: 2.4, gain: 0.08, filter: 'bandpass', freq: 1100, freqEnd: 500, q: 0.6, attack: 1.2, delay: 0.5, pan: dir * 0.5 }); },
     lightsOn() { A.sfx('click', { gain: 0.9, pitch: 0.7 }); t({ freq: 96, type: 'sine', dur: 0.6, gain: 0.25 }); },

@@ -21,7 +21,7 @@ export function makeBot(ctx, W, G) {
   const TEMPERS = {
     hold: { far: 28, near: 14, t0: 12, t1: 30, open: [7, 5], dark: 1.4, hidden: 1.2, patience: [7, 4.6], rest: [0.4, 1.0], range: 0.45 },
     stalk: { far: 24, near: 7, t0: 4, t1: 24, open: [8, 6], dark: 3.6, hidden: 4.5, patience: [3.2, 2.2], rest: [0.8, 1.6], range: 1 },
-    push: { far: 18, near: 6, t0: 1, t1: 14, open: [5, 4], dark: 1.2, hidden: 2.2, patience: [3.6, 2.4], rest: [0.1, 0.5], range: 0.8 },
+    push: { far: 18, near: 6, t0: 1, t1: 14, open: [6, 4], dark: 1.2, hidden: 2.2, patience: [3.6, 2.4], rest: [0.1, 0.5], range: 0.8 },
   };
 
   function create(p) {

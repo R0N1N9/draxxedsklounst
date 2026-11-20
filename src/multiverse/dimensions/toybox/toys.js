@@ -68,6 +68,7 @@ export function makeToys(THREE, G) {
     return { name, geo, c, r: Math.max(0.06, Math.min(geo.boundingBox.max.y - geo.boundingBox.min.y, geo.boundingBox.max.x - geo.boundingBox.min.x, geo.boundingBox.max.z - geo.boundingBox.min.z) / 2) };
   });
   const shard = new THREE.TetrahedronGeometry(0.11, 0);
+  shard.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(shard.attributes.position.count * 3).fill(1), 3));
 
   // ---- the wind-up copter (nose to +x; the body is the owner's plastic, shaded in the vertices) ----
   const cb = new G.Bag();
