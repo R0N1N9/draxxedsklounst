@@ -32,7 +32,7 @@ export function heightAt(x, z) {
   y -= 30 * smoothstep(L, L + 6.5, t) + 92 * smoothstep(L + 4, L + 72, t); // the second, into the deep
   // rock texture where it is steep
   const steep = smoothstep(-1, 2, t) * (1 - smoothstep(L + 9, L + 20, t)) + smoothstep(L - 1, L + 4, t) * (1 - smoothstep(L + 8, L + 26, t));
-  y += 1.6 * fbm(x * 0.21, z * 0.21 + y * 0.08, 3) * steep;
+  y += 1.6 * fbm(x * 0.21, zz * 0.21 + y * 0.08, 3) * steep; // (mirrored too: neither end of the reef is the better one)
   return y;
 }
 
@@ -206,9 +206,12 @@ export function buildWorld(rng) {
   for (let x = -30; x <= 26; x += 6) {
     for (let z = -42; z <= 42; z += 6) {
       const floor = heightAt(x, z);
-      for (const up of [2.6, 6.5]) {
-        const y = Math.min(floor + up, -7.5);
-        if (y < ARENA.y0 + 3 || y - floor < 1.6) continue;
+      // two heights over the bottom, and open water over the drop-off at the depths the duel
+      // is fought (where the long shots are)
+      for (const up of [2.6, 6.5, -9, -14, -19]) {
+        const y = up > 0 ? Math.min(floor + up, -7.5) : up;
+        if (y < ARENA.y0 + 3 || y - floor < (up > 0 ? 1.6 : 4)) continue;
+        if (up < 0 && posts.some((q) => q.x === x && q.z === z && Math.abs(q.y - y) < 2.5)) continue;
         const p = { x, y, z, cover: 0 };
         let blocked = false;
         for (const s of spheres) {

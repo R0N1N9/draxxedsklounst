@@ -229,7 +229,8 @@ export function makeView(ctx, THREE, renderer, S) {
       // its bulk overhead dims the whole sea; its wake bends the kelp
       const camY = camera.position.y;
       const hd = Math.hypot(KS.pos[0] - camera.position.x, KS.pos[2] - camera.position.z);
-      U.uDim.value = clamp(smoothstep(18, 5, hd) * smoothstep(-1, 5, KS.pos[1] - camY), 0, 1) * 0.7;
+      // (the arms spread 25 m round the body: the shade does too)
+      U.uDim.value = clamp(smoothstep(32, 8, hd) * smoothstep(-1, 6, KS.pos[1] - camY), 0, 1) * 0.72;
       U.uWake.value.set(KS.pos[0], KS.pos[1], KS.pos[2], KS.wake);
       // the gun in your hands
       const load = phase === 'intro' ? introLoad : ME.loaded ? 1 : 1 - ME.reload / S.RELOAD;

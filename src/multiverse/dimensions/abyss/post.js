@@ -59,7 +59,10 @@ void main() {
     float b = texture2D(tNoise, q * 0.011 + vec2(-uTime * 0.004, uTime * 0.003)).r;
     float shaft = smoothstep(0.3, 0.8, a * 1.5 * (0.45 + b));
     float depth = exp(min(p.y, 0.0) * 0.045);
-    sun += vec3(shaft * shadowAt(p) * depth * ext) * exp(min(p.y, 0.0) * vec3(0.06, 0.02, 0.012));
+    // (the first few metres scatter less than they should: what is close keeps its contrast,
+    // and the beams read as beams out in the blue instead of a haze over everything)
+    float nearK = smoothstep(0.5, 7.0, d);
+    sun += vec3(shaft * shadowAt(p) * depth * ext * nearK) * exp(min(p.y, 0.0) * vec3(0.06, 0.02, 0.012));
     for (int k = 0; k < 2; k++) {
       vec3 l = p - uLampPos[k];
       float ld = length(l);

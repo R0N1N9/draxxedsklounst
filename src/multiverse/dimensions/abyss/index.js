@@ -132,7 +132,7 @@ export default {
       mesh.layers.enable(1);
       const ribbon = new Ribbon(THREE, mats, 18, P[owner].color);
       scene.add(mesh, ribbon.mesh);
-      spears.push({ on: false, stuck: false, owner, judge: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ox: 0, oy: 0, oz: 0, age: 0, trail: 0, rib: 0, mesh, ribbon, id: 0, near: false });
+      spears.push({ on: false, stuck: false, idle: false, hitDecoy: null, owner, judge: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, ox: 0, oy: 0, oz: 0, age: 0, trail: 0, rib: 0, mesh, ribbon, id: 0, near: false });
     }
     let spearSeq = 0;
     const shellGeo = new THREE.SphereGeometry(1, 40, 24);
@@ -296,78 +296,29 @@ export default {
       sfx.pop(d.x, d.y, d.z);
     }
 
+    // Every spear in flight advances in the same small steps, side by side, so that when both
+    // divers loose at once the one that truly arrives first wins (and on a dead heat, the
+    // order alternates frame to frame: neither side owns the tie).
     function stepSpears(dt) {
+      const n = Math.max(1, Math.ceil(dt * 90)), h = dt / n, kd = Math.exp(-DRAG * h);
       for (const s of spears) {
         if (!s.on) continue;
         s.age += dt;
+        s.idle = s.stuck;
         if (s.stuck) {
           // stays where it struck; the streak fades
           s.ribbon.mat.uniforms.uAlpha.value = Math.max(0, s.ribbon.mat.uniforms.uAlpha.value - dt * 0.8);
           if (s.age > 20) { s.on = false; s.mesh.visible = false; s.ribbon.mesh.visible = false; }
-          continue;
         }
-        const n = Math.max(1, Math.ceil(dt * 90));
-        const h = dt / n, kd = Math.exp(-DRAG * h);
-        for (let k = 0; k < n && s.on && !s.stuck; k++) {
-          s.vx *= kd; s.vy = s.vy * kd - GRAV * h; s.vz *= kd;
-          const mx = s.vx * h, my = s.vy * h, mz = s.vz * h, len = Math.hypot(mx, my, mz) || 1e-6;
-          const dx = mx / len, dy = my / len, dz = mz / len;
-          let best = rayWorld(W, s.x, s.y, s.z, dx, dy, dz, len), what = hit.surf ? 'world' : '', surf = hit.surf;
-          const kr = sim.ray(s.x, s.y, s.z, s.x + mx, s.y + my, s.z + mz, 0.03);
-          if (kr.t >= 0 && kr.t * len < best) { best = kr.t * len; what = 'kraken'; }
-          const foe = P[1 - s.owner];
-          if (s.judge && foe.alive && ctx.phase === 'live') {
-            capsule(foe);
-            const u = segCap(s.x, s.y, s.z, mx, my, mz, capA, capB, HIT_R);
-            if (u >= 0 && u * len < best) { best = u * len; what = capT < 0.05 && capD < 0.05 ? 'head' : 'diver'; }
-          }
-          for (const d of decoys) {
-            if (!d.alive || d.owner === s.owner) continue;
-            const u = segCap(s.x, s.y, s.z, mx, my, mz, d, d, 0.4);
-            if (u >= 0 && u * len < best) { best = u * len; what = 'decoy'; s.hitDecoy = d; }
-          }
-          // close enough to be felt by the target
-          if (!s.near && foe.alive) {
-            const fx = foe.x - s.x, fy = foe.y - s.y, fz = foe.z - s.z, along = fx * dx + fy * dy + fz * dz;
-            if (along > 0 && along < len * 4) {
-              const miss = Math.hypot(fx - dx * along, fy - dy * along, fz - dz * along);
-              if (miss < 3) {
-                s.near = true;
-                if (foe === ME && !ME.bot) sfx.whizz(clamp((fx * Math.cos(ME.yaw) - fz * Math.sin(ME.yaw)) / 3, -1, 1));
-                if (foe.bot) foe.bot.replan = 0;
-              }
-            }
-          }
-          const hx = s.x + dx * best, hy = s.y + dy * best, hz = s.z + dz * best;
-          if (what === 'diver' || what === 'head') {
-            s.stuck = true; s.on = false; s.mesh.visible = false;
-            const range = Math.round(Math.hypot(hx - s.ox, hy - s.oy, hz - s.oz));
-            killInfo = { v: foe.i, dx, dy, dz, x: hx, y: hy, z: hz };
-            ctx.net.send({ k: 'k', v: foe.i, d: [+dx.toFixed(3), +dy.toFixed(3), +dz.toFixed(3)], p: [+hx.toFixed(2), +hy.toFixed(2), +hz.toFixed(2)] });
-            ctx.kill(foe.i, { how: what === 'head' ? `THROUGH THE MASK · ${range} M` : `${range} M` });
-            s.ribbon.head(hx, hy, hz);
-          } else if (what === 'decoy') {
-            const d = s.hitDecoy;
-            popDecoy(d);
-            ctx.net.send({ k: 'dp', n: d.slot });
-            stickFree(s, hx, hy, hz);
-          } else if (what === 'kraken') {
-            stick(s, hx, hy, hz, 'flesh');
-            if (s.judge) { inkAt(hx, hy, hz); ctx.net.send({ k: 'ink', p: [+hx.toFixed(2), +hy.toFixed(2), +hz.toFixed(2)], id: s.id }); }
-            s.mesh.visible = false;
-          } else if (what === 'world') {
-            stick(s, hx, hy, hz, surf);
-            if (s.judge) ctx.net.send({ k: 'sx', id: s.id, p: [+hx.toFixed(2), +hy.toFixed(2), +hz.toFixed(2)], s: surf });
-          } else {
-            s.x += mx; s.y += my; s.z += mz;
-          }
-          // the trail: bubbles strung back along the path to whoever fired it
-          s.trail += len;
-          while (s.trail > 0.32) {
-            s.trail -= 0.32;
-            bubbles.emit(s.x - dx * s.trail, s.y - dy * s.trail, s.z - dz * s.trail, (Math.random() - 0.5) * 0.2, 0.05 + Math.random() * 0.15, (Math.random() - 0.5) * 0.2, 0.035 + Math.random() * 0.04, 0.004, 5 + Math.random() * 3, 1, 1, 1, 0.9, 1.5, 0.22);
-          }
+      }
+      for (let k = 0; k < n; k++) {
+        for (let j = 0; j < spears.length; j++) {
+          const s = spears[tick ? spears.length - 1 - j : j];
+          if (s.on && !s.stuck) flySpear(s, h, kd);
         }
+      }
+      for (const s of spears) {
+        if (!s.on || s.idle) continue;
         s.rib += dt;
         if (s.rib > 0.035) { s.rib = 0; s.ribbon.push(s.x, s.y, s.z); } else s.ribbon.head(s.x, s.y, s.z);
         if (!s.stuck && s.age > SPEAR_LIFE) { s.stuck = true; s.vx = s.vy = s.vz = 0; }
@@ -375,6 +326,68 @@ export default {
           s.mesh.position.set(s.x, s.y, s.z);
           if (!s.stuck) { v3.set(s.x + s.vx, s.y + s.vy, s.z + s.vz); s.mesh.lookAt(v3); }
         }
+      }
+    }
+    // one small step of one spear's flight
+    function flySpear(s, h, kd) {
+      s.vx *= kd; s.vy = s.vy * kd - GRAV * h; s.vz *= kd;
+      const mx = s.vx * h, my = s.vy * h, mz = s.vz * h, len = Math.hypot(mx, my, mz) || 1e-6;
+      const dx = mx / len, dy = my / len, dz = mz / len;
+      let best = rayWorld(W, s.x, s.y, s.z, dx, dy, dz, len), what = hit.surf ? 'world' : '';
+      const surf = hit.surf;
+      const kr = sim.ray(s.x, s.y, s.z, s.x + mx, s.y + my, s.z + mz, 0.03);
+      if (kr.t >= 0 && kr.t * len < best) { best = kr.t * len; what = 'kraken'; }
+      const foe = P[1 - s.owner];
+      if (s.judge && foe.alive && ctx.phase === 'live') {
+        capsule(foe);
+        const u = segCap(s.x, s.y, s.z, mx, my, mz, capA, capB, HIT_R);
+        if (u >= 0 && u * len < best) { best = u * len; what = capT < 0.05 && capD < 0.05 ? 'head' : 'diver'; }
+      }
+      for (const d of decoys) {
+        if (!d.alive || d.owner === s.owner) continue;
+        const u = segCap(s.x, s.y, s.z, mx, my, mz, d, d, 0.4);
+        if (u >= 0 && u * len < best) { best = u * len; what = 'decoy'; s.hitDecoy = d; }
+      }
+      // close enough to be felt by the target
+      if (!s.near && foe.alive) {
+        const fx = foe.x - s.x, fy = foe.y - s.y, fz = foe.z - s.z, along = fx * dx + fy * dy + fz * dz;
+        if (along > 0 && along < len * 4) {
+          const miss = Math.hypot(fx - dx * along, fy - dy * along, fz - dz * along);
+          if (miss < 3) {
+            s.near = true;
+            if (foe === ME && !ME.bot) sfx.whizz(clamp((fx * Math.cos(ME.yaw) - fz * Math.sin(ME.yaw)) / 3, -1, 1));
+            if (foe.bot) foe.bot.replan = 0;
+          }
+        }
+      }
+      const hx = s.x + dx * best, hy = s.y + dy * best, hz = s.z + dz * best;
+      if (what === 'diver' || what === 'head') {
+        s.stuck = true; s.on = false; s.mesh.visible = false;
+        const range = Math.round(Math.hypot(hx - s.ox, hy - s.oy, hz - s.oz));
+        killInfo = { v: foe.i, dx, dy, dz, x: hx, y: hy, z: hz };
+        ctx.net.send({ k: 'k', v: foe.i, d: [+dx.toFixed(3), +dy.toFixed(3), +dz.toFixed(3)], p: [+hx.toFixed(2), +hy.toFixed(2), +hz.toFixed(2)] });
+        ctx.kill(foe.i, { how: what === 'head' ? `THROUGH THE MASK · ${range} M` : `${range} M` });
+        s.ribbon.head(hx, hy, hz);
+      } else if (what === 'decoy') {
+        const d = s.hitDecoy;
+        popDecoy(d);
+        ctx.net.send({ k: 'dp', n: d.slot });
+        stickFree(s, hx, hy, hz);
+      } else if (what === 'kraken') {
+        stick(s, hx, hy, hz, 'flesh');
+        if (s.judge) { inkAt(hx, hy, hz); ctx.net.send({ k: 'ink', p: [+hx.toFixed(2), +hy.toFixed(2), +hz.toFixed(2)], id: s.id }); }
+        s.mesh.visible = false;
+      } else if (what === 'world') {
+        stick(s, hx, hy, hz, surf);
+        if (s.judge) ctx.net.send({ k: 'sx', id: s.id, p: [+hx.toFixed(2), +hy.toFixed(2), +hz.toFixed(2)], s: surf });
+      } else {
+        s.x += mx; s.y += my; s.z += mz;
+      }
+      // the trail: bubbles strung back along the path to whoever fired it
+      s.trail += len;
+      while (s.trail > 0.32) {
+        s.trail -= 0.32;
+        bubbles.emit(s.x - dx * s.trail, s.y - dy * s.trail, s.z - dz * s.trail, (Math.random() - 0.5) * 0.2, 0.05 + Math.random() * 0.15, (Math.random() - 0.5) * 0.2, 0.035 + Math.random() * 0.04, 0.004, 5 + Math.random() * 3, 1, 1, 1, 0.9, 1.5, 0.22);
       }
     }
     function stickFree(s, x, y, z) { s.stuck = true; s.x = x; s.y = y; s.z = z; s.mesh.visible = false; }

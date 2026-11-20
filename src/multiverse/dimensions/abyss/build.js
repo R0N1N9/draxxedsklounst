@@ -34,16 +34,32 @@ function merge(THREE, list) {
   out.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return out;
 }
-// A displaced blob: rock (faceted, rough) or coral (smooth, ridged).
+// A displaced blob: rock (lumpy, weathered) or coral (smooth, ridged).
+// Weld a non-indexed geometry's coincident corners, so its normals come out smooth.
+function weld(THREE, src) {
+  const p = src.attributes.position, map = new Map(), pos = [], idx = [];
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i), key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+    let k = map.get(key);
+    if (k === undefined) { k = pos.length / 3; map.set(key, k); pos.push(x, y, z); }
+    idx.push(k);
+  }
+  src.dispose();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  return g;
+}
 function blob(THREE, seed, kind, lean) {
-  const g = kind === 'rock' ? new THREE.IcosahedronGeometry(1, lean ? 2 : 3) : new THREE.SphereGeometry(1, 22, 14);
+  // (rock: an icosphere welded first — weathered stone, not cut gems)
+  const g = kind === 'rock' ? weld(THREE, new THREE.IcosahedronGeometry(1, lean ? 3 : 4)) : new THREE.SphereGeometry(1, 22, 14);
   const p = g.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
     const l = v.length() || 1;
     v.multiplyScalar(1 / l);
     let d;
-    if (kind === 'rock') d = 1 + 0.32 * fbm(v.x * 1.6 + seed, v.y * 1.6 + v.z * 1.3, 4) + 0.12 * noise2(v.x * 5 + seed, v.z * 5 - v.y * 3);
+    if (kind === 'rock') d = 1 + 0.32 * fbm(v.x * 1.6 + seed, v.y * 1.6 + v.z * 1.3, 4) + 0.12 * noise2(v.x * 5 + seed, v.z * 5 - v.y * 3) + 0.045 * Math.abs(noise2(v.x * 11 - v.y * 4, v.z * 11 + seed));
     else {
       // brain coral: meandering grooves over a squashed dome
       const m = Math.sin((noise2(v.x * 2.2 + seed, v.z * 2.2 + v.y) * 4 + v.y * 2) * 5);

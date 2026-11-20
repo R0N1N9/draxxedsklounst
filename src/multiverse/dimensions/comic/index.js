@@ -21,7 +21,7 @@
 //   sightlines while it does. Pigeons burst from wherever a round lands or a sniper touches
 //   down; the el rattles through; newspapers ride the wind. Decoration runs on its own clock.
 // THE BOT      settles in, sends a ranging shot or two wide on purpose (nothing it fires in
-//   the first ten seconds can kill), then duels from cover — peek, steady, fire, hide for the
+//   the first eight seconds can kill), then duels from cover — peek, steady, fire, hide for the
 //   bolt — and when the long shots fail it leaps a terrace closer, and finally across the
 //   street. Near misses make it smoke and move. Skill scales notice, settle, lead and drop.
 // THE KILL     a freeze-frame splash page: everything behind the victim becomes a halftone
@@ -69,7 +69,7 @@ export default {
   hint: 'LEAP flies you to the rooftop you are looking at.',
   altToggle: true,
   roundTime: 60,
-  overTime: 3,
+  overTime: 2.7,
   angleFields: ['yaw', 'pitch'],
 
   create(ctx) {

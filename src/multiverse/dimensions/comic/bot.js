@@ -1,17 +1,18 @@
 // INK CITY — the other sniper's head. One brain drives the bot and, under autopilot, the
 // local player too.
 //   the opening   it settles at a spot with a view, finds you in the scope and sends one or
-//                 two ranging shots wide on purpose: nobody is killed before the ten-second mark
+//                 two ranging shots wide on purpose: nobody is killed before the eight-second mark
 //   the duel      peek, steady, fire, step back behind something for the bolt; its aim starts
 //                 loose on every new sight of you and tightens with time — faster with skill —
 //                 and it leads a runner and holds over for the drop about as well as it is skilled
 //   the push      when the long shots are not landing it leaps a terrace nearer, and in the end
-//                 across the street; near misses make it throw smoke and move
+//                 across the street; near misses make it throw smoke and move; a long round
+//                 makes it quicker on the trigger
 import { clamp, lerp, angDiff, angDamp, gauss } from '../../kit.js';
 import { LEAP_MAX, LEAP_MIN, LEAP_UP } from './world.js';
 import { EYE } from './hero.js';
 
-const LETHAL_AT = 10.2; // seconds of live play before a bot's rounds can kill (each bot adds up to three of its own)
+const LETHAL_AT = 8; // seconds of live play before a bot's rounds can kill (each bot adds up to three of its own)
 
 export function makeBot(ctx, W, G) {
   const skill = clamp(ctx.botSkill, 0, 1);
@@ -28,7 +29,9 @@ export function makeBot(ctx, W, G) {
   }
 
   // No two trigger pulls are the same: each shot carries its own small error, drawn when the last one left.
-  const newPull = (b) => { const s = lerp(0.0078, 0.0023, skill); b.sy = gauss(Math.random) * s; b.sp = gauss(Math.random) * s * 0.6; };
+  // A long round wears the nerves: from ~22 s on it settles faster and pulls cleaner.
+  const late = () => clamp((G.time() - 22) / 20, 0, 1) * 0.4;
+  const newPull = (b) => { const s = lerp(0.0078, 0.0023, skill) * (1 - late()); b.sy = gauss(Math.random) * s; b.sp = gauss(Math.random) * s * 0.6; };
 
   // A place on roof r to shoot from, and (if there is one) a place beside it to hide.
   function plan(p, b, e, r, T) {
@@ -117,7 +120,7 @@ export function makeBot(ctx, W, G) {
 
     // ---- aim ----
     const tof = dist / G.V, k = 1 - Math.exp(-dt / lerp(1.3, 0.5, skill));
-    const floor = lerp(0.0052, 0.0011, skill) * (1 + e.speed * 0.22);
+    const floor = lerp(0.0052, 0.0011, skill) * (1 + e.speed * 0.22) * (1 - late());
     b.ph += dt;
     b.ey += (Math.sin(b.ph * 1.7) * floor - b.ey) * k;
     b.ep += (Math.cos(b.ph * 1.3) * floor * 0.7 - b.ep) * k;
@@ -125,7 +128,7 @@ export function makeBot(ctx, W, G) {
     const tx = b.last.x + e.mvx * tof * leadK, tz = b.last.z + e.mvz * tof * leadK;
     const ty = b.last.y + 1.12 + (0.5 * G.GRAV * tof * tof - G.ZERO * dist) * lerp(0.5, 1, skill);
     const ax = tx - p.x, az = tz - p.z, ad = Math.hypot(ax, az) || 1;
-    // before the ten-second mark it shoots to scare: wide of you, on the side you are not running to
+    // before the eight-second mark it shoots to scare: wide of you, on the side you are not running to
     const ranging = T < b.lethalAt;
     if (ranging && b.offY === 0) { const side = (e.mvx * az - e.mvz * ax > 0 ? 1 : -1) * (Math.random() < 0.8 ? 1 : -1); b.offY = side * (1.7 + Math.random() * 1.4); b.offP = 0.5 + Math.random() * 0.8; }
     const oy = ranging ? b.offY / ad : 0, op = ranging ? b.offP / ad : 0;
@@ -147,7 +150,8 @@ export function makeBot(ctx, W, G) {
         if (Math.abs(angDiff(cmd.yaw, wantYaw)) < 0.03 && b.seenT > notice * 0.6) cmd.fire = true;
       } else if (p.scope > 0.9 && b.seenT > notice && onAim) {
         const lull = Math.hypot(p.swayX, p.swayY) * dist < lerp(0.8, 0.28, skill);
-        if ((b.settle > b.need && lull) || b.settle > b.need + 1.6) cmd.fire = true;
+        const need = b.need * (1 - late());
+        if ((b.settle > need && lull) || b.settle > need + 1.6) cmd.fire = true;
       }
       if (cmd.fire) {
         b.shots++;

@@ -31,20 +31,22 @@ export const WATER_FRAG = `
     return mix(c, vec3(0.006, 0.065, 0.160), smoothstep(0.78, 1.6, d));
   }
 
-  vec2 hash22(vec2 p) { return vec2(hash21(p), hash21(p + 19.19)); }
-
-  // Distances to the nearest two cell points: their difference is thin where two bubbles
-  // press together, which is what foam looks like up close.
-  vec2 cells(vec2 p) {
-    vec2 i = floor(p), f = fract(p);
-    float d1 = 8.0, d2 = 8.0;
-    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-      vec2 o = vec2(float(x), float(y));
-      vec2 r = o + 0.15 + 0.7 * hash22(i + o) - f;
-      float d = dot(r, r);
-      if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
-    }
-    return sqrt(vec2(d1, d2));
+  // One crop of bubbles: at most one per cell, each with a bright rim and a window of
+  // light at its top left, rising at its own speed. rim in .x, glint in .y, inside in .z.
+  vec3 bubbleLayer(vec2 p, float cellsPerH, float rise, float fill, float salt) {
+    // rise in screen space, then lay the cells on a slanted grid so no rows or columns show
+    p.y -= mod(uT, 60.0) * rise;
+    vec2 q = mat2(0.866, 0.5, -0.5, 0.866) * p * cellsPerH + salt;
+    vec2 i = floor(q), f = fract(q);
+    float h = hash21(i + salt);
+    if (h > fill) return vec3(0.0);
+    float r = 0.08 + 0.3 * pow(hash21(i + salt + 4.7), 1.6);
+    vec2 c = 0.5 + (vec2(hash21(i + 9.1), hash21(i + 2.3)) - 0.5) * (0.96 - 2.0 * r);
+    c.x += 0.04 * sin(mod(uT, 60.0) * (2.0 + 3.0 * h) + h * 40.0) * (1.0 - r * 2.0);
+    float d = length(f - c);
+    float rim = smoothstep(r - 0.06, r - 0.015, d) * (1.0 - smoothstep(r - 0.012, r + 0.012, d));
+    float glint = 1.0 - smoothstep(0.0, r * 0.22, length(f - c - vec2(-0.38, 0.38) * r));
+    return vec3(rim, glint, 1.0 - smoothstep(r - 0.02, r, d));
   }
 
   float shafts(vec2 uv) {
@@ -78,8 +80,15 @@ export const WATER_FRAG = `
       float seam = uSeam + 0.007 * uSeamLine * sin(cu.x * 13.0 * uAspect + tw * 2.2);
       float d = seam - cu.y;
       col = texture2D(tFrom, clamp(cu, 0.0, 1.0)).rgb;
-      float fill = 1.0 - smoothstep(-0.09, 0.0, cu.y);
+      float fill = (1.0 - smoothstep(-0.03, 0.14, cu.y)) * clamp(uScroll * 12.0, 0.0, 1.0) * smoothstep(-0.004, 0.004, d);
       col = mix(col, waterCol(max(d, 0.0)), max(fill, step(0.0, d) * uUnder));
+      if (fill > 0.001) {
+        // the water the lens sinks into has its own bubbles, so the picture's do not end at a line
+        vec2 sp = vec2(vUv.x * uAspect, vUv.y);
+        vec3 b1 = bubbleLayer(sp, 9.0, 0.3, 0.45, 11.0 + uSeed);
+        vec3 b2 = bubbleLayer(sp, 21.0, 0.22, 0.6, 17.0 + uSeed);
+        col = mix(col, vec3(0.8, 0.95, 1.0), max(b1.x, b2.x * 0.8) * 0.5 * fill) + vec3(0.9) * b1.y * 0.35 * fill;
+      }
       below = smoothstep(-0.012, 0.012, d);
       col += uSeamLine * vec3(0.85, 1.0, 1.0) * exp(-d * d / 0.00002) * 0.9;
       col = mix(col, col * vec3(0.8, 0.95, 1.05) + vec3(0.0, 0.03, 0.05), uSeamLine * below * 0.6);
@@ -94,23 +103,29 @@ export const WATER_FRAG = `
     // it drains upward and away (uClear 0 -> 1), lowest bubbles first.
     if (uFoam > 0.001 || uClear < 0.999) {
       vec2 p = vec2(vUv.x * uAspect, vUv.y);
-      float n = fbm(p * 2.4 + vec2(uSeed * 0.37, -tw * 0.45));
-      float plume = exp(-pow((vUv.x - uPlume.x) * uAspect / uPlume.y, 2.0));
-      float thrA = 1.0 - uFoam * 1.4;
-      float cA = smoothstep(thrA, thrA + 0.16, plume * 0.6 + n * 0.4);
-      float thrB = -0.2 + uClear * 1.4;
-      float cB = smoothstep(thrB, thrB + 0.16, vUv.y * 0.55 + n * 0.45);
+      // churn: billows of white water that fold over themselves as they rise
+      vec2 drift = vec2(0.0, -tw * 0.32);
+      vec2 warp = vec2(fbm(p * 1.4 + drift + uSeed), fbm(p * 1.4 + drift * 1.3 + uSeed + 5.2)) - 0.5;
+      float n = fbm(p * 2.3 + warp * 1.6 + drift * 1.4 + uSeed * 0.37);
+      // the column spreads and wanders as it rises
+      float plume = exp(-pow((vUv.x - uPlume.x + warp.x * 0.45) * uAspect / (uPlume.y * (0.55 + 0.9 * vUv.y)), 2.0));
+      float thrA = 1.0 - uFoam * 1.45;
+      float cA = below * smoothstep(thrA, thrA + 0.24, plume * 0.5 + n * 0.5 + 0.08 * (1.0 - vUv.y)); // never above the waterline
+      float thrB = -0.25 + uClear * 1.5;
+      float cB = smoothstep(thrB, thrB + 0.24, vUv.y * 0.55 + n * 0.45);
       float C = max(cA, cB);
       if (C > 0.0) {
-        vec2 m1 = cells(p * 7.0 + vec2(uSeed, -tw * 0.8));
-        vec2 m2 = cells(p * 19.0 + vec2(3.1, -tw * 1.5));
-        float mem = (1.0 - smoothstep(0.0, 0.08, m1.y - m1.x)) * 0.75 + (1.0 - smoothstep(0.0, 0.1, m2.y - m2.x)) * 0.45;
-        vec3 foam = mix(vec3(0.42, 0.74, 0.84), uFoamHi, smoothstep(0.2, 0.8, n + 0.3 * vUv.y));
-        foam *= 0.86 + 0.14 * smoothstep(0.55, 0.1, m1.x);
-        foam = mix(foam, vec3(1.0), clamp(mem, 0.0, 1.0) * 0.6);
-        // the thin edge of the curtain catches the light
-        foam += vec3(0.12, 0.16, 0.16) * (1.0 - abs(C * 2.0 - 1.0));
-        col = mix(col, foam, C);
+        vec3 b1 = bubbleLayer(p, 5.0, 0.5, 0.42, 1.3 + uSeed);
+        vec3 b2 = bubbleLayer(p, 11.0, 0.38, 0.5, 7.9 + uSeed);
+        vec3 b3 = bubbleLayer(p, 25.0, 0.28, 0.6, 3.3 + uSeed);
+        float bil = smoothstep(0.22, 0.66, n) * (0.75 + 0.25 * max(uFoam, 1.0 - uClear));
+        vec3 foam = mix(vec3(0.46, 0.79, 0.9), uFoamHi, bil);
+        foam = mix(foam, foam * vec3(0.78, 0.9, 0.95), (b1.z * 0.5 + b2.z * 0.3) * (1.0 - bil * 0.6));
+        float rim = max(max(b1.x, b2.x * 0.7), b3.x * 0.5);
+        foam = mix(foam, vec3(1.0), rim * 0.75);
+        foam += vec3(1.0) * max(b1.y, b2.y * 0.8) * 0.6;
+        foam *= 0.92 + 0.12 * vUv.y; // lit from above
+        col = mix(col, clamp(foam, 0.0, 1.0), C);
       }
     }
 
