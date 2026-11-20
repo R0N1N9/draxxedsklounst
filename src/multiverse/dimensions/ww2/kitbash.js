@@ -1,6 +1,6 @@
 // IRON AUTUMN — construction helpers. The whole static town is a handful of merged meshes
 // (one per material), so the draw-call count stays in the dozens however much rubble there is.
-import { fbm, clamp } from '../../kit.js';
+import { fbm, noise2, clamp } from '../../kit.js';
 
 // Direction TO the sun: low in the west, a little to the south. Fixed, so both ends of the
 // square see it side-on and neither sniper has to shoot into it.
@@ -33,8 +33,8 @@ export function makeFogPatch(THREE) {
 
 // Grime: every merged surface is darkened by slow noise and where it meets the ground.
 function grime(x, y, z) {
-  const n = fbm(x * 0.23 + y * 0.17, z * 0.23 - y * 0.13, 3);
-  return (0.86 + n * 0.5) * (y < 0.6 ? 0.74 + 0.43 * Math.max(0, y) : 1);
+  const n = fbm(x * 0.23 + y * 0.17, z * 0.23 - y * 0.13, 2);
+  return (0.86 + n * 0.56) * (y < 0.6 ? 0.74 + 0.43 * Math.max(0, y) : 1);
 }
 
 export class Batch {
@@ -69,7 +69,7 @@ export class Batch {
       else if (ax > az) uv.push(z * k, y * k);
       else uv.push(x * k, y * k);
       let t = this.tint ? this.tint(x, y, z) : 1;
-      if (soot) t *= 1 - soot * clamp(0.25 + fbm(x * 0.4 + z * 0.4, y * 0.3 + 9, 2) * 1.6, 0, 1);
+      if (soot) t *= 1 - soot * clamp(0.25 + noise2(x * 0.4 + z * 0.4, y * 0.3 + 9) * 0.9, 0, 1);
       col.push(c.r * t, c.g * t, c.b * t);
     }
     if (I) for (let i = 0; i < I.count; i++) idx.push(base + I.getX(i));
@@ -109,8 +109,8 @@ export class Batch {
 // A length of ruined wall as one extruded outline: stepped, broken skyline and real holes
 // for windows, so the sky and the sun come through. Wall space: u along, v up, depth = thickness.
 //   tops(u) → standing height at u;  windows: [{ u, v, w, h, arch }] (arch: pointed head)
-export function ruinWall(THREE, len, thick, tops, windows = []) {
-  const step = 0.55, n = Math.max(2, Math.round(len / step)), top = new Float32Array(n);
+export function ruinWall(THREE, len, thick, tops, windows = [], step = 0.55) {
+  const n = Math.max(2, Math.round(len / step)), top = new Float32Array(n);
   for (let i = 0; i < n; i++) top[i] = Math.max(0.3, Math.round(tops(((i + 0.5) / n) * len) / 0.3) * 0.3);
   const du = len / n, holes = [];
   for (const w of windows) {

@@ -17,13 +17,15 @@
 //                             would, then kneels and paints a fake laser (the home
 //                             dimension's decoy, reborn).
 // WORLD     Shutters slide across the lanes, a floor-polishing drone trundles along the
-//           south alley as moving cover, watcher drones crowd the glass.
+//           south alley as moving cover, watcher drones crowd the glass, and now and then
+//           somebody's cursor wanders in to inspect a pillar. All timed from ctx.time.
 // BOT       Believes only what a player could know (sight, lit tiles, flashes, lasers, the
 //           pulse). Picks a peek spot at a range set by its nerve, plants and focuses for
 //           the long shot, hip-fires up close, breaks sight to recharge, banks ricochets
 //           at campers, side-steps lasers, throws decoys. See bot.js.
-// KILL      The victim shatters into light, a shockwave runs through the grid, the shadows
-//           lift, the decisive rail hangs in the air and the camera pushes in.
+// KILL      The victim shatters into light and the glass cracks under them; a shockwave
+//           runs through the grid, the shadows lift, the decisive rail hangs in the air,
+//           the watchers' flashbulbs go off and the camera pushes in.
 // SUDDEN    The cover dissolves, the shadows lift, and the walls close to a small box.
 import { clamp, damp, angDamp, lerp, ease, segCircle } from '../../kit.js';
 import { W, H, R, SPAWNS, MID, ROUND_TIME, PULSE_EVERY, BEAT, RAIL_SPEED, SPEED, CRAWL, RELOAD, BEAM_FADE, buildWorld, mkPath } from './world.js';
@@ -34,9 +36,11 @@ import { makeSound } from './sound.js';
 import { fxState, makeFx } from './fx.js';
 
 const SWAY_HIP = 0.032, SWAY_RUN = 0.036, SWAY_MIN = 0.0012;
-const BLINK_DIST = 235, BLINK_CD = 5.5;
+const BLINK_DIST = 235, BLINK_CD = 5.5, BLINK_SLIP = 40;
 const DECOY_CD = 12, DECOY_LIFE = 6.5, DECOY_RUN = 2.7, DECOY_SPEED = 235, DECOY_STEP = 1 / 60;
 const STEP_EVERY = 0.2, STEP_SPEED = 135; // slower than this and the tiles stay dark
+// The kill frame, in CSS px: margin round the shooter, room round the victim's shatter, clearance under the banner.
+const KILL_PAD = 64, KILL_ROOM = 130, KILL_TOP = 64;
 
 // The barrel's wander: slow enough to read and time, never a plain sine.
 const wobble = (ph) => 0.62 * Math.sin(ph) + 0.38 * Math.sin(ph * 2.37 + 1.3);
@@ -87,14 +91,15 @@ export default {
       cam: { x: W / 2, y: H / 2, z: 1, roll: 0 },
       watch: { x: MID.x, y: MID.y, jolt: 0 },  // what the watcher drones are looking at
       droneHit: 0,
+      note: { x: 0, y: 0, t: -9 },             // the local rail just burst a hologram here
     };
     const sound = makeSound(ctx);
     const view = makeRenderer(ctx, world, S);
     for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = makeBot(ctx, world, S, p);
 
     const human = { mx: 0, my: 0, a: 0, fire: false, alt: false, a1: false, a2: false, da: undefined };
-    const scr = { x: 0, y: 0 };
-    let decoyN = 0, pulseN = 0, countN = -1, wasSudden = false, paintT = 0, music = '', frame = 0;
+    const scr = { x: 0, y: 0 }, spot = { x: 0, y: 0 }, cmds = [null, null];
+    let decoyN = 0, pulseN = 0, countN = -1, wasSudden = false, hinted = false, paintT = 0, music = '', frame = 0;
 
     const tell = (i, x, y, q) => { if (P[i].bot) P[i].bot.notice(x, y, q); };
 
@@ -171,7 +176,7 @@ export default {
       const r = ctx.net.remote;
       p.recoil = Math.max(0, p.recoil - dt * 5);
       p.reload = Math.max(0, p.reload - dt);
-      if (!r || !p.alive) return;
+      if (!r || !p.alive || !Number.isFinite(r.x) || !Number.isFinite(r.y) || !Number.isFinite(r.a)) return;
       const dx = r.x - p.x, dy = r.y - p.y;
       p.x = r.x;
       p.y = r.y;
@@ -190,8 +195,16 @@ export default {
       const dx = Math.cos(dir), dy = Math.sin(dir);
       // As far as there is free floor: cover thinner than the jump is simply skipped.
       for (let d = BLINK_DIST; d >= 60; d -= 12) {
-        const x = p.x + dx * d, y = p.y + dy * d;
-        if (!solids.free(x, y, R + 1)) continue;
+        let x = p.x + dx * d, y = p.y + dy * d;
+        if (!solids.free(x, y, R + 1)) {
+          // Grazing a wall (hugging it, aiming a touch inward): land beside it, do not refuse.
+          spot.x = x;
+          spot.y = y;
+          solids.push(spot, R + 2);
+          if (Math.hypot(spot.x - x, spot.y - y) > BLINK_SLIP || !solids.free(spot.x, spot.y, R + 1)) continue;
+          x = spot.x;
+          y = spot.y;
+        }
         if (online) ctx.net.send({ k: 'blink', x0: r1(p.x), y0: r1(p.y), x1: r1(x), y1: r1(y), a: +p.a.toFixed(2) });
         blinkFx(p.i, p.x, p.y, x, y, p.a);
         p.x = x;
@@ -352,6 +365,7 @@ export default {
             else {
               popDecoy(struck);
               if (online) ctx.net.send({ k: 'pop', id: struck.id });
+              if (b.owner === ctx.me) { S.note.x = struck.x; S.note.y = struck.y; S.note.t = S.t; } // fooled: say so
             }
           }
         }
@@ -443,11 +457,27 @@ export default {
         return;
       }
       if (S.kill) {
-        tz = 1.28;
-        // Toward the victim, but never so far that the frame fills with void.
-        tx = clamp(lerp(W / 2, S.kill.x, 0.6), W / (2 * tz), W - W / (2 * tz));
-        ty = clamp(lerp(H / 2, S.kill.y, 0.6), H / (2 * tz), H - H / (2 * tz));
-        roll = S.kill.x < W / 2 ? -0.016 : 0.016;
+        // Push in on the victim, as far as still tells the whole story: the shooter stays
+        // in the picture, the victim stays out from under the core's kill banner (a fifth
+        // of the way down the screen), and the frame never fills with void.
+        const kl = S.kill, w = P[kl.winner], f = view.frame;
+        const sw = ctx.width, sh = ctx.height, top = sh * 0.19 + KILL_TOP;
+        const dx = Math.abs(w.x - kl.x), below = w.y - kl.y;
+        const roomY = below >= 0 ? sh - KILL_PAD - top : sh - KILL_ROOM - KILL_PAD - 12;
+        tz = clamp(Math.min((sw - KILL_ROOM - KILL_PAD) / (dx || 1), roomY / (Math.abs(below) || 1)) / f.s, 1, 1.32);
+        const k = f.s * tz, hw = Math.min(W / 2, sw / (2 * k)), hh = H / (2 * tz);
+        tx = clamp(lerp(W / 2, kl.x, 0.6), hw, W - hw);
+        ty = clamp(lerp(H / 2, kl.y, 0.6), hh, H - hh);
+        // Where the camera may sit for the victim (v*) and for the shooter (w*) to be in frame.
+        const vx = (sw / 2 - KILL_ROOM) / k, wx = (sw / 2 - KILL_PAD) / k;
+        const vLo = kl.y - (sh - KILL_ROOM - f.cy) / k, vHi = kl.y - (top - f.cy) / k;
+        const wLo = w.y - (sh - KILL_PAD - f.cy) / k, wHi = w.y - (KILL_PAD + 12 - f.cy) / k;
+        const lox = Math.max(kl.x - vx, w.x - wx), hix = Math.min(kl.x + vx, w.x + wx);
+        const loy = Math.max(vLo, wLo), hiy = Math.min(vHi, wHi);
+        // Cannot have both: the victim wins.
+        tx = lox <= hix ? clamp(tx, lox, hix) : clamp(tx, kl.x - vx, kl.x + vx);
+        ty = loy <= hiy ? clamp(ty, loy, hiy) : clamp(ty, vLo, vHi);
+        roll = kl.x < W / 2 ? -0.016 : 0.016;
         rate = 6.5; // dt is already slowed by the core here
       }
       c.x = damp(c.x, tx, rate, dt);
@@ -484,6 +514,10 @@ export default {
         const live = ctx.phase === 'live', time = ctx.time;
         if (ctx.phase === 'intro' && S.introT >= 0) S.introT += dt;
         if (live) S.liveT += dt;
+        if (live && !hinted && S.liveT > 0.8) {
+          hinted = true; // once the countdown has cleared: the two things nobody guesses on their own
+          ctx.hud.message('LIGHTS OUT', ctx.input.device === 'touch' ? 'Running lights the floor · FOCUS steadies the rail' : 'Running lights the floor · hold FOCUS to steady the rail', 3.2);
+        }
         world.sync(time);
 
         // The four-bar pulse: counted in on the rim, then everyone is shown for a heartbeat.
@@ -512,9 +546,12 @@ export default {
           setMusic('hot');
         }
 
+        // Both snipers decide on the same snapshot of the world before either one moves:
+        // otherwise whoever is stepped second is always a frame fresher.
+        for (const p of P) if (!p.remote) cmds[p.i] = p.bot ? p.bot.think(dt) : humanCmd(p);
         for (const p of P) {
           if (p.remote) puppet(p, dt);
-          else step(p, p.bot ? p.bot.think(dt) : humanCmd(p), dt);
+          else step(p, cmds[p.i], dt);
           p.laserOn = p.alive && p.focus;
           if (p.laserOn) world.trace(p.x, p.y, p.a, p.laser);
         }
@@ -529,7 +566,7 @@ export default {
         camera(dt);
 
         const me = P[ctx.me];
-        ctx.net.sendState({ x: r1(me.x), y: r1(me.y), a: +me.a.toFixed(3), f: me.focus ? 1 : 0 });
+        if (online) ctx.net.sendState({ x: r1(me.x), y: r1(me.y), a: +me.a.toFixed(3), f: me.focus ? 1 : 0 });
         ctx.hud.cooldown('fire', me.reload / RELOAD);
         ctx.hud.cooldown('a1', me.blinkCd / BLINK_CD);
         ctx.hud.cooldown('a2', me.decoyCd / DECOY_CD);
@@ -544,8 +581,6 @@ export default {
         else if (phase === 'live') {
           sound.lightsOut();
           setMusic('cool');
-          // The two things nobody guesses on their own.
-          ctx.hud.message('LIGHTS OUT', ctx.input.device === 'touch' ? 'Running lights the floor · FOCUS steadies the rail' : 'Running lights the floor · hold FOCUS to steady the rail', 3.2);
         } else if (phase === 'over') {
           sound.stop();
           const res = ctx.result;
@@ -553,6 +588,9 @@ export default {
           const v = P[res.victim], w = P[res.winner];
           v.alive = false;
           v.laserOn = false;
+          // Every hologram goes out with the round: nothing sniper-shaped is left standing
+          // to muddle who shot whom.
+          for (const d of S.decoys) popDecoy(d);
           let beam = null;
           for (const b of S.bullets) if (b.owner === w.i) beam = b; // the latest one
           let dx = v.x - w.x, dy = v.y - w.y;

@@ -348,6 +348,12 @@ export function makeActors({ ctx, g, S, world, view, cols, glow, line, label, to
       }
     }
     if (S.lock && foe.alive) bracket(foe.x, foe.y, R + 8, HOT, 0.9); // your laser is on them
+    const na = t - S.note.t;
+    if (na < 1.2) { // that was not them
+      const a = clamp01(na * 9) * clamp01((1.2 - na) * 2.5);
+      bracket(S.note.x, S.note.y, R + 8 + na * 14, cols[foe.i], a * 0.8);
+      label('HOLOGRAM', S.note.x, S.note.y - R - 16 - na * 14, 10, cols[foe.i], a);
+    }
 
     // Introductions: who is who, and how far apart.
     if (ctx.phase === 'intro' && S.introT >= 0) {

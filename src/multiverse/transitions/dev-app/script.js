@@ -201,7 +201,7 @@ export function makePlan(ctx, to = ctx.to) {
     isValley ? 'Tree-shaking the pine trees…' : 'Tree-shaking the scenery…',
     to.perspective ? `Rotating camera to ${titleCase(to.perspective)}…` : 'Rotating the camera…',
   ]);
-  const steps = [`Removing ${oldThing}…`, core[0], extra[0], chance(rng, 0.5) ? core[1] : extra[1], pick(rng, ['Bundling a new reality…', 'Skipping the tests…', 'Shipping it anyway…', 'Almost there, probably…'])];
+  const steps = [`Removing ${oldThing}…`, core[0], extra[0], chance(rng, 0.5) ? core[1] : extra[1], pick(rng, ['Bundling a new reality…', 'Skipping the other tests…', 'Shipping it anyway…', 'Almost there, probably…'])];
   const errors = [
     ['sniper is not defined', 'defined sniper'],
     [`cannot find module '${oldFile}'`, 'that is the idea. continuing'],

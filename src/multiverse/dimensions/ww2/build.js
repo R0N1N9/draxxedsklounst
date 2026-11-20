@@ -8,7 +8,7 @@ import { TERRACE_Y } from './map.js';
 const PLASTER = ['#cdbd9e', '#b9a78c', '#a9a69c', '#c4a78c', '#9da6a2', '#c6b592', '#b3ac98', '#bfa07e'];
 const STONE = '#b9b09c', STONE_DARK = '#8f887a', CHAR = '#2a2622', SLATE = '#3a3d44';
 
-export function buildTown(THREE, map, tex, seed, fog) {
+export function buildTown(THREE, map, tex, seed, fog, Q) {
   const rnd = mulberry32(seed ^ 0x7a11);
   const R = (a, b) => a + rnd() * (b - a);
   const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -46,10 +46,11 @@ export function buildTown(THREE, map, tex, seed, fog) {
       col[k * 3] = tone * soot; col[k * 3 + 1] = tone * soot * 0.98; col[k * 3 + 2] = tone * soot * 0.95;
       mix[k * 2] = mud; mix[k * 2 + 1] = wet;
     }
-    const idx = new Uint32Array((HNX - 1) * (HNZ - 1) * 6);
+    // Every vertex on a GPU; every other one in software, where triangles are what cost.
+    const st = Q.rich ? 1 : 2, idx = new Uint32Array((((HNX - 1) / st) | 0) * (((HNZ - 1) / st) | 0) * 6);
     let q = 0;
-    for (let j = 0; j < HNZ - 1; j++) for (let i = 0; i < HNX - 1; i++) {
-      const a = j * HNX + i, b = a + 1, c = a + HNX, d = c + 1;
+    for (let j = 0; j + st < HNZ; j += st) for (let i = 0; i + st < HNX; i += st) {
+      const a = j * HNX + i, b = a + st, c = a + HNX * st, d = c + st;
       idx[q++] = a; idx[q++] = c; idx[q++] = b; idx[q++] = b; idx[q++] = c; idx[q++] = d;
     }
     const geo = new THREE.BufferGeometry();
@@ -59,10 +60,15 @@ export function buildTown(THREE, map, tex, seed, fog) {
     geo.setAttribute('aMix', new THREE.BufferAttribute(mix, 2));
     geo.setIndex(new THREE.BufferAttribute(idx, 1));
     geo.computeVertexNormals();
-    const mat = fog.patch(new THREE.MeshStandardMaterial({ map: tex.cobble, normalMap: tex.cobbleN, normalScale: new THREE.Vector2(1.1, 1.1), vertexColors: true, roughness: 0.86, metalness: 0 }), 'ground', (sh) => {
+    // Full quality: a PBR floor whose standing water mirrors the low sun. On a software
+    // rasteriser: the same paint job on a Lambert surface, at a fraction of the cost.
+    const base = Q.rich
+      ? new THREE.MeshStandardMaterial({ map: tex.cobble, normalMap: tex.cobbleN, normalScale: new THREE.Vector2(1.1, 1.1), vertexColors: true, roughness: 0.86, metalness: 0 })
+      : new THREE.MeshLambertMaterial({ map: tex.cobble, vertexColors: true });
+    const mat = fog.patch(base, 'ground', (sh) => {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aMix;\nvarying vec2 vMix;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMix = aMix;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vMix;')
-        // Mud swallows the setts; standing water darkens them and turns them into a mirror for the low sun.
+        // Mud swallows the setts; standing water darkens them.
         .replace('#include <color_fragment>', '#include <color_fragment>\nfloat stoneL = dot( diffuseColor.rgb, vec3( 0.333 ) );\ndiffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.2, 0.155, 0.11 ) * ( 0.5 + stoneL * 2.2 ), vMix.x );\ndiffuseColor.rgb *= mix( 1.0, 0.5, vMix.y );')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, 0.1, vMix.y );')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize( mix( normal, nonPerturbedNormal, max( vMix.x * 0.65, vMix.y * 0.88 ) ) );');
@@ -71,7 +77,7 @@ export function buildTown(THREE, map, tex, seed, fog) {
     ground.receiveShadow = true;
     group.add(ground);
     // Beyond the heightfield: coarse rubble out to the fog. Never walked on, barely seen.
-    const X0 = HX0, X1 = HX0 + (HNX - 1) * HF, Z0 = HZ0, Z1 = HZ0 + (HNZ - 1) * HF, S = 3;
+    const X0 = HX0, X1 = HX0 + (HNX - 1) * HF, Z0 = HZ0, Z1 = HZ0 + (HNZ - 1) * HF, S = 6;
     const op = [], oc = [], ou = [];
     const quad = (x0, z0, x1, z1) => {
       for (const [x, z] of [[x0, z0], [x0, z1], [x1, z0], [x1, z0], [x0, z1], [x1, z1]]) {
@@ -82,7 +88,7 @@ export function buildTown(THREE, map, tex, seed, fog) {
         oc.push(t, t * 0.95, t * 0.88);
       }
     };
-    for (let x = -130; x < 130; x += S) for (let z = -190; z < 190; z += S) {
+    for (let x = -130; x < 130; x += S) for (let z = -192; z < 192; z += S) {
       const x1 = x + S, z1 = z + S;
       if (x >= X0 && x1 <= X1 && z >= Z0 && z1 <= Z1) continue;
       // Finer strips where the two meshes meet, so the seam is a line, not a staircase.
@@ -98,7 +104,7 @@ export function buildTown(THREE, map, tex, seed, fog) {
     og.setAttribute('uv', new THREE.Float32BufferAttribute(ou, 2));
     og.setAttribute('color', new THREE.Float32BufferAttribute(oc, 3));
     og.computeVertexNormals();
-    const outer = new THREE.Mesh(og, fog.patch(new THREE.MeshLambertMaterial({ map: tex.cobble, vertexColors: true, color: '#8a7460' })));
+    const outer = new THREE.Mesh(og, fog.patch(new THREE.MeshLambertMaterial({ map: tex.cobble, vertexColors: true, color: '#8a7460', side: THREE.DoubleSide })));
     outer.receiveShadow = true;
     group.add(outer);
   }
@@ -230,7 +236,13 @@ export function buildTown(THREE, map, tex, seed, fog) {
       stone.box(24.22, T + 0.96, (za + zb) / 2, 0.6, 0.12, zb - za + 0.1, '#c8bfaa');
       for (const e of [za, zb]) stone.box(24.22, T + 0.3, e + (e === za ? -0.25 : 0.25), 0.42, 0.55, 0.5, STONE_DARK, 0, 0, R(-0.2, 0.2));
     }
-    for (const m of [-1, 1]) stone.box(24.5, T + 0.5, m * 18.8, 1.0, 1.0, 0.4, STONE);
+    for (const m of [-1, 1]) {
+      stone.box(24.5, T + 0.5, m * 18.8, 1.0, 1.0, 0.4, STONE);
+      // The broken end of the terrace wall, stepping down beside the rubble ramp.
+      stone.box(24.72, 0.95, m * 20.4, 0.55, 1.9, 2.8, STONE);
+      stone.box(24.72, 0.7, m * 22.8, 0.55, 1.4, 2.0, STONE_DARK, 0, 0, 0.04);
+      stone.box(24.72, 0.45, m * 24.5, 0.55, 0.9, 1.4, STONE, 0, 0, -0.05);
+    }
     // West front: two wings with lancets, the tower between them.
     const lancet = (u) => ({ u: u - 0.8, v: 2.4, w: 1.6, h: 5.4, arch: true });
     const wing = (za, zb, ph) => {
@@ -282,7 +294,7 @@ export function buildTown(THREE, map, tex, seed, fog) {
   bell.position.set(35, 21.7, 0);
   {
     const prof = [[0.0, 0], [0.34, 0], [0.42, -0.12], [0.5, -0.5], [0.62, -0.95], [0.86, -1.3], [0.92, -1.42], [0.8, -1.42], [0.0, -1.3]].map(([r, y]) => new THREE.Vector2(r, y));
-    const m = fog.patch(new THREE.MeshStandardMaterial({ color: '#8a6f35', roughness: 0.45, metalness: 0.85, side: THREE.DoubleSide }));
+    const m = fog.patch(new THREE.MeshLambertMaterial({ color: '#8a6f35', side: THREE.DoubleSide }));
     const b = new THREE.Mesh(new THREE.LatheGeometry(prof, 18), m);
     b.castShadow = true;
     const clapper = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.11, 1.3, 6), m);
@@ -298,7 +310,7 @@ export function buildTown(THREE, map, tex, seed, fog) {
   {
     const cols = 6, rows = 5, cw = (fw.x1 - fw.x0) / cols, ch = fw.h / rows;
     const g = new THREE.Group();
-    const mat = fog.patch(new THREE.MeshLambertMaterial({ map: tex.masonry, normalMap: tex.masonryN, vertexColors: true }));
+    const mat = fog.patch(new THREE.MeshLambertMaterial({ map: tex.masonry, normalMap: Q.rich ? tex.masonryN : null, vertexColors: true, side: THREE.DoubleSide }));
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
       const n = fbm(c * 0.9 + 3, r * 0.7, 2);
       if (r === rows - 1 && n > 0.02) continue; // ragged top
@@ -324,7 +336,7 @@ export function buildTown(THREE, map, tex, seed, fog) {
     const ring = (dist, h, seedOff) => {
       for (const [ax, az, bx, bz] of [[-dist, -170, -dist, 170], [dist, 170, dist, -170], [-150, -(dist + 90), 150, -(dist + 90)], [150, dist + 90, -150, dist + 90]]) {
         const len = Math.hypot(bx - ax, bz - az);
-        const w = ruinWall(THREE, len, 0.6, (u) => { const n = fbm(u * 0.035 + seedOff, seedOff * 0.3, 4); return clamp(h * (0.45 + n * 2.2) + (fbm(u * 0.4, seedOff, 2) > 0.3 ? h * 0.5 : 0), 1.5, h * 2.3); }, []);
+        const w = ruinWall(THREE, len, 0.6, (u) => { const n = fbm(u * 0.035 + seedOff, seedOff * 0.3, 4); return clamp(h * (0.45 + n * 2.2) + (fbm(u * 0.4, seedOff, 2) > 0.3 ? h * 0.5 : 0), 1.5, h * 2.3); }, [], 2.2);
         far.add(w.geo, wallM(ax, az, bx, bz), '#2c2a2c');
       }
     };
@@ -343,11 +355,13 @@ export function buildTown(THREE, map, tex, seed, fog) {
     return m;
   };
   const mats = {
-    masonry: fog.patch(new THREE.MeshLambertMaterial({ map: tex.masonry, normalMap: tex.masonryN, vertexColors: true })),
-    stone: fog.patch(new THREE.MeshLambertMaterial({ map: tex.cobble, normalMap: tex.cobbleN, normalScale: new THREE.Vector2(0.7, 0.7), vertexColors: true })),
-    wood: fog.patch(new THREE.MeshLambertMaterial({ map: tex.wood, normalMap: tex.woodN, vertexColors: true })),
-    plain: fog.patch(new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })),
-    far: fog.patch(new THREE.MeshLambertMaterial({ vertexColors: true })),
+    // Same shape of material everywhere (map + vertex colours, two-sided): without the normal
+    // maps they all compile to one shader program.
+    masonry: fog.patch(new THREE.MeshLambertMaterial({ map: tex.masonry, normalMap: Q.rich ? tex.masonryN : null, vertexColors: true, side: THREE.DoubleSide })),
+    stone: fog.patch(new THREE.MeshLambertMaterial({ map: tex.cobble, normalMap: Q.rich ? tex.cobbleN : null, normalScale: new THREE.Vector2(0.7, 0.7), vertexColors: true, side: THREE.DoubleSide })),
+    wood: fog.patch(new THREE.MeshLambertMaterial({ map: tex.wood, normalMap: Q.rich ? tex.woodN : null, vertexColors: true, side: THREE.DoubleSide })),
+    plain: fog.patch(new THREE.MeshLambertMaterial({ map: tex.white, vertexColors: true, side: THREE.DoubleSide })),
+    far: fog.patch(new THREE.MeshLambertMaterial({ map: tex.white, vertexColors: true, side: THREE.DoubleSide })),
   };
   return {
     group, bell, mats, batches: { masonry, stone, wood, plain },

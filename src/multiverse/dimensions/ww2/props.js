@@ -8,7 +8,7 @@ const RUST = ['#4a3f36', '#3a332d', '#5a4030', '#2a2623', '#463c34'];
 const BRICK = ['#7a4a38', '#8a5a44', '#b0a590', '#8a8478', '#3a3430', '#9a8a78', '#6a4636'];
 const LEAF = ['#b8651e', '#c98a2a', '#8a4a1a', '#a8741c', '#6e4a22'];
 
-export function buildProps(THREE, map, tex, seed, fog, town) {
+export function buildProps(THREE, map, tex, seed, fog, town, Q) {
   const rnd = mulberry32(seed ^ 0x9e07);
   const R = (a, b) => a + rnd() * (b - a);
   const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -43,10 +43,10 @@ export function buildProps(THREE, map, tex, seed, fog, town) {
       },
     };
   }
-  const bags = scatter(new THREE.SphereGeometry(0.5, 7, 5), fog.patch(new THREE.MeshLambertMaterial({ map: tex.sack, normalMap: tex.sackN })), true);
-  const rubbleMat = fog.patch(new THREE.MeshLambertMaterial({ flatShading: true }));
+  const bags = scatter(new THREE.SphereGeometry(0.5, 6, 4), fog.patch(new THREE.MeshLambertMaterial({ map: tex.sack, normalMap: Q.rich ? tex.sackN : null, side: THREE.DoubleSide })), true);
+  const rubbleMat = fog.patch(new THREE.MeshLambertMaterial({ map: tex.white, side: THREE.DoubleSide })); // shares the sandbags' program
   const bricks = scatter(new THREE.BoxGeometry(0.26, 0.11, 0.13), rubbleMat), rocks = scatter(new THREE.IcosahedronGeometry(0.26, 0), rubbleMat);
-  const leaves = scatter(new THREE.CircleGeometry(0.09, 5).rotateX(-Math.PI / 2), fog.patch(new THREE.MeshLambertMaterial({ side: THREE.DoubleSide })));
+  const leaves = scatter(new THREE.CircleGeometry(0.09, 5).rotateX(-Math.PI / 2), rubbleMat);
   const debris = (x, z, y = map.height(x, z), big = 1) => {
     if (rnd() < 0.55) bricks.add(x, y + 0.04 * big, z, R(0.8, 2.6) * big, R(0.8, 2.4) * big, R(0.8, 2.6) * big, R(0, 6.3), R(-0.5, 0.5), R(-0.5, 0.5), pick(BRICK));
     else rocks.add(x, y + 0.03, z, R(0.5, 1.9) * big, R(0.35, 1.1) * big, R(0.5, 1.9) * big, R(0, 6.3), R(-0.4, 0.4), 0, pick(BRICK));

@@ -23,7 +23,9 @@
 //               the next world's palette floods the tissue from the far end
 //   5.66 → 6.5  the synapse, held as a tableau: vesicles driven into the membrane, sparks
 //               across the cleft, the spine takes the hit — white-out (solid from 6.5)
-//   6.66        THE SWAP, held on white
+//   6.53 → 7.5  the afterimage: the synapse comes up on the white as a negative, printed in
+//               the next world's ink, and fades as the eye recovers (ears ringing)
+//   6.66        THE SWAP, held on that white
 //   6.78        ACT 3 · the title rises in ink on the white
 //   7.08 → 10.2 the post-synaptic tree grows through the white; behind its front the new
 //               world is line art, then real; the title's island is the last white to go
@@ -112,7 +114,7 @@ export default {
     };
     const cam = {
       side: randSign(rng), phi0: rand(rng, -0.4, 0.9), spin: rand(rng, 0.6, 2.2) * randSign(rng),
-      sway: rand(rng, 0.15, 0.4), swayF: rand(rng, 1, 2.4), rad0: rand(rng, 10, 14), rad1: rand(rng, 6, 9),
+      sway: rand(rng, 0.15, 0.4), swayF: rand(rng, 1, 2.4), rad0: rand(rng, 10, 14), rad1: rand(rng, 7.5, 10.5),
       ahead: rand(rng, 4, 8), roll: rand(rng, 0.08, 0.3) * randSign(rng), rollF: rand(rng, 0.6, 1.4),
       fov0: rand(rng, 40, 48), fov1: rand(rng, 58, 68),
       endPhi: rand(rng, -0.3, 0.55), endRad: rand(rng, 15, 19), endBack: rand(rng, -3, 2),
@@ -167,7 +169,7 @@ export default {
     const U = {
       uTime: { value: 0 }, uTan: { value: 1 }, uInvH: { value: 1 / 720 }, uFog: { value: 0.0105 }, uFlood: { value: 0 }, uGain: { value: 1 },
       uFloodCol: { value: V3(accRgb) }, uFloodCol2: { value: V3(fgRgb) }, uFocus: { value: 20 }, uAperture: { value: 0.22 }, uCocMax: { value: 0.032 },
-      uShutter: { value: 1 / 70 }, uAspect: { value: 1 }, uCamVel: { value: new THREE.Vector3() },
+      uShutter: { value: 1 / 70 }, uAspect: { value: 1 }, uCamVel: { value: new THREE.Vector3() }, uRing: { value: 1 },
       tMem: { value: texMem }, uTiles: { value: atlas.tiles },
     };
     const glow = { transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide };
@@ -219,6 +221,7 @@ export default {
       uniforms: {
         tGrow: { value: rtGrow.texture }, tTo: { value: texBlack }, uK: { value: 0 }, uAspect: { value: 1 }, uIslT: { value: 1.27 }, uOut: { value: 1 }, uHasTo: { value: 0 },
         uTexel: { value: v2() }, uInk: { value: V3(ground) }, uEdge: { value: V3(stroke) }, uAccent: { value: V3(accRgb) }, uWhite: { value: new THREE.Vector3(1, 1, 1) }, uIsl: { value: new THREE.Vector4(0.9, 0.4, 0.3, 0.12) },
+        tBurn: { value: rtGraded.texture }, uBurn: { value: 0 }, uBurnZoom: { value: 1 }, uBurnCol: { value: V3(rgb(mixHex(acc.dark, ink, 0.2))) }, uRoot: { value: v2() },
       },
     });
 
@@ -269,6 +272,7 @@ export default {
     const cleft = net.route.at(net.cleftS, { x: 0, y: 0, z: 0 });
     const rootUv = toUv(cleft.x, cleft.y, cleft.z, v2());
     const root = { x: clamp(rootUv.x, 0.3, 0.7) * aspect0, y: clamp(rootUv.y, 0.64, 0.8) };
+    pArrive.uniforms.uRoot.value.copy(rootUv);
     const growGeo = buildGrowth(THREE, rng, aspect0, root);
     const mGrow = new THREE.ShaderMaterial({
       uniforms: { uAspect0: { value: aspect0 } }, vertexShader: SH.GROW_VERT, fragmentShader: SH.GROW_FRAG, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
@@ -290,7 +294,7 @@ export default {
       renderer.setRenderTarget(null);
     }
 
-    let rtW = 0, rtH = 0;
+    let rtW = 0, rtH = 0, burnt = false;
     const size = v2();
     function sizeTargets() {
       renderer.getDrawingBufferSize(size);
@@ -298,6 +302,7 @@ export default {
       const W = Math.max(16, Math.round(size.x * k)), H = Math.max(16, Math.round(size.y * k));
       if (W === rtW && H === rtH) return;
       rtW = W; rtH = H;
+      burnt = false; // a resized target has lost its picture
       rtScene.setSize(W, H);
       rtGraded.setSize(W, H);
       for (let i = 0; i < LEVELS; i++) {
@@ -309,7 +314,9 @@ export default {
 
     // --- the tissue, one frame ----------------------------------------------------------------
     const headUv = v2();
-    function renderTissue(t, target) {
+    // print: the plate for the afterimage — no shock rings, the discharge held down and a
+    // shorter exposure, so that what burns in is the anatomy and not one white blot.
+    function renderTissue(t, target, print) {
       const aspect = ctx.width / ctx.height;
       applyCam(t);
       camAt(t - 1 / 120, c0);
@@ -338,7 +345,8 @@ export default {
       const kd = seg(t, T.burst + 0.12, T.white1);
       const cu = mCleft.uniforms;
       cu.uPos.value.set(cleft.x, cleft.y, cleft.z);
-      cu.uI.value = 7 * kd * kd;
+      cu.uI.value = 7 * kd * kd * (print ? 0.3 : 1);
+      U.uRing.value = print ? 0 : 1;
       cu.uSize.value = 8 + 44 * kd * kd;
       cu.uRot.value = -t * 1.3;
       meshes[3].visible = hu.uI.value > 0; // a flare is a big quad: do not fill it for nothing
@@ -373,10 +381,22 @@ export default {
       gu.uWarp.value = 0.0025 + 0.02 * clamp01(speed / 170) + 0.035 * (1 - seg(t, T.neuroIn, T.plunge1 + 0.3));
       gu.uFlood.value = flood;
       gu.uFlash.value = ease.inQuad(seg(t, T.white0, T.white1));
-      gu.uExposure.value = 1.15 + 0.5 * kd;
+      gu.uExposure.value = print ? 0.8 : 1.15 + 0.5 * kd;
+      gu.uBloom.value = print ? 0.16 : 0.3;
       renderer.setRenderTarget(target);
       pGrade.render(renderer);
       renderer.setRenderTarget(null);
+    }
+
+    // The afterimage on the white: the synapse as the charge crosses, kept in the
+    // target the eye act no longer needs. Scaled to where the lens had pushed in to by the
+    // white-out, so the ghost sits exactly where the discharge was (and the tree will root).
+    const tBurn = T.cross + 0.1;
+    const burnZoom = Math.tan((camAt(tBurn, c0).fov * Math.PI) / 360) / Math.tan((camAt(T.white1, c1).fov * Math.PI) / 360);
+    function ensureBurn() {
+      if (burnt) return;
+      burnt = true;
+      renderTissue(tBurn, rtGraded, true);
     }
 
     function eyeAt(t, aspect) {
@@ -437,12 +457,14 @@ export default {
     cue(T.burst + 0.14, () => A.sfx('shatter', { gain: 0.45 }));
     cue(T.cross, () => { A.sfx('zap', { gain: 0.8, pitch: 1.4 }); A.sfx('laser', { gain: 0.3, pitch: 0.6 }); });
     cue(T.white1 - 0.06, () => A.sfx('boom', { gain: 1 }));
+    // Ears ring through the white: two close sines, beating, gone by the time the tree grows.
+    cue(T.white1 + 0.04, () => { A.tone({ freq: 2960, dur: 1.5, gain: 0.022, attack: 0.05, pan: -0.3 }); A.tone({ freq: 2983, dur: 1.3, gain: 0.014, attack: 0.08, pan: 0.3 }); });
     cue(T.title, () => A.sfx('tick', { gain: 0.5, pitch: 0.6 }));
     cue(T.reveal0, () => {
       A.sfx('chime', { gain: 0.55 });
       [261.63, 392, 523.25, 783.99].forEach((f, i) => A.tone({ type: i < 2 ? 'triangle' : 'sine', freq: f, dur: 1.9 - i * 0.2, gain: 0.07, delay: 0.1 + i * 0.09, pan: (i - 1.5) * 0.3, attack: 0.03 }));
     });
-    [0.15, 0.55, 1.0, 1.5].forEach((d, i) => cue(T.reveal0 + d, () => A.noise({ filter: 'bandpass', freq: 5200 + i * 900, q: 4, dur: 0.14, gain: 0.1, attack: 0.002, pan: i & 1 ? 0.6 : -0.6 })));
+    [0.15, 0.55, 1.0, 1.5, 1.95, 2.3].forEach((d, i) => cue(T.reveal0 + d, () => A.noise({ filter: 'bandpass', freq: 5200 + i * 900, q: 4, dur: 0.14, gain: i < 4 ? 0.1 : 0.06, attack: 0.002, pan: i & 1 ? 0.6 : -0.6 })));
     cue(T.D - 1.15, () => A.sfx('swoosh', { gain: 0.3 }));
     cues.sort((a, b) => a.t - b.t);
     let cueAt = 0;
@@ -483,6 +505,10 @@ export default {
           const key = `${w}x${h}`;
           if (key !== layKey) { layKey = key; lay = titleLayout(g, w, h, title); }
           const k = to ? 1.75 * Math.pow(seg(t, T.reveal0, T.reveal1), 1.1) : 0;
+          const burn = 0.7 * smoothstep(T.white1, T.white1 + 0.16, t) * (1 - smoothstep(T.title - 0.05, T.reveal0 + 0.4, t));
+          if (burn > 0) ensureBurn();
+          u.uBurn.value = burn;
+          u.uBurnZoom.value = burnZoom * (1 + 0.07 * (t - T.white1)); // the push-in carries on through the white
           u.uK.value = k;
           u.uAspect.value = aspect;
           u.uTexel.value.set(1.2 / w, 1.2 / h);
@@ -490,7 +516,7 @@ export default {
           u.uIsl.value.set(lay.cx / h, 1 - lay.cy / h, lay.bw / 2 / h, lay.bh / 2 / h);
           renderer.setRenderTarget(null);
           pArrive.render(renderer);
-          if (t >= T.title) drawTitle(g, lay, t - T.title, smoothstep(1.1, 1.26, k), title);
+          if (t >= T.title) drawTitle(g, lay, t - T.title, smoothstep(1.25, 1.36, k), title); // the type goes as the shore closes on it
         }
 
         // Instrument readouts over acts 1 and 2.

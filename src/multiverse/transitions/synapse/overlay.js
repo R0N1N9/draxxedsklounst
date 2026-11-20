@@ -142,6 +142,7 @@ export function buildAtlas(ctx, rng, col) {
 // ---------------------------------------------------------------------------
 const unitOf = (w, h) => Math.min(w, h * 1.7);
 const margin = (w) => Math.max(16, w * 0.045);
+const labelPx = (u) => clamp(u * 0.0105, 8.5, 16); // the small mono captions: legible on a phone, not lost on a 16" desktop
 
 /** 0.0000042 → '4.2 µm'. */
 export function fmtLen(m) {
@@ -156,7 +157,7 @@ export function drawRecord(g, w, h, t, rec) {
   const a = pulse(t, rec.t0, rec.t1, 0.22);
   if (a <= 0) return;
   const u = unitOf(w, h), x = margin(w);
-  const lp = clamp(u * 0.0105, 8.5, 13), vp = clamp(u * 0.03, 15, 36);
+  const lp = labelPx(u), vp = clamp(u * 0.03, 15, 44);
   const rowH = vp * 1.18 + lp * 1.7;
   let y = h * 0.95 - rec.lines.length * rowH - lp * 1.5;
   // Scrim: the type never sits on raw picture.
@@ -208,7 +209,7 @@ export function drawRecord(g, w, h, t, rec) {
 /** Bottom-right scale bar: the powers-of-ten gauge that sells the plunge. */
 export function drawScale(g, w, h, a, metres, note) {
   if (a <= 0) return;
-  const u = unitOf(w, h), lp = clamp(u * 0.0105, 8.5, 13);
+  const u = unitOf(w, h), lp = labelPx(u);
   const x1 = w - margin(w), x0 = x1 - u * 0.11, y = h * 0.93;
   g.strokeStyle = rgba('#ffffff', 0.78 * a);
   g.lineWidth = 1.25;
@@ -238,14 +239,14 @@ export function drawScale(g, w, h, a, metres, note) {
 export function drawChase(g, w, h, ch) {
   const a = ch.a;
   if (a <= 0) return;
-  const u = unitOf(w, h), x = margin(w), lp = clamp(u * 0.0105, 8.5, 13);
+  const u = unitOf(w, h), x = margin(w), lp = labelPx(u);
   g.textAlign = 'left';
   g.textBaseline = 'alphabetic';
   let y = Math.max(22, h * 0.075);
   g.font = `600 ${lp}px ${MONO}`;
   g.fillStyle = rgba('#ffffff', 0.5 * a);
   g.fillText(ch.title, x, y);
-  const np = clamp(u * 0.026, 14, 32);
+  const np = clamp(u * 0.026, 14, 40);
   y += np * 1.05;
   g.font = `700 ${np}px ${SANS}`;
   g.fillStyle = rgba('#ffffff', 0.92 * a);
@@ -272,13 +273,28 @@ export function drawChase(g, w, h, ch) {
   sc.addColorStop(1, rgba(INK, 0.7 * a));
   g.fillStyle = sc;
   g.fillRect(0, h * 0.68, w, h * 0.32);
-  const qp0 = clamp(u * 0.04, 17, 50);
+  const qp0 = clamp(u * 0.04, 17, 60);
   const text = ch.words.join(' ');
   g.font = `700 ${qp0}px ${SANS}`;
   const qp = qp0 * Math.min(1, (w * 0.7) / Math.max(1, g.measureText(text).width)); // clear of the scale bar
   g.font = `700 ${qp}px ${SANS}`;
   const full = g.measureText(text).width, space = g.measureText(' ').width;
   const by = h * 0.9;
+  // A soft plate of shadow behind the words: a cell firing right behind them must not eat them.
+  const shown = ch.words.slice(0, ch.shown).join(' ');
+  if (shown) {
+    const pw = Math.max(qp * 3, g.measureText(shown).width * 0.62 + qp * 1.6), px = (w - full) / 2 + g.measureText(shown).width / 2;
+    g.save();
+    g.translate(px, by - qp * 0.42);
+    g.scale(1, (qp * 1.25) / pw);
+    const plate = g.createRadialGradient(0, 0, 0, 0, 0, pw);
+    plate.addColorStop(0, rgba(INK, 0.62 * a));
+    plate.addColorStop(0.6, rgba(INK, 0.4 * a));
+    plate.addColorStop(1, rgba(INK, 0));
+    g.fillStyle = plate;
+    g.fillRect(-pw, -pw, pw * 2, pw * 2);
+    g.restore();
+  }
   g.textAlign = 'center';
   g.font = `600 ${lp}px ${MONO}`;
   g.fillStyle = rgba(ch.color, 0.95 * a);
@@ -309,20 +325,26 @@ export function titleLayout(g, w, h, info) {
   g.font = `700 ${px}px ${SANS}`;
   let nw = g.measureText(info.name).width;
   if (nw > maxW) { px *= maxW / nw; g.font = `700 ${px}px ${SANS}`; nw = g.measureText(info.name).width; }
-  const op = clamp(u * 0.0125, 9, 15), tp = clamp(u * 0.021, 11.5, 25);
+  const op = clamp(u * 0.0125, 9, 17), tp = clamp(u * 0.021, 11.5, 28);
   g.font = `600 ${op}px ${MONO}`;
   const ow = g.measureText(info.over).width;
-  const sw = scoreRow(g, 0, 0, op, info, 0);
+  // The score is the one line here both players will look for: a size up from the captions.
+  let sp = clamp(u * 0.0155, 10, 22);
+  let sw = scoreRow(g, 0, 0, sp, info, 0);
+  if (sw > w * 0.84) { sp *= (w * 0.84) / sw; sw = scoreRow(g, 0, 0, sp, info, 0); }
   let tpx = tp;
   g.font = `600 ${tpx}px ${SANS}`;
   let tw = info.tagline ? g.measureText(info.tagline).width : 0;
   if (tw > maxW) { tpx *= maxW / tw; tw = maxW; }
-  const gapO = op * 1.5, gapT = info.tagline ? tpx * 1.5 : 0, gapS = op * 2.6;
-  const bh = op + gapO + px * 0.74 + px * 0.2 + gapT + gapS;
+  // Under the name: the rule, then air. Both keep a floor, so a long name set small
+  // does not pull the rule and the tagline up into its own descenders.
+  const ruleGap = Math.max(px * 0.13, op * 0.6), under = Math.max(px * 0.2, ruleGap + op * 0.55);
+  const gapO = op * 1.5, gapT = info.tagline ? tpx * 1.5 : 0, gapS = sp * 2.5;
+  const bh = op + gapO + px * 0.74 + under + gapT + gapS;
   const bw = Math.max(nw, ow, sw, tw);
   const cy = Math.min(h * 0.6, h * 0.95 - bh / 2 - h * 0.06);
-  const top = cy - bh / 2;
-  return { cx: w / 2, cy, bw, bh, px, op, tp: tpx, nw, yOver: top + op, yName: top + op + gapO + px * 0.74, yRule: top + op + gapO + px * 0.74 + px * 0.13, yTag: top + op + gapO + px * 0.94 + gapT * 0.72, yScore: top + bh };
+  const top = cy - bh / 2, yName = top + op + gapO + px * 0.74;
+  return { cx: w / 2, cy, bw, bh, px, op, sp, tp: tpx, nw, yOver: top + op, yName, yRule: yName + ruleGap, yTag: yName + under + gapT * 0.72, yScore: top + bh };
 }
 
 // One row: ROUND n · ■ NAME 2 — 1 NAME ■ (· MATCH POINT). a = 0 only measures. Returns its width.
@@ -409,7 +431,7 @@ export function drawTitle(g, lay, tl, out, info) {
     g.fillStyle = rgba(info.ink, 0.78 * a * seg(tl, 0.42, 0.75));
     g.fillText(info.tagline, cx, lay.yTag);
   }
-  scoreRow(g, cx, lay.yScore, op, info, a * seg(tl, 0.55, 0.9));
+  scoreRow(g, cx, lay.yScore, lay.sp, info, a * seg(tl, 0.55, 0.9));
 }
 
 /** Darker / lighter readings of a world's accent, for type on white and on ink. */

@@ -27,9 +27,9 @@ export function shapeOf(x, y, z, yaw, k, out) {
 }
 
 export function makeSoldierKit(THREE, fog) {
-  const lam = (color, o) => fog.patch(new THREE.MeshLambertMaterial({ color, ...o }));
+  const lam = (color) => fog.patch(new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide })); // all alike: one program
   const mats = {
-    coat: lam('#5b5847'), coatDark: lam('#4a4839', { side: THREE.DoubleSide }), trousers: lam('#45433a'), boot: lam('#1d1a18'), leather: lam('#4a3523'),
+    coat: lam('#5b5847'), coatDark: lam('#4a4839'), trousers: lam('#45433a'), boot: lam('#1d1a18'), leather: lam('#4a3523'),
     skin: lam('#b89074'), steel: lam('#414a3f'), wood: lam('#6a4528'), gun: lam('#23272b'), canvas: lam('#77705a'),
   };
   const cap = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 8);
@@ -42,7 +42,7 @@ export function makeSoldierKit(THREE, fog) {
     dome: new THREE.SphereGeometry(0.142, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.56), brim: new THREE.CylinderGeometry(0.139, 0.175, 0.05, 14, 1, true),
     hband: new THREE.TorusGeometry(0.142, 0.012, 4, 16),
   };
-  const idMat = (color) => fog.patch(new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.75 }));
+  const idMat = (color) => fog.patch(new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.75, side: THREE.DoubleSide }));
 
   // A helmet on its own: worn, shot off, or raised on a stick. Origin at the crown's centre.
   function helmet(id) {

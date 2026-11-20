@@ -60,9 +60,9 @@ function speckle(g, size, rnd, n, alpha) {
   }
 }
 
-export function makeTextures(THREE, renderer, seed) {
+export function makeTextures(THREE, renderer, seed, maxAniso = 8, normals = true) {
   const rnd = mulberry32(seed ^ 0x51ab);
-  const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const aniso = Math.max(1, Math.min(maxAniso, renderer.capabilities.getMaxAnisotropy()));
   const all = [];
   const tex = (canvas, { srgb = true, repeat = true, mips = true } = {}) => {
     const t = new THREE.CanvasTexture(canvas);
@@ -111,7 +111,8 @@ export function makeTextures(THREE, renderer, seed) {
   cobA.g.drawImage(noiseCanvas(64, 4, 11), 0, 0, S, S);
   cobA.g.globalAlpha = 1;
   cobA.g.globalCompositeOperation = 'source-over';
-  const cobble = tex(cobA.canvas), cobbleN = tex(normalFromHeight(cobH.canvas, 3.2), { srgb: false });
+  const nrm = (canvas, k) => (normals ? tex(normalFromHeight(canvas, k), { srgb: false }) : null); // not built where they will not be used
+  const cobble = tex(cobA.canvas), cobbleN = nrm(cobH.canvas, 3.2);
 
   // ---- masonry: lime plaster flaking off brick ----
   const masH = makeCanvas(S, S), masA = makeCanvas(S, S);
@@ -178,7 +179,7 @@ export function makeTextures(THREE, renderer, seed) {
   masH.g.globalAlpha = 0.18;
   masH.g.drawImage(noiseCanvas(128, 16, 41), 0, 0, S, S);
   masH.g.globalAlpha = 1;
-  const masonry = tex(masA.canvas), masonryN = tex(normalFromHeight(masH.canvas, 2.6), { srgb: false });
+  const masonry = tex(masA.canvas), masonryN = nrm(masH.canvas, 2.6);
 
   // ---- planks ----
   const wdA = makeCanvas(256, 256), wdH = makeCanvas(256, 256);
@@ -200,7 +201,7 @@ export function makeTextures(THREE, renderer, seed) {
     wdH.g.fillStyle = '#202020';
     wdH.g.fillRect(0, i * 64, 256, 4);
   }
-  const wood = tex(wdA.canvas), woodN = tex(normalFromHeight(wdH.canvas, 2), { srgb: false });
+  const wood = tex(wdA.canvas), woodN = nrm(wdH.canvas, 2);
 
   // ---- hessian for the sandbags ----
   const sbA = makeCanvas(128, 128), sbH = makeCanvas(128, 128);
@@ -217,7 +218,7 @@ export function makeTextures(THREE, renderer, seed) {
     sbH.g.fillRect(0, i, 128, 1.5);
   }
   speckle(sbA.g, 128, rnd, 500, 0.2);
-  const sack = tex(sbA.canvas), sackN = tex(normalFromHeight(sbH.canvas, 1.5), { srgb: false });
+  const sack = tex(sbA.canvas), sackN = nrm(sbH.canvas, 1.5);
 
   // ---- a billow of smoke: lumpy, soft-edged, alpha only ----
   const sm = makeCanvas(128, 128);
@@ -276,11 +277,17 @@ export function makeTextures(THREE, renderer, seed) {
   const scorch = tex(sc.canvas, { repeat: false });
 
   // ---- cloud deck: two decorrelated noise fields in R and G ----
-  const cl = makeCanvas(256, 256), a = noiseCanvas(256, 4, 71, 5).getContext('2d').getImageData(0, 0, 256, 256).data;
-  const b = noiseCanvas(256, 8, 97, 4).getContext('2d').getImageData(0, 0, 256, 256).data, ci = cl.g.createImageData(256, 256);
-  for (let i = 0; i < 256 * 256 * 4; i += 4) { ci.data[i] = a[i]; ci.data[i + 1] = b[i]; ci.data[i + 2] = 0; ci.data[i + 3] = 255; }
+  const CS = 128, cl = makeCanvas(CS, CS), a = noiseCanvas(CS, 4, 71, 5).getContext('2d').getImageData(0, 0, CS, CS).data;
+  const b = noiseCanvas(CS, 8, 97, 3).getContext('2d').getImageData(0, 0, CS, CS).data, ci = cl.g.createImageData(CS, CS);
+  for (let i = 0; i < CS * CS * 4; i += 4) { ci.data[i] = a[i]; ci.data[i + 1] = b[i]; ci.data[i + 2] = 0; ci.data[i + 3] = 255; }
   cl.g.putImageData(ci, 0, 0);
   const cloud = tex(cl.canvas, { srgb: false, mips: false });
 
-  return { cobble, cobbleN, masonry, masonryN, wood, woodN, sack, sackN, puff, glow, star, scorch, cloud, dispose() { for (const t of all) t.dispose(); } };
+  // One white texel: lets untextured surfaces share a shader program with textured ones.
+  const wh = makeCanvas(2, 2);
+  wh.g.fillStyle = '#fff';
+  wh.g.fillRect(0, 0, 2, 2);
+  const white = tex(wh.canvas, { mips: false });
+
+  return { white, cobble, cobbleN, masonry, masonryN, wood, woodN, sack, sackN, puff, glow, star, scorch, cloud, dispose() { for (const t of all) t.dispose(); } };
 }

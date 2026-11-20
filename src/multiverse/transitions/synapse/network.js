@@ -150,6 +150,11 @@ export function buildNetwork(THREE, rng, o) {
   const P = V(), Tn = V(), Bn = V(), Nn = V();
   const sheathCol = rgb(stain.sheath);
   const moteCol = rgb(stain.mote);
+  // A point r out from P in the plane across the route, at angle th (P, Bn, Nn as last set).
+  const around = (th, r) => {
+    const c = Math.cos(th) * r, s = Math.sin(th) * r;
+    return [P.x + Bn.x * c + Nn.x * s, P.y + Bn.y * c + Nn.y * s, P.z + Bn.z * c + Nn.z * s];
+  };
 
   // --- stations: where the light lands. Somas, the nodes between sheaths, the terminal.
   const R0 = 3.4, RR = 3.0, BOUTON = 8, GAP = 1.3;
@@ -252,12 +257,17 @@ export function buildNetwork(THREE, rng, o) {
   const tissue = (k = 1) => rgb(pick(rng, stain.den), rand(rng, 0.4, 0.8) * k);
   const somaCol = (k = 1) => rgb(pick(rng, stain.soma), rand(rng, 0.5, 0.8) * k);
   const order = (s) => clamp01(1 - s / L + rand(rng, -0.1, 0.1)); // flood order: the far end turns first
+  const SPARK = [0.05, 0.11]; // world radius of an ordinary spark
   const ring = (p, t, size, life, col) => sp.add({ position: [p.x, p.y, p.z], aVel: [0, 0, 0], aTim: [t, life, size, rng()], aCol: col, aKind: [3] });
-  const sparks = (p, t, n, speed, life, cols, bias, spread) => {
+  const sparks = (p, t, n, speed, life, cols, bias, spread, size = SPARK) => {
     for (let i = 0; i < n; i++) {
       const u = unit(rng), v = rand(rng, speed[0], speed[1]);
       const d = bias ? norm({ x: bias.x + u.x * spread, y: bias.y + u.y * spread, z: bias.z + u.z * spread }) : u;
-      sp.add({ position: [p.x, p.y, p.z], aVel: [d.x * v, d.y * v, d.z * v], aTim: [t + rng() * 0.05, rand(rng, life[0], life[1]), rand(rng, 0.05, 0.11), rng()], aCol: mul(pick(rng, cols), rand(rng, 1.2, 2.6)), aKind: [1] });
+      sp.add({
+        position: [p.x, p.y, p.z], aVel: [d.x * v, d.y * v, d.z * v], aKind: [1],
+        aTim: [t + rng() * 0.05, rand(rng, life[0], life[1]), rand(rng, size[0], size[1]), rng()],
+        aCol: mul(pick(rng, cols), rand(rng, 1.2, 2.6)),
+      });
     }
   };
   const white = [1, 1, 1];
@@ -268,7 +278,7 @@ export function buildNetwork(THREE, rng, o) {
   for (const sh of sheaths) {
     const st = stations[sh.hop], len = sh.b - sh.a, cap = 1.1 / len;
     const ord = order((sh.a + sh.b) / 2);
-    rb.strip(along(sh.a, sh.b, 0.9), (u) => 0.72 * capped(u, cap), (u) => u * len, (u) => st.t + u * LAND * st.d, mul(sheathCol, 0.26), o.pulse, 2.6, 0.26, 1, ord);
+    rb.strip(along(sh.a, sh.b, 0.9), (u) => 0.62 * capped(u, cap), (u) => u * len, (u) => st.t + u * LAND * st.d, mul(sheathCol, 0.26), o.pulse, 2.6, 0.26, 1, ord);
     const strands = randInt(rng, 2, 3);
     for (let k = 0; k < strands; k++) {
       const th = rng() * TAU, amp = rand(rng, 1.4, 2.4), n = 13, pts = [];
@@ -294,7 +304,11 @@ export function buildNetwork(THREE, rng, o) {
     route.dir(st.s, Tn);
     if (st.kind === 'soma') {
       const first = j === 0, lit = first ? o.pulse : o.sideCols[side++ & 1];
-      neuron(P, first ? R0 : RR, { trees: first ? 7 : 5, len: first ? [16, 26] : [12, 20], depth: 3, r0: first ? 0.5 : 0.38, flare: first ? 1.6 : 0.9, wander: 0.5, col: heroDen(), somaCol: somaCol(1.1), lit, fire: st.land, speed: 46, decay: 1.3, sustain: 0.3, order: order(st.s), tile: first ? 0 : tile++, mem: first ? 1.15 : 1, avoid: Tn });
+      neuron(P, first ? R0 : RR, {
+        trees: first ? 7 : 5, len: first ? [16, 26] : [12, 20], depth: 3, r0: first ? 0.5 : 0.38, flare: first ? 1.6 : 0.9, wander: 0.5,
+        col: heroDen(), somaCol: somaCol(1.1), lit, fire: st.land, speed: 46, decay: 1.3, sustain: 0.3, order: order(st.s),
+        tile: first ? 0 : tile++, mem: first ? 1.15 : 1, avoid: Tn,
+      });
       ring(P, st.land, first ? 15 : 10, first ? 0.75 : 0.5, mul(lit, 1.6));
       sparks(P, st.land, first ? 80 : 46, [10, 38], [0.35, 0.8], [lit, white, hot]);
     } else if (st.kind === 'node') {
@@ -313,27 +327,31 @@ export function buildNetwork(THREE, rng, o) {
   rb.strip(along(trunk0, somaS, 1.2), () => 0.58, (u) => u * 20, (u) => tCross + 0.12 + u * 0.22, mul(sheathCol, 0.28), o.accent, 1.2, 0.55, 3, 0);
   route.at(somaS, P);
   route.dir(somaS, Tn);
-  neuron(P, 4.2, { trees: 8, len: [18, 30], depth: 3, r0: 0.6, flare: 1.6, wander: 0.45, col: heroDen(), somaCol: somaCol(1.1), lit: o.accent, fire: tCross + 0.3, speed: 110, decay: 1.0, sustain: 0.6, order: 0, tile: 0, mem: 0, avoid: null });
+  neuron(P, 4.2, {
+    trees: 8, len: [18, 30], depth: 3, r0: 0.6, flare: 1.6, wander: 0.45,
+    col: heroDen(), somaCol: somaCol(1.1), lit: o.accent, fire: tCross + 0.3, speed: 110, decay: 1.0, sustain: 0.6, order: 0,
+    tile: 0, mem: 0, avoid: null,
+  });
   // Vesicles crowd the release face; on the impulse they are driven into it and burst.
   route.frame(L, Tn, Bn, Nn);
   const face = route.at(L - 0.3, V());
   for (let i = 0; i < 54; i++) {
     const u = rand(rng, 0.45, 0.93), s = L - BOUTON + u * BOUTON, rr = (0.26 + 2.7 * bulb(u)) * Math.sqrt(rng()) * 0.72, th = rng() * TAU;
     route.at(s, P);
-    const x = P.x + (Bn.x * Math.cos(th) + Nn.x * Math.sin(th)) * rr, y = P.y + (Bn.y * Math.cos(th) + Nn.y * Math.sin(th)) * rr, z = P.z + (Bn.z * Math.cos(th) + Nn.z * Math.sin(th)) * rr;
+    const [x, y, z] = around(th, rr);
     const jx = (rng() - 0.5) * 1.6, jy = (rng() - 0.5) * 1.6;
     const ex = face.x + Bn.x * jx + Nn.x * jy, ey = face.y + Bn.y * jx + Nn.y * jy, ez = face.z + Bn.z * jx + Nn.z * jy;
     const t0 = T.burst + rng() * 0.16, life = rand(rng, 0.18, 0.3);
     sp.add({ position: [x, y, z], aVel: [ex - x, ey - y, ez - z], aTim: [t0, life, rand(rng, 0.22, 0.36), rng()], aCol: mul(mix3(o.accent, white, 0.5), 0.9), aKind: [2] });
     // ...and each one that bursts throws its charge across the cleft.
     const E = { x: ex, y: ey, z: ez };
-    sparks(E, t0 + life, 16, [7, 46], [0.35, 0.95], [o.accent, o.fg, white, o.sideCols[0]], Tn, 0.42);
+    sparks(E, t0 + life, 22, [7, 46], [0.35, 0.95], [o.accent, o.fg, white, o.sideCols[0]], Tn, 0.42, [0.07, 0.17]); // the storm: seen from across the room
   }
   // Receptors on the spine's face take the hit.
   for (let i = 0; i < 16; i++) {
     const th = rng() * TAU, rr = Math.sqrt(rng()) * 2.1;
     route.at(L + CLEFT + 0.25 + rr * rr * 0.12, P);
-    sp.add({ position: [P.x + (Bn.x * Math.cos(th) + Nn.x * Math.sin(th)) * rr, P.y + (Bn.y * Math.cos(th) + Nn.y * Math.sin(th)) * rr, P.z + (Bn.z * Math.cos(th) + Nn.z * Math.sin(th)) * rr], aVel: [0, 0, 0], aTim: [tCross + rng() * 0.12, 1, 0.2, rng()], aCol: mul(o.accent, 1.4), aKind: [4] });
+    sp.add({ position: around(th, rr), aVel: [0, 0, 0], aTim: [tCross + rng() * 0.12, 1, 0.2, rng()], aCol: mul(o.accent, 1.4), aKind: [4] });
   }
   ring(route.at(cleftS, P), tCross, 9, 0.45, mul(mix3(o.accent, white, 0.4), 2));
 
@@ -353,7 +371,11 @@ export function buildNetwork(THREE, rng, o) {
     const lit = prog > 0.7 && chance(rng, 0.65) ? o.accent : o.sideCols[side++ & 1];
     const tOut = passTime(s), lag = 0.03 + rho2 * 0.006;
     const ord = order(s);
-    neuron(c, rad, { trees: randInt(rng, 4, 6), len: [9, 20], depth: 2, r0: rand(rng, 0.2, 0.34), flare: 1.4, wander: 0.6, col: tissue(), somaCol: somaCol(), lit, fire: fires ? tOut + lag : NEVER, speed: 55, decay: 1.0, sustain: 0.42, order: ord, tile: randInt(rng, 0, 3), mem: rand(rng, 0.3, 0.7), avoid: null });
+    neuron(c, rad, {
+      trees: randInt(rng, 4, 6), len: [9, 20], depth: 2, r0: rand(rng, 0.2, 0.34), flare: 1.4, wander: 0.6,
+      col: tissue(), somaCol: somaCol(), lit, fire: fires ? tOut + lag : NEVER, speed: 55, decay: 1.0, sustain: 0.42, order: ord,
+      tile: randInt(rng, 0, 3), mem: rand(rng, 0.3, 0.7), avoid: null,
+    });
     if (fires) {
       // The collateral: a sagging thread from the axon to the cell.
       const bend = unit(rng), pts = [], n = 26;
@@ -370,14 +392,18 @@ export function buildNetwork(THREE, rng, o) {
     const s = rand(rng, -30, L + 40), rho2 = rand(rng, 12, 48), th = rng() * TAU, len = rand(rng, 70, 150);
     route.at(s, P);
     route.frame(s, Tn, Bn, Nn);
-    const c = { x: P.x + (Bn.x * Math.cos(th) + Nn.x * Math.sin(th)) * rho2, y: P.y + (Bn.y * Math.cos(th) + Nn.y * Math.sin(th)) * rho2, z: P.z + (Bn.z * Math.cos(th) + Nn.z * Math.sin(th)) * rho2 };
+    const [cx, cy, cz] = around(th, rho2);
     // Roughly tangent to the cylinder around the route, so they cross the view, not the lens.
-    const tang = { x: -Bn.x * Math.sin(th) + Nn.x * Math.cos(th), y: -Bn.y * Math.sin(th) + Nn.y * Math.cos(th), z: -Bn.z * Math.sin(th) + Nn.z * Math.cos(th) };
-    const j = unit(rng), d = norm({ x: tang.x + Tn.x * rand(rng, -0.7, 0.7) + j.x * 0.3, y: tang.y + Tn.y * rand(rng, -0.7, 0.7) + j.y * 0.3, z: tang.z + Tn.z * rand(rng, -0.7, 0.7) + j.z * 0.3 });
+    const sn = Math.sin(th), cs = Math.cos(th), j = unit(rng);
+    const d = norm({
+      x: Nn.x * cs - Bn.x * sn + Tn.x * rand(rng, -0.7, 0.7) + j.x * 0.3,
+      y: Nn.y * cs - Bn.y * sn + Tn.y * rand(rng, -0.7, 0.7) + j.y * 0.3,
+      z: Nn.z * cs - Bn.z * sn + Tn.z * rand(rng, -0.7, 0.7) + j.z * 0.3,
+    });
     const pts = [], n = 28, bend = unit(rng), sag = rand(rng, 2, 9);
     for (let k = 0; k <= n; k++) {
       const u = k / n - 0.5, w = (0.25 - u * u) * 4 * sag;
-      pts.push(c.x + d.x * len * u + bend.x * w, c.y + d.y * len * u + bend.y * w, c.z + d.z * len * u + bend.z * w);
+      pts.push(cx + d.x * len * u + bend.x * w, cy + d.y * len * u + bend.y * w, cz + d.z * len * u + bend.z * w);
     }
     const late = clamp01(s / L) > 0.45 && chance(rng, 0.45), fr = rand(rng, 0.045, 0.085);
     rb.strip(pts, () => fr, (u) => u * len, (u) => (late ? passTime(s) + u * 0.5 : NEVER), tissue(0.55), late ? o.accent : white, 3, 0.12, 0, order(s));
@@ -387,8 +413,10 @@ export function buildNetwork(THREE, rng, o) {
     const s = rand(rng, -95, L + 70), rho2 = 1.6 + 34 * Math.sqrt(rng()), th = rng() * TAU;
     route.at(s, P);
     route.frame(s, Tn, Bn, Nn);
-    const dx = Math.cos(th) * rho2, dy = Math.sin(th) * rho2;
-    sp.add({ position: [P.x + Bn.x * dx + Nn.x * dy, P.y + Bn.y * dx + Nn.y * dy, P.z + Bn.z * dx + Nn.z * dy], aVel: [rand(rng, 0.3, 1.2), rand(rng, 0.3, 1.2), rand(rng, 0.3, 1.2)], aTim: [0, 1, rand(rng, 0.045, 0.15), rng()], aCol: mul(moteCol, rand(rng, 0.25, 1.0)), aKind: [0] });
+    sp.add({
+      position: around(th, rho2), aVel: [rand(rng, 0.3, 1.2), rand(rng, 0.3, 1.2), rand(rng, 0.3, 1.2)], aKind: [0],
+      aTim: [0, 1, rand(rng, 0.045, 0.15), rng()], aCol: mul(moteCol, rand(rng, 0.25, 1.0)),
+    });
   }
 
   return { route, L, stations, hops: J, relays, pulseS, camS, passTime, cleftS, ribbons: rb.build(THREE), somas: sm.build(THREE), sprites: sp.build(THREE) };

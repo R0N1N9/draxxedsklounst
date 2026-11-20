@@ -64,10 +64,10 @@ void main() {
   vCol = aCol;
 }`;
 const POINT_FRAG = `
-precision highp float; varying vec4 vCol;
+precision highp float; varying vec4 vCol; uniform float uAdd;
 void main() {
-  float a = 1.0 - smoothstep(0.45, 1.0, length(gl_PointCoord - 0.5) * 2.0);
-  gl_FragColor = ADD;
+  float a = (1.0 - smoothstep(0.45, 1.0, length(gl_PointCoord - 0.5) * 2.0)) * vCol.a;
+  gl_FragColor = vec4(vCol.rgb * mix(1.0, a, uAdd), mix(a, 1.0, uAdd)); // one program for sparks (additive) and clods
 }`;
 const TRACER_VERT = `
 attribute vec3 iA, iB; attribute vec4 iCol;
@@ -121,7 +121,7 @@ void main() {
 }`;
 const SCORCH_FRAG = 'precision highp float; uniform sampler2D uTex; varying vec2 vUv; varying float vA; void main() { gl_FragColor = vec4(vec3(0.012, 0.01, 0.009), texture2D(uTex, vUv).a * vA); }';
 
-export function buildFx(THREE, tex, map, fogShared, fogColor, fogDensity) {
+export function buildFx(THREE, tex, map, fogShared, fogColor, fogDensity, Q) {
   const group = new THREE.Group();
   const disposables = [];
   const own = (x) => { disposables.push(x); return x; };
@@ -148,7 +148,7 @@ export function buildFx(THREE, tex, map, fogShared, fogColor, fogDensity) {
     group.add(m);
     return m;
   };
-  const sunCol = new THREE.Color(1.0, 0.55, 0.26).multiplyScalar(2.6), amb = new THREE.Color(0.36, 0.39, 0.46);
+  const sunCol = new THREE.Color(1.0, 0.52, 0.22).multiplyScalar(5.5), amb = new THREE.Color(0.55, 0.62, 0.78);
 
   // ---- smoke / dust / fire -------------------------------------------------------------
   const SN = 300;
@@ -208,10 +208,9 @@ export function buildFx(THREE, tex, map, fogShared, fogColor, fogDensity) {
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aCol', new THREE.BufferAttribute(col, 4).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('aSize', new THREE.BufferAttribute(size, 1).setUsage(THREE.DynamicDrawUsage));
-    const u = { uScale: { value: 600 } };
+    const u = { uScale: { value: 600 }, uAdd: { value: additive ? 1 : 0 } };
     const m = new THREE.Points(g, own(new THREE.ShaderMaterial({
-      vertexShader: POINT_VERT, uniforms: u, transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-      fragmentShader: POINT_FRAG.replace('ADD', additive ? 'vec4(vCol.rgb * a * vCol.a, 1.0)' : 'vec4(vCol.rgb, a * vCol.a)'),
+      vertexShader: POINT_VERT, fragmentShader: POINT_FRAG, uniforms: u, transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
     })));
     m.frustumCulled = false;
     m.renderOrder = 6;
@@ -319,8 +318,9 @@ export function buildFx(THREE, tex, map, fogShared, fogColor, fogDensity) {
   }
 
   // ---- flashes: a glow, and the one point light they share --------------------------------
+  // Real point lights only where the hardware can afford them per pixel; elsewhere the glow sprites carry it.
   const flashLight = new THREE.PointLight('#ffb060', 0, 45, 2);
-  group.add(flashLight);
+  if (Q.rich) group.add(flashLight);
   const FL = 10, fl = new Float32Array(FL * 9); // x y z r g b size life max
   let flN = 0;
   function flash(x, y, z, r, g, b, size, life) {
@@ -353,7 +353,7 @@ export function buildFx(THREE, tex, map, fogShared, fogColor, fogDensity) {
   }
 
   // Two parachute flares can burn at once; the lights always exist so shaders never recompile.
-  const flareLights = [0, 1].map(() => { const l = new THREE.PointLight('#fff0d2', 0, 75, 2); group.add(l); return l; });
+  const flareLights = [0, 1].map(() => { const l = new THREE.PointLight('#fff0d2', 0, 75, 2); if (Q.rich) group.add(l); return l; });
 
   return {
     group, smoke, sparks, clods, tracer, marker, scorch, flash, flareLights,

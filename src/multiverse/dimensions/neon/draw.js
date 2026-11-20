@@ -1,12 +1,12 @@
 // Everything you see. The draw order is the lighting model: the glass floor and whatever
 // the dark may hide go down first, then the shadow volumes, then every source of light
 // (cover, tiles, lasers, rails, the local sniper) on top of the dark.
-import { TAU, clamp, clamp01, lerp, makeCanvas, makeRng, hashSeed, hexToRgb, ease, angDiff } from '../../kit.js';
+import { TAU, clamp, clamp01, lerp, makeCanvas, makeRng, hashSeed, hexToRgb, ease } from '../../kit.js';
 import { W, H, R, MID, GANTRY, CH_TOP, CH_BOT, BEAT, PULSE_EVERY, SPAWNS, BEAM_FADE } from './world.js';
 import { makeActors } from './actors.js';
 import { makeProps } from './props.js';
 import { MARGIN, bakeFloor, bakeHalo } from './floor.js';
-import { INK, VIOLET, EDGE, PINK, HOT, HAZARD, font } from './style.js';
+import { VIOLET, EDGE, PINK, HOT, HAZARD, font } from './style.js';
 
 const MASK = 4;    // the shadow mask is a quarter-size sheet: the upscale is its soft edge
 const EYE = [9, 0, -4.5, 7.8, -4.5, -7.8]; // three eye points: a penumbra, not a knife edge
@@ -268,7 +268,7 @@ export function makeRenderer(ctx, world, S) {
     const k = view.k, px = 1 / k, wide = Math.max(2.5, 1.7 * px);
     const me = P[ctx.me], foe = P[1 - ctx.me];
     const live = ctx.phase === 'live', t = S.t;
-    const clock = live || ctx.phase === 'over' ? ctx.time : t;
+    const clock = live ? ctx.time : t; // the music's clock while there is music
     const beat = clock / BEAT, bp = beat % 1, thump = Math.exp(-bp * 5);
     const sh = S.shakeOut;
     const cover = 1 - st.dissolve;
@@ -621,10 +621,12 @@ export function makeRenderer(ctx, world, S) {
     fit,
     toScreen,
     render,
+    frame: view, // read-only: s = CSS px per world unit at zoom 1, (cx, cy) = where the camera centre lands
     dispose() {
       for (const c of [floor, halo, mask]) if (c) c.canvas.width = c.canvas.height = 0;
       for (const c of sprites.values()) c.canvas.width = c.canvas.height = 0;
       sprites.clear();
+      fonts.clear();
       floor = halo = null;
     },
   };

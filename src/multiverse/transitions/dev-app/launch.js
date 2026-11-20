@@ -94,12 +94,29 @@ export function drawInspector(g, R, fx, fy, plan, color, k, del, gone, sc) {
   g.restore();
 }
 
-/** One placeholder asset: dashed box, a cross, a name plate. */
-function placeholder(g, R, x, y, name, color, k, fill) {
+/** Where a placeholder stands once it has been kept inside the pane. */
+function standAt(R, x, y, k, out) {
+  const e = ease.outBack(clamp(k, 0, 1)), u = R.w / 560;
+  out.bw = R.w * 0.085 * e;
+  out.bh = R.h * 0.3 * e;
+  out.x = clamp(x, R.x + out.bw / 2 + 4, R.x + R.w - out.bw / 2 - 4);
+  out.y = clamp(y, R.y + out.bh / 2 + 4, R.y + R.h - out.bh / 2 - 16 * u);
+  return out;
+}
+
+/**
+ * One placeholder asset: dashed box, a cross, a name plate. `tip` (radians) topples the box
+ * about its foot; `struck` 0..1 strikes the name out, the way the tree strikes deleted files.
+ */
+function placeholder(g, R, P, name, color, k, fill, tip = 0, struck = 0, nudge = 0) {
   if (k <= 0.01) return;
-  const e = ease.outBack(clamp(k, 0, 1));
-  const bw = R.w * 0.085 * e, bh = R.h * 0.3 * e, u = R.w / 560;
-  const px = clamp(x, R.x + bw / 2 + 4, R.x + R.w - bw / 2 - 4), py = clamp(y, R.y + bh / 2 + 4, R.y + R.h - bh / 2 - 16 * u);
+  const { bw, bh } = P, px = P.x + nudge, py = P.y, u = R.w / 560;
+  g.save();
+  if (tip) {
+    g.translate(px, py + bh / 2);
+    g.rotate(tip);
+    g.translate(-px, -py - bh / 2);
+  }
   g.fillStyle = rgba(color, 0.1 + 0.3 * fill);
   g.fillRect(px - bw / 2, py - bh / 2, bw, bh);
   g.strokeStyle = color;
@@ -113,21 +130,47 @@ function placeholder(g, R, x, y, name, color, k, fill) {
   g.moveTo(px - bw / 2, py - bh / 2); g.lineTo(px + bw / 2, py + bh / 2);
   g.moveTo(px + bw / 2, py - bh / 2); g.lineTo(px - bw / 2, py + bh / 2);
   g.stroke();
-  g.globalAlpha = 1;
+  g.restore();
   const fs = Math.max(6.5, 10.5 * u);
   g.font = `600 ${fs}px ${MONO}`;
   const label = name, tw = g.measureText(label).width + fs, th2 = fs * 1.6;
-  const lx = clamp(px - tw / 2, R.x + 2, R.x + R.w - tw - 2), ly = py + bh / 2 + 3 * u;
-  g.fillStyle = color;
+  const lx = clamp(P.x - tw / 2, R.x + 2, R.x + R.w - tw - 2), ly = py + bh / 2 + 3 * u;
+  g.fillStyle = struck > 0 ? mixHex(color, '#20222a', 0.45 * struck) : color;
   g.fillRect(lx, ly, tw, th2);
   g.fillStyle = contrastOn(color);
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.fillText(label, lx + tw / 2, ly + th2 / 2 + 0.5);
+  if (struck > 0) g.fillRect(lx + fs * 0.3, ly + th2 / 2 - Math.max(0.5, 0.6 * u), (tw - fs * 0.6) * struck, Math.max(1, 1.2 * u));
 }
 
-/** The half-built scene: both snipers as labelled placeholders, a camera chip naming the new perspective. */
-export function drawScaffold(g, R, plan, to, fx, fy, kL, kW, fill, kCam) {
+/** A tracer from a to b: `k` 0..1 is the round in flight, `fade` 0..1 the trail dying behind it. */
+function tracer(g, ax, ay, bx, by, color, k, fade, u) {
+  if (k <= 0 || fade >= 1) return;
+  const hx = ax + (bx - ax) * k, hy = ay + (by - ay) * k;
+  g.lineCap = 'round';
+  g.strokeStyle = rgba(color, 0.55 * (1 - fade));
+  g.lineWidth = Math.max(1.5, 3.2 * u);
+  g.beginPath();
+  g.moveTo(ax, ay);
+  g.lineTo(hx, hy);
+  g.stroke();
+  g.strokeStyle = rgba('#ffffff', 0.95 * (1 - fade));
+  g.lineWidth = Math.max(0.75, 1.1 * u);
+  g.stroke();
+  g.lineCap = 'butt';
+}
+
+const WS = { x: 0, y: 0, bw: 0, bh: 0 }, LS = { x: 0, y: 0, bw: 0, bh: 0 };
+const bounce = (k) => (k < 0.62 ? (k / 0.62) * (k / 0.62) : 1 - 0.22 * Math.sin(((k - 0.62) / 0.38) * Math.PI));
+
+/**
+ * The half-built scene: both snipers as labelled placeholders, a camera chip naming the new
+ * perspective — and, as the build's last step, the round re-run as its test: the winner's box
+ * puts one tracer into the loser's, which falls over. (A draw: both fire, both miss.)
+ * `shot` = seconds since that test fired (negative before it).
+ */
+export function drawScaffold(g, R, plan, to, fx, fy, kL, kW, fill, kCam, shot) {
   g.save();
   g.beginPath();
   g.rect(R.x, R.y, R.w, R.h);
@@ -135,13 +178,59 @@ export function drawScaffold(g, R, plan, to, fx, fy, kL, kW, fill, kCam) {
   const u = R.w / 560;
   const wx = fx < 0.5 ? fx + 0.34 : fx - 0.34, wy = clamp(fy + 0.03, 0.3, 0.7);
   const ly = clamp(fy, 0.3, 0.7);
-  placeholder(g, R, R.x + wx * R.w, R.y + wy * R.h, plan.W || 'PLAYER_1', plan.winColor, kW, fill);
-  placeholder(g, R, R.x + fx * R.w, R.y + ly * R.h, plan.L || 'PLAYER_2', plan.loseColor, kL, fill);
+  standAt(R, R.x + wx * R.w, R.y + wy * R.h, kW, WS);
+  standAt(R, R.x + fx * R.w, R.y + ly * R.h, kL, LS);
+  const dir = LS.x >= WS.x ? 1 : -1, hit = !!plan.L;
+  const fly = clamp(shot / 0.07, 0, 1), fade = clamp((shot - 0.07) / 0.3, 0, 1);
+  const recoil = shot > 0 ? Math.max(0, 1 - shot / 0.16) * 3.5 * u : 0;
+  // The loser's box takes the round and topples away from it; its name is struck out.
+  const fall = hit && shot > 0.07 ? bounce(clamp((shot - 0.07) / 0.36, 0, 1)) : 0;
+  placeholder(g, R, WS, plan.W || 'PLAYER_1', plan.winColor, kW, fill, 0, 0, -dir * recoil);
+  placeholder(g, R, LS, plan.L || 'PLAYER_2', plan.loseColor, kL, fill, dir * fall * Math.PI / 2, hit ? clamp((shot - 0.1) / 0.2, 0, 1) : 0, hit ? 0 : dir * recoil);
+  if (shot > 0 && kW > 0.5 && kL > 0.5) {
+    const ay = WS.y - WS.bh * 0.22, by = LS.y - LS.bh * 0.22;
+    const ax = WS.x + dir * WS.bw / 2, bx = LS.x - dir * LS.bw / 2;
+    if (hit) tracer(g, ax, ay, LS.x, by, plan.winColor, fly, fade, u);
+    else {
+      // Two rounds pass each other and leave by opposite edges of the pane.
+      const over = R.w * 1.2;
+      tracer(g, ax, ay, ax + dir * over, ay - over * 0.07, plan.winColor, fly, fade, u);
+      tracer(g, bx, by + LS.bh * 0.1, bx - dir * over, by + LS.bh * 0.1 - over * 0.05, plan.loseColor, fly, fade, u);
+    }
+    if (shot < 0.12) {
+      // Muzzle flash: a four-point spark at the box's edge.
+      const a = 1 - shot / 0.12, r = (5 + 9 * (1 - a)) * u;
+      g.fillStyle = rgba('#ffffff', a);
+      for (const [mx, my, sd] of hit ? [[ax, ay, dir]] : [[ax, ay, dir], [bx, by + LS.bh * 0.1, -dir]]) {
+        g.beginPath();
+        g.moveTo(mx + sd * r * 1.6, my); g.lineTo(mx + sd * r * 0.3, my - r * 0.3); g.lineTo(mx, my - r);
+        g.lineTo(mx - sd * r * 0.2, my); g.lineTo(mx, my + r); g.lineTo(mx + sd * r * 0.3, my + r * 0.3);
+        g.closePath();
+        g.fill();
+      }
+    }
+    if (hit && shot > 0.07 && shot < 0.6) {
+      // The hit: a ring and a few square chips of the loser's colour. Pixels, nothing else.
+      const s2 = shot - 0.07, seeds = plan.keySeeds;
+      g.strokeStyle = rgba('#ffffff', Math.max(0, 1 - s2 / 0.22));
+      g.lineWidth = Math.max(1, 1.5 * u);
+      g.beginPath();
+      g.arc(LS.x, by, (4 + 60 * s2) * u, 0, TAU);
+      g.stroke();
+      g.fillStyle = plan.loseColor;
+      g.globalAlpha = clamp(1 - (s2 - 0.25) / 0.28, 0, 1);
+      for (let i = 0; i < 9; i++) {
+        const an = -Math.PI / 2 + (seeds[i + 7] - 0.5) * 2.6 + dir * 0.5, sp = (70 + 150 * seeds[i + 27]) * u, sz = (2.2 + 2.4 * seeds[i + 47]) * u;
+        g.fillRect(LS.x + Math.cos(an) * sp * s2 - sz / 2, by + Math.sin(an) * sp * s2 + 520 * u * s2 * s2 - sz / 2, sz, sz);
+      }
+      g.globalAlpha = 1;
+    }
+  }
   if (kCam > 0.01) {
     const e = ease.outCubic(clamp(kCam, 0, 1));
     const fs = Math.max(6.5, 10 * u);
     g.font = `600 ${fs}px ${MONO}`;
-    const label = trunc(g, `camera: ${to.perspective || 'unknown'}`, R.w * 0.7);
+    const label = trunc(g, `camera: ${to.perspective || 'unknown'}`, R.w * 0.5);
     const tw = g.measureText(label).width + fs * 1.4, h = fs * 1.9;
     const x = R.x + 7 * u - (1 - e) * 20 * u, y = R.y + 7 * u;
     g.globalAlpha = e;
@@ -152,6 +241,24 @@ export function drawScaffold(g, R, plan, to, fx, fy, kL, kW, fill, kCam) {
     g.lineWidth = 1;
     g.stroke();
     g.fillStyle = to.palette.fg;
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    g.fillText(label, x + fs * 0.7, y + h / 2 + 0.5);
+    g.globalAlpha = 1;
+  }
+  // The test's verdict, top right of the pane, in the console's voice.
+  if (shot > 0.2) {
+    const e = ease.outBack(clamp((shot - 0.2) / 0.24, 0, 1));
+    const fs = Math.max(6.5, 10 * u);
+    g.font = `600 ${fs}px ${MONO}`;
+    const label = trunc(g, hit ? `test: ${plan.how ? plan.how.toLowerCase() : 'one clean shot'} · passed` : 'test: 2 shots · 0 hits · passed', R.w * 0.44);
+    const tw = g.measureText(label).width + fs * 1.4, h = fs * 1.9;
+    const x = R.x + R.w - 7 * u - tw, y = R.y + 7 * u - (1 - e) * 10 * u;
+    g.globalAlpha = clamp((shot - 0.2) / 0.12, 0, 1);
+    roundRect(g, x, y, tw, h, 3 * u);
+    g.fillStyle = rgba(to.palette.accent, 0.9);
+    g.fill();
+    g.fillStyle = contrastOn(to.palette.accent);
     g.textAlign = 'left';
     g.textBaseline = 'middle';
     g.fillText(label, x + fs * 0.7, y + h / 2 + 0.5);

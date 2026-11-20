@@ -8,31 +8,37 @@
 // The comedy is contrast — one quiet, deadpan second after a tense duel, then relentless
 // escalation — so the fake software has to be immaculate: it is a parody of polish.
 //
-// BEAT SHEET (11 s, swap at 7.7 s)
+// BEAT SHEET (11.3 s, swap at 8.0 s)
 //   0.00  FREEZE     the old world, untouched, silent. Nothing happens. That is the joke.
 //   0.50  SCRIM      it softens and dims like the backdrop of a modal…
 //   0.72  DIALOG     …and a cheerful alert pops dead centre with a chime: "Do you want to
 //                    develop an app?"  A pointer wanders in on its own and goes for [No].
 //   1.0-3.0  THE GAG one of five (see GAGS in dev-app/dialog.js) — the answer is Yes.
-//   3.0   "GREAT CHOICE!"  the icon hops, confetti, "Developing your app…".
-//   3.5   TAKEOVER   the pointer grabs the corner of the WORLD and resizes it like a layer,
+//   3.0   "GREAT CHOICE!"  the icon hops, confetti, "Developing your app…" — held for a
+//                    good half second: it is the punchline, it has to be read.
+//   3.8   TAKEOVER   the pointer grabs the corner of the WORLD and resizes it like a layer,
 //                    down into the preview pane of an IDE that assembles around it. An
 //                    inspector tag stays pinned to the impact point, naming the loser.
-//   4.2-6.8  CODE    the next world's source types itself: new Dimension("<name>"),
+//   4.5-7.1  CODE    the next world's source types itself: new Dimension("<name>"),
 //                    perspective, palette (real colour chips), players, the score, and
 //                    comments that mock the kill by name.
-//   4.5-7.0  BUILD   comically specific steps; the preview is scanned into a wireframe of
+//   4.8-7.3  BUILD   comically specific steps; the preview is scanned into a wireframe of
 //                    itself in the next world's colours, crunched into placeholder tiles,
 //                    cleared to an empty scene with two placeholder snipers. Sometimes an
 //                    error that fixes itself. A needy pop-up rates itself five stars.
-//                    BUILD SUCCEEDED.
-//   7.30  RUN        the pointer presses Run; the preview blooms to white.
-//   7.70  THE SWAP   on full white.
-//   7.8   LAUNCH     the white clears on the app's splash screen in the pane — the new
+//   6.85  THE TEST   the build's last step re-runs the round on the placeholders: the
+//                    winner's box puts a tracer into the loser's, which falls over.
+//                    BUILD SUCCEEDED · 1 casualty.
+//   7.60  RUN        the pointer presses Run; the preview blooms to white behind a shock
+//                    ring in the new world's accent.
+//   8.00  THE SWAP   on full white.
+//   8.1   LAUNCH     the white clears on the app's splash screen in the pane — the new
 //                    world's palette, its name landing as the title — then the splash irises
 //                    open on the new world itself, running small inside the IDE.
-//   8.95  ARRIVAL    the pane grows to fill the screen while the IDE's panels are thrown
-//                    off it; a toast: "App launched: <name>". The overlay ends fully clear.
+//   9.25  ARRIVAL    the pane grows to fill the screen while the IDE's panels are thrown
+//                    off it; a toast: "App launched: <name>".
+//   10.15 LIVE       the build's scan line makes one last pass and the still frame goes
+//                    live behind it. The overlay ends fully clear.
 //
 // DIFFERENT EVERY TIME (all drawn from ctx.rng in create(), see dev-app/script.js)
 //   1. the dialog gag: dodge / relabel / remind-me-later / countdown / the button falls off
@@ -49,35 +55,42 @@
 //              into its own wireframe and placeholder tiles by the shader below
 //   focus      the inspector tag and the loser's placeholder sit on the impact point
 //   winner / loser / how   named in the dialog copy, the code, the comments, the build
-//              steps, the inspector, the console, the toast — each in its identity colour
+//              steps, the inspector, the console, the toast — each in its identity colour —
+//              and re-enacted by the two placeholders as the build's closing test
 //   score / matchPoint     const SCORE = [a, b] and its comment
 //   from       "Removing the valley…", the project name, the files that get deleted
 //   to         name, perspective, tagline, and palette: chips in the editor, the preview's
 //              wireframe and tiles, the build bar's gradient, the splash, the status bar
-import { seg, ease, clamp, lerp, hexToRgb, roundRect, canvasTexture, makeCanvas, fullscreenPass, COVER_UV_GLSL, GLSL_NOISE } from '../kit.js';
+import { seg, ease, clamp, lerp, hexToRgb, rgba, roundRect, canvasTexture, makeCanvas, fullscreenPass, COVER_UV_GLSL, GLSL_NOISE } from '../kit.js';
 import { makePlan, slug } from './dev-app/script.js';
 import { makeTheme, drawPointer, drawRipple, softShadow } from './dev-app/ui.js';
 import { GAGS, T_POP, T_OUT, dialogLayout, gagKeys, drawGag } from './dev-app/dialog.js';
 import { ideLayout, drawIdeBack, drawIdeFront, lerpRect } from './dev-app/ide.js';
 import { drawHandles, drawInspector, drawScaffold, drawReady, drawSplash, drawToast, drawNag } from './dev-app/launch.js';
 
-const DUR = 11, SWAP_AT = 0.7, SWAP = DUR * SWAP_AT;
+// SWAP is computed the way the director computes it (swapAt * duration), so both agree to the bit.
+const DUR = 11.3, SWAP_AT = 8 / DUR, SWAP = SWAP_AT * DUR;
+const TK = T_OUT + 0.2; // the takeover starts as the dialog's last pixels fade
 const T = {
   scrim: 0.5,
-  grab: 3.5, drag0: 3.56, drag1: 4.36,    // the pointer takes the world by a corner and shrinks it
-  type0: 4.22, type1: 6.82,
-  build0: 4.52, build1: 7.0,
-  nag0: 5.5, nag1: 6.86,                  // a pop-up nobody needed, in the middle of the build
-  run: 7.3, white: SWAP - 0.22,           // opaque white from here until the new world exists
-  iris0: SWAP + 0.7, iris1: SWAP + 1.0,   // splash → the world, still inside the pane
-  exp0: SWAP + 1.25, exp1: SWAP + 2.15,   // the pane takes the screen
-  fade1: SWAP + 2.5,
+  grab: TK, drag0: TK + 0.06, drag1: TK + 0.86, // the pointer takes the world by a corner and shrinks it
+  type0: TK + 0.72, type1: TK + 3.32,
+  build0: TK + 1.02, build1: TK + 3.5,
+  nag0: TK + 2.0, nag1: TK + 3.36,          // a pop-up nobody needed, in the middle of the build
+  run: TK + 3.8, white: SWAP - 0.22,        // opaque white from here until the new world exists
+  iris0: SWAP + 0.7, iris1: SWAP + 1.0,     // splash → the world, still inside the pane
+  exp0: SWAP + 1.25, exp1: SWAP + 2.15,     // the pane takes the screen…
+  fade1: SWAP + 2.53,                       // …and a scan line makes it live
   toast0: SWAP + 1.6, toast1: DUR - 0.46,
 };
 
 // The old world, wherever the pointer has dragged it, and whatever the build is doing to it.
-const FRAG = `
+// One source, three programs (MODE 0 plain, 1 modal blur, 2 the build): each act only pays
+// for its own texture taps. A uniform-gated branch is no guarantee of that — software and
+// some mobile rasterisers run both sides — and one fat shader ran the whole film at a crawl.
+const frag = (mode) => `
   precision highp float;
+  #define MODE ${mode}
   varying vec2 vUv;
   uniform sampler2D tFrom, tSoft;
   uniform vec4 uRect;              // where the world sits: x0, y0, x1, y1 in screen uv (y up)
@@ -98,23 +111,26 @@ const FRAG = `
     if (p.x < -uPx.x || p.x > 1.0 + uPx.x || p.y < -uPx.y || p.y > 1.0 + uPx.y) discard;
     p = clamp(p, 0.0, 1.0);
     vec2 q = p;
+  #if MODE == 2
     float band = floor(p.y * 22.0);
     if (uGlitch > 0.0) {
       // Hot reload: rows of the picture slip sideways for a few frames.
       float on = step(0.55, hash21(vec2(band, uTick)));
       q.x = clamp(q.x + (hash21(vec2(uTick, band)) - 0.5) * 0.16 * uGlitch * on, 0.0, 1.0);
     }
+  #endif
     vec3 c = src(q);
-    if (uBlur > 0.0) {
-      vec3 acc = vec3(0.0);
-      for (int i = 0; i < 14; i++) {
-        float a = float(i) * 2.39996, r = sqrt((float(i) + 0.5) / 14.0);
-        acc += texture2D(tSoft, coverUv(q + vec2(cos(a), sin(a) * uSA) * r * 0.014 * uBlur, uSA, uIA)).rgb;
-      }
-      acc /= 14.0;
-      c = mix(c, acc, smoothstep(0.0, 0.3, uBlur));
-      c = mix(c, vec3(luma(c)), 0.22 * uBlur) * (1.0 - uDim);
+  #if MODE == 1
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 14; i++) {
+      float a = float(i) * 2.39996, r = sqrt((float(i) + 0.5) / 14.0);
+      acc += texture2D(tSoft, coverUv(q + vec2(cos(a), sin(a) * uSA) * r * 0.014 * uBlur, uSA, uIA)).rgb;
     }
+    acc /= 14.0;
+    c = mix(c, acc, smoothstep(0.0, 0.3, uBlur));
+    c = mix(c, vec3(luma(c)), 0.22 * uBlur) * (1.0 - uDim);
+  #endif
+  #if MODE == 2
     if (uFront > -0.5) {
       // Sobel on the old frame: the world drawn as its own blueprint, in the next palette.
       float s = dot(p - 0.5, uDir) + 0.5;
@@ -170,8 +186,22 @@ const FRAG = `
       c = mix(c, b, step(hash21(id + 1.3), uBlank * 1.12));
     }
     c = mix(c, vec3(0.95, 0.2, 0.26), uErr * (0.25 + 0.2 * step(0.5, hash21(vec2(band, uTick + 2.0)))));
+  #endif
     gl_FragColor = vec4(c, 1.0);
   }`;
+
+// A ring of light with soft shoulders and a white-hot core (a stroked arc looks cut out of card).
+function softRing(g, w, h, cx, cy, r, wd, color, alpha) {
+  if (alpha <= 0.004) return;
+  const gr = g.createRadialGradient(cx, cy, Math.max(0, r - wd), cx, cy, r + wd);
+  gr.addColorStop(0, rgba(color, 0));
+  gr.addColorStop(0.4, rgba(color, alpha * 0.55));
+  gr.addColorStop(0.5, `rgba(255,255,255,${alpha})`);
+  gr.addColorStop(0.6, rgba(color, alpha * 0.55));
+  gr.addColorStop(1, rgba(color, 0));
+  g.fillStyle = gr;
+  g.fillRect(0, 0, w, h);
+}
 
 const pressed = (t, t0) => (t < t0 ? 0 : t < t0 + 0.05 ? (t - t0) / 0.05 : Math.max(0, 1 - (t - t0 - 0.05) / 0.16));
 const rgb01 = (hex) => { const c = hexToRgb(hex); return [c.r / 255, c.g / 255, c.b / 255]; };
@@ -220,19 +250,23 @@ export default {
     // -- GL: the old world -------------------------------------------------------
     // srgb: false — texels go straight back out, so frame 0 is exactly the gameplay frame.
     const tex = canvasTexture(THREE, ctx.fromImage, { srgb: false });
+    // Mip-mapped: the world spends half the film at ~45% size in the pane, where a bare
+    // bilinear fetch shimmers on every thin line. At 1:1 (frame 0) the base level is used.
+    tex.generateMipmaps = true;
+    tex.minFilter = THREE.LinearMipmapLinearFilter;
     const softTex = canvasTexture(THREE, softCopy(ctx.fromImage), { srgb: false });
-    const pass = fullscreenPass(THREE, {
-      fragmentShader: FRAG,
-      uniforms: {
-        tFrom: { value: tex }, tSoft: { value: softTex },
-        uRect: { value: new THREE.Vector4(0, 0, 1, 1) }, uPx: { value: new THREE.Vector2(0.001, 0.001) },
-        uSA: { value: 1 }, uIA: { value: ctx.fromImage.width / Math.max(1, ctx.fromImage.height) },
-        uBlur: { value: 0 }, uDim: { value: 0 }, uFront: { value: -1 }, uDir: { value: new THREE.Vector2(plan.scan[0], plan.scan[1]) },
-        uBlock: { value: 0 }, uCells: { value: plan.cells }, uBlank: { value: 0 }, uTick: { value: 0 }, uGlitch: { value: 0 }, uErr: { value: 0 },
-        uBg: { value: new THREE.Vector3(...rgb01(to.palette.bg)) }, uFg: { value: new THREE.Vector3(...rgb01(to.palette.fg)) }, uAc: { value: new THREE.Vector3(...rgb01(to.palette.accent)) },
-      },
-    });
-    const U = pass.uniforms;
+    const U = {
+      tFrom: { value: tex }, tSoft: { value: softTex },
+      uRect: { value: new THREE.Vector4(2, 2, 3, 3) }, uPx: { value: new THREE.Vector2(0.001, 0.001) },
+      uSA: { value: 1 }, uIA: { value: ctx.fromImage.width / Math.max(1, ctx.fromImage.height) },
+      uBlur: { value: 0 }, uDim: { value: 0 }, uFront: { value: -1 }, uDir: { value: new THREE.Vector2(plan.scan[0], plan.scan[1]) },
+      uBlock: { value: 0 }, uCells: { value: plan.cells }, uBlank: { value: 0 }, uTick: { value: 0 }, uGlitch: { value: 0 }, uErr: { value: 0 },
+      uBg: { value: new THREE.Vector3(...rgb01(to.palette.bg)) }, uFg: { value: new THREE.Vector3(...rgb01(to.palette.fg)) }, uAc: { value: new THREE.Vector3(...rgb01(to.palette.accent)) },
+    };
+    const passes = [0, 1, 2].map((mode) => fullscreenPass(THREE, { fragmentShader: frag(mode), uniforms: U }));
+    // Compile all three now, behind the cut (uRect starts off-screen, so nothing is drawn):
+    // otherwise the first blurred frame and the first build frame would each hitch.
+    for (const p of passes) p.render(renderer);
 
     // -- schedules -----------------------------------------------------------------
     // Typing: each line has its own pace and a breath after it, fitted to the window.
@@ -261,6 +295,8 @@ export default {
       }
     }
     const fixAt = errEnd - 0.17;
+    // The build's last act: the round re-run as a test on the two placeholders (see drawScaffold).
+    const shotAt = Math.max(T.build1 - 0.46, b[3] + 0.5);
     const con = [{ t: T.drag1 + 0.04, s: `$ develop --app "${to.name}" --yes`, kind: 'cmd', type: 0.32 }];
     plan.steps.forEach((s, i) => con.push({ t: b[i], s, kind: 'step', doneAt: b[i + 1], doneStr: `${plan.ms[i]} ms` }));
     if (plan.error) {
@@ -277,7 +313,7 @@ export default {
     const typed = new Array(nLines).fill(0), conNow = [];
     const st = {
       t: 0, typed, caretLine: 0, caretCol: 0, caretOn: false, typing: false, mockK: 0, todoK: 0, pal: 0, zoom: 1, badge: 'LIVE', errCount: 0,
-      ready: 0, runPress: 0, live: false, con: conNow, treeDel: [0, 0, 0], treeAdd: [0, 0, 0, 0],
+      ready: 0, runPress: 0, live: false, dusk: 0, con: conNow, treeDel: [0, 0, 0], treeAdd: [0, 0, 0, 0],
       build: { state: 'idle', k: 0, label: '', shake: 0 },
       xf: { title: [0, 0, 0, 0], tree: [0, 0, 0, 0], editor: [0, 0, 0, 0], col: [0, 0, 0, 0], status: [0, 0, 0, 0] },
     };
@@ -495,6 +531,12 @@ export default {
       cue(errAt, () => A.sfx('error', { gain: 0.75 }));
       cue(fixAt, () => A.sfx('blip', { gain: 0.5, pitch: 1.7 }));
     }
+    if (ctx.loser) {
+      cue(shotAt, () => A.sfx('hit', { gain: 0.5, pitch: 1.3 }));
+      cue(shotAt + 0.29, () => A.sfx('thud', { gain: 0.2, pitch: 1.9 }));
+    } else {
+      cue(shotAt, () => { A.sfx('tick', { gain: 0.45, pitch: 1.5, pan: -0.3 }); A.sfx('tick', { gain: 0.45, pitch: 1.2, pan: 0.3, delay: 0.03 }); });
+    }
     cue(T.nag0, () => A.sfx('blip', { gain: 0.4, pitch: 1.35 }));
     if (plan.nag.kind === 'stars') for (let i = 0; i < 5; i++) cue(T.nag0 + 0.44 + i * 0.104, () => A.tone({ type: 'triangle', freq: 880 * Math.pow(1.122, i), dur: 0.12, gain: 0.1 }));
     else if (plan.nag.kind === 'button') cue(T.nag0 + 0.78, () => A.sfx('click', { gain: 0.6, pitch: 1.1 }));
@@ -507,6 +549,11 @@ export default {
     cue(T.exp0, () => A.sfx('whoosh', { gain: 0.75, pitch: 0.8 }));
     cue(T.exp1 - 0.05, () => A.sfx('thud', { gain: 0.3 }));
     cue(T.toast0, () => ding(990, 0.12));
+    // The scan line that makes the frame live: a thin rising shimmer, nothing more.
+    cue(T.exp1, () => {
+      A.tone({ freq: 900, freqEnd: 2600, dur: 0.38, gain: 0.035, attack: 0.05 });
+      A.noise({ filter: 'bandpass', freq: 1500, freqEnd: 6000, q: 4, dur: 0.38, gain: 0.1, attack: 0.12 });
+    });
     cues.sort((p, q) => p.t - q.t);
     let cueAt = 0;
 
@@ -539,6 +586,7 @@ export default {
           if (e < 1) {
             state(t);
             st.zoom = pane.w / w;
+            st.dusk = ease.inOutQuad(seg(t, T.exp0 + 0.05, T.exp0 + 0.6));
             scatter(t, w, h);
             drawIdeBack(g, th, L, plan, st, to);
             if (e > 0) softShadow(g, pane.x, pane.y, pane.w, pane.h, rad, 70 * S * Math.sin(Math.PI * e), 0.4);
@@ -571,16 +619,39 @@ export default {
               g.globalAlpha = 1;
             }
           } else {
-            // Full-screen: let go of the still frame and hand over to the live world beneath.
-            const a = 1 - ease.inOutQuad(seg(t, T.exp1, T.fade1));
-            if (a > 0) {
-              g.globalAlpha = a;
+            // Full-screen: hand over to the live world beneath. The still is 2 s stale by now
+            // and the new world has not been standing still, so a cross-fade would be a
+            // double exposure; instead the build's scan line comes back for one last pass
+            // ("hot reload") and the frame goes live behind it.
+            const k = ease.inOutQuad(seg(t, T.exp1, T.fade1));
+            if (k < 1) {
+              const sx = plan.scan[0], sy = -plan.scan[1]; // the shader's uDir, in canvas space
+              const at = sx ? (sx > 0 ? k : 1 - k) * w : (sy > 0 ? k : 1 - k) * h;
+              g.save();
+              g.beginPath();
+              if (sx) g.rect(sx > 0 ? at : 0, 0, sx > 0 ? w - at : at, h);
+              else g.rect(0, sy > 0 ? at : 0, w, sy > 0 ? h - at : at);
+              g.clip();
               g.drawImage(img, 0, 0, w, h);
-              g.globalAlpha = 1;
+              g.restore();
+              const band = 34 * S, core = Math.max(1.5, 2 * S), edge = Math.sqrt(Math.sin(Math.PI * k));
+              const gr = sx ? g.createLinearGradient(at - band, 0, at + band, 0) : g.createLinearGradient(0, at - band, 0, at + band);
+              gr.addColorStop(0, rgba(to.palette.accent, 0));
+              gr.addColorStop(0.5, rgba(to.palette.accent, 0.5 * edge));
+              gr.addColorStop(1, rgba(to.palette.accent, 0));
+              g.fillStyle = gr;
+              if (sx) g.fillRect(at - band, 0, band * 2, h); else g.fillRect(0, at - band, w, band * 2);
+              g.fillStyle = rgba('#ffffff', 0.9 * edge);
+              if (sx) g.fillRect(at - core / 2, 0, core, h); else g.fillRect(0, at - core / 2, w, core);
             }
           }
           drawToast(g, th, w, h, plan, to, seg(t, T.toast0, T.toast0 + 0.45), seg(t, T.toast1, T.toast1 + 0.3), t);
           const fa = 1 - ease.outCubic(seg(t, SWAP + 0.1, SWAP + 0.62));
+          const rk = seg(t, SWAP + 0.12, SWAP + 0.8);
+          if (rk > 0 && rk < 1) {
+            // The launch still ringing outwards from the pane as the white clears.
+            softRing(g, w, h, L.scr.x + L.scr.w / 2, L.scr.y + L.scr.h / 2, Math.hypot(w, h) * (0.16 + 0.8 * ease.outCubic(rk)), 26 * S, to.palette.accent, 0.6 * (1 - rk) * (1 - rk));
+          }
           if (fa > 0) {
             g.fillStyle = `rgba(255,255,255,${fa})`;
             g.fillRect(0, 0, w, h);
@@ -606,7 +677,7 @@ export default {
         for (let i = 1; i < nSteps; i++) gl = Math.max(gl, pulseAt(t, b[i], 0.17));
         U.uGlitch.value = gl;
         U.uErr.value = inErr ? 1 : 0;
-        pass.render(renderer);
+        passes[blur > 0 ? 1 : t >= b[0] ? 2 : 0].render(renderer);
 
         const tagK = seg(t, T_OUT + 0.2, T_OUT + 0.46), tagGone = seg(t, b[0] + 0.62, b[0] + 0.92), tagDel = t > b[0] + 0.26;
         const fx = clamp(ctx.focus.x / w, 0.06, 0.94), fy = clamp(ctx.focus.y / h, 0.12, 0.9);
@@ -622,6 +693,7 @@ export default {
           // ---- Act 2: the IDE, with a hole where the GL layer shows the world ----
           state(t);
           st.zoom = R.w / w;
+          st.dusk = 0;
           assemble(t, w, h);
           drawIdeBack(g, th, L, plan, st, to);
           drawIdeFront(g, th, L, plan, st);
@@ -640,7 +712,7 @@ export default {
             g.stroke();
           }
           drawInspector(g, R, fx, fy, plan, plan.loseColor, tagK, tagDel, tagGone, tagScale);
-          drawScaffold(g, R, plan, to, fx, fy, seg(t, b[3] + 0.12, b[3] + 0.4), seg(t, b[3] + 0.26, b[3] + 0.54), ease.outCubic(seg(t, b[4] + 0.1, b[4] + 0.4)), seg(t, b[3] + 0.05, b[3] + 0.35));
+          drawScaffold(g, R, plan, to, fx, fy, seg(t, b[3] + 0.12, b[3] + 0.4), seg(t, b[3] + 0.26, b[3] + 0.54), ease.outCubic(seg(t, b[4] + 0.1, b[4] + 0.4)), seg(t, b[3] + 0.05, b[3] + 0.35), t - shotAt);
           drawReady(g, R, to, seg(t, T.build1 + 0.02, T.build1 + 0.3), t);
           drawHandles(g, th, R, S, ha, cornerOf(R, w, h), w, h);
         }
@@ -658,6 +730,8 @@ export default {
           gr.addColorStop(1, 'rgba(255,255,255,0)');
           g.fillStyle = gr;
           g.fillRect(0, 0, w, h);
+          // A shock ring in the new world's accent runs ahead of the white.
+          softRing(g, w, h, cx, cy, Math.hypot(w, h) * (0.05 + 0.7 * k), (44 - 20 * k) * S, to.palette.accent, 0.9 * (1 - k * k));
           g.fillStyle = `rgba(255,255,255,${k * k * k})`;
           g.fillRect(0, 0, w, h);
         }
@@ -667,7 +741,7 @@ export default {
         if (music) A.stopMusic(0.05);
         tex.dispose();
         softTex.dispose();
-        pass.dispose();
+        for (const p of passes) p.dispose();
       },
     };
   },

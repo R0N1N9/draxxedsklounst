@@ -554,6 +554,12 @@ function panel(g, th, L, r, xf, fn) {
 export function drawIdeBack(g, th, L, plan, st, to) {
   g.fillStyle = th.bg;
   g.fillRect(0, 0, L.w, L.h);
+  if (st.dusk > 0) {
+    // As the window flies apart the desk behind it goes to the new world's own dark, so the
+    // last sliver around the growing pane is never a bright frame.
+    g.fillStyle = rgba(mixHex(to.palette.bg, '#000000', 0.35), st.dusk);
+    g.fillRect(0, 0, L.w, L.h);
+  }
   panel(g, th, L, L.col, st.xf.col, () => drawColumn(g, th, L, plan, st, to));
   panel(g, th, L, L.status, st.xf.status, () => drawStatus(g, th, L, plan, st, to));
 }

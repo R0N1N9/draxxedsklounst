@@ -7,7 +7,7 @@ import { SHELL_WARN, SHELL_LETHAL, FLARE_BURN, HALF_L } from './map.js';
 
 const hash = (n, s) => { let h = Math.imul(n + 1, 374761393) ^ Math.imul(s | 0, 668265263); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 
-export function makeEvents(ctx, map, fx, sfx, town, afterMesh, atmos, G) {
+export function makeEvents(ctx, map, fx, sfx, town, afterMesh, atmos, G, Q) {
   const shells = map.shells, flares = map.flares, strokes = map.bellStrokes, fw = map.fallWall;
   const pending = [], dangers = [], flareNow = [{ x: 0, y: 0, z: 0, on: 0 }, { x: 0, y: 0, z: 0, on: 0 }];
   const wallRings = [-15.6, -12.6, -9.6, -7.2].map((x) => ({ x, z: 0, r: 1.3 }));
@@ -60,13 +60,13 @@ export function makeEvents(ctx, map, fx, sfx, town, afterMesh, atmos, G) {
           persT = 1.0;
           const edge = map.safeZ(ts) + 1.5;
           G.eachLocal((p) => {
-            if (Math.abs(p.z) < edge && ts < 35) return;
+            if (Math.abs(p.z) < edge && ts < 27) return;
             const x = p.x + p.mvx * 0.5, z = p.z + p.mvz * 0.5;
             incoming({ t: time + 0.95, x, z, y: map.floorAt(x, z, p.y + 0.5, time), how: 'THE BARRAGE' }, 0.95);
             ctx.net.send({ k: 'ps', x: +x.toFixed(1), z: +z.toFixed(1), t: +(time + 0.95).toFixed(2) });
           });
         }
-        if (ts > 37.5 && !lastShell) { lastShell = true; G.lastShell(); }
+        if (ts > 31 && !lastShell) { lastShell = true; G.lastShell(); }
       }
       dangers.length = 0;
       for (let i = pending.length - 1; i >= 0; i--) {
@@ -116,6 +116,7 @@ export function makeEvents(ctx, map, fx, sfx, town, afterMesh, atmos, G) {
         l.position.set(n.x, n.y, n.z);
         fx.glow(n.x, n.y, n.z, 7 * fl, 7 * n.on, 6.2 * n.on, 4.6 * n.on);
         fx.star(n.x, n.y, n.z, 13 * fl, 3 * n.on, 2.7 * n.on, 2.1 * n.on, wt * 0.2);
+        if (!Q.rich) fx.glow(n.x, 1.5, n.z, 46, 0.42 * n.on * fl, 0.38 * n.on * fl, 0.28 * n.on * fl); // no light to cast: a pool of glow on the ground instead
         if (trail <= 0) fx.smoke(n.x, n.y + 0.6, n.z, 0, 1.6, 0, 0.6, 0.7, 3.2, 0.3, 0.85, 0.82, 0.74, 0.25, 0.4, 0.3, 0.4);
       }
       if (trail <= 0) trail = 0.14;

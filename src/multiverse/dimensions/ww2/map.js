@@ -13,7 +13,7 @@ export const SPAWN = [{ x: 6, z: 51.5, yaw: 0 }, { x: 6, z: -51.5, yaw: Math.PI 
 export const SHELL_WARN = 2.5;     // seconds of whistle and ground marker before a shell lands
 export const SHELL_LETHAL = 2.7;   // metres: "lethal only at the centre"
 export const FLARE_BURN = 9, FLARE_RADIUS = 21;
-export const BELL_MASK = 1.25;     // seconds after each strike during which a shot is drowned out
+export const BELL_MASK = 1.0;     // seconds after each strike during which a shot is drowned out
 
 const HF = 0.5, HX0 = -34, HZ0 = -66, HNX = 137, HNZ = 265; // heightfield grid
 const NAV = 1.25, NCOLS = 48, NROWS = 96;                   // navigation grid over the playable area
@@ -51,10 +51,12 @@ export function buildMap(rng) {
   box(31, -21, 44, 21, 0, 40);
   box(24, -19, 31, 19, 0, TERRACE_Y);
   for (let i = 0; i < 6; i++) box(19.2 + 0.8 * i, -4, 24, 4, 0, (TERRACE_Y / 6) * (i + 1));
+  for (const s of [-1, 1]) box(19.2, s > 0 ? 4 : -4.5, 24, s > 0 ? 4.5 : -4, 0, 1.5); // cheek walls: the steps are entered from the front
   piece('church', {});
   both((m) => {
     // Rubble ramps off both ends of the terrace (stacked slabs: each one is a step).
     for (let i = 0; i < 6; i++) mbox(m, 25, 19, 30.6, 19 + 1.1 * (6 - i), 0, (TERRACE_Y / 6) * (i + 1), 'dirt');
+    mbox(m, 24.45, 19, 25, 25.2, 0, 1.5); // and the ramp from its foot, not over its side
     piece('ramp', { m, x0: 25, x1: 30.6, z0: 19, z1: 25.6 });
     // Parapet along the terrace edge, broken in places.
     for (const [a, b] of [[4.6, 9.2], [12.4, 19]]) {
@@ -181,6 +183,7 @@ export function buildMap(rng) {
       h += smoothstep(0, 5.5, edge) * 0.95 * clamp(n, 0.15, 1.2) * (1 - church);
     }
     for (const c of craters) {
+      if (Math.abs(x - c.x) > c.r * 1.6 || Math.abs(z - c.z) > c.r * 1.6) continue;
       const q = Math.hypot(x - c.x, z - c.z) / c.r;
       if (q < 1.6) {
         if (q < 1) { const k = 1 - q * q; h -= c.d * k * k; }
@@ -189,7 +192,7 @@ export function buildMap(rng) {
       }
     }
     let cut = 0, bank = 0;
-    for (const s of trench) {
+    if (x < -16 && x > -28.5) for (const s of trench) { // the trench keeps to the west flank
       const dx = s.bx - s.ax, dz = s.bz - s.az;
       const t = clamp(((x - s.ax) * dx + (z - s.az) * dz) / (dx * dx + dz * dz), 0, 1);
       const d = Math.hypot(x - (s.ax + dx * t), z - (s.az + dz * t));
@@ -545,7 +548,7 @@ export function buildMap(rng) {
   }
   // The bell: three strokes at a time. A rifle fired on a stroke is drowned out.
   const bellStrokes = [];
-  for (let k = 0; k < 9; k++) for (let i = 0; i < 3; i++) bellStrokes.push(5.5 + k * 14 + i * 1.8);
+  for (let k = 0; k < 8; k++) for (let i = 0; i < 3; i++) bellStrokes.push(24 + k * 17 + i * 2.2);
   const bellMasked = (time) => {
     for (let i = 0; i < bellStrokes.length; i++) { const d = time - bellStrokes[i]; if (d >= -0.05 && d < BELL_MASK) return true; if (d < -0.05) break; }
     return false;
@@ -553,7 +556,7 @@ export function buildMap(rng) {
 
   // Sudden death: the barrage closes on the fountain from both ends. Everything outside
   // |z| <= safeZ(t) is being shelled; t is seconds since sudden death began.
-  const safeZ = (t) => (t < 22 ? lerp(HALF_L, 13, smoothstep(0, 22, t)) : lerp(13, 2.5, smoothstep(22, 34, t)));
+  const safeZ = (t) => (t < 16 ? lerp(HALF_L, 13, smoothstep(0, 16, t)) : lerp(13, 2.5, smoothstep(16, 26, t)));
 
   return {
     boxes, cyls, pieces, craters, trench, posts, smokes, hf, HF, HX0, HZ0, HNX, HNZ,

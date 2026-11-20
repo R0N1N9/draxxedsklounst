@@ -30,8 +30,8 @@ export const DIMENSIONS = [
 ];
 
 export const TRANSITIONS = [
-  { id: 'dev-app', first: true, wip: true, load: () => import('./transitions/dev-app.js') },
-  { id: 'synapse', wip: true, load: () => import('./transitions/synapse.js') },
+  { id: 'dev-app', first: true, load: () => import('./transitions/dev-app.js') },
+  { id: 'synapse', load: () => import('./transitions/synapse.js') },
   { id: 'flashback', wip: true, load: () => import('./transitions/flashback.js') },
   { id: 'shatter', wip: true, load: () => import('./transitions/shatter.js') },
   { id: 'wormhole', wip: true, load: () => import('./transitions/wormhole.js') },

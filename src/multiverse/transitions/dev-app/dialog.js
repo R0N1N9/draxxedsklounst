@@ -6,7 +6,7 @@ import { seg, ease, lerp, clamp, rgba, mixHex, roundRect } from '../../kit.js';
 import { appIcon, dropShadow, drawButton, fit } from './ui.js';
 
 export const T_POP = 0.72; // the first 0.7 s is the frozen world and nothing else: the deadpan beat
-export const T_OUT = 3.3;  // every gag has said "Great choice!" and gone by here
+export const T_OUT = 3.6;  // every gag has said "Great choice!" — and been read — by here
 
 /** When each gag says Yes (`acc`), its clicks ([time, lands?]) and its sounds. */
 export const GAGS = {

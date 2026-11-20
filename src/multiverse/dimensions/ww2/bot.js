@@ -35,7 +35,7 @@ export function makeBot(ctx, map, G) {
   }
 
   function choosePost(p, b, sudden) {
-    const curDz = Math.abs(p.z - b.knownZ), minRange = sudden >= 0 ? 0 : 34 - 20 * b.aggr - Math.min(14, G.time() * 0.25);
+    const curDz = Math.abs(p.z - b.knownZ), minRange = sudden >= 0 ? 0 : Math.max(10, 62 - 26 * b.aggr - G.time() * 1.4);
     const safe = sudden >= 0 ? map.safeZ(sudden + 7) - 2.5 : 1e9;
     cand.length = 0;
     for (const post of map.posts) {
@@ -44,7 +44,9 @@ export function makeBot(ctx, map, G) {
       const dSelf = Math.hypot(post.x - p.x, post.z - p.z), dz = Math.abs(post.z - b.knownZ);
       if (dSelf < 3 || dSelf > (sudden >= 0 ? 70 : 40) || dz < minRange || Math.abs(post.z) > safe) continue;
       if ((post.z - b.knownZ) * (p.z - b.knownZ) < 0) continue; // never a post behind the enemy
-      let s = -Math.abs(dSelf - 15) * 0.5 + (curDz - dz) * (b.afterDecoy ? 0.05 : 0.35 + b.aggr) + rnd() * 7;
+      // Early on the bot is content to trade shots down the length of the square; the longer the round runs, the more it wants to close.
+      const push = b.afterDecoy ? 0.05 : (0.35 + b.aggr) * clamp((G.time() - 4 + b.aggr * 10) / 16, 0.12, 1);
+      let s = -Math.abs(dSelf - 15) * 0.5 + (curDz - dz) * push + rnd() * 7;
       if (post.kind === 'pit') s += 1.5;
       if (post.y > 1) s += 2;
       if (b.prev && Math.hypot(post.x - b.prev.x, post.z - b.prev.z) < 2) s -= 6;
@@ -194,7 +196,8 @@ export function makeBot(ctx, map, G) {
       if (!moving || needScope) wantScope = needScope || wantScope;
       const tol = 0.004 + 0.006 * (1 - skill);
       const aligned = Math.abs(angDiff(p.yaw, wantYaw)) < tol && Math.abs(p.pitch - wantPitch) < tol;
-      if (aligned && b.onT > b.react && (!needScope || p.scope > 0.93) && p.bolt <= 0 && p.reload <= 0 && p.ammo > 0 && !moving) {
+      // No snap shots off the starting line: everyone gets a moment to get their head down.
+      if (aligned && b.onT > b.react && time > 2.6 + (1 - skill) && (!needScope || p.scope > 0.93) && p.bolt <= 0 && p.reload <= 0 && p.ammo > 0 && !moving) {
         cmd.fire = true;
         b.onT = Math.min(b.onT, 0.5);
         b.react = b.onT + 0.25 + rnd() * 0.5 * (1.4 - skill);

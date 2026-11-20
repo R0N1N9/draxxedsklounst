@@ -7,6 +7,8 @@ import { clamp, lerp, angDiff, angDamp, gauss, dist } from '../../kit.js';
 import { W, R, MID, RAIL_SPEED } from './world.js';
 import { pointSeg } from './geom.js';
 
+const LEASH = 560, LEASH_T = 5; // how deep a bot may go in the opening, and for how long
+
 export function makeBot(ctx, world, S, self) {
   const skill = clamp(ctx.botSkill, 0, 1);
   const foe = S.P[1 - self.i];
@@ -29,6 +31,11 @@ export function makeBot(ctx, world, S, self) {
   const patience = 3.5 + Math.random() * 2.5; // nobody duels at range before they have found their feet
 
   const aggression = () => clamp(nerve * 0.6 + ctx.time / 45, 0, 1);
+  // The opening is a long-range affair: for the first seconds nobody leaves their own third
+  // (so nobody is rushed while still reading the room), then the leash pays out until the
+  // whole floor is fair game.
+  const reach = () => (ctx.time < LEASH_T ? LEASH : LEASH + (ctx.time - LEASH_T) * 130);
+  const depthOf = (x) => (self.i ? W - x : x);
 
   function setGoal(x, y) {
     gx = x;
@@ -64,19 +71,29 @@ export function makeBot(ctx, world, S, self) {
 
   // A spot with a clear line to where we think they are, at the range our nerve likes.
   function pickPeek() {
-    const cells = world.freeCells, pref = lerp(780, 300, aggression()), early = clamp(1 - ctx.time / 12, 0, 1);
-    let best = -1, bs = Infinity;
-    for (let k = 0; k < 30; k++) {
+    const cells = world.freeCells, pref = lerp(780, 300, aggression()), early = clamp(1 - ctx.time / 12, 0, 1), lim = reach();
+    let best = -1, bs = Infinity, lane = -1, ls = Infinity;
+    for (let k = 0; k < 40; k++) {
       const c = cells[(Math.random() * cells.length) | 0];
       const x = world.cellX(c), y = world.cellY(c);
-      if (!solids.los(x, y, bel.x, bel.y)) continue;
-      // Early on, set up on our own side: the opening is a long-range affair.
-      const depth = Math.max(0, (self.i ? W - x : x) - 560) * 1.5 * early;
-      const s = Math.abs(dist(x, y, bel.x, bel.y) - pref) + dist(x, y, self.x, self.y) * 0.7 + depth + Math.random() * 60;
+      if (depthOf(x) > lim) continue;
+      const far = dist(x, y, self.x, self.y);
+      if (!solids.los(x, y, bel.x, bel.y)) {
+        // No line to them from here. A long look down a lane is the next best thing.
+        if (best < 0 && solids.los(x, y, W - x, y)) {
+          const s = far + Math.random() * 160;
+          if (s < ls) { ls = s; lane = c; }
+        }
+        continue;
+      }
+      // Early on, set up on our own side.
+      const depth = Math.max(0, depthOf(x) - LEASH) * 1.5 * early;
+      const s = Math.abs(dist(x, y, bel.x, bel.y) - pref) + far * 0.7 + depth + Math.random() * 60;
       if (s < bs) { bs = s; best = c; }
     }
+    if (best < 0) best = lane;
     if (best >= 0) setGoal(world.cellX(best), world.cellY(best));
-    else setGoal(bel.x, bel.y);
+    else setGoal(self.i ? Math.max(bel.x, W - lim) : Math.min(bel.x, lim), bel.y);
   }
 
   // Somewhere close that they cannot see.
@@ -86,7 +103,7 @@ export function makeBot(ctx, world, S, self) {
     for (let k = 0; k < 30; k++) {
       const c = cells[(Math.random() * cells.length) | 0];
       const x = world.cellX(c), y = world.cellY(c), d = dist(x, y, self.x, self.y);
-      if (d < 90 || d > 480 || solids.los(x, y, bel.x, bel.y)) continue;
+      if (d < 90 || d > 480 || depthOf(x) > reach() + 50 || solids.los(x, y, bel.x, bel.y)) continue;
       const s = d + Math.random() * 90;
       if (s < bs) { bs = s; best = c; }
     }
@@ -98,9 +115,10 @@ export function makeBot(ctx, world, S, self) {
   function patrolNext() {
     const pts = world.patrol;
     if (!pts.length) return;
+    const lim = reach() + 30;
     let best = 0, bs = -Infinity;
     for (let i = 0; i < pts.length; i++) {
-      if (i === patrolI) continue;
+      if (i === patrolI || depthOf(pts[i].x) > lim) continue;
       const toward = self.i === 0 ? pts[i].x : W - pts[i].x;
       const s = toward * 0.4 * aggression() + Math.random() * 500 - dist(pts[i].x, pts[i].y, self.x, self.y) * 0.25;
       if (s > bs) { bs = s; best = i; }
@@ -126,7 +144,7 @@ export function makeBot(ctx, world, S, self) {
     if (!sighting) {
       // A fresh sighting: stand and duel, or duck back and come at them from another angle?
       sighting = true;
-      duel = ctx.time > patience && Math.random() < 0.1 + 0.6 * aggression();
+      duel = ctx.time > patience && Math.random() < 0.25 + 0.55 * aggression();
     }
     lostT = 0;
     seen += dt;
@@ -300,7 +318,7 @@ export function makeBot(ctx, world, S, self) {
       }
 
       // ---- abilities ----
-      if (hasGoal && self.blinkCd <= 0 && !cmd.alt && (cmd.mx || cmd.my) && dist(self.x, self.y, gx, gy) > 280) {
+      if (ctx.time > LEASH_T && hasGoal && self.blinkCd <= 0 && !cmd.alt && (cmd.mx || cmd.my) && dist(self.x, self.y, gx, gy) > 280) {
         blinkT -= dt;
         if (blinkT <= 0) { blinkT = (2 + Math.random() * 4) / (0.5 + skill); cmd.a1 = true; }
       }

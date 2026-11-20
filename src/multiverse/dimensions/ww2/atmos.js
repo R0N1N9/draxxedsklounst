@@ -20,7 +20,7 @@ void main() {
   float az = max(dot(normalize(d.xz + vec2(1e-5)), normalize(uSun.xz)), 0.0);
   // At the horizon the sky IS the fog colour, so the distant ruins melt into it.
   vec3 hor = mix(uFog, uSunFog, sa * sa * sa);
-  vec3 zen = mix(vec3(0.05, 0.075, 0.13), vec3(0.17, 0.15, 0.2), az * 0.7);
+  vec3 zen = mix(vec3(0.03, 0.05, 0.095), vec3(0.13, 0.11, 0.15), az * 0.7);
   vec3 col = mix(hor, zen, smoothstep(0.0, 0.5, h));
   col += vec3(1.3, 0.5, 0.14) * pow(az, 4.0) * exp(-h * 6.0) * 0.55;
   // Cloud deck: a plane overhead, two layers sliding over each other.
@@ -32,8 +32,8 @@ void main() {
   // Lit from below and from the west: where the deck thins towards the sun it catches fire.
   float densS = texture2D(uCloud, (uv + normalize(uSun.xz) * 0.5) * 0.1 + w1).r * 0.72 + n2 * 0.28;
   float lit = clamp((dens - densS) * 5.0 + 0.45, 0.0, 1.0);
-  vec3 warm = mix(vec3(0.34, 0.27, 0.3), vec3(2.1, 0.8, 0.26), pow(az, 1.6));
-  vec3 cc = mix(vec3(0.07, 0.07, 0.095), warm, lit * (0.3 + 0.7 * (1.0 - smoothstep(0.4, 0.75, dens))));
+  vec3 warm = mix(vec3(0.2, 0.17, 0.2), vec3(2.3, 0.82, 0.24), pow(az, 1.6));
+  vec3 cc = mix(vec3(0.04, 0.042, 0.06), warm, lit * (0.3 + 0.7 * (1.0 - smoothstep(0.4, 0.75, dens))));
   col = mix(col, cc, cov * 0.94);
   float clear = 1.0 - cov * 0.85;
   col += vec3(1.0, 0.5, 0.16) * (smoothstep(0.99955, 0.9998, dot(d, uSun)) * 40.0 + pow(sa, 90.0) * 3.0 + pow(sa, 10.0) * 0.6) * clear;
@@ -59,21 +59,21 @@ void main() {
 
 const DRIFT_VERT = `
 attribute vec4 aSeed;
-uniform float uTime, uScale;
+uniform float uTime, uScale, uRise, uSize;
 uniform vec3 uCam, uWind, uBox;
 varying float vFade, vKind, vTw;
 void main() {
   // Each mote lives in a box that follows the camera and wraps: endless, and free.
   float sp = 0.5 + aSeed.w;
   vec3 p = aSeed.xyz * uBox + uWind * uTime * sp;
-  p.y += uTime * mix(-0.9, 0.55, step(0.5, aSeed.w)) * RISE;
+  p.y += uTime * mix(-0.9, 0.55, step(0.5, aSeed.w)) * uRise;
   p.x += sin(uTime * (0.7 + aSeed.x) + aSeed.z * 40.0) * 0.6;
   p.z += cos(uTime * (0.6 + aSeed.y) + aSeed.x * 40.0) * 0.6;
   p = mod(p - uCam + uBox * 0.5, uBox) - uBox * 0.5 + uCam;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
   float dist = -mv.z;
-  gl_PointSize = clamp(SIZE * (0.5 + aSeed.y) * uScale / max(dist, 0.5), 1.0, 24.0);
+  gl_PointSize = clamp(uSize * (0.5 + aSeed.y) * uScale / max(dist, 0.5), 1.0, 24.0);
   vFade = smoothstep(0.6, 2.5, dist) * (1.0 - smoothstep(uBox.x * 0.3, uBox.x * 0.5, dist));
   vKind = aSeed.x;
   vTw = sin(uTime * (3.0 + aSeed.z * 9.0) + aSeed.w * 30.0);
@@ -81,10 +81,13 @@ void main() {
 const DRIFT_FRAG = `
 precision highp float;
 varying float vFade, vKind, vTw;
+uniform float uEmber;
 void main() {
   float r = length(gl_PointCoord - 0.5) * 2.0;
   float a = (1.0 - smoothstep(0.4, 1.0, r)) * vFade;
-  COLOUR
+  // One fleck in six is a leaf still holding its colour; the rest is ash. Embers glow instead.
+  vec3 c = vKind > 0.84 ? vec3(0.62, 0.3, 0.07) : vec3(0.11, 0.105, 0.1) + 0.12 * vTw;
+  gl_FragColor = mix(vec4(c, a * 0.75), vec4(vec3(5.0, 1.7, 0.35) * a * (0.55 + 0.45 * vTw), 1.0), uEmber);
 }`;
 
 export function buildAtmosphere(THREE, tex, seed, fogShared, fogColor) {
@@ -133,18 +136,15 @@ export function buildAtmosphere(THREE, tex, seed, fogShared, fogColor) {
   const dgeo = new THREE.BufferGeometry();
   dgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
   dgeo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 4));
-  const dU = () => ({ uTime: { value: 0 }, uScale: { value: 600 }, uCam: { value: new THREE.Vector3() }, uWind: { value: new THREE.Vector3(1.3, 0, 0.45) }, uBox: { value: new THREE.Vector3(46, 18, 46) } });
-  const ashU = dU(), emberU = dU();
+  const dU = (ember) => ({ uTime: { value: 0 }, uScale: { value: 600 }, uCam: { value: new THREE.Vector3() }, uWind: { value: new THREE.Vector3(1.3, 0, 0.45) }, uBox: { value: new THREE.Vector3(46, 18, 46) }, uEmber: { value: ember }, uRise: { value: ember ? 1.3 : 0.5 }, uSize: { value: ember ? 0.035 : 0.05 } });
+  const ashU = dU(0), emberU = dU(1);
   const ash = new THREE.Points(dgeo, new THREE.ShaderMaterial({
-    vertexShader: DRIFT_VERT.replace('RISE', '0.5').replace('SIZE', '0.05'), uniforms: ashU, transparent: true, depthWrite: false, fog: false,
-    // One fleck in six is a leaf still holding its colour; the rest is ash.
-    fragmentShader: DRIFT_FRAG.replace('COLOUR', 'vec3 c = vKind > 0.84 ? vec3(0.62, 0.3, 0.07) : vec3(0.11, 0.105, 0.1) + 0.12 * vTw; gl_FragColor = vec4(c, a * 0.75);'),
+    vertexShader: DRIFT_VERT, fragmentShader: DRIFT_FRAG, uniforms: ashU, transparent: true, depthWrite: false, fog: false,
   }));
   const emberGeo = dgeo.clone();
   emberGeo.setDrawRange(0, 150);
   const embers = new THREE.Points(emberGeo, new THREE.ShaderMaterial({
-    vertexShader: DRIFT_VERT.replace('RISE', '1.3').replace('SIZE', '0.035'), uniforms: emberU, transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
-    fragmentShader: DRIFT_FRAG.replace('COLOUR', 'gl_FragColor = vec4(vec3(5.0, 1.7, 0.35) * a * (0.55 + 0.45 * vTw), 1.0);'),
+    vertexShader: DRIFT_VERT, fragmentShader: DRIFT_FRAG, uniforms: emberU, transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending,
   }));
   emberU.uBox.value.set(40, 14, 40);
   ash.frustumCulled = embers.frustumCulled = false;

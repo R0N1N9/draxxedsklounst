@@ -10,7 +10,7 @@ import { drawOverlay } from './overlay.js';
 const FOV = 58, ZOOM = 4.6;
 
 export function makeView(ctx, THREE, renderer, W) {
-  const { scene, map, fx, post, atmos, fog, P, G, events, decoys } = W;
+  const { scene, map, fx, post, atmos, fog, P, G, events, decoys, Q } = W;
   const camera = new THREE.PerspectiveCamera(FOV, ctx.width / ctx.height, 0.07, 1500);
   camera.rotation.order = 'YXZ';
   const me = P[ctx.me], foe = P[1 - ctx.me];
@@ -24,6 +24,7 @@ export function makeView(ctx, THREE, renderer, W) {
   for (let i = 0; i < 5; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: '', color: '#fff', hollow: false, text: '', ring: false });
   for (let i = 0; i < 4; i++) S.hits.push({ ang: 0, a: 0, near: false });
   let wt = 0, boom = 2.8, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, blocked = false, bellA = 0, raysK = 0;
+  let frames = 0, tPrev = 0, worst = 0, worstPrev = 0, cost = 0, skipLeft = 0, fresh = false, wasFallen = false;
   const api = { camera, shot: null, wt: 0, scopeAmount: 0, pointScale: 600 };
 
   const dirOf = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
@@ -89,6 +90,7 @@ export function makeView(ctx, THREE, renderer, W) {
     },
 
     update(dt, T) {
+      fresh = true;
       wt += dt;
       api.wt = wt;
       const phase = ctx.phase;
@@ -134,7 +136,7 @@ export function makeView(ctx, THREE, renderer, W) {
       camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
       api.scopeAmount = scopeAmt;
       renderer.getDrawingBufferSize(size);
-      pointScale = api.pointScale = size.y / (2 * Math.tan((camera.fov * Math.PI) / 360));
+      pointScale = api.pointScale = (size.y * post.scale) / (2 * Math.tan((camera.fov * Math.PI) / 360));
 
       // Open sights: what the crosshair is actually on, and whether the muzzle can see it too.
       aimOk = false;
@@ -200,7 +202,7 @@ export function makeView(ctx, THREE, renderer, W) {
       S.scope = scopeAmt;
       S.live = phase === 'live';
       S.alive = me.alive;
-      S.spreadPx = (G.hipSpread(me) * pointScale) / renderer.getPixelRatio();
+      S.spreadPx = (G.hipSpread(me) * ctx.height) / (2 * Math.tan((camera.fov * Math.PI) / 360));
       S.blocked = blocked;
       S.ammo = me.ammo; S.cycling = me.bolt > 0 || me.reload > 0; S.reloading = me.reload > 0;
       S.cycle = me.reload > 0 ? me.reload / 2.7 : Math.max(0, me.bolt) / 1.25;
@@ -208,7 +210,7 @@ export function makeView(ctx, THREE, renderer, W) {
       bellA = damp(bellA, map.bellMasked(T) ? 1 : 0, 10, dt);
       S.bell = bellA;
       S.bars = damp(S.bars, phase === 'live' ? 0 : 1, phase === 'live' ? 5 : 3, dt);
-      S.pad = ctx.input.device === 'touch' ? 6 : 0;
+      S.pad = ctx.input.device === 'touch' ? 6 : 42; // on desktop the core's chips own the bottom edge
       S.note = G.notes.text; S.noteA = G.notes.a;
       // Shell warning: how deep inside a telegraphed ring are we?
       let shell = 0;
@@ -248,13 +250,33 @@ export function makeView(ctx, THREE, renderer, W) {
     },
 
     render() {
-      const DBG = globalThis.__ww2 || {};
-      renderer.shadowMap.needsUpdate = !DBG.noShadowUpd;
-      if (DBG.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); }
-      else post.render(scene, camera, raysK > 0.01);
-      renderer.setRenderTarget(null);
       S.w = ctx.width; S.h = ctx.height;
       drawOverlay(ctx.g, S);
+      // The core clamps a frame's time step, so a machine that needs 300 ms to draw the
+      // square would play the duel in slow motion (and drift out of step with its opponent).
+      // When drawing is that slow, draw the scene less often: the canvas keeps its last
+      // picture, the frames in between cost almost nothing, and the clock stays honest.
+      const now = performance.now(), iv = tPrev ? now - tPrev : 0, inBand = fresh;
+      tPrev = now;
+      fresh = false;
+      if (iv > worst) worst = iv;
+      // A render with no update before it is the core photographing the world for a
+      // transition: the canvas must hold a picture, so put the last graded frame back.
+      if (!inBand && frames > 3) { post.present(); return; }
+      if (++frames > 3 && skipLeft > 0) { skipLeft--; return; }
+      // The longest gap since the last real draw is what that draw cost. Two slow draws in a
+      // row before anything is skipped: one hitch is not a slow machine.
+      cost = Math.min(worst, worstPrev || worst);
+      worstPrev = worst;
+      worst = 0;
+      skipLeft = cost > 75 ? Math.min(240, Math.round((cost - 50) / 12)) : 0;
+      // Shadows: every frame on a GPU. In software the map is static — drawn at the start and
+      // again once the wall is down — and the snipers do not cast into it.
+      const fallen = G.time() > map.fallWall.t + 1.6;
+      renderer.shadowMap.needsUpdate = Q.rich || frames < 4 || fallen !== wasFallen;
+      wasFallen = fallen;
+      post.render(scene, camera, raysK > 0.01);
+      renderer.setRenderTarget(null);
     },
   });
   return api;

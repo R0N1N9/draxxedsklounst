@@ -165,7 +165,7 @@ attribute vec3 aVel;   // mote: drift amplitude · spark: velocity · vesicle: d
 attribute vec4 aTim;   // start, life, world radius, rnd
 attribute vec3 aCol;
 attribute float aKind; // 0 mote, 1 spark, 2 vesicle, 3 ring, 4 receptor
-uniform float uTime, uTan, uInvH, uFog, uFlood, uGain, uShutter, uAspect;
+uniform float uTime, uTan, uInvH, uFog, uFlood, uGain, uShutter, uAspect, uRing;
 uniform vec3 uCamVel, uFloodCol2;
 ${DOF}
 varying vec2 vQ;
@@ -194,7 +194,7 @@ void main() {
   } else if (aKind < 3.5) {
     if (tau < 0.0 || tau > life) a = 0.0;
     size *= 0.2 + 1.8 * (1.0 - pow(1.0 - k, 3.0));
-    a *= (1.0 - k) * (1.0 - k);
+    a *= (1.0 - k) * (1.0 - k) * uRing;
   } else {
     a = tau > 0.0 ? 1.0 + 3.0 * exp(-tau * 6.0) : 0.12;
   }
@@ -359,7 +359,6 @@ float pane(vec2 q, vec2 b, float r) {
 }
 void main() {
   vec2 asp = vec2(uAspect, 1.0);
-  vec3 direct = texture2D(tFrom, vUv).rgb;
   vec2 p = (vUv - uC) * asp;
   float r = length(p), rn = r / uRi;
   vec2 dv = r > 1e-5 ? p / r : vec2(1.0, 0.0);
@@ -435,7 +434,11 @@ void main() {
   skin += vec3(0.5, 0.36, 0.33) * (exp(-pow((arch - 0.9) / 0.022, 2.0)) + exp(-pow((low - 1.185) / 0.02, 2.0))) * 0.28;
   eye = mix(eye, skin, max(lidU, lidL) * uLid);
 
-  gl_FragColor = vec4(mix(direct, eye, uA), 1.0);
+  // The eye fades in around the picture that is already receding (never against a second,
+  // still copy of it: that reads as a double exposure). At uA = 0 this is tFrom, texel for texel.
+  vec2 in0 = step(vec2(0.0), iuv) * step(iuv, vec2(1.0));
+  vec3 plain = mix(vec3(0.008, 0.008, 0.016), img, in0.x * in0.y);
+  gl_FragColor = vec4(mix(plain, eye, uA), 1.0);
 }`;
 
 // ---------------------------------------------------------------------------
@@ -473,10 +476,10 @@ void main() {
 export const ARRIVE_FRAG = `
 precision highp float;
 varying vec2 vUv;
-uniform sampler2D tGrow, tTo;
-uniform float uK, uAspect, uIslT, uOut, uHasTo;
-uniform vec2 uTexel;
-uniform vec3 uInk, uEdge, uAccent, uWhite;
+uniform sampler2D tGrow, tTo, tBurn;
+uniform float uK, uAspect, uIslT, uOut, uHasTo, uBurn, uBurnZoom;
+uniform vec2 uTexel, uRoot;
+uniform vec3 uInk, uEdge, uAccent, uWhite, uBurnCol;
 uniform vec4 uIsl;     // the title's island: centre.xy, half extents (field space)
 ${GLSL_NOISE}
 float lum(vec2 uv) { return dot(texture2D(tTo, uv).rgb, vec3(0.299, 0.587, 0.114)); }
@@ -489,7 +492,7 @@ void main() {
   vec2 dq = abs(fp - uIsl.xy) - uIsl.zw;
   float sd = length(max(dq, 0.0)) + min(max(dq.x, dq.y), 0.0) - 0.07 + n * 0.07;
   float isl = smoothstep(0.035, -0.045, sd);
-  T = mix(T, uIslT + clamp(-sd, 0.0, 0.25) * 0.55, isl);
+  T = mix(T, uIslT + clamp(-sd, 0.0, 0.25) * 0.4, isl);
   float tau = uK - T;
 
   float a = 1.0 - smoothstep(0.1, 0.25, tau);
@@ -500,10 +503,20 @@ void main() {
   float gy = lum(vUv + vec2(0.0, uTexel.y)) - lum(vUv - vec2(0.0, uTexel.y));
   float edge = smoothstep(0.02, 0.2, length(vec2(gx, gy)) * 2.0) * uHasTo;
   vec3 sketch = mix(mix(uInk, to, 0.3 * uHasTo), uEdge, edge);
-  sketch = mix(sketch, to, smoothstep(0.05, 0.2, tau) * uHasTo);
+  sketch = mix(sketch, to, max(smoothstep(0.05, 0.2, tau), isl) * uHasTo); // the island opens straight onto the place: no ink stage, the world is already there all round it
   // The shore: the next palette bleeding into the white ahead of the front.
   float shore = smoothstep(-0.12, 0.0, tau) * (1.0 - sk) * smoothstep(0.0, 0.06, uK);
-  vec3 white = mix(uWhite, mix(uAccent, vec3(1.0), 0.3), shore * 0.9);
+  // The afterimage: as the eye recovers from the flash, the synapse it last saw comes up
+  // on the white as a negative — a wash of the next world's colour, its ink where the
+  // light was hottest — and fades under the title. It thins away from the discharge.
+  vec3 paper = uWhite;
+  if (uBurn > 0.0) {
+    vec2 bq = (vUv - 0.5) / uBurnZoom;
+    vec3 b = texture2D(tBurn, bq + 0.5).rgb;
+    float bl = pow(smoothstep(0.07, 0.88, max(b.r, max(b.g, b.b))), 0.8) * smoothstep(1.05, 0.3, length(fp - uRoot * vec2(uAspect, 1.0)));
+    paper = mix(paper, mix(mix(uAccent, vec3(1.0), 0.4), uBurnCol, bl * bl), bl * uBurn);
+  }
+  vec3 white = mix(paper, mix(uAccent, vec3(1.0), 0.3), shore * 0.9);
   vec3 c = mix(white, sketch, sk);
   c += vec3(1.0) * exp(-max(tau, 0.0) * 60.0) * sk * 0.7;
   // Lightning: the tree's core burns on a moment after the front has gone by.

@@ -65,23 +65,31 @@ export default {
     const { THREE, renderer } = ctx.three;
     const map = buildMap(ctx.rng);
     const scene = new THREE.Scene();
-    const fogColor = new THREE.Color(0.105, 0.118, 0.15);
+    const fogColor = new THREE.Color(0.066, 0.078, 0.105);
     scene.fog = new THREE.FogExp2(fogColor, FOG_D);
     const fog = makeFogPatch(THREE);
-    fog.shared.uSunFog.value.setRGB(1.05, 0.5, 0.2);
-    const tex = makeTextures(THREE, renderer, ctx.seed);
-    const town = buildTown(THREE, map, tex, ctx.seed, fog);
-    const props = buildProps(THREE, map, tex, ctx.seed, fog, town);
+    fog.shared.uSunFog.value.setRGB(1.25, 0.56, 0.2);
+    // Two builds of the same picture. A software rasteriser (no GPU, or a blocked one) pays
+    // per texture fetch, so there the materials shed normal maps, PBR and soft shadow
+    // filtering, and the scene is drawn at reduced resolution under full-resolution grain.
+    const Q = { rich: true, scale: 1 };
+    try {
+      const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.rich = false; Q.scale = 0.85; }
+    } catch { /* masked: assume a real GPU */ }
+    const tex = makeTextures(THREE, renderer, ctx.seed, Q.rich ? 8 : 1, Q.rich);
+    const town = buildTown(THREE, map, tex, ctx.seed, fog, Q);
+    const props = buildProps(THREE, map, tex, ctx.seed, fog, town, Q);
     town.finish();
     const atmos = buildAtmosphere(THREE, tex, ctx.seed, fog.shared, fogColor);
-    const fx = buildFx(THREE, tex, map, fog.shared, fogColor, FOG_D);
-    const post = makePost(THREE, renderer);
+    const fx = buildFx(THREE, tex, map, fog.shared, fogColor, FOG_D, Q);
+    const post = makePost(THREE, renderer, { msaa: Q.rich, scale: Q.scale, lens: Q.rich });
     const sfx = makeSfx(ctx);
     scene.add(town.group, atmos.group, fx.group);
 
     // Light: a cold sky and one low, warm sun whose shadows cross the whole square.
-    scene.add(new THREE.HemisphereLight(new THREE.Color(0.42, 0.5, 0.68), new THREE.Color(0.2, 0.15, 0.11), 2.3));
-    const sun = new THREE.DirectionalLight(new THREE.Color(1, 0.53, 0.24), 8.5);
+    scene.add(new THREE.HemisphereLight(new THREE.Color(0.4, 0.5, 0.72), new THREE.Color(0.26, 0.19, 0.14), 4.4));
+    const sun = new THREE.DirectionalLight(new THREE.Color(1, 0.5, 0.2), 21);
     sun.position.set(SUN.x * 150, SUN.y * 150, SUN.z * 150);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 1024);
@@ -104,6 +112,7 @@ export default {
     }
     scene.add(sun, sun.target);
     renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = Q.rich ? THREE.PCFSoftShadowMap : THREE.BasicShadowMap;
     renderer.shadowMap.autoUpdate = false; // the view asks for an update when it renders
 
     // ---- the two snipers. Player 0 always holds the south barricade. ----
@@ -111,6 +120,7 @@ export default {
     const P = [0, 1].map((i) => {
       const s = SPAWN[i], c = hexToRgb(ctx.players[i].color), model = kit.soldier(ctx.players[i].color);
       scene.add(model.root);
+      if (!Q.rich) model.root.traverse((o) => { o.castShadow = false; }); // the software build bakes its shadows once
       return {
         i, x: s.x, y: map.floorAt(s.x, s.z, 0.5, 0), z: s.z, vy: 0, yaw: s.yaw, pitch: 0, crouch: true, k: 0, scoped: false, scope: 0, alive: true, dead: -1, fx: 0, fz: 1,
         ammo: MAG, bolt: 0, boltStep: 0, reload: 0, recoil: 0, fatigue: 0, speed: 0, mvx: 0, mvz: 0, stepT: 0, swayX: 0, swayY: 0, swayT: i * 4.1, breathUp: false, hipFire: false,
@@ -153,7 +163,7 @@ export default {
         if (local(far)) { fx.flash(far.x, far.y + 1, far.z, 1, 0.6, 0.3, 9, 0.25); sfx.shell(far.x, far.y, far.z); G.env(far, 'THE LAST SHELL', far.x + 0.5, far.y, far.z + 0.5); }
       },
     };
-    const events = makeEvents(ctx, map, fx, sfx, town, props.afterMesh, atmos, G);
+    const events = makeEvents(ctx, map, fx, sfx, town, props.afterMesh, atmos, G, Q);
     const brain = makeBot(ctx, map, G);
     for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = brain.create(p);
 
@@ -453,7 +463,7 @@ export default {
       p.recoil = Math.max(0, p.recoil - dt * 5);
     }
 
-    const view = makeView(ctx, THREE, renderer, { scene, map, fx, post, atmos, fog, P, G, events, decoys, sfx });
+    const view = makeView(ctx, THREE, renderer, { scene, map, fx, post, atmos, fog, P, G, events, decoys, sfx, Q });
     const pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, k: 0, aim: 0, speed: 0, mvx: 0, mvz: 0, bolt: -1, recoil: 0, dead: -1, fx: 0, fz: 1 };
 
     function fell(v) {
@@ -606,6 +616,7 @@ export default {
         ctx.audio.stopMusic(0.3);
         renderer.setRenderTarget(null);
         renderer.shadowMap.autoUpdate = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.shadowMap.enabled = false;
         post.dispose();
         fx.dispose();
