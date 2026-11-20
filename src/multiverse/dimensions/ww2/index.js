@@ -89,7 +89,7 @@ export default {
 
     // Light: a cold sky and one low, warm sun whose shadows cross the whole square.
     scene.add(new THREE.HemisphereLight(new THREE.Color(0.4, 0.5, 0.72), new THREE.Color(0.26, 0.19, 0.14), 4.4));
-    const sun = new THREE.DirectionalLight(new THREE.Color(1, 0.5, 0.2), 21);
+    const sun = new THREE.DirectionalLight(new THREE.Color(1, 0.5, 0.2), 13);
     sun.position.set(SUN.x * 150, SUN.y * 150, SUN.z * 150);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 1024);

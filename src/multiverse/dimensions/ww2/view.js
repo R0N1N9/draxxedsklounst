@@ -25,7 +25,7 @@ export function makeView(ctx, THREE, renderer, W) {
   for (let i = 0; i < 4; i++) S.hits.push({ ang: 0, a: 0, near: false });
   let wt = 0, boom = 2.8, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, blocked = false, bellA = 0, raysK = 0;
   let frames = 0, tPrev = 0, worst = 0, worstPrev = 0, cost = 0, skipLeft = 0, fresh = false, wasFallen = false;
-  const api = { camera, shot: null, wt: 0, scopeAmount: 0, pointScale: 600 };
+  const api = { camera, shot: null, force: 0, wt: 0, scopeAmount: 0, pointScale: 600 };
 
   const dirOf = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
 
@@ -192,7 +192,7 @@ export function makeView(ctx, THREE, renderer, W) {
       u.uTime.value = wt;
       u.uRays.value = raysK * 0.9;
       u.uSunCol.value.copy(sunCol);
-      u.uExposure.value = 1.0;
+      u.uExposure.value = 0.92;
       u.uFlinch.value = G.flinch();
       u.uScope.value = scopeAmt;
       u.uFade.value = 1;
@@ -262,8 +262,9 @@ export function makeView(ctx, THREE, renderer, W) {
       if (iv > worst) worst = iv;
       // A render with no update before it is the core photographing the world for a
       // transition: the canvas must hold a picture, so put the last graded frame back.
-      if (!inBand && frames > 3) { post.present(); return; }
-      if (++frames > 3 && skipLeft > 0) { skipLeft--; return; }
+      if (api.force > 0) api.force--; // (test scripts: draw now)
+      else if (!inBand && frames > 3) { post.present(); return; }
+      else if (++frames > 3 && skipLeft > 0) { skipLeft--; return; }
       // The longest gap since the last real draw is what that draw cost. Two slow draws in a
       // row before anything is skipped: one hitch is not a slow machine.
       cost = Math.min(worst, worstPrev || worst);

@@ -9,7 +9,7 @@ export { clamp, lerp, smoothstep, TAU, mulberry32, noise2, fbm };
 // Maths / time
 // ---------------------------------------------------------------------------
 /** Clamp to [0, 1]. */
-export const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+export const clamp01 = (x) => (x > 0 ? (x > 1 ? 1 : x) : 0); // NaN → 0
 /** Where x sits between a and b (unclamped; 0 when a === b). */
 export const invLerp = (a, b, x) => (a === b ? 0 : (x - a) / (b - a));
 /** Map x from [a, b] to [c, d], clamped. */
@@ -125,13 +125,36 @@ export function hashSeed(...parts) {
 // ---------------------------------------------------------------------------
 // Colour (CSS in, CSS out)
 // ---------------------------------------------------------------------------
-/** '#rgb' or '#rrggbb' → {r, g, b} in 0..255 (black for anything unparseable). */
+let cssProbe = null;
+const cssCache = new Map();
+/**
+ * A colour → {r, g, b} in 0..255. Takes '#rgb', '#rrggbb' (and their alpha forms), a
+ * 0xRRGGBB number, and — in a browser — any other CSS colour ('rgb(...)', 'tomato').
+ * Black for anything unparseable.
+ */
 export function hexToRgb(hex) {
-  let h = String(hex).trim().replace('#', '');
-  if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
-  const n = parseInt(h.slice(0, 6), 16);
-  if (h.length < 6 || !isFinite(n)) return { r: 0, g: 0, b: 0 };
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  if (typeof hex === 'number') return { r: (hex >> 16) & 255, g: (hex >> 8) & 255, b: hex & 255 };
+  const str = String(hex).trim();
+  let h = str.replace('#', '');
+  if (/^[0-9a-f]{3,4}$/i.test(h)) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  if (/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(h)) {
+    const n = parseInt(h.slice(0, 6), 16);
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+  if (cssCache.has(str)) return cssCache.get(str);
+  let out = { r: 0, g: 0, b: 0 };
+  if (typeof document !== 'undefined') {
+    // Let the browser parse it: a canvas normalises any valid colour to #rrggbb or rgba().
+    cssProbe ||= document.createElement('canvas').getContext('2d');
+    cssProbe.fillStyle = '#000';
+    cssProbe.fillStyle = str;
+    const v = cssProbe.fillStyle;
+    const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(v);
+    if (m) out = { r: +m[1], g: +m[2], b: +m[3] };
+    else if (v[0] === '#') { const n = parseInt(v.slice(1, 7), 16); out = { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 }; }
+  }
+  cssCache.set(str, out);
+  return out;
 }
 /** 0..255 components → '#rrggbb'. */
 export const rgbToHex = (r, g, b) => '#' + [r, g, b].map((v) => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0')).join('');
@@ -189,7 +212,14 @@ export function segCircle(ax, ay, bx, by, cx, cy, r) {
   return t >= 0 && t <= 1 ? t : -1;
 }
 
-/** Segment AB against a rect: {t, nx, ny} entry point and outward normal, or null (also null when A starts inside). */
+/**
+ * Segment AB against a rect: {t, nx, ny} entry point and outward normal, or null.
+ * A segment that STARTS inside the rect (or exactly on its edge, heading in) reports no
+ * hit — which is what lets a ricochet leave the face it bounced off. The flip side:
+ * never start a shot from a point you have not checked. Fire from the shooter's centre
+ * (which collision keeps outside every rect), not from a muzzle point further out that
+ * may already be inside the wall they are hugging.
+ */
 export function segRect(ax, ay, bx, by, rect) {
   const dx = bx - ax, dy = by - ay;
   let t0 = 0, t1 = 1, nx = 0, ny = 0;
@@ -221,6 +251,7 @@ export function segRect(ax, ay, bx, by, rect) {
 export function raycastRects(ox, oy, dx, dy, maxDist, rects) {
   const len = Math.hypot(dx, dy);
   if (len < 1e-12 || !(maxDist > 0)) return null;
+  if (!Number.isFinite(maxDist)) maxDist = 1e6; // "no limit"
   dx /= len;
   dy /= len;
   const ex = ox + dx * maxDist, ey = oy + dy * maxDist;
@@ -348,6 +379,7 @@ export class Particles2D {
 
   draw(g) {
     const prevOp = g.globalCompositeOperation, prevAlpha = g.globalAlpha;
+    const prevCap = g.lineCap, prevWidth = g.lineWidth, prevStroke = g.strokeStyle, prevFill = g.fillStyle;
     let additive = false;
     for (let i = 0; i < this.max; i++) {
       const q = this.pool[i];
@@ -387,6 +419,10 @@ export class Particles2D {
     }
     g.globalCompositeOperation = prevOp;
     g.globalAlpha = prevAlpha;
+    g.lineCap = prevCap;
+    g.lineWidth = prevWidth;
+    g.strokeStyle = prevStroke;
+    g.fillStyle = prevFill;
   }
 
   clear() {
@@ -488,6 +524,7 @@ export function vignette(g, w, h, strength = 0.5, color = '#000') {
 /** Dispose every geometry, material and texture under root, then detach it. Safe on null and on repeats. */
 export function disposeTree(root) {
   if (!root) return;
+  if (typeof root.traverse !== 'function') { if (typeof root.dispose === 'function') root.dispose(); return; } // e.g. a fullscreenPass
   const seen = new Set();
   const tex = (t) => { if (t && t.isTexture && !seen.has(t)) { seen.add(t); t.dispose(); } };
   root.traverse((o) => {
@@ -497,7 +534,14 @@ export function disposeTree(root) {
       if (seen.has(m)) continue;
       seen.add(m);
       for (const k in m) tex(m[k]);
-      if (m.uniforms) for (const k in m.uniforms) tex(m.uniforms[k] && m.uniforms[k].value);
+      if (m.uniforms) {
+        for (const k in m.uniforms) {
+          const v = m.uniforms[k] && m.uniforms[k].value;
+          if (Array.isArray(v)) v.forEach(tex); // sampler arrays
+          else if (v && typeof v === 'object' && !v.isTexture && !v.isColor && !v.isVector2 && !v.isVector3 && !v.isVector4 && !v.isMatrix3 && !v.isMatrix4) { for (const j in v) tex(v[j]); } // struct uniforms
+          else tex(v);
+        }
+      }
       m.dispose();
     }
     if (o.isLight && o.shadow && o.shadow.map) o.shadow.map.dispose();
@@ -563,12 +607,12 @@ vec2 coverUv(vec2 uv, float screenAspect, float imageAspect) {
   return (uv - 0.5) * s + 0.5;
 }`;
 
-/** GLSL: float hash21(vec2), float noise(vec2) (value noise, 0..1), float fbm(vec2) (5 octaves, 0..1). */
+/** GLSL: float hash21(vec2), float noise(vec2) (value noise, 0..1), float fbm(vec2) (5 octaves, 0..1). Keep inputs below a few thousand: wrap time-driven offsets with mod(). */
 export const GLSL_NOISE = `
 float hash21(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 float noise(vec2 p) {
   vec2 i = floor(p), f = fract(p);

@@ -107,7 +107,9 @@ export default {
       resolveCircleRects(p, R, cover());
       if (cmd.fire && p.reload <= 0) {
         p.reload = RELOAD;
-        const x = p.x + Math.cos(p.a) * R * 1.3, y = p.y + Math.sin(p.a) * R * 1.3;
+        // From the centre, which collision keeps outside every wall — a muzzle point further
+        // out could already be inside the wall you are hugging, and the shot would pass through it.
+        const x = p.x, y = p.y;
         shoot(p.i, x, y, p.a, true);
         ctx.net.send({ k: 'shot', x: Math.round(x), y: Math.round(y), a: +p.a.toFixed(3) }); // so the peer can draw it
       }

@@ -16,7 +16,7 @@ void main() {
   vec4 s = min((a + b + c + d) * 0.25, vec4(40.0));
   float lum = dot(s.rgb, vec3(0.2126, 0.7152, 0.0722));
   float sky = 1.0 - clamp(s.a, 0.0, 1.0);
-  gl_FragColor = vec4(s.rgb * (max(lum - 1.0, 0.0) / max(lum, 1e-3)), sky * min(max(lum - 0.75, 0.0), 6.0));
+  gl_FragColor = vec4(s.rgb * (max(lum - 1.15, 0.0) / max(lum, 1e-3)), sky * min(max(lum - 0.75, 0.0), 6.0));
 }`;
 const BLUR = HEAD + `
 uniform vec2 uDir;
@@ -58,7 +58,7 @@ void main() {
 #else
   vec3 col = texture2D(tSrc, vUv).rgb;
 #endif
-  col += texture2D(tBloom, vUv).rgb * 0.5 + texture2D(tWide, vUv).rgb * 0.85;
+  col += texture2D(tBloom, vUv).rgb * 0.45 + texture2D(tWide, vUv).rgb * 0.5;
   col += uSunCol * texture2D(tRays, vUv).r * uRays;
   col = aces(col * uExposure);
   // The grade: pull the colour out, then put warmth back into the highlights only.

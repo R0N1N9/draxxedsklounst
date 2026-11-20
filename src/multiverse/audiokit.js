@@ -11,8 +11,8 @@
 // There are no timers in here: the director calls update() once per frame, and
 // that runs the music scheduler and the housekeeping.
 
-const MAX_VOICES = 48;  // one-shot cap; past it new sounds are dropped, never queued
-const HARD_VOICES = 72; // an sfx admitted under the cap may still finish its own layers
+const MAX_VOICES = 72;  // one-shot cap; past it new sounds are dropped, never queued (cues queued with `delay` count from the moment they are queued)
+const HARD_VOICES = 110; // an sfx admitted under the cap may still finish its own layers
 const MAX_MUSIC = 64;
 const LOOKAHEAD = 0.2;  // seconds of music scheduled ahead of the audio clock
 const XFADE = 0.3;
@@ -383,7 +383,9 @@ export class AudioKit {
     } catch {}
   }
 
-  update() {
+  // lookahead (seconds): the director asks for more just before a known stall (building
+  // the next world at a swap), so the score plays on through the hitch.
+  update(lookahead = 0) {
     try {
       const out = this.out;
       if (!out) return;
@@ -398,9 +400,14 @@ export class AudioKit {
       if (!m) return;
       // Fell behind (hidden tab, long hitch): pick the pattern up from here
       // rather than machine-gun every step that was missed.
-      if (m.next < now) m.next = now + 0.02;
-      const horizon = now + LOOKAHEAD;
-      for (let i = 0; i < 32 && m.next < horizon; i++) {
+      // ...and pick it up ON the beat: skip whole steps, keep the grid.
+      if (m.next < now) {
+        const skip = Math.ceil((now + 0.02 - m.next) / m.dur);
+        m.next += skip * m.dur;
+        m.step += skip;
+      }
+      const horizon = now + Math.max(LOOKAHEAD, Math.min(3, lookahead || 0));
+      for (let i = 0; i < 160 && m.next < horizon; i++) {
         this._step(m, m.next);
         m.step++;
         m.next += m.dur;
@@ -474,7 +481,9 @@ export class AudioKit {
 
   _bus() {
     const out = this.out;
-    if (!out) return null;
+    // A context that is not running (iPadOS interrupts it for calls, Siri, app switches)
+    // would queue every one-shot behind its frozen clock and fire them all on resume.
+    if (!out || out.context.state !== 'running') return null;
     if (!this._fx) {
       this._fx = out.context.createGain();
       this._fx.connect(out);

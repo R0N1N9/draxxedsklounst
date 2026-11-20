@@ -162,6 +162,11 @@ export class Director {
     this.input = new MvInput({ stageEl: this.stage.root, settings: this.o.settings || {} });
     this.input.onPause = () => this._pause(true);
     this.audio = new AudioKit(this.o.audio);
+    // iPadOS interrupts the audio context (calls, Siri, app switches): any touch, click or
+    // key brings it back, as does returning to the page.
+    const wake = () => { try { this.o.audio.unlock(); } catch {} };
+    for (const ev of ['pointerdown', 'touchend', 'keydown']) addEventListener(ev, wake, { capture: true, passive: true });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) wake(); });
     this.hud = new MvHud(this.input);
     this.hudApi = {
       message: (a, b, c) => this.hud.message(a, b, c),
@@ -374,7 +379,7 @@ export class Director {
       get score() { return d.score; },
       target: this.target,
       input: this.input.state,
-      audio: this.audio,
+      audio: this._audioFor((this.dimAudioTag = 'dim' + round)),
       hud: this.hudApi,
       net,
       seed,
@@ -464,6 +469,29 @@ export class Director {
       if (mod.native) inst.suspend();
       else inst.dispose();
     } catch (e) { this._error(`dispose ${mod.id}`, e); }
+    this._endMusic(this.dimAudioTag);
+  }
+
+  // Each module gets its own view of the audio kit: the music slot is shared, and the old
+  // world, the transition and the new world overlap in time — a module may only stop a
+  // score it started, and the director ends whatever a module left playing.
+  _audioFor(tag) {
+    const k = this.audio, d = this;
+    return {
+      get ctx() { return k.ctx; },
+      get out() { return k.out; },
+      get now() { return k.now; },
+      tone: (o) => k.tone(o),
+      noise: (o) => k.noise(o),
+      sfx: (n, o) => k.sfx(n, o),
+      music: (spec) => { d.musicOwner = tag; k.music(spec); },
+      stopMusic: (fade) => { if (d.musicOwner === tag) { d.musicOwner = null; k.stopMusic(fade); } },
+      duck: (a, t) => k.duck(a, t),
+    };
+  }
+
+  _endMusic(tag) {
+    if (tag && this.musicOwner === tag) { this.musicOwner = null; this.audio.stopMusic(0.3); }
   }
 
   // ---------------------------------------------------------------------------
@@ -767,7 +795,7 @@ export class Director {
         matchPoint: Math.max(...this.score) === this.target - 1,
         seed,
         rng: mulberry32(seed),
-        audio: this.audio,
+        audio: this._audioFor((fx.audioTag = 'fx' + this.round)),
       };
       try {
         fx.inst = mod.create(ctx);
@@ -802,6 +830,7 @@ export class Director {
     try {
       this._disposeInst();
       this.round++;
+      this.audio.update(1.5); // building the next world can stall a frame or two: keep the score playing through it
       await this._mountSafe(fx.next);
       if (!this.mod.native) {
         try { this.inst.update(0); } catch (e) { this._fault('update', e); }
@@ -848,6 +877,7 @@ export class Director {
     const fx = this.fx;
     if (!fx) return;
     if (fx.inst) { try { fx.inst.dispose(); } catch (e) { this._error('fx dispose', e); } }
+    this._endMusic(fx.audioTag);
     this.fx = null;
     this.stage.showFx(false);
     this._log('arrive', { dim: this.mod && this.mod.id, round: this.round });

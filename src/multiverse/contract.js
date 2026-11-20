@@ -263,7 +263,11 @@
  *             'swoosh' 'riser' 'drop' 'glitch' 'blip' 'click' 'chime' 'powerup' 'error'
  *             'bell' 'shatter' 'tick' 'heartbeat'
  * @property {(spec:MusicSpec) => void} music   start a looping step-sequencer pattern
- *             (replaces any current one with a short crossfade)
+ *             (replaces any current one with a short crossfade). There is ONE music slot: a dimension
+ *             starts its bed in onPhase('live') (not in create(): the transition into it
+ *             may still be scoring), and stopMusic() only ever stops your own pattern.
+ *             Calling music() again with different tracks restarts the loop — do not call
+ *             it every frame.
  * @property {(fade?:number) => void} stopMusic
  */
 /**
