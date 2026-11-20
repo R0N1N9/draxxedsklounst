@@ -169,28 +169,38 @@ function seeded(seed) {
 }
 
 // ---------------------------------------------------------------------------
-// Outfits: 'ghillie' (default) and 'wraith' (hooded poncho, balaclava, goggles).
+// Outfits: 'ghillie' (default) and 'wraith' (balaclava, goggles, helmet).
 // Any outfit can wear the thermal poncho; the wraith wears a cloth one anyway.
 // ---------------------------------------------------------------------------
 export const DEFAULT_LENS = '#e0283a';
 export const LENS_COLORS = ['#e0283a', '#ff8a1f', '#f2d23c', '#3cf28a', '#38d6f2', '#8a5cff', '#f23ca8', '#1b1d22'];
 export const OUTFITS = {
   ghillie: { name: 'Ghillie', desc: 'Jute ghillie, boonie hat, painted face. Melts into grass and scrub.' },
-  wraith: { name: 'Wraith', desc: 'Hooded poncho thrown over the left shoulder, balaclava and goggles. Dark urban camo.' },
+  wraith: { name: 'Wraith', desc: 'Balaclava, goggles and a high-cut helmet. Dark urban kit; with the thermal poncho the hood goes up.' },
 };
 const WRAITH_MAP = {
-  [PAL.fatigue]: '#37393c',
-  [PAL.fatigueDark]: '#2b2d30',
-  [PAL.vest]: '#3f413f',
-  [PAL.pouch]: '#363834',
   [PAL.glove]: '#1d1e20',
   [PAL.boot]: '#1c1b1b',
   [PAL.face]: '#1f2022', // balaclava
-  [PAL.rig]: '#3b3d3c',
-  [PAL.web]: '#2c2e2d',
-  [PAL.tab]: '#6b6250',
-  [PAL.can]: '#2f3530',
 };
+// Operator theme: these parts take the theme colour, keeping their light/dark relationships.
+const THEMED = new Set([PAL.fatigue, PAL.fatigueDark, PAL.vest, PAL.pouch, PAL.rig, PAL.web, PAL.hat, PAL.can]);
+export const THEME_DEFAULT = { ghillie: '#4b4e3a', wraith: '#37393c' };
+export const THEME_COLORS = ['#4b4e3a', '#6e5f45', '#7a7466', '#37393c', '#1f2023', '#3a4250', '#4e3f5c', '#5a3a30'];
+const _h1 = {}, _h2 = {}, _h3 = {}, _rc = new THREE.Color();
+// Recolour `hex` as if `ref` had been `theme` (hue shift, saturation and lightness scale).
+export function retint(hex, theme, ref = PAL.fatigue) {
+  if (!theme || theme.toLowerCase() === ref.toLowerCase()) return hex;
+  _rc.set(hex).getHSL(_h1);
+  _rc.set(ref).getHSL(_h2);
+  _rc.set(theme).getHSL(_h3);
+  // Take the theme's hue; scale saturation gently (greys stay as rich as the theme itself).
+  const h = _h3.h;
+  const ratio = _h2.s < 0.06 ? 1 : Math.min(1.25, Math.max(0.6, _h1.s / _h2.s));
+  const sat = Math.min(1, _h3.s * ratio);
+  const l = Math.min(0.92, Math.max(0.025, _h1.l * (_h3.l / Math.max(0.02, _h2.l))));
+  return '#' + _rc.setHSL(h, sat, l).getHexString();
+}
 const CAMO = {
   olive: ['#363c2a', '#454b33', '#535940', '#61633f', '#3d3a2b'],
   urban: ['#1b1c1e', '#2a2c2f', '#424548', '#63676a', '#828586'],
@@ -210,23 +220,27 @@ function vnoise(x, y, z) {
   const c = (dx, dy, dz) => hash3(xi + dx, yi + dy, zi + dz);
   return L(L(L(c(0, 0, 0), c(1, 0, 0), fx), L(c(0, 1, 0), c(1, 1, 0), fx), fy), L(L(c(0, 0, 1), c(1, 0, 1), fx), L(c(0, 1, 1), c(1, 1, 1), fx), fy), fz);
 }
-// Blotchy camo: two octaves of value noise quantised into the palette.
+// Blotchy camo: two octaves of value noise per vertex (computed once), mapped to a palette.
 const _c2 = new THREE.Color();
-function camoColors(geo, pal, seed) {
-  const pos = geo.attributes.position, n = pos.count;
-  const out = new Float32Array(n * 3), c = new THREE.Color();
+function camoNoise(geo, seed) {
+  const pos = geo.attributes.position, n = pos.count, out = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const x = pos.getX(i) + seed, y = pos.getY(i), z = pos.getZ(i);
-    const v = vnoise(x * 4.2, y * 4.2, z * 4.2) * 0.8 + vnoise(x * 11 + 9, y * 11, z * 11) * 0.2;
+    out[i] = vnoise(x * 4.2, y * 4.2, z * 4.2) * 0.8 + vnoise(x * 11 + 9, y * 11, z * 11) * 0.2;
+  }
+  return out;
+}
+function camoFill(arr, noise, pal) {
+  const c = new THREE.Color();
+  for (let i = 0; i < noise.length; i++) {
     // Soft-edged blotches: steepened blend between neighbouring palette colours.
-    const f = Math.max(0, Math.min(pal.length - 1.001, (v - 0.2) * pal.length * 1.6));
+    const f = Math.max(0, Math.min(pal.length - 1.001, (noise[i] - 0.2) * pal.length * 1.6));
     const k = Math.floor(f);
     let t = f - k;
     t = t < 0.35 ? 0 : t > 0.65 ? 1 : (t - 0.35) / 0.3;
     c.set(pal[k]).lerp(_c2.set(pal[k + 1]), t);
-    out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
+    arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
   }
-  return out;
 }
 
 // Grid surface from fn(u, v) -> Vector3, wound so its front faces point outward.
@@ -658,19 +672,41 @@ export class Avatar {
       mask.add(filt);
     }
     head.add(mask);
+    // Wraith: high-cut helmet with NVG shroud and side rails (off when the poncho hood is up).
+    const helmet = new THREE.Group();
+    const shell = mesh(new THREE.SphereGeometry(0.128, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.42).scale(0.95, 1.0, 1.08), P.rig);
+    shell.position.set(0, 0.01, 0.005);
+    helmet.add(shell);
+    const brimH = mesh(new THREE.CylinderGeometry(0.122, 0.124, 0.022, 18, 1, true, Math.PI * 0.3, Math.PI * 1.4).scale(0.95, 1, 1.08), P.web);
+    brimH.position.set(0, 0.055, 0.005);
+    helmet.add(brimH);
+    for (const sx of [-1, 1]) {
+      const rail = mesh(slab(0.012, 0.03, 0.09, 0.004), '#1b1c1e');
+      rail.position.set(sx * 0.118, 0.06, 0.01);
+      helmet.add(rail);
+    }
+    const shroud = mesh(slab(0.04, 0.03, 0.02, 0.005), '#1b1c1e');
+    shroud.position.set(0, 0.095, -0.125);
+    shroud.rotation.x = 0.35;
+    helmet.add(shroud);
+    const strobe = mesh(slab(0.025, 0.02, 0.03, 0.005), '#1b1c1e');
+    strobe.position.set(0, 0.135, 0.07);
+    helmet.add(strobe);
+    head.add(helmet);
+    this.helmet = helmet;
     this.mask = mask;
     this.head = head;
     this.neck.add(head);
 
-    // --- Poncho (shown for the Wraith, or anyone wearing the thermal poncho) ---
+    // --- Thermal poncho (shown only when it's in the loadout) ---
     this.poncho = new THREE.Group();
     this.ponchoMeshes = [];
     const pb = buildPonchoBody();
     const addCloth = (geo, parent, lining = true) => {
       const outer = new THREE.Mesh(geo, ponchoOuter());
       outer.castShadow = true;
-      outer.userData.camo = { olive: camoColors(geo, CAMO.olive, seed * 0.37), urban: camoColors(geo, CAMO.urban, seed * 0.37) };
-      geo.setAttribute('color', new THREE.BufferAttribute(outer.userData.camo.olive.slice(), 3));
+      outer.userData.noise = camoNoise(geo, seed * 0.37);
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count * 3), 3));
       parent.add(outer);
       this.ponchoMeshes.push(outer);
       if (lining) {
@@ -729,28 +765,31 @@ export class Avatar {
   }
 
   // look: { outfit: 'ghillie' | 'wraith', poncho: thermal poncho equipped, lens: '#rrggbb',
+  //         theme: '#rrggbb' (operator colour; outfit default if empty),
   //         kit: { scout, stealth, tactical } — shows the matching gear on the body }
   setLook(look = {}) {
     const outfit = look.outfit === 'wraith' ? 'wraith' : 'ghillie';
     const thermal = !!look.poncho;
-    const lens = /^#[0-9a-f]{6}$/i.test(look.lens || '') ? look.lens : DEFAULT_LENS;
+    const hexOk = (h) => /^#[0-9a-f]{6}$/i.test(h || '');
+    const lens = hexOk(look.lens) ? look.lens : DEFAULT_LENS;
+    const theme = hexOk(look.theme) ? look.theme : THEME_DEFAULT[outfit];
     const kit = look.kit || {};
-    const key = [outfit, thermal, lens, kit.scout, kit.stealth, kit.tactical].join('|');
+    const key = [outfit, thermal, lens, theme, kit.scout, kit.stealth, kit.tactical].join('|');
     if (this.look === key) return;
     this.look = key;
     const wraith = outfit === 'wraith';
-    const hooded = wraith || thermal;
-    this.poncho.visible = this.hood.visible = hooded;
-    this.ghilliePart.visible = !hooded;
-    for (const o of this.hatParts) o.visible = !hooded;
+    this.poncho.visible = this.hood.visible = thermal;
+    this.ghilliePart.visible = !wraith && !thermal;
+    for (const o of this.hatParts) o.visible = !wraith && !thermal;
     for (const o of this.faceParts) o.visible = !wraith;
     this.mask.visible = wraith;
+    this.helmet.visible = wraith && !thermal;
     this.glasses.visible = !wraith;
     this.lensMat.color.set(lens);
     this.lensMat.emissive.set(lens);
     for (const [k, g] of Object.entries(this.kit)) {
       g.visible = kit.scout === k || kit.stealth === k || kit.tactical === k;
-      g.position.z = hooded ? 0.09 : 0; // strapped on over the poncho
+      g.position.z = thermal ? 0.09 : 0; // strapped on over the poncho
     }
     this.smokeKit.visible = kit.tactical === 'smoke';
     const sup = kit.stealth === 'suppressor';
@@ -763,13 +802,17 @@ export class Avatar {
     };
     this.root.traverse((o) => {
       if (!o.isMesh || !o.userData.hex) return;
-      const hex = wraith ? WRAITH_MAP[o.userData.hex] || o.userData.hex : o.userData.hex;
+      let hex = o.userData.hex;
+      if (THEMED.has(hex)) hex = retint(hex, theme);
+      else if (wraith && WRAITH_MAP[hex]) hex = WRAITH_MAP[hex];
       setMat(o, mat(hex, o.userData.flat));
     });
+    // Poncho camo follows the theme: woodland tones for the ghillie, high-contrast urban for the wraith.
+    const pal = (wraith ? CAMO.urban : CAMO.olive).map((h) => retint(h, theme, THEME_DEFAULT[outfit]));
     for (const o of this.ponchoMeshes) {
       if (o.userData.lining) setMat(o, ponchoLining(thermal ? 'foil' : 'dark'));
       else {
-        o.geometry.attributes.color.array.set(o.userData.camo[wraith ? 'urban' : 'olive']);
+        camoFill(o.geometry.attributes.color.array, o.userData.noise, pal);
         o.geometry.attributes.color.needsUpdate = true;
       }
     }

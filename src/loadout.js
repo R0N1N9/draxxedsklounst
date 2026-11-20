@@ -1,34 +1,41 @@
 // Loadout picker: one tool per slot. Used inline in the main menu and as an in-game overlay.
 import { TOOLS, SLOTS, validLoadout } from './tools.js';
 import { WEAPONS, RIFLES } from './weapons.js';
-import { OUTFITS, LENS_COLORS } from './avatar.js';
+import { OUTFITS, LENS_COLORS, THEME_COLORS, THEME_DEFAULT } from './avatar.js';
 import { showPreview } from './preview.js';
 
 export function renderLoadout(el, loadout, onChange) {
   let lo = validLoadout(loadout);
+  const swatches = (key, colors) => `<div class="lo-lens" data-row="${key}">${colors.map((c) => `<button class="lo-sw" data-key="${key}" data-c="${c}" style="--c:${c}" title="${c}"></button>`).join('')}
+    <label class="lo-sw lo-custom" title="Any colour"><input type="color" data-key="${key}" /></label></div>`;
   el.innerHTML = `<div class="lo-op"><div class="lo-prev"><div class="lo-cap"></div></div><div class="lo-side"><div class="lo-slot lo-outfits"></div>
-    <div class="lo-slot"><div class="lo-head"><span>Lenses</span><em>goggles &amp; glasses</em></div>
-    <div class="lo-lens">${LENS_COLORS.map((c) => `<button class="lo-sw" data-lens="${c}" style="--c:${c}" title="${c}"></button>`).join('')}
-    <label class="lo-sw lo-custom" title="Any colour"><input type="color" /></label></div></div></div></div><div class="lo-list"></div>`;
+    <div class="lo-slot"><div class="lo-head"><span>Operator colour</span><em>uniform, kit &amp; poncho</em></div>${swatches('theme', THEME_COLORS)}</div>
+    <div class="lo-slot"><div class="lo-head"><span>Lenses</span><em>goggles &amp; glasses</em></div>${swatches('lens', LENS_COLORS)}</div></div></div><div class="lo-list"></div>`;
   const list = el.querySelector('.lo-list'), prev = el.querySelector('.lo-prev'), outfits = el.querySelector('.lo-outfits');
-  const picker = el.querySelector('.lo-custom input');
-  const look = () => ({ outfit: lo.outfit, poncho: lo.stealth === 'poncho', lens: lo.lens, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } });
-  const markLens = () => {
-    let preset = false;
-    el.querySelectorAll('.lo-sw[data-lens]').forEach((b) => { const on = b.dataset.lens === lo.lens; b.classList.toggle('on', on); preset ||= on; });
-    picker.parentNode.classList.toggle('on', !preset);
-    picker.parentNode.style.setProperty('--c', lo.lens);
-    picker.value = lo.lens;
+  const look = () => ({ outfit: lo.outfit, poncho: lo.stealth === 'poncho', lens: lo.lens, theme: lo.theme, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } });
+  const current = (key) => (key === 'theme' ? lo.theme || THEME_DEFAULT[lo.outfit] : lo.lens);
+  const markSwatches = () => {
+    for (const key of ['theme', 'lens']) {
+      const row = el.querySelector(`[data-row="${key}"]`), val = current(key);
+      let preset = false;
+      row.querySelectorAll('.lo-sw[data-c]').forEach((b) => { const on = b.dataset.c === val; b.classList.toggle('on', on); preset ||= on; });
+      const custom = row.querySelector('.lo-custom');
+      custom.classList.toggle('on', !preset);
+      custom.style.setProperty('--c', val);
+      custom.querySelector('input').value = val;
+    }
   };
-  picker.addEventListener('input', () => {
-    lo = { ...lo, lens: picker.value };
-    markLens();
-    showPreview(prev, look());
+  el.querySelectorAll('.lo-custom input').forEach((inp) => {
+    inp.addEventListener('input', () => {
+      lo = { ...lo, [inp.dataset.key]: inp.value };
+      markSwatches();
+      showPreview(prev, look());
+    });
+    inp.addEventListener('change', () => onChange(lo));
   });
-  picker.addEventListener('change', () => onChange(lo));
   const draw = () => {
     const poncho = lo.stealth === 'poncho';
-    markLens();
+    markSwatches();
     outfits.innerHTML = `<div class="lo-head"><span>Operator</span><em>drag to turn</em></div><div class="lo-opts">${Object.entries(OUTFITS).map(([k, o]) => `<button class="lo-opt${lo.outfit === k ? ' on' : ''}" data-slot="outfit" data-tool="${k}"><b>${o.name}</b><span>${o.desc}</span></button>`).join('')}</div>`;
     prev.querySelector('.lo-cap').innerHTML = `${OUTFITS[lo.outfit].name.toUpperCase()}${poncho ? ' <i>+ THERMAL PONCHO</i>' : ''}`;
     showPreview(prev, look());
@@ -48,9 +55,9 @@ export function renderLoadout(el, loadout, onChange) {
     }).join('');
   };
   el.onclick = (e) => {
-    const sw = e.target.closest('.lo-sw[data-lens]');
+    const sw = e.target.closest('.lo-sw[data-c]');
     if (sw) {
-      lo = { ...lo, lens: sw.dataset.lens };
+      lo = { ...lo, [sw.dataset.key]: sw.dataset.c };
       draw();
       onChange(lo);
       return;
