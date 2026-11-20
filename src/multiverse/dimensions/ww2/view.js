@@ -37,8 +37,8 @@ export function makeView(ctx, THREE, renderer, W) {
     dirOf(yaw, pitch, F);
     Rt.set(Math.cos(yaw), 0, -Math.sin(yaw));
     // Pivot at the shoulder; the boom shortens when there is a wall behind.
-    const px = p.x + Rt.x * 0.3, py = p.y + headY(p.k) + 0.14, pz = p.z + Rt.z * 0.3;
-    tmp.set(Rt.x * 0.36 - F.x * 2.75, 0.2 - F.y * 2.75, Rt.z * 0.36 - F.z * 2.75);
+    const px = p.x + Rt.x * 0.38, py = p.y + headY(p.k) + 0.2, pz = p.z + Rt.z * 0.38;
+    tmp.set(Rt.x * 0.62 - F.x * 3.0, 0.28 - F.y * 3.0, Rt.z * 0.62 - F.z * 3.0);
     const want = tmp.length();
     tmp.multiplyScalar(1 / want);
     const free = Math.max(0.3, map.ray(px, py, pz, tmp.x, tmp.y, tmp.z, want + 0.3, G.time(), false) - 0.3);
@@ -192,7 +192,7 @@ export function makeView(ctx, THREE, renderer, W) {
       u.uTime.value = wt;
       u.uRays.value = raysK * 0.9;
       u.uSunCol.value.copy(sunCol);
-      u.uExposure.value = 0.92;
+      u.uExposure.value = 1.0;
       u.uFlinch.value = G.flinch();
       u.uScope.value = scopeAmt;
       u.uFade.value = 1;

@@ -5,7 +5,7 @@ import { ruinWall } from './kitbash.js';
 import { TERRACE_Y } from './map.js';
 
 const RUST = ['#4a3f36', '#3a332d', '#5a4030', '#2a2623', '#463c34'];
-const BRICK = ['#7a4a38', '#8a5a44', '#b0a590', '#8a8478', '#3a3430', '#9a8a78', '#6a4636'];
+const BRICK = ['#6a4436', '#74503e', '#857c6c', '#6f6a60', '#3a3430', '#7c7062', '#5c4034'];
 const LEAF = ['#b8651e', '#c98a2a', '#8a4a1a', '#a8741c', '#6e4a22'];
 
 export function buildProps(THREE, map, tex, seed, fog, town, Q) {
@@ -105,14 +105,18 @@ export function buildProps(THREE, map, tex, seed, fog, town, Q) {
       const y = map.height(p.x, p.z) + 0.55, a = R(0, 6.3);
       for (let k = 0; k < 3; k++) plain.box(p.x, y, p.z, 0.13, 1.9, 0.13, pick(RUST), a + k * 2.094, 0.96, 0);
     } else if (p.type === 'column') {
-      stone.cyl(p.x, 0.2, p.z, 0.86, 0.9, 0.4, '#8f887a', 14);
-      plain.cyl(p.x, 1.75, p.z, 0.75, 0.75, 2.7, '#8c8674', 16);
-      plain.cyl(p.x, 3.35, p.z, 0.2, 0.9, 0.5, '#3a3d44', 16);
-      // What is left of the bills pasted on it: pale scraps, nothing legible.
-      for (let k = 0; k < 7; k++) {
-        const a = R(0, 6.3), h = R(0.4, 0.9);
-        plain.add(new THREE.CylinderGeometry(0.762, 0.762, h, 5, 1, true, a, R(0.35, 0.8)), plain.mat(p.x, R(0.9, 2.6), p.z), pick(['#c9c0a8', '#a9a08a', '#b98a6a', '#9aa6a0', '#d2c8a8']));
+      stone.cyl(p.x, 0.18, p.z, 0.9, 0.96, 0.36, '#8f887a', 16);
+      masonry.cyl(p.x, 1.7, p.z, 0.75, 0.75, 2.7, '#a39a86', 20);
+      stone.cyl(p.x, 3.1, p.z, 0.86, 0.8, 0.14, '#8f887a', 16);
+      plain.cyl(p.x, 3.42, p.z, 0.3, 0.9, 0.5, '#33363d', 16);
+      plain.add(new THREE.SphereGeometry(0.16, 8, 6), plain.mat(p.x, 3.74, p.z), '#33363d');
+      // What is left of the bills pasted on it, layer over torn layer: nothing legible.
+      for (let k = 0; k < 16; k++) {
+        const a = R(0, 6.3), h = R(0.35, 0.95), w = R(0.3, 0.75), y = R(0.75, 2.7), c = pick(['#b5ab92', '#8f8a78', '#a7775a', '#7f8c88', '#c2b48c', '#6f5a4a', '#96a08c']);
+        plain.add(new THREE.CylinderGeometry(0.757 + k * 0.0006, 0.757 + k * 0.0006, h, 5, 1, true, a, w), plain.mat(p.x, y, p.z), c);
+        if (rnd() < 0.6) plain.add(new THREE.CylinderGeometry(0.768, 0.768, h * R(0.12, 0.3), 4, 1, true, a + R(0.03, 0.1), w * R(0.5, 0.8)), plain.mat(p.x, y + h * R(-0.3, 0.3), p.z), pick(['#3b3a36', '#5a2f26', '#2f3c44']));
       }
+      for (let k = 0; k < 8; k++) debris(p.x + R(-1.6, 1.6), p.z + R(-1.6, 1.6), undefined, 0.5);
     } else if (p.type === 'tree') {
       const branch = (x, y, z, len, rad, yaw, pitch, depth) => {
         const dx = Math.sin(pitch) * Math.sin(yaw), dy = Math.cos(pitch), dz = Math.sin(pitch) * Math.cos(yaw);

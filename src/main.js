@@ -317,6 +317,9 @@ $('btn-ai').onclick = () => {
 const syncMode = () => {
   $('btn-host-go').style.display = multiverse() ? 'none' : '';
   $('btn-lab').style.display = params.has('lab') ? '' : 'none';
+  // The host picks the mode; someone arriving on an invite link has nothing to pick.
+  $('field-mode').style.display = params.get('join') ? 'none' : '';
+  $('field-target').style.display = multiverse() && !params.get('join') ? '' : 'none';
 };
 document.querySelector('[data-setting="mode"]').addEventListener('change', syncMode);
 syncMode();

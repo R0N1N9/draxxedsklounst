@@ -1,7 +1,7 @@
 // IRON AUTUMN — what is drawn on the glass: the scope and its three-post reticle, the
 // open-sight crosshair, the clip, markers, warnings. Stencilled paper-and-ember, nothing
 // that would look out of place chalked on an ammunition crate.
-import { clamp, rgba } from '../../kit.js';
+import { clamp, rgba, TAU } from '../../kit.js';
 
 const PAPER = '#e9dfc8', EMBER = '#e8853a', RED = '#e2472f', MONO = "'JetBrains Mono', Menlo, monospace";
 
@@ -49,7 +49,7 @@ export function drawOverlay(g, S) {
       } else {
         chevron(g, m.x, m.y - 4 * u, 7 * u, m.color, m.a, m.hollow);
         if (m.text) label(g, m.text, m.x, m.y - 20 * u, 10 * u, m.color, 'center', m.a);
-        if (m.ring) { g.beginPath(); g.arc(m.x, m.y + 12 * u, (10 + 6 * Math.sin(S.t * 6)) * u, 0, 6.283); g.lineWidth = 1.5; g.strokeStyle = rgba(m.color, m.a * 0.7); g.stroke(); }
+        if (m.ring) { g.beginPath(); g.arc(m.x, m.y + 12 * u, (10 + 6 * Math.sin(S.t * 6)) * u, 0, TAU); g.lineWidth = 1.5; g.strokeStyle = rgba(m.color, m.a * 0.7); g.stroke(); }
       }
     } else if (m.kind !== 'ping') {
       // Off screen: an arrow on an ellipse inside the frame, clear of the corners' controls.
@@ -68,14 +68,14 @@ export function drawOverlay(g, S) {
     g.fillStyle = `rgba(0,0,0,${0.96 * a})`;
     g.beginPath();
     g.rect(0, 0, w, h);
-    g.arc(cx, cy, R, 0, 6.283, true);
+    g.arc(cx, cy, R, 0, TAU, true);
     g.fill();
     const grad = g.createRadialGradient(cx, cy, R * 0.72, cx, cy, R);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
     grad.addColorStop(1, `rgba(0,0,0,${0.75 * a})`);
     g.fillStyle = grad;
     g.beginPath();
-    g.arc(cx, cy, R, 0, 6.283);
+    g.arc(cx, cy, R, 0, TAU);
     g.fill();
     if (S.scope > 0.6) {
       // Three posts: the tip of the lower one is the point of aim.

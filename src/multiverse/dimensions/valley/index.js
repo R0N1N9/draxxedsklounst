@@ -32,19 +32,27 @@ export default {
       difficulty: ctx.difficulty,
       oppName: ctx.players[1 - ctx.me].name,
       mv: {
+        secret: () => cur.secret(),
         roundOver(winner, r) {
           const how = r.reason === 'kill' ? `${PART[r.part] || 'KILL'}${r.dist ? ` · ${Math.round(r.dist)} M` : ''}` : r.reason === 'time' && winner >= 0 ? 'UPLINKS' : '';
           return cur.roundOver(winner, { how });
         },
       },
     });
-    game.mvFreeze(); // built under a transition (or the loading screen): no HUD or input until begin()
+    // Built for round one it idles like the classic lobby; built under a transition it
+    // stays frozen (no HUD or input) until begin().
+    const opening = ctx.round === 1;
+    if (opening) game.mvLobby();
+    else game.mvFreeze();
+    // Sides alternate by round and the spawn points come from the round's seed, so both
+    // clients know where the round will start before it does.
+    const pre = (c) => ({ sides: c.round % 2 === 0 ? [1, -1] : [-1, 1], spawns: [c.seed % 3, (c.seed >>> 3) % 3] });
     return {
       game,
-      begin() { game.mvBegin(cur.score, cur.round); },
+      begin() { game.mvBegin(cur.score, cur.round, opening && cur.round === 1); },
       freeze() { game.mvFreeze(); },
       suspend() { game.mvSuspend(); },
-      resume(next) { cur = next; afterReveal(); game.mvResume(); },
+      resume(next) { cur = next; afterReveal(); game.mvResume(pre(next)); },
       capture(g, w, h) { game.mvCapture(g, w, h); },
       dispose() { game.mvSuspend(); },
     };

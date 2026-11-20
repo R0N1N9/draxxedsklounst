@@ -29,8 +29,8 @@ export function shapeOf(x, y, z, yaw, k, out) {
 export function makeSoldierKit(THREE, fog) {
   const lam = (color) => fog.patch(new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide })); // all alike: one program
   const mats = {
-    coat: lam('#5b5847'), coatDark: lam('#4a4839'), trousers: lam('#45433a'), boot: lam('#1d1a18'), leather: lam('#4a3523'),
-    skin: lam('#b89074'), steel: lam('#414a3f'), wood: lam('#6a4528'), gun: lam('#23272b'), canvas: lam('#77705a'),
+    coat: lam('#3f4034'), coatDark: lam('#34352b'), trousers: lam('#33332c'), boot: lam('#141210'), leather: lam('#3a2a1c'),
+    skin: lam('#9a7458'), steel: lam('#2f372f'), wood: lam('#523520'), gun: lam('#191c1f'), canvas: lam('#5c563f'),
   };
   const cap = (r, len) => new THREE.CapsuleGeometry(r, len, 3, 8);
   const geos = {
@@ -42,7 +42,7 @@ export function makeSoldierKit(THREE, fog) {
     dome: new THREE.SphereGeometry(0.142, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.56), brim: new THREE.CylinderGeometry(0.139, 0.175, 0.05, 14, 1, true),
     hband: new THREE.TorusGeometry(0.142, 0.012, 4, 16),
   };
-  const idMat = (color) => fog.patch(new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.75, side: THREE.DoubleSide }));
+  const idMat = (color) => fog.patch(new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.9, side: THREE.DoubleSide }));
 
   // A helmet on its own: worn, shot off, or raised on a stick. Origin at the crown's centre.
   function helmet(id) {
@@ -79,8 +79,9 @@ export function makeSoldierKit(THREE, fog) {
     // Kit rides on the torso: belt, pouches, pack and bedroll, canteen.
     part(mats.leather, 0.215, 0.05, 0.215, b.torso, 0, -0.2, 0, geos.cyl);
     for (const s of [-1, 1]) part(mats.leather, 0.09, 0.1, 0.06, b.torso, s * 0.11, -0.19, -0.2);
-    part(mats.canvas, 0.3, 0.34, 0.15, b.torso, 0, 0.02, 0.24);
-    part(mats.canvas, 0.085, 0.4, 0.085, b.torso, 0, 0.23, 0.25, geos.cyl).rotation.z = Math.PI / 2;
+    part(mats.canvas, 0.25, 0.27, 0.11, b.torso, 0, 0.03, 0.2);
+    part(mats.leather, 0.26, 0.03, 0.115, b.torso, 0, 0.1, 0.2);
+    part(mats.canvas, 0.07, 0.34, 0.07, b.torso, 0, 0.21, 0.2, geos.cyl).rotation.z = Math.PI / 2;
     part(mats.steel, 0.06, 0.15, 0.06, b.torso, 0.2, -0.22, 0.12, geos.cyl);
     for (const s of [-1, 1]) part(mats.leather, 0.035, 0.5, 0.02, b.torso, s * 0.12, 0.02, -0.17).rotation.z = s * 0.12;
     // Armband in the identity colour, high on the left sleeve; cuff on the right.

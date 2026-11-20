@@ -7,7 +7,7 @@ import { Solid, Solids, rectPts, slabPts, ngonPts, polyGap, solidDist, pointSeg 
 export const W = 1600, H = 900, R = 15;
 export const BPM = 112, BEAT = 60 / BPM;
 export const PULSE_EVERY = 16 * BEAT; // the lattice strobes every four bars
-export const ROUND_TIME = 55;
+export const ROUND_TIME = 50;
 export const RAIL_RANGE = 2800, RAIL_SPEED = 5200; // near-instant: a quarter of a second wall to wall
 export const SPEED = 255, CRAWL = 66;             // a sniper's run, and the crawl while focused
 export const RELOAD = 1.25, BEAM_FADE = 0.6;

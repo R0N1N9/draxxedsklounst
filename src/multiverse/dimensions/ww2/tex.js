@@ -126,7 +126,7 @@ export function makeTextures(THREE, renderer, seed, maxAniso = 8, normals = true
     for (const ox of [0, S]) {
       masH.g.fillStyle = `rgb(${hh},${hh},${hh})`;
       masH.g.fillRect(x + ox, y, bw - 4, bh - 4);
-      masA.g.fillStyle = `rgb(${138 * t},${78 * t},${58 * t})`;
+      masA.g.fillStyle = `rgb(${116 * t},${74 * t},${58 * t})`;
       masA.g.fillRect(x + ox, y, bw - 4, bh - 4);
     }
   }

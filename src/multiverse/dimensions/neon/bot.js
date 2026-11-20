@@ -8,6 +8,7 @@ import { W, R, MID, RAIL_SPEED } from './world.js';
 import { pointSeg } from './geom.js';
 
 const LEASH = 560, LEASH_T = 5; // how deep a bot may go in the opening, and for how long
+const OPENING = 4.2;            // seconds before the first long shot (an elite's; a recruit takes longer)
 
 export function makeBot(ctx, world, S, self) {
   const skill = clamp(ctx.botSkill, 0, 1);
@@ -30,7 +31,9 @@ export function makeBot(ctx, world, S, self) {
   let decoyT = 3 + Math.random() * 5, blinkT = 3 + Math.random() * 3;
   const patience = 3.5 + Math.random() * 2.5; // nobody duels at range before they have found their feet
 
-  const aggression = () => clamp(nerve * 0.6 + ctx.time / 45, 0, 1);
+  // Nerve rises with the clock, and steeply in the last third: a round should be settled
+  // by a rail, not by the walls.
+  const aggression = () => clamp(nerve * 0.6 + ctx.time / 45 + Math.max(0, ctx.time - 30) / 18, 0, 1);
   // The opening is a long-range affair: for the first seconds nobody leaves their own third
   // (so nobody is rushed while still reading the room), then the leash pays out until the
   // whole floor is fair game.
@@ -144,7 +147,7 @@ export function makeBot(ctx, world, S, self) {
     if (!sighting) {
       // A fresh sighting: stand and duel, or duck back and come at them from another angle?
       sighting = true;
-      duel = ctx.time > patience && Math.random() < 0.25 + 0.55 * aggression();
+      duel = ctx.time > patience && (ctx.time > 38 || Math.random() < 0.25 + 0.55 * aggression());
     }
     lostT = 0;
     seen += dt;
@@ -182,7 +185,9 @@ export function makeBot(ctx, world, S, self) {
     const tol = Math.max(0.006, (R * 0.55) / d);
     const steady = close || self.sway < 0.004 + 0.012 * (1 - skill);
     // Nobody is at their sharpest in the first seconds after the lights go out.
-    if (seen > react * (ctx.time < 8 ? 1.8 : 1) && steady && self.reload <= 0 && Math.abs(angDiff(self.aim, want)) < tol) {
+    // ...and nobody is sniped from across the floor while the lights are still going out.
+    const settled = close || ctx.time > OPENING + 1.5 * (1 - skill);
+    if (seen > react * (ctx.time < 8 ? 1.8 : 1) && steady && settled && self.reload <= 0 && Math.abs(angDiff(self.aim, want)) < tol) {
       hes -= dt;
       if (hes <= 0) {
         cmd.fire = true;

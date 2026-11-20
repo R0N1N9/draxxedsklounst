@@ -22,7 +22,7 @@ void main() {
   vec3 hor = mix(uFog, uSunFog, sa * sa * sa);
   vec3 zen = mix(vec3(0.03, 0.05, 0.095), vec3(0.13, 0.11, 0.15), az * 0.7);
   vec3 col = mix(hor, zen, smoothstep(0.0, 0.5, h));
-  col += vec3(1.3, 0.5, 0.14) * pow(az, 4.0) * exp(-h * 6.0) * 0.55;
+  col += vec3(1.3, 0.5, 0.14) * pow(az, 4.0) * exp(-h * 6.0) * 0.4;
   // Cloud deck: a plane overhead, two layers sliding over each other.
   vec2 uv = d.xz / (h + 0.17);
   vec2 w1 = vec2(uTime * 0.0035, uTime * 0.0012), w2 = vec2(-uTime * 0.006, uTime * 0.0027);
@@ -36,7 +36,7 @@ void main() {
   vec3 cc = mix(vec3(0.04, 0.042, 0.06), warm, lit * (0.3 + 0.7 * (1.0 - smoothstep(0.4, 0.75, dens))));
   col = mix(col, cc, cov * 0.94);
   float clear = 1.0 - cov * 0.85;
-  col += vec3(1.0, 0.5, 0.16) * (smoothstep(0.99955, 0.9998, dot(d, uSun)) * 40.0 + pow(sa, 90.0) * 3.0 + pow(sa, 10.0) * 0.6) * clear;
+  col += vec3(1.0, 0.5, 0.16) * (smoothstep(0.99955, 0.9998, dot(d, uSun)) * 40.0 + pow(sa, 90.0) * 2.5 + pow(sa, 10.0) * 0.35) * clear;
   for (int i = 0; i < 3; i++) {
     float s = smoothstep(0.9968, 0.9995, dot(d, uSpot[i].xyz));
     col += vec3(0.75, 0.86, 1.0) * s * uSpot[i].w * (0.25 + cov * 1.2);
@@ -105,7 +105,7 @@ export function buildAtmosphere(THREE, tex, seed, fogShared, fogColor) {
   group.add(sky);
 
   // Searchlights: three batteries out beyond the town, each hunting its own patch of cloud.
-  const beamMat = new THREE.ShaderMaterial({ vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG, uniforms: { uGain: { value: 0.5 } }, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+  const beamMat = new THREE.ShaderMaterial({ vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG, uniforms: { uGain: { value: 0.3 } }, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
   const beamGeo = new THREE.CylinderGeometry(17, 1.2, 760, 14, 1, true).translate(0, 380, 0);
   const up = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), tmp = new THREE.Vector3();
   const beams = [[190, -210], [-240, 90], [80, 260]].map(([x, z], i) => {
@@ -113,7 +113,8 @@ export function buildAtmosphere(THREE, tex, seed, fogShared, fogColor) {
     mesh.position.set(x, -4, z);
     mesh.frustumCulled = false;
     group.add(mesh);
-    return { mesh, a: 0.11 + i * 0.037, b: 0.083 + i * 0.029, pa: rnd() * 6.3, pb: rnd() * 6.3, tx: -x * 0.0016, tz: -z * 0.0016 };
+    const l = Math.hypot(x, z);
+    return { mesh, a: 0.11 + i * 0.037, b: 0.083 + i * 0.029, pa: rnd() * 6.3, pb: rnd() * 6.3, tx: (-x / l) * 0.22, tz: (-z / l) * 0.22 };
   });
 
   // The bomber stream: nine silhouettes in vics, too high to care about the square.
@@ -158,7 +159,7 @@ export function buildAtmosphere(THREE, tex, seed, fogShared, fogColor) {
       skyU.uTime.value = wt + 100;
       beams.forEach((b, i) => {
         // Lean towards the town, then wander.
-        dir.set(b.tx * 160 + Math.sin(wt * b.a + b.pa) * 0.42, 1, b.tz * 160 + Math.cos(wt * b.b + b.pb) * 0.36).normalize();
+        dir.set(b.tx + Math.sin(wt * b.a + b.pa) * 0.34, 1, b.tz + Math.cos(wt * b.b + b.pb) * 0.3).normalize();
         b.mesh.quaternion.setFromUnitVectors(up, dir);
         tmp.copy(dir).multiplyScalar(520 / dir.y).add(b.mesh.position).sub(cam.position).normalize();
         skyU.uSpot.value[i].set(tmp.x, tmp.y, tmp.z, 0.5);

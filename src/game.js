@@ -331,7 +331,9 @@ export class Game {
       this.oppName = String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16);
     });
     n.on('close', () => {
-      if (this.mv) return; // the director reports a lost connection
+      // After the reveal the director reports a lost connection; before it, this is still
+      // the classic duel as far as anyone can tell, so it is reported the classic way.
+      if (this.mv && !this.mv.secret()) return;
       this.hud.card(`<h2>CONNECTION LOST</h2><p>${this.oppName} left the game.</p><button onclick="location.href=location.pathname">Back to menu</button>`);
       this.remote.setVisible(false);
       this.remoteAlive = false;
@@ -389,7 +391,8 @@ export class Game {
     this.round++;
     const flip = this.round % 2 === 0;
     this.sides = flip ? [1, -1] : [-1, 1];
-    this.spawnIdx = [Math.floor(Math.random() * 3), Math.floor(Math.random() * 3)];
+    this.spawnIdx = this._mvSpawn || [Math.floor(Math.random() * 3), Math.floor(Math.random() * 3)];
+    this._mvSpawn = null;
     this.wind.set(Math.random() * Math.PI * 2, 1.5 + Math.random() * 5.5, Math.random() * 1000);
     this.uplinkState.forEach((u) => (u.owner = -1));
     this.phase = 'insert';
@@ -1196,27 +1199,57 @@ export class Game {
   }
 
   // Back on screen (still frozen, under the transition) — mvBegin starts the round.
-  mvResume() {
+  // pre = { sides, spawns } for the coming round, known to both clients in advance, so the
+  // view the transition arrives on is the view the round starts from.
+  mvResume(pre) {
     this.suspended = false;
     this.frozen = true;
     this.phase = 'hold';
     this.result = null;
     this.renderer.domElement.style.display = '';
-    this._spawnFree();
+    const side = pre ? pre.sides[this.me] : 0;
+    const sp = pre && this.world.spawns[String(side)] && this.world.spawns[String(side)][pre.spawns[this.me]];
+    if (sp) {
+      this._mvSpawn = pre.spawns;
+      this.player.reset(sp, side < 0 ? Math.PI : 0);
+      this.player.zero = 400;
+    } else this._spawnFree();
+    this.player.eyePos(this.camera.position);
+    this.camera.rotation.set(this.player.pitch, this.player.yaw, 0, 'YXZ');
+    this.camera.fov = WEAPON.baseFov;
+    this.camera.updateProjectionMatrix();
     this._resize();
     this.clock.getDelta();
     this.renderer.setAnimationLoop(() => this._frame());
   }
 
-  mvBegin(scores, round) {
+  // opening = the first round of the match: it must play exactly like the classic game's
+  // (the lobby beat, the "match starting" message, the same delay before round 1).
+  mvBegin(scores, round, opening) {
     this.frozen = false;
     this.scores = scores.slice();
     this.round = round - 1;
+    this.hud._scoreKey = ''; // the number of pips may have changed
+    this.hud.show(true);
+    document.getElementById('touch').classList.add('active');
+    this.input.enabled = true;
+    if (!opening) this.input.requestLock();
+    if (this.mode !== 'host') return;
+    if (opening) {
+      this.hud.message(this.offline ? 'AI OPPONENT READY' : 'OPPONENT CONNECTED', 'Match starting…', 2.5);
+      setTimeout(() => this._hostStartRound(), 1500);
+    } else this._hostStartRound();
+  }
+
+  // Round one, before anything has been revealed: the valley waits exactly as the classic
+  // game does (free to roam, HUD on) instead of being frozen under a transition.
+  mvLobby() {
+    this.frozen = false;
+    this.phase = 'wait';
     this.hud.show(true);
     document.getElementById('touch').classList.add('active');
     this.input.enabled = true;
     this.input.requestLock();
-    if (this.mode === 'host') this._hostStartRound();
   }
 
   // Draw the current view into a 2D context (a WebGL canvas can only be copied in the

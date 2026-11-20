@@ -235,7 +235,7 @@ export class Director {
       const p = this.players[1 - this.me];
       p.name = clean(m.name, 'Opponent');
       this.hud.setPlayers(this.players, this.me);
-      if (this.authority && !m.mvAck) hello();
+      if (this.authority && !m.mvAck) { hello(); this.helloAt ||= performance.now(); }
     });
     tp.on('close', () => this._lost());
     tp.on('mv', (m) => this._onCtl(m));
@@ -277,6 +277,7 @@ export class Director {
         break;
       case 'ready':
         this.peerReady = Math.max(this.peerReady, m.r);
+        if (this._staleShown) { this._staleShown = false; this.hud.card(''); }
         if (this.authority) this._maybeGo();
         break;
       case 'go':
@@ -300,6 +301,8 @@ export class Director {
   _lost() {
     if (this.phase === 'idle') return;
     this._log('lost');
+    // Before the reveal the valley reports it itself, exactly as the classic game does.
+    if (this.settled === 0 && this.mod && this.mod.native && !this.fx) return;
     this.input.setEnabled(false);
     if (this.mod && this.mod.native && this.inst && this.inst.freeze) {
       try { this.inst.freeze(); } catch (e) { this._error('freeze', e); }
@@ -400,6 +403,8 @@ export class Director {
       round,
       difficulty: this.o.difficulty || 'normal',
       valley: this.o.valley,
+      seed: mixSeed(this.matchSeed, round) >>> 0,
+      secret: () => this.settled === 0,
       roundOver: (winner, info) => this._nativeOver(round, winner, info),
     };
   }
@@ -1011,6 +1016,11 @@ export class Director {
     if (this.transport) {
       this.transport.tick(dt);
       this._netFlush(dt);
+      // A guest that said hello but never joins in is running an old copy of the game.
+      if (this.authority && this.round === 1 && this.settled === 0 && this.peerReady < 1 && this.helloAt && !this._staleShown && now - this.helloAt > 15000) {
+        this._staleShown = true;
+        this.hud.card('<h2>STILL CONNECTING</h2><p>If this takes much longer, ask your friend to reload the game page and join again.</p>', [{ label: 'Keep waiting', primary: true, onClick: () => this.hud.card('') }, { label: 'Back to menu', onClick: () => this.exit() }]);
+      }
       // Waiting for the other device to arrive (after the reveal only: before it, nothing extra may show).
       if (this.phase === 'intro' && this.holdIntro && this.selfReady === this.round && !this._waitShown && this.settled > 0 && !this.mod.native && !this.fx && now - this.readyAt > 2500) {
         this._waitShown = true;

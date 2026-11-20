@@ -5,8 +5,8 @@ import { clamp, lerp, smoothstep, fbm, mulberry32 } from '../../kit.js';
 import { Batch, ruinWall, SUN } from './kitbash.js';
 import { TERRACE_Y } from './map.js';
 
-const PLASTER = ['#cdbd9e', '#b9a78c', '#a9a69c', '#c4a78c', '#9da6a2', '#c6b592', '#b3ac98', '#bfa07e'];
-const STONE = '#b9b09c', STONE_DARK = '#8f887a', CHAR = '#2a2622', SLATE = '#3a3d44';
+const PLASTER = ['#a89a80', '#978a73', '#8a887f', '#a08a72', '#7f8885', '#a2946f', '#928c7c', '#9c8266'];
+const STONE = '#a39a88', STONE_DARK = '#7d776a', CHAR = '#2a2622', SLATE = '#3a3d44';
 
 export function buildTown(THREE, map, tex, seed, fog, Q) {
   const rnd = mulberry32(seed ^ 0x7a11);

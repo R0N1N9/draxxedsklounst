@@ -65,10 +65,10 @@ export default {
     const { THREE, renderer } = ctx.three;
     const map = buildMap(ctx.rng);
     const scene = new THREE.Scene();
-    const fogColor = new THREE.Color(0.066, 0.078, 0.105);
+    const fogColor = new THREE.Color(0.085, 0.098, 0.132);
     scene.fog = new THREE.FogExp2(fogColor, FOG_D);
     const fog = makeFogPatch(THREE);
-    fog.shared.uSunFog.value.setRGB(1.25, 0.56, 0.2);
+    fog.shared.uSunFog.value.setRGB(0.85, 0.38, 0.135);
     // Two builds of the same picture. A software rasteriser (no GPU, or a blocked one) pays
     // per texture fetch, so there the materials shed normal maps, PBR and soft shadow
     // filtering, and the scene is drawn at reduced resolution under full-resolution grain.
@@ -88,7 +88,7 @@ export default {
     scene.add(town.group, atmos.group, fx.group);
 
     // Light: a cold sky and one low, warm sun whose shadows cross the whole square.
-    scene.add(new THREE.HemisphereLight(new THREE.Color(0.4, 0.5, 0.72), new THREE.Color(0.26, 0.19, 0.14), 4.4));
+    scene.add(new THREE.HemisphereLight(new THREE.Color(0.4, 0.5, 0.72), new THREE.Color(0.34, 0.26, 0.2), 7));
     const sun = new THREE.DirectionalLight(new THREE.Color(1, 0.5, 0.2), 13);
     sun.position.set(SUN.x * 150, SUN.y * 150, SUN.z * 150);
     sun.castShadow = true;
@@ -628,7 +628,7 @@ export default {
       },
     };
     inst.view = view; // for the test scripts: view.shot = { x, y, z, tx, ty, tz, fov }
-    inst.dbg = { scene, post, sun, town, fx, atmos, P, map };
+    inst.dbg = { scene, post, sun, town, fx, atmos, P, map, tex };
     post.resize();
     return inst;
   },
