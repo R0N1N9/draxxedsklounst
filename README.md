@@ -116,7 +116,7 @@ Pick **SNIPER CELL** on the main menu, then a mission, the **staging area** load
 ### Missions
 
 - **NightWatch** (default): SENTINEL's augmented night garrison.
-  - **Scavs:** cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
+  - **Sentries:** cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
   - **Juggernauts:** a recharging energy shell. When it breaks, they berserk with an energy blade.
   - **Bulwarks:** behind a hard-light wall. Snipe through its sight-port, or catch them when they lower it to fire. Tower bulwarks carry beam rifles and you see a red laser before they fire.
   - **Titans:** heavy armour. Body hits do half damage, and a helmet eats the first headshot; the follow-up kills.

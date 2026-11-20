@@ -99,7 +99,7 @@ export const Phone = {
     for (const D of F.devices) consider('iot', D.id, D.x, D.y, D.z, D.kind.toUpperCase());
     for (const d of Object.values(F.doors)) if ((d.kind === 'elec' || d.kind === 'dock') && !d.open && !d.sealed && !d.unlocked) consider('door', d.id, d.x, (d.y || 0) + 1.2, d.z, 'E-LOCK DOOR');
     for (const L of F.lightSources || []) if (!L.broken && !(L.offT > 0)) consider('light', L.id, L.x, L.y, L.z, L.kind === 'panel' ? 'CEILING PANEL' : 'LAMP');
-    for (const g of S.guards) if (g.state !== 'dead') consider('guard', g.id, g.x, (g.y || 0) + 1.5, g.z, ({ scav: 'SCAV', jugg: 'JUGGERNAUT', bulwark: 'BULWARK', titan: 'TITAN', overseer: 'OVERSEER' }[g.type] || 'GUARD'));
+    for (const g of S.guards) if (g.state !== 'dead') consider('guard', g.id, g.x, (g.y || 0) + 1.5, g.z, ({ scav: 'SENTRY', jugg: 'JUGGERNAUT', bulwark: 'BULWARK', titan: 'TITAN', overseer: 'OVERSEER' }[g.type] || 'GUARD'));
     return { list, best };
   },
 

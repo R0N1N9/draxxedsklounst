@@ -310,7 +310,7 @@ export const Kit2 = {
     const dirs = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
     const comp = dirs[((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8];
     const m = Math.round(f.d / 10) * 10;
-    const what = { scav: 'scav', jugg: 'juggernaut', bulwark: 'bulwark', titan: 'titan', overseer: 'the Overseer', guard: 'tango' }[f.g.type] || 'tango';
+    const what = { scav: 'sentry', jugg: 'juggernaut', bulwark: 'bulwark', titan: 'titan', overseer: 'the Overseer', guard: 'tango' }[f.g.type] || 'tango';
     const n = fresh.length;
     const lines = n > 1
       ? [`Contact. ${n} tangos, ${comp}, ${m} meters.`, `Multiple contacts, ${comp}, ${m} out.`]

@@ -625,7 +625,7 @@ $('panel-staging').addEventListener('click', (e) => {
   renderStaging();
 });
 const cellSet = { role: store.get('cellRole', 'shooter'), diff: store.get('cellDiff', 'operative'), names: store.get('cellNames', {}), mission: store.get('cellMission', 'nightwatch') };
-const MISSION_DESC = { nightwatch: 'NightWatch: SENTINEL\u2019s augmented night garrison \u2014 cowardly scavs, shielded juggernauts with energy blades, bulwarks behind hard-light walls, beam-rifle snipers on the towers.', infiltration: 'Infiltration: the original op against a crew of human security guards.' };
+const MISSION_DESC = { nightwatch: 'NightWatch: SENTINEL\u2019s augmented night garrison \u2014 cowardly sentries, shielded juggernauts with energy blades, bulwarks behind hard-light walls, beam-rifle snipers on the towers.', infiltration: 'Infiltration: the original op against a crew of human security guards.' };
 const cellName = (role) => ((cellSet.names[role] || '').trim() || CELL_CALL[role]).replace(/[<>&"]/g, '').slice(0, 16);
 function syncCell() {
   document.querySelectorAll('#panel-cell .cell-role').forEach((b) => b.classList.toggle('on', b.dataset.role === cellSet.role));

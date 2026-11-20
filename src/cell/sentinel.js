@@ -10,7 +10,7 @@
 //
 // NightWatch troops are SENTINEL's augmented security, and they fight like a night-time
 // alien patrol in an old shooter:
-//   SCAV        small, unshielded, cowardly: alone and shot at, it shrieks and runs.
+//   SENTRY      small, unshielded, cowardly: alone and shot at, it shrieks and runs.
 //   JUGGERNAUT  big and shielded (energy shell that recharges); shoots heavy plasma, and
 //               when its shell breaks, a pack-mate dies or you get close, it goes berserk
 //               and charges with an energy blade.
@@ -32,7 +32,7 @@ export const DIFFS = {
 
 export const TYPES = {
   guard: { name: 'GUARD', hp: 125, shield: 0, sight: 30, rate: 1, speed: [1.45, 1.9, 2.4, 3.6], scale: 1, color: '#4aa8ff' },
-  scav: { name: 'SCAV', hp: 60, shield: 0, sight: 24, rate: 0.8, speed: [1.6, 2.1, 2.8, 4.0], scale: 0.8, flee: true, color: '#ffb030' },
+  scav: { name: 'SENTRY', hp: 60, shield: 0, sight: 24, rate: 0.8, speed: [1.6, 2.1, 2.8, 4.0], scale: 0.8, flee: true, color: '#ffb030' },
   jugg: { name: 'JUGGERNAUT', hp: 260, shield: 120, sight: 30, rate: 1, speed: [1.35, 1.8, 2.3, 2.9], scale: 1.22, berserk: true, color: '#ff3a6a' },
   bulwark: { name: 'BULWARK', hp: 90, shield: 0, sight: 40, rate: 1.3, speed: [1.6, 2.0, 2.8, 3.3], scale: 0.95, wall: true, color: '#30e0ff' },
   overseer: { name: 'OVERSEER', hp: 300, shield: 160, sight: 32, rate: 1.1, speed: [1.35, 1.8, 2.3, 2.9], scale: 1.28, berserk: true, helmet: true, color: '#c070ff' },
