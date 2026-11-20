@@ -121,7 +121,12 @@ window.__reckoning = () => {
   try { sessionStorage.setItem('draxxed.reckoning', '1'); } catch {}
   updateTitle();
 };
-settings.rules = normalizeRules(store.get('rules', { preset: 'bf' }));
+// Long range is the default distance; move old "auto" settings over once.
+{
+  const saved = store.get('rules', { preset: 'bf' });
+  if (!store.get('rangeV2', false)) { if (saved.range === 'auto' || !saved.range) saved.range = 'long'; store.set('rangeV2', true); store.set('rules', saved); }
+  settings.rules = normalizeRules(saved);
+}
 applyRules(settings.rules);
 
 // ---- Sniping style ----

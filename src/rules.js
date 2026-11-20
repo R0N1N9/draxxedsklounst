@@ -48,7 +48,8 @@ export function normalizeRules(r) {
   const base = p ? { preset: r.preset, ...p } : { ...DEFAULT_RULES, preset: 'custom' };
   const out = { ...base, autoZero: r && r.autoZero !== undefined ? !!r.autoZero : true };
   // Distance is independent of the physics: 'auto' follows the style, or pick one to mix and match.
-  out.range = r && ['close', 'medium', 'long', 'extreme'].includes(r.range) ? r.range : 'auto';
+  // Long is the default; 'auto' (follow the style) is opt-in.
+  out.range = r && ['auto', 'close', 'medium', 'long', 'extreme'].includes(r.range) ? r.range : 'long';
   out.styleRange = (p && p.range) || 'long';
   if (r && r.preset === 'custom') {
     const num = (v, d, lo, hi) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);

@@ -280,7 +280,7 @@ export class BotPeer {
       this.alive = false;
       this.scoped = false;
       this.state = 'dead';
-      this._emit({ t: 'died', id: m.id, part: m.part, dist: m.dist, ip: m.ip });
+      this._emit({ t: 'died', id: m.id, part: m.part, dist: m.dist, ip: m.ip, peck: m.peck ? 1 : 0, p: this.pos.toArray() });
       this._sendState();
       if (this.phase === 'sandbox') this.respawnT = this.t + 4;
     } else {

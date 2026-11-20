@@ -304,6 +304,46 @@ export class Audio {
     }
   }
 
+  // The Reckoning: deep ground rumble / roar, and the overlord's flick.
+  rumble(dur = 3) {
+    if (!this.ctx) return;
+    const t = this.now;
+    this._noiseBurst(this.master, t, dur, 'lowpass', 120, 0.7, 0.9, dur * 0.8);
+    const o = this.ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(38, t);
+    o.frequency.linearRampToValueAtTime(70, t + dur * 0.4);
+    o.frequency.exponentialRampToValueAtTime(30, t + dur);
+    const lp = this.ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 260;
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.5, t + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(lp).connect(g).connect(this.master);
+    if (this.reverb) g.connect(this.reverb);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  }
+
+  flick() {
+    if (!this.ctx) return;
+    const t = this.now;
+    this._noiseBurst(this.master, t, 0.05, 'highpass', 2500, 1, 1.2, 0.04);
+    this._noiseBurst(this.master, t + 0.03, 0.8, 'bandpass', 900, 0.8, 0.5, 0.6);
+    const o = this.ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(1400, t + 0.02);
+    o.frequency.exponentialRampToValueAtTime(180, t + 0.7);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.3, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+    o.connect(g).connect(this.master);
+    o.start(t + 0.02);
+    o.stop(t + 0.8);
+  }
+
   footstep(pos) {
     if (!this.ctx) return;
     const p = this._panner(pos, 3);

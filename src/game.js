@@ -20,6 +20,7 @@ import { segSegClosest, clamp, mulberry32 } from './util.js';
 import { crestAt } from './terrain.js';
 import { spawnPoint } from './range.js';
 import { Chickens, buildChicken, animateChicken } from './chicken.js';
+import { Reckoning } from './reckoning.js';
 import { BotPeer } from './bot.js';
 import { Sandbox } from './sandbox.js';
 import { ToolSystem, setThermal } from './tools.js';
@@ -34,7 +35,7 @@ const ACCENTS = ['#e0a040', '#40c8d8'];
 // Higher magnification = bigger objective = more glint.
 const ZOOM_GLINT = { 4: 0.32, 5: 0.4, 8: 0.68, 10: 0.85, 12: 1.0, 16: 1.15, 20: 1.3, 30: 1.5, 40: 1.7 };
 const UAV_INTERVAL = 60;
-const PART_NAMES = { head: 'HEADSHOT', torso: 'BODY SHOT', legs: 'LEG SHOT' };
+const PART_NAMES = { head: 'HEADSHOT', torso: 'BODY SHOT', legs: 'LEG SHOT', chicken: 'FLICKED BY THE OVERLORD' };
 
 // Final look: silhouette ink lines from depth, split-tone grade, vignette, grain, damage tint.
 const GradeShader = {
@@ -202,6 +203,7 @@ export class Game {
     this.tools = new ToolSystem(this);
     this.supply = new Supply(this);
     this.chickens = new Chickens(this);
+    this.reckoning = new Reckoning(this);
     if (this.player.pollo) setTimeout(() => this.onReckoning(), 5000);
     this.loadoutPanel = new LoadoutPanel(this, settings.saveLoadout);
     if (this.offline) this.net = new BotPeer(this, { difficulty: this.difficulty, behaviour: this.offline === 'sandbox' ? 'passive' : 'hostile' });
@@ -517,7 +519,7 @@ export class Game {
     this.result = r;
     const won = r.winner === this.me, draw = r.winner < 0;
     let reason = '';
-    if (r.reason === 'kill') reason = `${PART_NAMES[r.part] || 'KILL'} · ${Math.round(r.dist)} m`;
+    if (r.reason === 'kill') reason = r.part === 'chicken' ? 'Pecked · eaten · flicked off the map' : `${PART_NAMES[r.part] || 'KILL'} · ${Math.round(r.dist)} m`;
     else if (r.reason === 'time') reason = draw ? `Time — uplinks tied ${r.up[0]}–${r.up[1]}` : `Time — uplinks ${Math.max(...r.up)}–${Math.min(...r.up)}`;
     this.pendingCard = `<h2 class="${won ? 'win' : draw ? '' : 'lose'}">${draw ? 'ROUND DRAWN' : won ? 'ROUND WON' : 'ROUND LOST'}</h2><p>${reason}</p><div class="sc"><span class="me">${this.name} ${this.scores[this.me]}</span><span class="dash">—</span><span class="them">${this.scores[1 - this.me]} ${this.oppName}</span></div>`;
     if (!this.replay.active && !(r.reason === 'kill')) this._showPendingCard();
@@ -597,7 +599,7 @@ export class Game {
       this.audio.chicken(null, 'peck');
       if (this.now - (this._peckMsgT || -9) > 3) {
         this._peckMsgT = this.now;
-        this.hud.message('PECKED', 'An enemy chicken is on you: shoot it (the pistol is quickest)', 2.2);
+        this.hud.message('PECKED', 'Switching to your pistol is always faster than reloading.', 2.6);
       }
       this.hud.damage(0);
     }
@@ -607,6 +609,16 @@ export class Game {
       const right = dx * Math.cos(P.yaw) - dz * Math.sin(P.yaw);
       const fwd = -dx * Math.sin(P.yaw) - dz * Math.cos(P.yaw);
       this.hud.damage(Math.atan2(right, fwd));
+    }
+    if (P.hp <= 0 && m.peck) {
+      // Death by chicken: the Reckoning instead of a killcam.
+      P.alive = false;
+      P.hp = 0;
+      this.net.send({ t: 'died', id: m.id, part: m.part, dist: 0, ip: m.ip, peck: 1, p: P.pos.toArray().map((x) => Math.round(x * 10) / 10) });
+      this._sendState(true);
+      if (this.mode === 'host') this._hostEndRound(1 - this.me, 'kill', { part: 'chicken', dist: 0 });
+      this._playReckoning(P.pos.clone(), this.tools.myLook(), () => (this.offline === 'sandbox' ? this._sandboxRespawn() : this._showPendingCard()));
+      return;
     }
     if (P.hp <= 0) {
       P.alive = false;
@@ -664,8 +676,24 @@ export class Game {
   _onRemoteDied(m) {
     this.remoteAlive = false;
     this.remoteDeadLock = true;
+    if (m.peck) {
+      if (this.mode === 'host') this._hostEndRound(this.me, 'kill', { part: 'chicken', dist: 0 });
+      const at = Array.isArray(m.p) ? new THREE.Vector3(...m.p) : (sampleHist(this.remoteHist, this.now - NET.interpDelay) || { p: new THREE.Vector3() }).p.clone();
+      this._playReckoning(at, this.tools.remoteLook(), () => this._showPendingCard());
+      return;
+    }
     if (this.mode === 'host') this._hostEndRound(this.me, 'kill', { part: m.part, dist: m.dist });
     if (this.killShown !== m.id) this._startKillerReplay(m.id, new THREE.Vector3(...m.ip), m.part, m.dist);
+  }
+
+  // Swap the Reckoning cinematic in for the killcam (same interface), then swap back.
+  _playReckoning(victimPos, look, onDone) {
+    if (this.replay !== this.reckoning) {
+      if (this.replay.active) this.replay.stop();
+      this._killcam = this.replay;
+    }
+    this.replay = this.reckoning;
+    this.reckoning.start({ victimPos, victimLook: look, ghost: this.ghostB, onStop: () => (this.replay = this._killcam), onDone });
   }
 
   _startKillerReplay(id, impact, part, dist) {
