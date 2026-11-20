@@ -15,6 +15,8 @@ export const PAYLOADS = [
   { k: 'quad', key: '8', name: 'RECON QUAD', bw: 0, cd: 25, cast: 0, aim: false, desc: 'Fly the quadcopter (Q). Anything it sees is revealed; F tags.' },
   { k: 'medevac', key: '9', name: 'MEDEVAC DRONE', bw: 30, cd: 22, cast: 0, aim: false, desc: 'Flies to a downed agent and gets them back up at 55 %.' },
 ];
+// What SENTINEL's ICE knocks out with the console (physical kit still works).
+const ICE_BLOCKED = new Set(['scan', 'jam', 'emp', 'lights', 'spoof', 'decoy']);
 export const PAYLOAD = Object.fromEntries(PAYLOADS.map((p) => [p.k, p]));
 
 // Click-to-hack actions on the console.
@@ -47,6 +49,7 @@ export class Ops {
   use(k, target) {
     const p = PAYLOAD[k], G = this.game;
     if (!p) return 'unknown';
+    if (G.obj.ice && ICE_BLOCKED.has(k)) return 'CONSOLE OFFLINE (ICE) \u2014 PHONE-HACK BY SIGHT (H)';
     if ((this.cd[k] || 0) > 0) return 'COOLING DOWN';
     if (this.bw < p.bw) return 'NOT ENOUGH BANDWIDTH';
     if (k === 'supply' && G.obj.drops <= 0) return 'NO DROPS LEFT';
@@ -67,6 +70,7 @@ export class Ops {
 
   hack(kind, id) {
     const G = this.game;
+    if (G.obj.ice) return 'CONSOLE OFFLINE (ICE) \u2014 PHONE-HACK BY SIGHT (H)';
     if (kind === 'door') {
       const d = G.fac.doors[id];
       if (!d) return 'NO DOOR';

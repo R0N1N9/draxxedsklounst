@@ -26,7 +26,8 @@ export const SPOTS = {
   lz: { x: 110, z: -16, r: 7 }, // the extraction van, on the east track
   barracks: { x: 43.5, z: 22 },
   gate: { x: 0, z: 72 },
-  dronePad: { x: 58, z: 22, y: 8.2 },
+  dronePad: { x: -52, z: 22.5, y: 1.2 }, // in front of the drone bay
+  droneBay: { x: -52, z: 30 },
 };
 
 // Rack-room keycards: one per door, each with a coloured tag that matches the door's reader.
@@ -642,13 +643,28 @@ export class Facility {
     };
     truck(14, 18);
     truck(-14, 16);
-    // Barracks (reinforcements come out of here) with the drone pad on its roof.
+    // Barracks: reinforcements muster here. Hack the door panel to lock them in for a while,
+    // or C4 it for good.
     this.box(46, 0, 14, 70, 4.2, 30, '#565b52');
     this.box(45.7, 4.2, 13.7, 70.3, 4.6, 30.3, '#3a3d38');
     this.deco(new THREE.BoxGeometry(0.1, 2.4, 1.6), 45.9, 1.2, 22, '#2d3036');
-    this.box(54, 4.6, 18, 62, 4.9, 26, '#2f3236', { sight: false });
-    this.deco(new THREE.RingGeometry(2.2, 2.6, 24).rotateX(-Math.PI / 2), 58, 4.95, 22, '#d0b040');
     this._light(45.5, 3.4, 22, 12, 'yard', '#ffc98a', true);
+    const bpanel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.3, 0.22), new THREE.MeshBasicMaterial({ color: '#ff3040' }));
+    bpanel.position.set(45.86, 1.4, 23.3);
+    this.root.add(bpanel);
+    this.stations.push({ id: 'barracks', kind: 'barracks', x: 44.6, z: 23.3, y: 0, floor: 0, panel: bpanel });
+    // Drone bay: a hangar in the west yard that launches replacement patrol drones from the
+    // pad in front of it. Hack its control panel to ground them for good, or C4 it.
+    this.box(-57, 0, 27, -47, 4, 33, '#4b5058');
+    this.box(-57.3, 4, 26.7, -46.7, 4.35, 33.3, '#34383f');
+    this.deco(new THREE.BoxGeometry(6, 3, 0.06), -52, 1.6, 26.97, '#2a2d33');
+    for (let i = 0; i < 6; i++) this.deco(new THREE.BoxGeometry(5.8, 0.05, 0.03), -52, 0.4 + i * 0.5, 26.93, '#3a3e45');
+    this.deco(new THREE.RingGeometry(2.0, 2.4, 28).rotateX(-Math.PI / 2), -52, terrainHeight(-52, 22.5) + 0.06, 22.5, '#d0b040');
+    this._light(-52, 4.4, 26.4, 12, 'yard', '#ffc98a', true);
+    const dpanel = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.06), new THREE.MeshBasicMaterial({ color: '#30ffd0' }));
+    dpanel.position.set(-48.2, 1.4, 26.96);
+    this.root.add(dpanel);
+    this.stations.push({ id: 'bay', kind: 'bay', x: -48.2, z: 25.8, y: 0, floor: 0, panel: dpanel });
     // Sandbag nests near the gate and the dock.
     for (const [x, z, ry] of [[-14, 54, 0], [64, -22, Math.PI / 2], [-66, 12, Math.PI / 2]]) {
       const w = 4, d = 0.9;
@@ -697,7 +713,7 @@ export class Facility {
     const out = [
       [-66, 48], [-40, 50], [-20, 52], [0, 54], [22, 50], [50, 44], [68, 40], [72, 6], [74, -23], [66, -52], [40, -52], [10, -54], [-20, -52], [-44, -52], [-68, -50], [-70, -24], [-72, 11], [-68, 32],
       [-44, 10], [-44, -10], [-44, -36], [44, -10], [42, -20], [44, -36], [0, 6], [-20, 8], [20, 8], [0, 28], [30, 20], [-30, 18], [40, 4], [42, 22],
-      [-90, 11], [0, 68], [86, -23], [0, 88], [-90, 50], [90, 30], [100, -60], [-100, -40], [110, -16],
+      [-52, 22], [-90, 11], [0, 68], [86, -23], [0, 88], [-90, 50], [90, 30], [100, -60], [-100, -40], [110, -16],
     ].map(([x, z]) => [x, z, null]);
     const g0 = [
       [-34, -10], [-22, -9], [-22.7, -16.6], [-22.7, -20], [0, -9], [0, -16.5], [-33, -20], [-12, -20], [0, -20], [3, -20], [15, -20], [24.7, -20], [29, -20], [34, -20],
@@ -974,6 +990,8 @@ export class Facility {
       if (q.kind === 'drawer') q.mesh.position.z = q.home.z + (searched.includes(q.id) ? 0.38 : 0);
       else if (q.kind === 'shelf') q.mesh.visible = (used[q.id] || 0) < q.uses;
       else if (q.kind === 'fridge') q.mesh.material.color.set((used[q.id] || 0) < q.uses ? '#40c8ff' : '#ff4040');
+      else if (q.kind === 'barracks') q.panel.material.color.set(ob.barracks === 'destroyed' ? '#202020' : ob.barracksT > 0 ? '#30ffd0' : '#ff3040');
+      else if (q.kind === 'bay') q.panel.material.color.set(ob.bay === 'destroyed' ? '#202020' : ob.bay === 'hacked' ? '#ff3040' : (t * 2) % 1 < 0.5 ? '#30ffd0' : '#108070');
       else if (q.kind === 'comms') q.leds.forEach((m, i) => m.material.color.set(ob.commsDown ? ((t * 2 + i * 0.3) % 1 < 0.5 ? '#ff2030' : '#300808') : Math.sin(t * 9 + i * 2.1) > 0 ? '#ff9a20' : '#5a3008'));
     }
     for (let i = 0; i < this.cctvScreens.length; i++) {

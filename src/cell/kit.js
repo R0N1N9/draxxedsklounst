@@ -18,8 +18,8 @@ export const KIT = {
   lure: { charges: 3, life: 7, radius: 16 },
   exec: { max: 2, start: 1, range: 35, targets: 3, gap: 0.22 },
 };
-const CALL_LINE = { look: 'Eyes on my mark.', enemy: 'Enemy, marked.', move: 'Moving to my mark.', hold: 'Hold position.', regroup: 'On me.', cover: 'Cover me.', sync: 'Sync target marked. Get on him.', pickup: 'I\'m down! I need a pickup on my position!' };
-const COMMS_LABEL = { look: 'LOOK HERE', enemy: 'ENEMY', move: 'MOVE HERE', hold: 'HOLD', regroup: 'ON ME', cover: 'COVER ME', sync: 'SYNC TARGET', pickup: 'PICK ME UP' };
+const CALL_LINE = { look: 'Eyes on my mark.', enemy: 'Enemy, marked.', move: 'Moving to my mark.', hold: 'Hold position.', regroup: 'On me.', cover: 'Cover me.', sync: 'Sync target marked. Get on him.', pickup: 'I\'m down! I need a pickup on my position!', perch: 'Need you set up there. Good sightline on the compound.' };
+const COMMS_LABEL = { look: 'LOOK HERE', enemy: 'ENEMY', move: 'MOVE HERE', hold: 'HOLD', regroup: 'ON ME', cover: 'COVER ME', sync: 'SYNC TARGET', pickup: 'PICK ME UP', perch: 'SNIPER POSITION' };
 const REQ_LABEL = { supply: 'SUPPLY DROP', scan: 'PULSE SCAN', emp: 'EMP', decoy: 'DECOY', lights: 'CUT LIGHTS', drone: 'DRONE OVERWATCH' };
 const BOLT = {
   plasma: { color: '#60ff80', speed: 38, size: 0.5 },
@@ -73,7 +73,7 @@ export const KitMethods = {
   _kitKeys(dt, I, tab, quad, live, act) {
     const shooterKit = this.role === 'shooter';
     if (live && !tab && !quad && shooterKit) {
-      if (I.pressed('KeyH') || I.pressed('cell-deadeye')) this._deadeye();
+      if ((I.pressed('KeyH') && !(this.operative && this.phone && this.phone.target)) || I.pressed('cell-deadeye')) this._deadeye();
       if (I.pressed('KeyX') || I.pressed('cell-lure')) this._throwLure();
       if (I.pressed('KeyT') || I.pressed('cell-exec')) this._execute();
     }
@@ -408,7 +408,17 @@ export const KitMethods = {
     const A = this.aiShoot, say = (m) => { this.comms(m, 'amber', this.partnerName); this._voice('partner', m); };
     if (k === 'hold') { A.holdT = 30; say('Holding fire.'); }
     else if (k === 'enemy') { A.holdT = 0; say(enemyId ? 'I see him.' : 'Nothing under your mark.'); }
-    else if (k === 'move') {
+    else if (k === 'perch') {
+      // A sniper position anywhere the spotter marks (outside the building): Ra relocates there.
+      if (this.fac.insideBuilding(at.x, at.z)) { say('Can\'t shoot from inside that building. Pick somewhere with a view.'); return; }
+      const x = at.x, z = at.z;
+      const yaw = Math.atan2(-(0 - x), -(-15 - z));
+      SPOTS.perches[3] = { id: 'mark', name: 'SPOTTER\'S MARK', x, z, yaw, custom: true };
+      const d = Math.hypot(x - this.partner.pos.x, z - this.partner.pos.z);
+      A.moveTo = 3;
+      A.moveT = Math.max(5, Math.min(25, d / 9));
+      say(`Copy, moving to your mark. ${Math.round(A.moveT)} seconds.`);
+    } else if (k === 'move') {
       const best = SPOTS.perches.map((p, i) => [Math.hypot(p.x - at.x, p.z - at.z), i]).sort((a, b) => a[0] - b[0])[0][1];
       if (best !== A.perch) this._execPayload('perch', { i: best }, 'spotter'); else say('Already here.');
     } else if (k === 'regroup' || k === 'cover') { A.coverT = 40; A.holdT = 0; say('Got you covered. Anything near you is mine.'); }

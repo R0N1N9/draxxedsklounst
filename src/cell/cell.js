@@ -38,6 +38,9 @@ import { installKit, KIT } from './kit.js';
 import { installKit2 } from './kit2.js';
 import { installIce } from './ice.js';
 import { installNeuro } from './neuro.js';
+import { installNVG } from './nvg.js';
+import { installSpatial } from './spatial.js';
+import { installPhone } from './phone.js';
 import { wallBlock } from './sentinel.js';
 import { Cinema } from './cinema.js';
 import { Radio } from './voice.js';
@@ -104,8 +107,19 @@ const CellShader = {
         float amp = (uMode > 2.5 ? 6.0 : uMode > 1.5 ? 7.0 : 9.0) / (1.0 + uWash * 1.6);
         float v = 1.0 - exp(-l * amp);
         vec3 tint = uMode > 2.5 ? vec3(0.95) : uMode > 1.5 ? vec3(0.84, 0.93, 1.0) : uMode > 0.5 ? vec3(0.8, 0.9, 1.0) : vec3(0.78, 0.89, 1.0);
-        vec3 nv = tint * (v * 0.95 + 0.03) + g * 0.07 * (1.0 + uWash * 2.0);
-        nv *= 0.92 + 0.08 * sin(uv.y * uRes.y * 1.4);
+        vec3 nv;
+        if (uMode < 1.5) {
+          // Goggles and scope: a modern blue grade: deep navy shadows, cyan-blue mids, near-white
+          // highlights. Smooth, with only a whisper of grain and no scanlines.
+          vec3 lo = vec3(0.01, 0.05, 0.12), mid = vec3(0.16, 0.48, 0.86), hi = vec3(0.82, 0.95, 1.0);
+          nv = mix(lo, mid, smoothstep(0.0, 0.55, v));
+          nv = mix(nv, hi, smoothstep(0.55, 1.0, v));
+          nv += g * 0.018 * (1.0 + uWash * 1.5);
+          tint = vec3(0.55, 0.8, 1.0);
+        } else {
+          nv = tint * (v * 0.95 + 0.03) + g * 0.07 * (1.0 + uWash * 2.0);
+          nv *= 0.92 + 0.08 * sin(uv.y * uRes.y * 1.4);
+        }
         // Bright sources bloom into halos, and a light in your face washes the tube out.
         float glow = 0.0;
         for (int i = 0; i < 8; i++) {
@@ -319,7 +333,7 @@ export class CellGame {
     for (const k of ['touchSensR', 'touchSensL', 'gyroMode', 'gyroSens', 'gyroInvertY']) if (this.settings[k] !== undefined) this.input[k] = this.settings[k];
 
     // Mission state (host-authoritative; mirrored on the guest).
-    this.obj = { perimeter: false, relay: false, badge: false, found: false, aligned: false, upload: 0, uploading: false, trace: 0, traced: false, drive: null, driveAt: null, exfil: false, access: 1, drops: this.D.drops, canCrack: false, crack: 0, step: 0, cards: [], searched: [], used: {}, commsDown: false, cctv: false, quiet: null, ice: false, ifak: { shooter: 1, spotter: 1 } };
+    this.obj = { perimeter: false, relay: false, badge: false, found: false, aligned: false, upload: 0, uploading: false, trace: 0, traced: false, drive: null, driveAt: null, exfil: false, access: 1, drops: this.D.drops, canCrack: false, crack: 0, step: 0, cards: [], searched: [], used: {}, commsDown: false, cctv: false, quiet: null, ice: false, ifak: { shooter: 1, spotter: 1 }, barracks: 'ok', barracksT: 0, bay: 'ok', c4: [] };
     this.crates = [];
     this.crateId = 1;
     this.prompts = {}; // role -> { label, p }
@@ -351,6 +365,9 @@ export class CellGame {
     this._wlInit();
     this._iceInit();
     this._neuroInit();
+    this._nvgInit();
+    this._spatialInit();
+    this._phoneInit();
     this._mapPoints();
     this._buildHud();
     this.tablet = new Tablet(this);
@@ -625,6 +642,8 @@ export class CellGame {
       case 'lockdown': this._lockdownFx(); break;
       case 'ice': this.hud.flash('ICE ALERT', 'red'); break;
       case 'confirm': if (this.isHost) this.sentinel.confirm(m.id); break;
+      case 'boom': this._boom(m); break;
+      case 'blasthurt': if (m.role === this.role) this._damage(m.dmg, { x: m.x, z: m.z }); break;
       case 'sweepfx': this.isr.sweepFx = { x: m.x, z: m.z, r: m.r, t: 0 }; break;
       case 'vote': if (this.isHost) this._castVote(m.role, m.v); break;
       case 'heal': if (m.role === this.role) this._heal(m.hp); break;
@@ -721,6 +740,8 @@ export class CellGame {
       case 'scan': S.scanT = 4; for (const d of S.drones) if (d.state !== 'dead') { d.scanT = 4; d.tagT = Math.max(d.tagT, 8); } for (const c of S.cams) c.scanT = 4; this._toast('Network pulse \u2014 every drone, camera and device for 4 s. (People don\u2019t show: use the ISR sweep.)', 'cyan'); break;
       // ISR ping sweep: a circle on the ground; everything inside, flesh or machine, gets marked.
       case 'qmark': this._neuroMark(target.ids || []); break;
+      case 'pdrone': { const d = S.byId(target.id); if (d && d.state !== 'dead') { d.empT = 8; this._toast('Drone shorted out for 8 s.', 'cyan'); } break; }
+      case 'plight': this.fac.lightsOff((L) => L.id === target.id, 20); this._toast('Light cut for 20 s.', 'dim'); break;
       case 'isrsweep': {
         let n = 0;
         for (const g of S.guards) if (g.state !== 'dead' && Math.hypot(g.x - target.x, g.z - target.z) < target.r) { g.tagT = Math.max(g.tagT, 15); n++; }
@@ -955,11 +976,8 @@ export class CellGame {
     // Keys for this mode.
     if (I.pressed('Tab') || I.pressed('cell-tab')) this.tablet.toggle();
     if ((I.pressed('KeyL') || I.pressed('cell-light')) && !tab) this._wlToggle();
-    if (I.pressed('KeyN') || I.pressed('cell-nv')) {
-      this.nv = !this.nv;
-      this.audio.click();
-      if (this.nv && !this.isr.active && this.t - (this._darkT || -99) > 25 && Math.random() < 0.65) { this._darkT = this.t; this._radio('me', ['Going dark.', 'NODs on. Going dark.', 'Going dark.'][Math.floor(Math.random() * 3)]); }
-    }
+    if (I.pressed('KeyN') || I.pressed('cell-nv')) this._nvgToggle();
+    this._phoneTick(dt, I);
     // Objective board: O shows / hides it, P expands / compacts it (P is the sweep in the ISR view).
     if (I.pressed('KeyO')) this.hud.objToggle();
     if (I.pressed('KeyP') && !this.isr.active) this.hud.objExpand();
@@ -1573,6 +1591,7 @@ export class CellGame {
     this._doors(dt);
     this._crates(dt);
     this._iceHost(dt);
+    this._c4Tick(dt);
     this._medevacTick(dt);
     if (this.aiShoot) this._aiShooter(dt);
     this._objectives(dt);
@@ -1898,6 +1917,27 @@ export class CellGame {
           this._voice(role, 'Their radios are dead. Nobody\'s calling for help now.');
         });
         return;
+      // Barracks: the spotter hacks the door shut for a while; the shooter can C4 it for good.
+      // Drone bay: a hack grounds it for good; so does C4. Planting C4 puts every guard on alert.
+      case 'barracks':
+      case 'bay': {
+        const site = q.kind, name = site === 'bay' ? 'drone bay' : 'barracks';
+        const st = site === 'bay' ? ob.bay : ob.barracks;
+        if (st === 'destroyed') return opt(site + 'x', `The ${name} is wrecked`, 0, null);
+        if (ob.c4.some((c) => c.site === site)) return opt(site + 'x', `C4 is set on the ${name} \u2014 get clear!`, 0, null);
+        const c4 = role === 'shooter' && (!this.operative || (role === this.role && this.input.held('ShiftLeft')));
+        if (c4) {
+          opt('c4', `Hold E \u2014 plant C4 on the ${name} (alerts every guard)`, 2.5, () => this._plantC4(site, q, role));
+        } else {
+          if (site === 'bay' && st === 'hacked') return opt('bayx', 'Drone bay grounded \u2014 no more launches', 0, null);
+          if (site === 'barracks' && ob.barracksT > 0) return opt('barx', `Barracks locked down \u2014 ${Math.ceil(ob.barracksT)} s`, 0, null);
+          opt(site, site === 'bay' ? 'Hold E \u2014 hack the drone bay controls (ground it for good)' : 'Hold E \u2014 hack the barracks door (lock them in for 90 s)', site === 'bay' ? 3.5 : 3, () => {
+            if (site === 'bay') { ob.bay = 'hacked'; this._toast('Drone bay hacked: no more drone launches.', 'cyan'); this._radio(role, 'Drone bay is grounded. No more birds.'); }
+            else { ob.barracksT = 90; this._toast('Barracks door hacked shut: no reinforcements for 90 s.', 'cyan'); this._radio(role, 'Barracks door is locked. That buys us a minute and a half.'); }
+          });
+        }
+        return;
+      }
       case 'cctv':
         if (ob.cctv) return opt('cctvx', 'CCTV desk — the feeds are yours', 0, null);
         opt('cctv', `Hold E — hack the CCTV desk in person${fast ? '' : ' (slow without the tablet)'}`, fast ? 3 : 5, () => {
@@ -1907,6 +1947,81 @@ export class CellGame {
           this._voice(role, 'Cameras are ours. They can see us all day and nobody will hear about it.');
         });
         return;
+    }
+  }
+
+  // C4: a six-second fuse. Planting it is loud work: every guard on the map is alerted to it.
+  _plantC4(site, q, role) {
+    const ob = this.obj, S = this.sentinel;
+    const at = site === 'bay' ? { x: -52, y: 1.0, z: 26.85 } : { x: 45.8, y: 1.0, z: 21.2 };
+    ob.c4.push({ id: (this._c4id = (this._c4id || 0) + 1), site, x: at.x, y: at.y, z: at.z, t: 6 });
+    S.raise(1, null);
+    for (const g of S.guards) if (g.state !== 'dead' && g.state !== 'flee' && !g.tower) S._alert(g, null, { x: q.x, z: q.z, y: 0 });
+    this._toast(`C4 planted on the ${site === 'bay' ? 'drone bay' : 'barracks'} \u2014 6 s. Every guard is coming.`, 'red');
+    this._radio(role, 'Charge set! Six seconds, get clear!');
+  }
+  _c4Tick(dt) {
+    const ob = this.obj, S = this.sentinel;
+    if (ob.barracksT > 0) ob.barracksT = Math.max(0, ob.barracksT - dt);
+    S.barracksDown = ob.barracks === 'destroyed' || ob.barracksT > 0;
+    S.bayDown = ob.bay !== 'ok';
+    for (const c of ob.c4) {
+      c.t -= dt;
+      if (c.t > 0) continue;
+      c.done = true;
+      if (c.site === 'bay') ob.bay = 'destroyed'; else ob.barracks = 'destroyed';
+      // Blast: anything within 9 m.
+      for (const g of S.guards) if (g.state !== 'dead' && Math.hypot(g.x - c.x, g.z - c.z) < 9) S.damage(g.id, 999, 'explosive', { x: c.x, z: c.z }, 'torso');
+      for (const d of S.drones) if (d.state !== 'dead' && Math.hypot(d.x - c.x, d.z - c.z) < 9) S.damage(d.id, 999, 'explosive', { x: c.x, z: c.z }, 'torso');
+      for (const a of this.agents()) {
+        const dd = Math.hypot(a.pos.x - c.x, a.pos.z - c.z);
+        if (a.alive && dd < 9) { const dmg = Math.round(120 * (1 - dd / 9)); if (a.role === this.role) this._damage(dmg, { x: c.x, z: c.z }); else this._broadcast({ k: 'blasthurt', role: a.role, dmg, x: c.x, z: c.z }); }
+      }
+      S.noise({ x: c.x, y: 1, z: c.z }, 140, true);
+      this._toast(c.site === 'bay' ? 'Drone bay destroyed. No more drones.' : 'Barracks destroyed. No more reinforcements.', 'amber');
+      this._broadcast({ k: 'boom', x: c.x, y: c.y, z: c.z });
+      this._boom(c);
+    }
+    ob.c4 = ob.c4.filter((c) => !c.done);
+  }
+  _boom(c) {
+    const p = new THREE.Vector3(c.x, c.y + 1, c.z);
+    for (let i = 0; i < 6; i++) this.effects.puff(p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4)), 'dust', 4 + Math.random() * 3, 2.5);
+    this.audio.shotDistant(p, this.camera.position.distanceTo(p) / 343, false);
+    this.audio.rumble && this.audio.rumble(2.5);
+    this.post.uniforms.uStatic.value = Math.max(this.post.uniforms.uStatic.value, this.camera.position.distanceTo(p) < 40 ? 0.8 : 0.2);
+  }
+  // Every client: the charges' blinking LEDs, and smoke over wrecked sites.
+  _c4Visuals(dt) {
+    const ob = this.obj;
+    this.c4Objs = this.c4Objs || new Map();
+    const seen = new Set();
+    for (const c of ob.c4 || []) {
+      seen.add(c.id);
+      let o = this.c4Objs.get(c.id);
+      if (!o) {
+        o = new THREE.Group();
+        o.add(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.08), new THREE.MeshLambertMaterial({ color: '#c8b48a' })));
+        const led = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), new THREE.MeshBasicMaterial({ color: '#ff2020' }));
+        led.position.set(0.06, 0.08, 0.04);
+        o.add(led);
+        o.userData.led = led;
+        o.position.set(c.x, c.y, c.z);
+        this.scene.add(o);
+        this.c4Objs.set(c.id, o);
+      }
+      const fast = c.t < 2 ? 6 : 2;
+      const on = (this.t * fast) % 1 < 0.5;
+      if (on && !o.userData.on) this.audio.beep(o.position, c.t < 2);
+      o.userData.on = on;
+      o.userData.led.visible = on;
+    }
+    for (const [id, o] of this.c4Objs) if (!seen.has(id)) { this.scene.remove(o); this.c4Objs.delete(id); }
+    this._smokeT = (this._smokeT || 0) - dt;
+    if (this._smokeT <= 0) {
+      this._smokeT = 0.6;
+      if (ob.barracks === 'destroyed') this.effects.puff(new THREE.Vector3(58 + (Math.random() - 0.5) * 10, 4.5, 22 + (Math.random() - 0.5) * 6), 'dust', 3.5, 3);
+      if (ob.bay === 'destroyed') this.effects.puff(new THREE.Vector3(-52 + (Math.random() - 0.5) * 6, 4.2, 30 + (Math.random() - 0.5) * 4), 'dust', 3, 3);
     }
   }
 
@@ -2049,6 +2164,9 @@ export class CellGame {
   _visuals(dt) {
     this._iceClient(dt);
     this._neuroTick(dt);
+    this._nvgTick(dt);
+    this._spatialTick(dt);
+    this._c4Visuals(dt);
     this.fac.syncStations(this.obj, this.t);
     this._vanVisual(dt);
     this._lasersTick();
@@ -2311,7 +2429,7 @@ class CellHud {
     if (!t) return;
     const bar = document.createElement('div');
     bar.className = 'cell-tbar';
-    const extra = (g.role === 'spotter' || g.operative) ? [['cell-isr', 'ISR'], ['cell-sweep', 'SWEEP']] : [];
+    const extra = (g.role === 'spotter' || g.operative) ? [['cell-isr', 'ISR'], ['cell-sweep', 'SWEEP'], ['cell-hack', 'HACK']] : [];
     const common = [...extra, ['cell-light', 'LIGHT'], ['cell-drop', 'DROP'], ['cell-ping', 'PING \u25CE'], ['cell-help', 'HELP \u271A'], ['cell-sync', 'SYNC'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
     const pills = g.operative
       ? [['cell-tab', 'TABLET'], ['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-quad', 'QUAD'], ['cell-recall', 'RECALL'], ...common]
@@ -2612,6 +2730,8 @@ class CellHud {
     // Scope (Halo-style ring with a range readout) or a small crosshair.
     g._neuroHud(c, proj, W, H);
     g._syncHud(c, proj);
+    g._phoneHud(c, proj, W, H);
+    g._nvgHud(c, W, H);
     if (g.isr.active) this._isrHud(c, W, H);
     else if (scoped) this._scope(c, W, H);
     else if (g.quad && g.quad.active) this._quadHud(c, W, H);
@@ -2740,3 +2860,6 @@ installKit(CellGame);
 installKit2(CellGame);
 installIce(CellGame);
 installNeuro(CellGame);
+installNVG(CellGame);
+installSpatial(CellGame);
+installPhone(CellGame);

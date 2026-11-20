@@ -373,7 +373,7 @@ export class Tablet {
       for (const b of P.pay.querySelectorAll('[data-k]')) {
         const k = b.dataset.k, cd = O.cd[k] || 0, p = PAYLOAD[k];
         b.classList.toggle('sel', this.selected === k);
-        b.classList.toggle('off', cd > 0 || O.bw < p.bw || (k === 'supply' && ob.drops <= 0) || (k === 'quad' && !g.canQuad()) || (k === 'medevac' && !g.downedAgent()));
+        b.classList.toggle('off', cd > 0 || O.bw < p.bw || (k === 'supply' && ob.drops <= 0) || (k === 'quad' && !g.canQuad()) || (k === 'medevac' && !g.downedAgent()) || (ob.ice && ['scan', 'jam', 'emp', 'lights', 'spoof', 'decoy'].includes(k)));
         b.querySelector('.c').textContent = cd > 0 ? Math.ceil(cd) + 's' : '';
       }
       const cr = P.hold.querySelector('.ct-crack'), fi = P.hold.querySelector('.ct-fight');
@@ -386,6 +386,44 @@ export class Tablet {
       P.bw.innerHTML = `<div class="ct-h">OVERWATCH</div><p>${g.aiSpot ? 'R\u014dnin answers requests and runs payloads on his own.' : 'Requests land on ' + esc(g.partnerName) + '\u2019s console to SEND or DENY.'} Tap a contact to tag it. Right-click / long-press the map for the ping wheel.</p>`;
     }
     P.log.innerHTML = '<div class="ct-h">COMMS</div>' + g.commsLog.slice(-7).map((l) => `<div class="c-${l.c && l.c[0] === '#' ? 'x' : l.c}">${l.who ? '<b>' + esc(l.who) + '</b> ' : ''}${esc(l.m)}</div>`).join('');
+  }
+
+  // The console is a cheap ruggedised slate on a stolen uplink: scanlines, sparkle, the odd
+  // torn frame. Under SENTINEL's ICE the uplink drops and it's all static.
+  _glitch(c, W, H, k) {
+    const g = this.g, ice = g.obj && g.obj.ice;
+    const t = g.t;
+    c.save();
+    c.fillStyle = 'rgba(0,0,0,0.18)';
+    for (let y = (t * 40) % 3; y < H; y += 3) c.fillRect(0, y, W, 1);
+    // Tearing: shift a few horizontal bands sideways.
+    if (Math.random() < (ice ? 0.6 : 0.07)) {
+      const cv = this.canvas;
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      for (let n = 0; n < (ice ? 4 : 1 + Math.floor(Math.random() * 2)); n++) {
+        const y = Math.floor(Math.random() * cv.height), h = Math.floor(4 + Math.random() * 18 * k), dx = Math.floor((Math.random() - 0.5) * 40 * k);
+        c.drawImage(cv, 0, y, cv.width, h, dx, y, cv.width, h);
+      }
+      c.setTransform(k, 0, 0, k, 0, 0);
+    }
+    // Sparkle.
+    c.fillStyle = 'rgba(180,255,240,0.5)';
+    for (let n = 0; n < (ice ? 400 : 40); n++) c.fillRect(Math.random() * W, Math.random() * H, 1, 1);
+    if (Math.random() < 0.03) { c.fillStyle = 'rgba(0,255,224,0.06)'; c.fillRect(0, 0, W, H); }
+    if (ice) {
+      // Uplink lost: heavy static over everything.
+      for (let n = 0; n < 160; n++) { const v = Math.floor(Math.random() * 120); c.fillStyle = `rgba(${v},${v + 10},${v + 8},0.55)`; c.fillRect(Math.random() * W, Math.random() * H, 2 + Math.random() * 40, 1 + Math.random() * 3); }
+      c.fillStyle = 'rgba(2,8,10,0.72)';
+      c.fillRect(0, 0, W, H);
+      c.textAlign = 'center';
+      c.fillStyle = (t * 2) % 1 < 0.5 ? '#ff3048' : '#a01828';
+      c.font = `700 ${this.mini ? 11 : 22}px JetBrains Mono, monospace`;
+      c.fillText('UPLINK LOST \u2014 SENTINEL ICE', W / 2, H / 2 - (this.mini ? 4 : 10));
+      c.fillStyle = 'rgba(200,240,235,0.85)';
+      c.font = `600 ${this.mini ? 8 : 13}px JetBrains Mono, monospace`;
+      c.fillText(this.mini ? 'PHONE HACK (H)' : 'Console offline \u2014 phone-hack by sight: hold H', W / 2, H / 2 + (this.mini ? 9 : 16));
+    }
+    c.restore();
   }
 
   _draw() {
@@ -604,6 +642,7 @@ export class Tablet {
     // Scan sweep.
     if (S.scanT > 0) { c.strokeStyle = `rgba(0,255,224,${0.4 * (S.scanT / 4)})`; c.lineWidth = 2; const a = T(g.player.pos.x, g.player.pos.z); c.beginPath(); c.arc(a.x, a.y, (4 - S.scanT) * 120 * s * 0.25, 0, Math.PI * 2); c.stroke(); c.lineWidth = 1; }
     void BUILDING;
+    this._glitch(c, W, H, k);
   }
 }
 

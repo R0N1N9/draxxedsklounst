@@ -680,6 +680,13 @@ export class Sentinel {
         if (how === 'takedown') this.stats.takedowns++; else this.stats.kills++;
         if (part === 'head') this.stats.heads++;
         this.emit({ t: 'kill', id, how, chief: e.chief });
+        // Anyone who saw it drop goes to check the body (and then radios it in).
+        for (const o of this.guards) {
+          if (o === e || o.state === 'dead' || o.tower || o.type === 'scav' || o.state === 'alert' || o.state === 'berserk') continue;
+          const d = Math.hypot(o.x - e.x, o.z - e.z);
+          if (d > 32 || Math.abs((o.y || 0) - (e.y || 0)) > 2) continue;
+          if (this.fac.los({ x: o.x, y: o.y + EYE, z: o.z }, { x: e.x, y: (e.y || 0) + 1, z: e.z })) { e.found = true; this._checkBody(o, e); }
+        }
         // The squad reacts: scavs panic, juggernauts lose their temper.
         for (const o of this.guards) {
           if (o === e || o.state === 'dead') continue;
@@ -752,6 +759,29 @@ export class Sentinel {
     return true;
   }
 
+  // Walk to a body, look it over, then get on the radio (which brings backup unless the
+  // radio is jammed, the comms rack is hacked, or he's dropped before he finishes).
+  _checkBody(g, b) {
+    if (g.state === 'alert' || g.state === 'berserk') return;
+    g.state = 'search';
+    g.aw = Math.max(g.aw, 0.6);
+    g.bodyCheck = { x: b.x, z: b.z, y: b.y || 0 };
+    g.lkp = { ...g.bodyCheck };
+    g.searchT = 25;
+    g.path = null;
+  }
+  // A light was shot out: guards who could see it, or share its room, go and look.
+  lightOut(at) {
+    const room = this.fac.roomAt(at.x, at.z, (at.y || 0) - 2);
+    for (const g of this.guards) {
+      if (g.state === 'dead' || g.tower || g.state === 'alert' || g.state === 'berserk' || g.state === 'flee') continue;
+      const d = Math.hypot(g.x - at.x, g.z - at.z);
+      if (d > 28) continue;
+      const same = room && this.fac.roomAt(g.x, g.z, g.y) === room;
+      if (same || this.fac.los({ x: g.x, y: g.y + EYE, z: g.z }, at)) this._investigate(g, { x: at.x, z: at.z, y: room ? room.y0 || 0 : g.y }, 12);
+    }
+  }
+
   // In-person hacks from the building's rooms.
   cutComms() {
     this.commsDown = true;
@@ -786,7 +816,7 @@ export class Sentinel {
     for (const g of inside) if (g.state !== 'alert' && g.state !== 'berserk') { g.state = 'search'; g.aw = Math.max(g.aw, 0.5); g.lkp = { x: g.x, z: g.z, y: g.y }; g.searchT = 40; g.path = null; }
     // A fireteam from the barracks fills the gaps in the ring.
     const s = SPOTS.barracks;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < (this.barracksDown ? 0 : 3); i++) {
       const p = ring[(outside.length + i) % ring.length];
       const g = this.spawnGuard({ type: this.mission === 'nightwatch' ? (i ? 'scav' : 'jugg') : 'guard', x: s.x + i - 1, z: s.z });
       this._icePost(g, p);
@@ -967,11 +997,12 @@ export class Sentinel {
 
   // A radio call brings a backup fireteam from outside the building, straight to the contact.
   _backup(lkp) {
+    if (this.barracksDown) return;
     if (this.t - this.lastBackup < 30) return;
     this.lastBackup = this.t;
     const alive = this.guards.filter((g) => g.state !== 'dead').length;
     if (alive > this.garrison + 8) return;
-    const spots = [SPOTS.barracks, SPOTS.gate].filter((s) => !(this.agents || []).some((a) => a.alive && Math.hypot(a.pos.x - s.x, a.pos.z - s.z) < 14));
+    const spots = [SPOTS.barracks].filter((s) => !(this.agents || []).some((a) => a.alive && Math.hypot(a.pos.x - s.x, a.pos.z - s.z) < 14));
     const s = spots.sort((a, b) => Math.hypot(a.x - lkp.x, a.z - lkp.z) - Math.hypot(b.x - lkp.x, b.z - lkp.z))[0];
     if (!s) return;
     const hunt = { x: lkp.x, z: lkp.z, y: lkp.y || 0 };
@@ -992,8 +1023,8 @@ export class Sentinel {
     if (this.respawnT <= 0) {
       this.respawnT = every;
       if (alive < cap) {
-        // Always outside the building: the barracks door or the south gate, whichever no agent stands near.
-        const spots = [SPOTS.barracks, SPOTS.gate].filter((s) => !(this.agents || []).some((a) => a.alive && Math.hypot(a.pos.x - s.x, a.pos.z - s.z) < 14));
+        // Out of the barracks door (unless it's hacked shut or blown, or an agent stands at it).
+        const spots = this.barracksDown ? [] : [SPOTS.barracks].filter((s) => !(this.agents || []).some((a) => a.alive && Math.hypot(a.pos.x - s.x, a.pos.z - s.z) < 14));
         const s = spots[Math.floor(this.rng() * spots.length)];
         if (s) {
           const yard = [[-60, 46], [-20, 52], [22, 50], [60, 44], [72, 6], [44, -36], [-44, -36], [-44, 10], [0, 28], [30, 20], [-30, 18]];
@@ -1007,19 +1038,19 @@ export class Sentinel {
             const n = this.lockdown || this.alarm >= 1 ? 2 : 1;
             for (let i = 0; i < n && alive + 1 + i < cap; i++) this.spawnGuard({ type: 'scav', x: s.x + offs[i][0], z: s.z + offs[i][1], leader: lead.id, off: offs[i], hunt });
           } else this.spawnGuard({ route, x: s.x + (this.rng() - 0.5) * 2, z: s.z, hunt });
-          this.emit({ t: 'toast', m: this.lockdown || this.alarm >= 1 ? 'SENTINEL: reinforcements deployed.' : 'Fresh patrol out of the ' + (s === SPOTS.gate ? 'south gate.' : 'barracks.'), c: 'dim' });
+          this.emit({ t: 'toast', m: this.lockdown || this.alarm >= 1 ? 'SENTINEL: reinforcements deployed.' : 'Fresh patrol out of the barracks.', c: 'dim' });
         }
       }
     }
     for (const d of this.drones) {
-      if (d.state !== 'dead' || d.respawnT === undefined) continue;
+      if (d.state !== 'dead' || d.respawnT === undefined || this.bayDown) continue;
       d.respawnT -= dt;
       if (d.respawnT <= 0) {
         const pad = SPOTS.dronePad;
         Object.assign(d, { x: pad.x, y: pad.y, z: pad.z, hp: DRONE_HP, state: this.alarm >= 1 ? 'hunt' : 'patrol', aw: 0, huntT: 10, respawnT: undefined });
         d.obj.visible = true;
         d.obj.rotation.set(0, 0, 0);
-        this.emit({ t: 'toast', m: 'Patrol drone relaunched from the barracks pad.', c: 'dim' });
+        this.emit({ t: 'toast', m: 'Patrol drone launched from the drone bay.', c: 'dim' });
       }
     }
   }
@@ -1147,7 +1178,7 @@ export class Sentinel {
         if (!lit || !this.fac.los({ x: g.x, y: g.y + EYE, z: g.z }, { x: b.x, y: b.y + 0.3, z: b.z })) continue;
         b.found = true;
         if (g.type === 'scav') this._scare(g, b);
-        else { this._alert(g, null, { x: b.x, z: b.z }); g.searchT = 14; }
+        else this._checkBody(g, b);
         this.emit({ t: 'toast', m: b.chief ? 'They found the Overseer’s body.' : 'A body has been found.', c: 'amber' });
         break;
       }
@@ -1231,6 +1262,13 @@ export class Sentinel {
       }
       if (g.fleeT <= 0) { g.state = 'search'; g.lkp = { x: g.x, z: g.z }; g.searchT = 5; g.aw = 0.5; }
     } else if (g.state === 'sus' || g.state === 'search') {
+      // Checking a body: once there, crouch over it a moment and get on the radio.
+      if (g.bodyCheck && Math.hypot(g.bodyCheck.x - g.x, g.bodyCheck.z - g.z) < 2.2) {
+        g.bodyCheck = null;
+        g.lkp = { x: g.x, z: g.z, y: g.y };
+        g.searchT = 14;
+        if (g.jamT <= 0 && !this.commsDown) { g.radioT = 4; this.emit({ t: 'toast', m: 'A guard is radioing in a body \u2014 drop him or jam him.', c: 'amber' }); }
+      }
       // A clearing squad's room clock only starts once it's actually in the room.
       if (g.sweepRoom && !g.inRoom) {
         g.travelT = (g.travelT || 0) + dt;
@@ -1538,7 +1576,9 @@ export class Sentinel {
       const sw = g.moving ? Math.sin(U.phase) * (g.state === 'berserk' || g.state === 'flee' ? 0.9 : 0.55) : 0;
       U.legs[0].rotation.x = sw;
       U.legs[1].rotation.x = -sw;
-      U.gun.rotation.x = g.state === 'alert' ? 0 : g.state === 'flee' ? -1.1 : -0.35;
+      // On the radio: weapon slung low in one hand while the other works the radio.
+      U.gun.rotation.x = g.radioT > 0 ? -0.95 : g.state === 'alert' ? 0 : g.state === 'flee' ? -1.1 : -0.35;
+      U.gun.rotation.z = g.radioT > 0 ? 0.5 : 0;
       const red = g.state === 'alert' || g.state === 'search';
       const kind = g.radioT > 0 ? 'radio' : g.state === 'berserk' ? 'berserk' : g.state === 'flee' ? 'flee' : red ? 'alert' : 'sus';
       const showTag = g.state === 'alert' || g.state === 'sus' || g.state === 'search' || g.state === 'flee' || g.state === 'berserk' || g.aw > 0.15;

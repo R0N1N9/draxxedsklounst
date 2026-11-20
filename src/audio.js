@@ -351,6 +351,59 @@ export class Audio {
     this._noiseBurst(p, this.now, 0.1, 'bandpass', 600 + Math.random() * 300, 1.2, 0.35, 0.07);
   }
 
+  // Night vision: the reach (cloth rustle), the mount click, and the tubes whining up (or down).
+  nvgReach() {
+    if (!this.ctx) return;
+    this._noiseBurst(this.master, this.now, 0.18, 'bandpass', 1800, 0.7, 0.05, 0.12);
+  }
+  nvg(on) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = this.now;
+    this._noiseBurst(this.master, t, 0.03, 'highpass', 3500, 0.8, 0.35, 0.02);
+    this._noiseBurst(this.master, t + 0.045, 0.02, 'highpass', 5000, 0.8, 0.2, 0.015);
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(on ? 4200 : 9800, t + 0.05);
+    o.frequency.exponentialRampToValueAtTime(on ? 10500 : 2500, t + (on ? 0.9 : 0.5));
+    g.gain.setValueAtTime(0.0001, t + 0.05);
+    g.gain.exponentialRampToValueAtTime(on ? 0.035 : 0.025, t + 0.15);
+    g.gain.exponentialRampToValueAtTime(on ? 0.008 : 0.0001, t + (on ? 1.4 : 0.6));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (on ? 2.6 : 0.7));
+    o.connect(g).connect(this.master);
+    o.start(t + 0.05);
+    o.stop(t + 2.7);
+  }
+
+  // A footstep somewhere in the world. heavy: juggernaut/titan weight. muffled: through a wall.
+  stepAt(pos, heavy = false, muffled = false, gain = 1) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const p = this._panner(pos, heavy ? 5 : 3);
+    let dest = p;
+    if (muffled) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 420; lp.connect(p); dest = lp; }
+    this._noiseBurst(dest, this.now, heavy ? 0.16 : 0.09, 'bandpass', (heavy ? 220 : 520) + Math.random() * 180, 1.1, (heavy ? 0.55 : 0.3) * gain, heavy ? 0.12 : 0.06);
+    if (heavy) this._thump(dest, this.now, 55, 0.35 * gain, 0.18);
+  }
+
+  // A guard's radio: a squelch and a burst of garbled chatter at their position.
+  radioAt(pos, muffled = false) {
+    if (!this.ctx) return;
+    const ctx = this.ctx, t = this.now;
+    const p = this._panner(pos, 4);
+    let dest = p;
+    if (muffled) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600; lp.connect(p); dest = lp; }
+    this._noiseBurst(dest, t, 0.06, 'bandpass', 2400, 2, 0.18, 0.05);
+    for (let i = 0; i < 5; i++) this._noiseBurst(dest, t + 0.08 + i * 0.09 + Math.random() * 0.04, 0.07, 'bandpass', 900 + Math.random() * 900, 4, 0.1, 0.06);
+    this._noiseBurst(dest, t + 0.62, 0.05, 'bandpass', 2400, 2, 0.14, 0.04);
+  }
+
+  // Loop gain / muffling (patrol-drone hum behind walls).
+  loopGain(key, v) {
+    const l = this.loops && this.loops[key];
+    if (!l) return;
+    l.g.gain.setTargetAtTime(v, this.ctx.currentTime, 0.15);
+  }
+
   _startWind() {
     const ctx = this.ctx;
     const src = ctx.createBufferSource();

@@ -20,6 +20,7 @@ export const Kit2 = {
   _shootLight(id, at) {
     if (!this.fac.breakLight(id)) return;
     this.sentinel.noise({ x: at.x, y: at.y, z: at.z }, 12, false);
+    this.sentinel.lightOut(at);
     this._broadcastFx({ k: 'glass', x: at.x, y: at.y, z: at.z });
     this.atmos.syncLamps();
   },

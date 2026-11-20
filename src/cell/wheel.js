@@ -10,6 +10,7 @@ export const WHEEL = [
   { k: 'regroup', label: 'ON ME', group: 'comms', icon: '⬤' },
   { k: 'cover', label: 'COVER', group: 'comms', icon: '⛨' },
   { k: 'sync', label: 'SYNC', group: 'comms', icon: '⦿' },
+  { k: 'perch', label: 'SNIPER POS', group: 'comms', icon: '⌖' },
   { k: 'supply', label: 'SUPPLY', group: 'req', icon: '▣' },
   { k: 'scan', label: 'SCAN', group: 'req', icon: '◉' },
   { k: 'emp', label: 'EMP', group: 'req', icon: 'ϟ' },

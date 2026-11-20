@@ -131,6 +131,21 @@ Headshots kill anything except a helmet's first hit.
 - **Solo · lone operative:** one sniper carrying both kits.
 - **Co-op:** the host picks a role and the friend who joins gets the other.
 
+### Sabotage
+
+- **Barracks:** reinforcements and backup fireteams only come out of here.
+  - The spotter can hack the door panel to lock them in for 90 s.
+  - The shooter can plant **C4** to end it for good.
+- **Drone bay** (west yard): replacement patrol drones launch from its pad.
+  - Hacking its control panel grounds it for good, and so does C4.
+- **Planting C4 alerts every guard on the map.** The fuse is 6 s, so get clear.
+
+### Guards notice
+
+- Guards who see a comrade drop, or find a body, walk over to check it.
+- Then they get on the radio for backup, with the weapon slung low. Drop them first, jam them, or hack the comms rack.
+- Shooting out a light brings nearby guards over to look.
+
 ### Security layout
 
 **Outside the fence:**
@@ -202,7 +217,8 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 - **Radio for backup:** a guard who spots you radios after 1.5 s (watch for the ((•)) icon). The call brings a fireteam from outside the building to your position. Drop the guard first, or jam the radio.
 - **Breaking contact:** the HUD shows DETECTED, then HUNTED. Break line of sight for long enough and the hunt is called off. While they hunt, a **white silhouette** marks your last known position.
 - **Light and night vision:**
-  - Night vision is white phosphor with a blue tint.
+  - **N** to reach up and pull the goggles down: your hand comes up, the goggles flip down with a click and a tube whine, and the picture irises open as the tubes warm.
+  - The goggles and scope use a smooth, modern blue grade.
   - Bright lights, including a weapon light in your face, wash it out.
   - **IR strobes** on both operators' helmets and shoulders, and **IR lasers** from both weapons, show only in night vision and the ISR IR view.
 - **Weapon lights (L):** a weapon light makes you easy to see. Guards also walk over to wherever the beam lands, so it works as a distraction.
@@ -245,6 +261,10 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 - **ISR Predator** (I): a high-altitude drone orbiting the map. Slew its sensor with the mouse; it has IR (white-hot) and EO modes. Tag, ping and request from it.
   - **P (SWEEP)** runs a ping sweep: a circle on the ground that marks every unit inside it, people and machines, for 15 s, with red silhouettes through walls.
   - The tablet's pulse scan only hears electronics (drones, cameras, devices).
+- **Phone hacks (hold H):** look at a camera, drone, door, light, IoT device or guard within 45 m and hack it by line of sight.
+  - Hacks: loop a camera, short out a drone, pop a door, kill a light, set off a device, or jam an earpiece.
+  - These still work when ICE knocks the CYBER OPS console offline. Under ICE the tablet is all static and its network payloads are blocked.
+- **SNIPER POS** on the ping wheel asks the shooter to set up at a spot. It works from first person, the ISR cross or the tablet map. An AI shooter relocates there.
 - The HUD shows both interfaces as small live squares; tap one to open it.
 
 **Staging-area perks:** extra lures, extra magazines or fast camo for the shooter; bandwidth, logistics (+2 drops) or light armour for the spotter.
@@ -264,6 +284,16 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
   - Opening: drive in, gear up, walk out.
   - Ending: a sunrise on an open road under a striped, retro sun.
   - The title reads SNIPER in white, CELL in red and NIGHTWATCH in cyan.
+
+### Audio
+
+Play with headphones. Every sound is positioned in 3D (HRTF panning):
+
+- Guard footsteps, muffled when they're behind a wall.
+- Radio squelch from alerted guards.
+- Patrol-drone rotor hum.
+- Your partner's footsteps.
+- Shots, impacts and C4 blasts.
 
 ### Atmosphere
 
@@ -289,6 +319,9 @@ The code is in `src/cell/`:
 | `chat.js` | Text and voice chat |
 | `ice.js`, `music.js` | The ICE vote, sweep and radio, and the procedural score |
 | `neuro.js` | The recon quad's neurolink marking |
+| `nvg.js` | The night-vision gesture and warm-up |
+| `spatial.js` | Positional audio cues |
+| `phone.js` | Line-of-sight phone hacks |
 | `van.js`, `wheel.js`, `sfx.js` | The van, the ping wheel and synthesized sounds |
 | `cell.js` | Game loop, roles, netcode, objectives and HUD |
 
