@@ -100,6 +100,8 @@ export function renderLoadout(el, loadout, onChange, onLook) {
     const b = e.target.closest('.lo-opt');
     if (!b) return;
     lo = { ...lo, [b.dataset.slot]: b.dataset.tool };
+    // Leaving the thermal poncho drops its skin, so coming back to it starts on the standard one.
+    if (b.dataset.slot === 'stealth' && b.dataset.tool !== 'poncho') lo.skin = 'std';
     draw();
     onChange(lo);
   };
