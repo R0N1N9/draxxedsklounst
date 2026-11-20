@@ -121,11 +121,18 @@ export function makeEye(plan, glintCol) {
     if (E.scar && side === E.aim) { g.strokeStyle = base; g.lineWidth = ew * 0.05; g.beginPath(); g.moveTo(ex + side * ew * 0.5, yb - ew * 0.3); g.lineTo(ex + side * ew * 0.62, yb + ew * 0.3); g.stroke(); }
   }
 
+  function prepare(w, h) {
+    const key = `${Math.round(w)}x${Math.round(h)}`;
+    if (key !== toneKey) { toneKey = key; tone = halftone(Math.round(w), Math.round(h)); }
+  }
+
   return {
+    /** Build the halftone sheet for this frame size (call it in create(): it is the one slow thing here). */
+    prepare,
+
     /** Paint the face over the whole frame at time t. focus: CSS-pixel impact point. */
     draw(g, w, h, t, focus) {
-      const key = `${Math.round(w)}x${Math.round(h)}`;
-      if (key !== toneKey) { toneKey = key; tone = halftone(Math.round(w), Math.round(h)); }
+      prepare(w, h);
       const cy = h * E.y, ew = Math.min(w * 0.13, h * 0.22), spread = Math.max(w * E.spread, ew * 1.55);
       const px = w / 2 + E.dive * spread, py = cy + ew * 0.02;
       const kIn = ease.outCubic(seg(t, T.mix0 - 0.12, T.push1 + 0.3));

@@ -44,7 +44,7 @@ export function makeArrival(ctx, plan) {
   /** Where the photo's picture is at time t: centre, picture height, rotation (CSS px, radians). */
   function pose(t, w, h, out) {
     const s0 = h * 0.46;
-    const cx0 = w * (0.5 + A.ox), cy0 = h * 0.43;
+    const cx0 = w * (0.5 + A.ox), cy0 = h * 0.42;
     const kl = seg(t, T.land0, T.land1), drop = 1 - ease.outCubic(kl);
     const wob = Math.sin(kl * 9) * Math.exp(-kl * 5) * 0.06;
     const k = ease.inOutCubic(seg(t, T.push0, T.pushEnd));
@@ -175,7 +175,7 @@ export function makeArrival(ctx, plan) {
       }
 
       // ---- the photo ----------------------------------------------------------------------------
-      const b = ph * 0.06, bot = ph * 0.26;
+      const b = ph * 0.06, bot = ph * 0.3;
       g.save();
       g.translate(P.cx, P.cy);
       g.rotate(P.rot);
@@ -204,8 +204,8 @@ export function makeArrival(ctx, plan) {
         // the caption: the next world's name, written while the picture comes up
         const ck = seg(t, T.cap0, T.cap1);
         if (ck > 0 && hasTo) {
-          const lay = layoutText(g, P, 'cap', ctx.to.name, pw * 0.94, bot * 0.5, HAND, 1);
-          const tw = g.measureText(lay.lines[0]).width, cy = ph / 2 + bot * 0.4;
+          const lay = layoutText(g, P, 'cap', ctx.to.name, pw * 0.94, bot * 0.52, HAND, 1);
+          const tw = g.measureText(lay.lines[0]).width, cy = ph / 2 + bot * 0.42;
           g.save();
           g.beginPath(); g.rect(-tw / 2 - lay.px, cy - lay.px, (tw + lay.px * 2) * ease.inOutSine(ck), lay.px * 2); g.clip();
           g.textAlign = 'center'; g.textBaseline = 'middle';
@@ -248,7 +248,7 @@ export function makeArrival(ctx, plan) {
 
       // ---- label tape, stuck down over everything --------------------------------------------------
       if (P.k < 1 && t > T.cap1 - 0.1) {
-        const pwr = P.s0 * aspect, phr = P.s0, b0 = phr * 0.06, bot0 = phr * 0.26;
+        const pwr = P.s0 * aspect, phr = P.s0, b0 = phr * 0.06, bot0 = phr * 0.3;
         g.save();
         g.translate(P.camX, P.camY);
         g.rotate(P.camRot);

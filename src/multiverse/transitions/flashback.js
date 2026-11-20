@@ -15,29 +15,32 @@
 //
 // BEAT SHEET (11.0 s, swap at 7.8 s)
 //   0.00         the old world, untouched (the cut in is invisible)
-//   0.0 → 0.86   ACT 1 · freeze, drain, push in hard on the impact point (radial smear)
+//   0.0 → 0.86   ACT 1 · freeze: viewfinder brackets snap onto the impact point with the
+//                loser's name, the colour drains, and we push in hard (radial smear)
 //   0.46 → 1.18  …which dissolves into the close-up: the hat pulled low, one eye squinting
 //   1.18         the glint — the winner's colour flares in both pupils and across the face;
 //                eyes snap wide, brows go up, a bead of sweat; the name is scrawled across
 //                the freeze-frame with how it happened and who did it
 //   1.68 → 2.24  the pupils blow; we dive through one of them into black
-//   2.24 → 2.52  film leader: 3, 2 (pop)
-//   2.52 → 3.22  title card: "THE COLLECTED MEMORIES OF <loser>, b. <year>, <town>"
+//   2.24 → 2.52  film leader: 3, 2 (pop), one clear frame
+//   2.52 → 3.22  title card: "THE COLLECTED MEMORIES OF <loser>, b. <month year>, <town>"
 //   3.22 → 6.94  ACT 2 · the reel: six or seven memories, each 16 % shorter than the last,
 //                the film slipping through the gate between them (sprocket holes fly by),
-//                the year counter rolling from birth to now; the last is the handshake
-//                before this duel, in the old world's palette, both snipers labelled
-//   6.94 → 7.20  the present catches up: the old world itself is the last frame
+//                the year counter rolling from birth to now, the projector running away;
+//                the last is the handshake before this duel, in the old world's palette,
+//                both snipers labelled by name
+//   6.94 → 7.20  the present catches up: the old world itself is the last frame, captioned
 //   7.14         the film jams; 7.20 it burns through from the impact point, the edge
-//                glowing in the next world's accent; solid white from 7.60
-//   7.80         THE SWAP, held on the white of the bare lamp
+//                glowing in the next world's accent; solid white from 7.60, the loose end
+//                of the film slapping across the bare lamp
+//   7.80         THE SWAP, held on that white
 //   7.94 → 8.65  ACT 3 · the white decays like a flashbulb onto a table in the next world's
 //                palette: the memories lie around as fading prints, a new instant photo drops in
 //   8.40 → 9.85  it develops — a ghost in the new world's two inks, then the world itself;
-//                the caption writes itself: the dimension's name; label tape: round,
-//                perspective, score, match point
+//                the caption writes itself: the dimension's name; a note on a paper scrap;
+//                label tape: round, perspective, score, match point
 //   10.0 → 10.76 we fall into the picture until it is the screen
-//   10.79 → 11.0 the still gives way to the live world; the overlay ends fully clear
+//   10.79 → 10.95 the still gives way to the live world; the overlay ends fully clear
 //
 // AXES OF VARIATION (all drawn once from ctx.rng — see flashback/script.js)
 //   1. the cut: which five or six of fifteen memories (plus the handshake), at what ages —
@@ -132,6 +135,10 @@ export default {
       fs = W / w;
       texFilm.dispose(); // its storage was allocated for the old size
     }
+
+    // The slow things happen now, at the cut, not in the middle of the push-in.
+    sizeFilm(ctx.width, ctx.height);
+    eye.prepare(ctx.width, ctx.height);
 
     // --- the reel ---------------------------------------------------------------------------------
     const cardAt = (t) => { let i = 0; while (i + 1 < all.length && t >= all[i + 1].t0) i++; return i; };
