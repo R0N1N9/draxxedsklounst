@@ -8,6 +8,10 @@ const K = 0.024;            // barrel strength
 const SCALE = 1 / (1 - K);  // grow the picture so the middle of each edge still touches the glass
 const GX = 16, GY = 10;     // distortion mesh (the bend is gentle: 160 tiles are indistinguishable from 448 and a third of the draw calls)
 const PITCH = 3;            // scanline pitch in CSS px
+const SCENE_PX = 2.6e6;     // the flat picture is drawn at no more than this many pixels
+// ?fixres=1 (the test harness) means "never lower the quality", the same as for the 3D worlds.
+let FIXED = false;
+try { FIXED = /[?&]fixres\b/.test(location.search); } catch (e) { /* no location: adapt as usual */ }
 
 export function makeCrt(pal) {
   const scene = makeCanvas(2, 2), b1 = makeCanvas(2, 2), b2 = makeCanvas(2, 2), grain = makeCanvas(128, 128), glass = makeCanvas(2, 2);
@@ -15,9 +19,9 @@ export function makeCrt(pal) {
   for (let i = 0; i < gi.data.length; i += 4) { const v = Math.random() * 255; gi.data[i] = gi.data[i + 1] = gi.data[i + 2] = v; gi.data[i + 3] = 255; }
   grain.g.putImageData(gi, 0, 0);
 
-  const C = { canvas: scene.canvas, g: scene.g, rs: 1, w: 0, h: 0, ready: false };
+  const C = { canvas: scene.canvas, g: scene.g, rs: 1, w: 0, h: 0, ready: false, q: 1 };
   const px = new Float32Array((GX + 1) * (GY + 1)), py = new Float32Array((GX + 1) * (GY + 1));
-  let grainPat = null, barGrad = null, patG = null, last = '', n = 0;
+  let grainPat = null, barGrad = null, patG = null, last = '', n = 0, tPrev = 0, slowN = 0;
 
   const warp = (u, v, out) => {
     const f = (1 - K * (u * u + v * v)) * SCALE;
@@ -28,7 +32,8 @@ export function makeCrt(pal) {
 
   /** Resize to the stage; true when anything changed. */
   C.size = (w, h, dpr) => {
-    const rs = clamp(Math.min(dpr, Math.sqrt(2.6e6 / (w * h))), 1, 2);
+    w = Math.max(2, w); h = Math.max(2, h);
+    const rs = clamp(Math.min(dpr, C.q * Math.sqrt(SCENE_PX / (w * h))), 1, 2);
     const key = `${w}x${h}@${rs.toFixed(2)}`;
     if (key === last) return false;
     last = key;
@@ -78,6 +83,22 @@ export function makeCrt(pal) {
     C.g.fillStyle = pal.bg;
     C.g.fillRect(0, 0, w, h);
     C.ready = true;
+    return true;
+  };
+
+  /**
+   * Called once per rendered frame with the clock: when frames keep running long (an older iPad, a
+   * crowded machine) the flat picture is drawn at a lower resolution, in two steps and never back up.
+   * Returns true when the quality changed and the caller must size again.
+   */
+  C.watch = (now) => {
+    const dt = now - tPrev;
+    tPrev = now;
+    if (FIXED || C.q <= 0.65 || dt <= 0 || dt > 120) { slowN = 0; return false; } // a hitch or a hidden tab says nothing
+    slowN = dt > 23 ? slowN + 1 : Math.max(0, slowN - 2);
+    if (slowN < 40) return false;
+    slowN = 0;
+    C.q = C.q > 0.9 ? 0.8 : 0.64;
     return true;
   };
 
@@ -173,7 +194,7 @@ export function makeCrt(pal) {
     g.fillStyle = barGrad;
     g.fillRect(0, -60, w, 120);
     g.restore();
-    if (grainPat && (n & 1)) {
+    if (grainPat && (n & 1) && C.q > 0.9) {
       g.save();
       g.globalAlpha = 0.09;
       g.translate((Math.random() * 128) | 0, (Math.random() * 128) | 0);

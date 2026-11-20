@@ -31,8 +31,9 @@ import { makeParts, rayCells } from './fx.js';
 import { makeSound } from './sound.js';
 import { makeBot } from './bot.js';
 
-const SPEED = 13, HOLD_SPEED = 4.3, RELOAD = 1.5, PING_CD = 11, FORK_CD = 14;
-const BREATH_T = 2.6, BREATH_REGEN = 3.2, HIP = 0.05, RUN_SWAY = 0.035, SCOPE = 0.0045;
+const SPEED = 11.5, HOLD_SPEED = 4.3, RELOAD = 1.5, PING_CD = 11, FORK_CD = 14;
+// Hip fire wanders enough that a close duel is a matter of timing the click, not of who clicks first: steadying costs speed.
+const BREATH_T = 2.6, BREATH_REGEN = 3.2, HIP = 0.075, RUN_SWAY = 0.05, SCOPE = 0.005;
 const R_HIT = 1.05, ROUND_TIME = 40, SHRINK_T = 22;
 const DECOY_SPEED = 8.5, DECOY_LIFE = 7;
 const DIRS = ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'];
@@ -49,8 +50,8 @@ export default {
   renderer: '2d',
   aim: 'pointer',
   palette: { bg: '#010b04', fg: '#c9ffd6', accent: '#58ff72' },
-  controls: { move: 'MOVE', aim: 'AIM', fire: 'FIRE', alt: 'BREATH', a1: 'PING', a2: 'FORK' },
-  hint: 'Fog of war: shots and pings give you away. Bullets bounce once.',
+  controls: { move: 'MOVE', aim: 'AIM', fire: 'FIRE', alt: 'STEADY', a1: 'PING', a2: 'DECOY' },
+  hint: 'You are the @ in brackets. Find the other @ in the dark and shoot first.',
   altToggle: true,
   roundTime: ROUND_TIME,
   angleFields: ['a'],
@@ -67,7 +68,7 @@ export default {
 
     const P = [0, 1].map((i) => ({
       i, x: world.spawns[i].x, y: world.spawns[i].y, vx: 0, vy: 0, aim: i ? Math.PI : 0, a: i ? Math.PI : 0,
-      sway: HIP, swPh: Math.random() * 9, alive: true, hold: false, breath: 1, winded: 0, reload: 0, pingCd: 0, forkCd: 0,
+      sway: HIP, swPh: Math.random() * 9, alive: true, hold: false, lock: false, breath: 1, winded: 0, reload: 0, pingCd: 0, forkCd: 0,
       recoil: 0, flash: 0, moving: false, stepT: 0, decoyN: 0, aimPath: mkPath(),
       remote: online && i !== me, bot: null,
     }));
@@ -79,10 +80,9 @@ export default {
       seen: { a: 0, mode: 'none' }, ghost: { on: false, x: 0, y: 0, t: 0 },
       vis: new Uint8Array(COLS * ROWS), fog: 0, kill: null, intro: true, introT: 0,
       cam: { x: W / 2, y: H / 2, z: 1 }, shake: new Shake(9, 0.02), glitch: 0, pingFlash: 0,
-      world, ctx,
+      world, ctx, fired: false,
     };
     const view = makeView(ctx, world, S, pal, term);
-    S.view = view;
     for (const p of P) if (!p.remote && (p.i !== me || ctx.autopilot)) p.bot = makeBot(ctx, world, S, p);
     const viewers = online ? [me] : [0, 1];
     const human = { mx: 0, my: 0, a: 0, fire: false, alt: false, a1: false, a2: false };
@@ -114,13 +114,14 @@ export default {
       p.forkCd = Math.max(0, p.forkCd - dt);
       // breath
       p.winded = Math.max(0, p.winded - dt);
-      const want = cmd.alt && p.winded <= 0 && p.breath > 0.01;
+      if (!cmd.alt) p.lock = false;
+      const want = cmd.alt && !p.lock && p.winded <= 0 && p.breath > 0.01; // after a gasp the control must be let go (or tapped off) first
       if (want && !p.hold && p.i === me) sound.inhale();
       if (!want && p.hold && p.i === me) sound.exhale();
       p.hold = want;
       if (p.hold) {
         p.breath -= dt / BREATH_T;
-        if (p.breath <= 0) { p.breath = 0; p.hold = false; p.winded = 1.1; if (p.i === me) { sound.gasp(); term.say('out of breath', 'warn'); } }
+        if (p.breath <= 0) { p.breath = 0; p.hold = false; p.lock = true; p.winded = 1.1; if (p.i === me) { sound.gasp(); term.say('out of breath', 'warn'); } }
       } else p.breath = Math.min(1, p.breath + dt / BREATH_REGEN * (p.winded > 0 ? 0.3 : 1));
       const sw = p.hold ? SCOPE : HIP + RUN_SWAY * Math.min(1, spd / SPEED);
       p.sway = damp(p.sway, sw, p.hold ? 5 : 9, dt);
@@ -164,7 +165,7 @@ export default {
       launch(p.i, path, !online || p.i === me);
       p.reload = RELOAD;
       p.sway = Math.min(0.12, p.sway + 0.03);
-      if (p.i === me) { term.run(`./rifle --fire ${Math.round(((p.a * 180) / Math.PI + 360) % 360)}`); }
+      if (p.i === me) { S.fired = true; term.run(`./rifle --fire ${Math.round(((p.a * 180) / Math.PI + 360) % 360)}`); }
       if (online && p.i === me) ctx.net.send({ k: 'shot', x: r2(p.x), y: r2(p.y), a: +p.a.toFixed(4) });
     }
     function launch(owner, path, judge) {
@@ -299,7 +300,11 @@ export default {
       sound[end ? 'impact' : 'ricochet'](x);
       S.glitch = Math.max(S.glitch, 0.06);
     }
+    // Two rounds can land in one frame (a trade). The one fired first wins; an exact tie alternates by
+    // round, so neither seat is favoured by the order the snipers happen to be processed in.
+    let verdict = null;
     function stepBullets(dt) {
+      verdict = null;
       for (let j = S.bullets.length - 1; j >= 0; j--) {
         const b = S.bullets[j], p = b.path;
         if (!(b.kill && ctx.phase === 'over')) b.age += dt;
@@ -311,7 +316,10 @@ export default {
           if (at >= 0) {
             s1 = b.total = at;
             b.stopped = true;
-            if (struck && !struck.decoy) { b.kill = true; ctx.kill(struck.i, { how: howLabel(b, at, struck) }); } else if (struck) {
+            if (struck && !struck.decoy) {
+              const first = !verdict || b.age > verdict.b.age + 1e-6 || (Math.abs(b.age - verdict.b.age) <= 1e-6 && ((ctx.round + b.owner) & 1) === 0);
+              if (first) { if (verdict) verdict.b.kill = false; verdict = { b, victim: struck.i, how: howLabel(b, at, struck) }; b.kill = true; }
+            } else if (struck) {
               popDecoy(struck);
               if (online) ctx.net.send({ k: 'pop', id: struck.id });
               if (b.owner === me) term.say(`hit pid ${struck.pid}: it was a fork()`, 'warn');
@@ -341,6 +349,7 @@ export default {
           }
         }
       }
+      if (verdict) ctx.kill(verdict.victim, { how: verdict.how });
     }
     const segDist = (px, py, ax, ay, bx, by) => {
       const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1;
@@ -435,12 +444,12 @@ export default {
       const t = ctx.input.device === 'touch', pad = ctx.input.device === 'gamepad';
       if (t) {
         term.say('left stick: move · right stick: aim, release to fire', 'sys');
-        term.say('BREATH (tap): steady aim, long line · PING · FORK', 'sys');
+        term.say('STEADY: hold breath, long line · PING · DECOY', 'sys');
       } else if (pad) {
-        term.say('stick: move/aim · RT fire · LT hold breath · LB ping · RB fork', 'sys');
+        term.say('stick: move/aim · RT fire · LT steady · LB ping · RB decoy', 'sys');
       } else {
-        term.say('wasd: move · mouse: aim · lmb: fire', 'sys');
-        term.say('rmb: hold breath (steady, long line) · q: ping · e: fork', 'sys');
+        term.say('wasd: move · mouse: aim · click: fire', 'sys');
+        term.say('rmb: steady (long line) · q: ping · e: decoy', 'sys');
       }
     }
 
@@ -505,8 +514,6 @@ export default {
         if (live && !helped && S.liveT > 0.7) {
           helped = true;
           helpLines();
-          const t = ctx.input.device === 'touch';
-          ctx.hud.message('FOG OF WAR', t ? 'Shots and pings give you away · rounds bounce once' : 'Shots and pings give you away · rounds bounce once · hold RMB to steady', 3.4);
         }
         if (ctx.sudden && !wasSudden) {
           wasSudden = true;
@@ -585,9 +592,6 @@ export default {
         view.screenOf(o.x, o.y, out);
         return out;
       },
-
-      /** For tests and tuning only: the live simulation state. */
-      debug: () => S,
 
       dispose() {
         sound.stop(0.3);

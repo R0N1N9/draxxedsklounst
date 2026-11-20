@@ -31,7 +31,7 @@ export function makeView(ctx, world, S, pal, term) {
 
   V.fit = () => {
     const w = ctx.width, h = ctx.height, touch = ctx.input.device === 'touch';
-    const key = `${w}x${h}|${ctx.dpr}|${touch}`;
+    const key = `${w}x${h}|${ctx.dpr}|${touch}|${crt.q}`;
     if (key === sizeKey) return false;
     sizeKey = key;
     fitLayout(L, w, h, touch);
@@ -423,6 +423,52 @@ export function makeView(ctx, world, S, pal, term) {
     g.globalAlpha = 1;
   }
 
+  // The first seconds: the one thing a newcomer needs, beside their own '@', in the words of the device in hand.
+  let pa = 0, paT = 0, paKey = '', paLines = null, paW = 0;
+  function drawPrompt() {
+    const me = S.P[ctx.me], dev = ctx.input.device;
+    const want = me.alive && !S.fired && S.liveT < 14 && ctx.phase !== 'over' && (ctx.phase === 'live' || S.introT > 0.5) ? 1 : 0;
+    const dt = Math.min(0.1, Math.max(0, S.t - paT));
+    paT = S.t;
+    pa += (want - pa) * Math.min(1, dt * (want ? 4 : 7));
+    if (pa < 0.02) return;
+    if (paKey !== dev) {
+      paKey = dev;
+      paLines = dev === 'touch'
+        ? ['YOU: the @ in brackets', 'drag RIGHT thumb to aim', 'let go to FIRE', 'LEFT thumb to move']
+        : dev === 'gamepad'
+          ? ['YOU: the @ in brackets', 'right stick: aim', 'RT: FIRE', 'left stick: move']
+          : ['YOU: the @ in brackets', 'MOUSE: aim   CLICK: FIRE', 'WASD: move   RMB: steady', 'the other @ hides in the dark'];
+      paW = 0;
+      for (const l of paLines) paW = Math.max(paW, l.length);
+    }
+    const fs = Math.max(10, u * 1.25), lh = fs * 1.5, pad = fs * 0.8;
+    const bw = paW * fs * 0.6 + pad * 2, bh = paLines.length * lh + pad * 1.2;
+    const px = X(me.x), py = Yp(me.y);
+    const bx = clamp(px - bw / 2, X(1.2), X(W - 1.2) - bw);
+    let by = py - u * 5 - bh;
+    if (by < Yp(1)) by = py + u * 4.5;
+    g.save();
+    g.globalAlpha = pa;
+    g.fillStyle = pal.bg;
+    g.globalAlpha = pa * 0.86;
+    roundRect(g, bx, by, bw, bh, u * 0.5);
+    g.fill();
+    g.globalAlpha = pa * 0.9;
+    g.strokeStyle = myCol;
+    g.lineWidth = Math.max(1, u * 0.14);
+    g.stroke();
+    g.textAlign = 'left';
+    g.textBaseline = 'middle';
+    font(fs, 700);
+    for (let i = 0; i < paLines.length; i++) {
+      g.globalAlpha = pa * (i === 0 ? 1 : 0.95);
+      g.fillStyle = i === 0 ? myCol : i === paLines.length - 1 && dev === 'kbm' ? pal.mid : pal.hi;
+      g.fillText(paLines[i], bx + pad, by + pad * 0.6 + lh * (i + 0.5));
+    }
+    g.restore();
+  }
+
   // ---- the console row's status line, and the in-world HUD around you ----
   function status() {
     const me = S.P[ctx.me];
@@ -582,8 +628,10 @@ export function makeView(ctx, world, S, pal, term) {
   }
 
   V.render = () => {
-    if (!crt.ready) return;
+    if (ctx.width < 16 || ctx.height < 16) return; // a collapsed window: nothing to draw into
+    crt.watch(performance.now());
     V.fit();
+    if (!crt.ready) return;
     frame++;
     if (++fontCheck % 40 === 1 && !Y.font) {
       try { if (document.fonts && document.fonts.check('600 12px "JetBrains Mono"')) { Y.font = true; layerDirty = true; } } catch (e) { Y.font = true; }
@@ -636,6 +684,7 @@ export function makeView(ctx, world, S, pal, term) {
       }
     }
     drawParts();
+    drawPrompt();
     if (S.pingFlash > 0) { // the sonar's flash lights the whole screen for a moment
       g.fillStyle = pal.hi;
       g.globalAlpha = S.pingFlash * 0.07;

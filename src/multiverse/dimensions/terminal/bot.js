@@ -135,7 +135,7 @@ export function makeBot(ctx, world, S, p) {
       const pr = lead(tx, ty, tvx, tvy);
       const want = Math.atan2(pr.y - p.y, pr.x - p.x) + err * (1 + d / 50);
       cmd.a = angLerp(p.aim, want, 1 - Math.exp(-dt * turn));
-      const scoped = skill > 0.3 && d > 26 && p.breath > 0.3 && p.winded <= 0 && t > retreatUntil;
+      const scoped = skill > 0.3 && d > 20 && p.breath > 0.3 && p.winded <= 0 && t > retreatUntil;
       if (t < retreatUntil) {
         // cycling the bolt behind cover
         moving = followRetreat();
@@ -151,7 +151,7 @@ export function makeBot(ctx, world, S, p) {
         if (!world.free(p.x + cmd.mx * 2.2, p.y + cmd.my * 2.2, R_BODY + 0.1)) strafe = -strafe;
       }
       // the opening is a feeling-out: nobody pulls the trigger in the first few seconds unless it is close
-      const need = (k.seenT || (decoy ? 1 : 0)) >= react * (0.6 + d / 90) + fireDelay && (ctx.time > 6 + 3 * (1 - skill) || d < 12);
+      const need = (k.seenT || (decoy ? 1 : 0)) >= react * (0.6 + d / 90) + fireDelay && (ctx.time > 9 + 4 * (1 - skill) || d < 12);
       const tol = d < 16 ? 1.5 : lerp(1.2, 0.8, skill);
       const off = Math.abs(angDiff(p.a, Math.atan2(pr.y - p.y, pr.x - p.x))) * d;
       const steady = !cmd.alt || p.sway < 0.012;
@@ -173,7 +173,7 @@ export function makeBot(ctx, world, S, p) {
       const fresh = known && since < 6;
       holdT -= dt;
       replanT -= dt;
-      const aggr = clamp((ctx.time - 6) / 18, 0, 1);
+      const aggr = clamp((ctx.time - 8) / 24, 0, 1); // it closes in slowly: a long, patient duel comes first
       const fs = world.spawns[1 - p.i], hot = known && since < 30;
       const zx = lerp(W / 2, hot ? k.x : fs.x, 0.3 + 0.7 * aggr), zy = lerp(H / 2, hot ? k.y : fs.y, 0.3 + 0.7 * aggr);
       const kind = fresh ? 'hunt' : 'explore';
@@ -207,7 +207,7 @@ export function makeBot(ctx, world, S, p) {
         goal.kind = '';
       }
       // a suppressing round down the last known line keeps a hider honest (and gives me away)
-      if (known && since < 3 && t > nextSup && p.reload <= 0 && skill > 0.4 && world.los(p.x, p.y, k.x, k.y) && dist(p.x, p.y, k.x, k.y) < 60) {
+      if (known && since < 3 && ctx.time > 12 && t > nextSup && p.reload <= 0 && skill > 0.4 && world.los(p.x, p.y, k.x, k.y) && dist(p.x, p.y, k.x, k.y) < 60) {
         nextSup = t + 7 + Math.random() * 5;
         if (Math.abs(angDiff(p.a, Math.atan2(k.y - p.y, k.x - p.x))) * dist(p.x, p.y, k.x, k.y) < 2) { cmd.fire = true; retreatUntil = t + RELOAD; }
       }
