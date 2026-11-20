@@ -4,7 +4,7 @@ import { randomCode } from './util.js';
 import { PALETTES } from './atmosphere.js';
 import { drawMap } from './briefmap.js';
 import { renderLoadout } from './loadout.js';
-import { PRESETS, RULES, applyRules, normalizeRules, rulesLabel } from './rules.js';
+import { PRESETS, RULES, LOOKS, applyRules, normalizeRules, rulesLabel } from './rules.js';
 import { RANGES } from './range.js';
 
 const $ = (id) => document.getElementById(id);
@@ -183,17 +183,24 @@ function renderStyle() {
   // Same order as the styles above, so each distance sits under the style it suits (AUTO under CUSTOM).
   $('style-range').innerHTML = [...['close', 'medium', 'long', 'extreme'].map((k) => `<button class="${sel === k ? 'on' : ''}" data-range="${k}"><b>${RANGES[k].name.toUpperCase()}</b><i>${RANGES[k].dist}</i></button>`),
     `<button class="${sel === 'auto' ? 'on' : ''}" data-range="auto"><b>AUTO</b><i>${RANGES[def].name}</i></button>`].join('');
+  // Graphics look bar.
+  $('style-look').innerHTML = Object.entries(LOOKS).map(([k, l]) => `<button class="${r.look === k ? 'on' : ''}" data-look="${k}"><b>${l.name.toUpperCase()}</b><i>${l.sub}</i></button>`).join('');
+  $('look-desc').textContent = LOOKS[r.look].desc;
   $('range-desc').textContent = sel === 'auto' ? `Follows the style: ${RANGES[def].name} (${RANGES[def].dist}, like ${GAME[def]}). ${RANGES[def].desc}` : `Like ${GAME[sel]} (${RANGES[sel].dist}). ${RANGES[sel].desc}`;
 }
 $('style-presets').onclick = (e) => {
   const b = e.target.closest('[data-preset]');
   if (!b) return;
   const k = b.dataset.preset;
-  saveRules(k === 'custom' ? { ...settings.rules, preset: 'custom', zooms: null } : { preset: k, autoZero: settings.rules.autoZero, range: settings.rules.range });
+  saveRules(k === 'custom' ? { ...settings.rules, preset: 'custom', zooms: null } : { preset: k, autoZero: settings.rules.autoZero, range: settings.rules.range, look: settings.rules.look });
 };
 $('style-range').onclick = (e) => {
   const b = e.target.closest('[data-range]');
   if (b) saveRules({ ...settings.rules, range: b.dataset.range });
+};
+$('style-look').onclick = (e) => {
+  const b = e.target.closest('[data-look]');
+  if (b) saveRules({ ...settings.rules, look: b.dataset.look });
 };
 document.querySelectorAll('[data-sr]').forEach((el) => el.addEventListener('input', () => {
   saveRules({ ...settings.rules, preset: 'custom', [el.dataset.sr]: +el.value });
