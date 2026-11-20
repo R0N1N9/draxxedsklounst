@@ -36,6 +36,8 @@ import { Sfx } from './sfx.js';
 import { Wheel } from './wheel.js';
 import { installKit, KIT } from './kit.js';
 import { installKit2 } from './kit2.js';
+import { installIce } from './ice.js';
+import { installNeuro } from './neuro.js';
 import { wallBlock } from './sentinel.js';
 import { Cinema } from './cinema.js';
 import { Radio } from './voice.js';
@@ -73,7 +75,8 @@ export const OBJECTIVES = [
   { k: 'exfil', title: 'EXFILTRATE', hint: 'Get the drive out the loading dock to the van east of the fence. Spotter drives, shooter rides shotgun.' },
 ];
 
-const BLEED = 16;
+const BLEED = 30;
+const QUAD_BAT = 300; // seconds of flight (half rate while flying, quarter while parked)
 
 // ---------------------------------------------------------------------------
 // Post: night vision (goggles / scope / quad feed), active-camo shimmer, damage, grain.
@@ -316,7 +319,7 @@ export class CellGame {
     for (const k of ['touchSensR', 'touchSensL', 'gyroMode', 'gyroSens', 'gyroInvertY']) if (this.settings[k] !== undefined) this.input[k] = this.settings[k];
 
     // Mission state (host-authoritative; mirrored on the guest).
-    this.obj = { perimeter: false, relay: false, badge: false, found: false, aligned: false, upload: 0, uploading: false, trace: 0, traced: false, drive: null, driveAt: null, exfil: false, access: 1, drops: this.D.drops, canCrack: false, crack: 0, step: 0, cards: [], searched: [], used: {}, commsDown: false, cctv: false, quiet: null, ice: false };
+    this.obj = { perimeter: false, relay: false, badge: false, found: false, aligned: false, upload: 0, uploading: false, trace: 0, traced: false, drive: null, driveAt: null, exfil: false, access: 1, drops: this.D.drops, canCrack: false, crack: 0, step: 0, cards: [], searched: [], used: {}, commsDown: false, cctv: false, quiet: null, ice: false, ifak: { shooter: 1, spotter: 1 } };
     this.crates = [];
     this.crateId = 1;
     this.prompts = {}; // role -> { label, p }
@@ -346,6 +349,8 @@ export class CellGame {
     this.atmos = new AtmosFX(this.scene, { quality, night: true, color: '#b8c8ff', mistColor: '#5d6c90', bright: 0.45, lamps: this.fac.lightSources.filter((L) => L.kind === 'lamp') });
     this._irInit();
     this._wlInit();
+    this._iceInit();
+    this._neuroInit();
     this._mapPoints();
     this._buildHud();
     this.tablet = new Tablet(this);
@@ -570,7 +575,7 @@ export class CellGame {
 
   _sendState() {
     const P = this.player, r = (v) => Math.round(v * 100) / 100;
-    const q = this.quad && this.quad.active ? [r(this.quad.x), r(this.quad.y), r(this.quad.z), r(this.quad.yaw), r(this.quad.pitch)] : 0;
+    const q = this._quadOut() ? [r(this.quad.x), r(this.quad.y), r(this.quad.z), r(this.quad.yaw), r(this.quad.pitch)] : 0;
     const total = P.arms.reduce((s, w) => s + w.mag + w.reserve + w.chamber, 0), full = P.arms.reduce((s, w) => s + w.def.mag * (1 + P._spare(w.def)), 0);
     this.send({
       t: 'cp', p: [r(P.pos.x), r(P.pos.y), r(P.pos.z)], y: r(P.yaw), pi: r(P.pitch), st: P.stance, w: P.def.slot === 'pistol' ? 1 : 0,
@@ -619,6 +624,8 @@ export class CellGame {
       case 'takedown': if (m.role === this.role) this._knife(); break;
       case 'lockdown': this._lockdownFx(); break;
       case 'ice': this.hud.flash('ICE ALERT', 'red'); break;
+      case 'sweepfx': this.isr.sweepFx = { x: m.x, z: m.z, r: m.r, t: 0 }; break;
+      case 'vote': if (this.isHost) this._castVote(m.role, m.v); break;
       case 'heal': if (m.role === this.role) this._heal(m.hp); break;
       case 'ammo': if (m.role === this.role) this._ammo(); break;
       case 'trace': this.hud.flash('TRACED', 'red'); break;
@@ -709,7 +716,19 @@ export class CellGame {
   _execPayload(k, target, by) {
     const S = this.sentinel, ob = this.obj;
     switch (k) {
-      case 'scan': S.scanT = 4; for (const g of S.guards) if (g.state !== 'dead') g.scanT = 4; for (const d of S.drones) d.scanT = 4; this._toast('Pulse scan — every contact on the network for 4 s.', 'cyan'); break;
+      // The console's pulse only hears the network: drones, cameras, devices. People don't show.
+      case 'scan': S.scanT = 4; for (const d of S.drones) if (d.state !== 'dead') { d.scanT = 4; d.tagT = Math.max(d.tagT, 8); } for (const c of S.cams) c.scanT = 4; this._toast('Network pulse \u2014 every drone, camera and device for 4 s. (People don\u2019t show: use the ISR sweep.)', 'cyan'); break;
+      // ISR ping sweep: a circle on the ground; everything inside, flesh or machine, gets marked.
+      case 'qmark': this._neuroMark(target.ids || []); break;
+      case 'isrsweep': {
+        let n = 0;
+        for (const g of S.guards) if (g.state !== 'dead' && Math.hypot(g.x - target.x, g.z - target.z) < target.r) { g.tagT = Math.max(g.tagT, 15); n++; }
+        for (const d of S.drones) if (d.state !== 'dead' && Math.hypot(d.x - target.x, d.z - target.z) < target.r) { d.tagT = Math.max(d.tagT, 15); n++; }
+        for (const c of S.cams) if (Math.hypot(c.x - target.x, c.z - target.z) < target.r) { c.scanT = 6; n++; }
+        this._toast(`ISR sweep: ${n} contact${n === 1 ? '' : 's'} marked for 15 s \u2014 red through walls.`, 'cyan');
+        this._broadcast({ k: 'sweepfx', x: target.x, z: target.z, r: target.r });
+        break;
+      }
       case 'jam': S.jams.push({ x: target.x, z: target.z, r: PAYLOAD.jam.r, t: 5 }); this._toast('Earpieces jammed for 5 s.', 'cyan'); break;
       case 'emp':
         {
@@ -945,7 +964,22 @@ export class CellGame {
     const pr = this.prompts[this.role];
     if ((I.pressed('KeyE') || I.pressed('cell-use')) && pr && (pr.key === 'jack' || pr.key === 'extract') && !tab) this._serverMinigame(pr.key);
     if (this.role === 'shooter' && (I.pressed('KeyG') || I.pressed('cell-ability')) && !this.downed) this._toggleCloak();
-    if ((this.role === 'spotter' || this.operative) && (I.pressed('KeyQ') || I.pressed(this.operative ? 'cell-quad' : 'cell-ability')) && !tab) { if (quad) this._endQuad(); else { const why = this.ops.use('quad'); if (why) this.hud.flash(why, 'red'); } }
+    // Recon quad: tap Q = launch / park it (it keeps marking) / take it back; hold Q (or RECALL)
+    // = quick calldown, straight back to you.
+    if (this.role === 'spotter' || this.operative) {
+      const qa = this.operative ? 'cell-quad' : 'cell-ability';
+      const qHeld = (I.held('KeyQ') || I.held('T:' + qa)) && !tab;
+      if (qHeld) { this._qT = (this._qT || 0) + dt; if (this._qT > 0.45 && !this._qDone && this._quadOut()) { this._qDone = true; this._recallQuad(); } }
+      else {
+        if (this._qT > 0 && !this._qDone) {
+          if (quad) this._parkQuad();
+          else if (this.quad && this.quad.parked) this._resumeQuad();
+          else { const why = this.ops.use('quad'); if (why) this.hud.flash(why, 'red'); }
+        }
+        this._qT = 0; this._qDone = false;
+      }
+      if (I.pressed('cell-recall') && this._quadOut()) this._recallQuad();
+    }
     if (I.pressed('KeyF') || I.pressed('cell-tag')) this._tagAtCrosshair();
     this._eHeld = (I.held('KeyE') || I.held('T:cell-use')) && !tab && !this.mini.open;
     const isr = this.isr.active;
@@ -953,6 +987,8 @@ export class CellGame {
     if (this.aiSpot) this.aiSpot.update(dt);
     this._kitUpdate(dt);
     this.quadCd = Math.max(0, this.quadCd - dt);
+    if (!this._quadOut() && this.quadBat !== undefined) this.quadBat = Math.min(QUAD_BAT, this.quadBat + dt * 3);
+    if (this.quad && this.quad.parked) { this.quad.bat -= dt * 0.25; if (this.quad.bat <= 0) { this.comms('Quad battery dead \u2014 it\u2019s coming home.', 'cyan', this.name); this._endQuad(); } }
 
     // Cloak battery (Cold Archive: drain 14/s, regen 7 × camo/s).
     const C = this.cloak;
@@ -987,6 +1023,7 @@ export class CellGame {
     if (quad) { act.mx = 0; act.my = 0; act.sprint = false; act.lookX = 0; act.lookY = 0; }
     if (isr || this.mini.open) {
       if (isr) this.isr.control(dt, act, I);
+      if (isr && (I.pressed('KeyP') || I.pressed('cell-sweep'))) this._isrSweep();
       act.mx = act.my = 0; act.sprint = act.jump = act.crouch = act.prone = false; act.fire = act.fireHeld = act.scope = false; act.lookX = act.lookY = 0; act.zoomIn = act.zoomOut = false; act.slot1 = act.slot2 = act.swap = false; act.reload = false;
     }
     if (seat) { act.mx = act.my = 0; act.sprint = act.jump = act.crouch = act.prone = false; act.fire = act.fireHeld = false; act.scope = false; }
@@ -1290,6 +1327,18 @@ export class CellGame {
     this.comms(`${this.name} is back up.`, 'cyan');
   }
 
+  // ISR ping sweep at the sensor point (spotter / lone operative, in the ISR view).
+  _isrSweep() {
+    const I = this.isr;
+    if (I.sweepCd > 0) { this.hud.flash(`SWEEP ${Math.ceil(I.sweepCd)} s`, 'red'); return; }
+    I.sweepCd = 25;
+    const r = Math.max(18, Math.min(45, I.slant() * Math.tan((I.fov * Math.PI) / 360) * 0.8));
+    I.sweepFx = { x: I.spi.x, z: I.spi.z, r, t: 0 };
+    this.sfx.ui(true);
+    this._voice('isr', 'Sweep running on your cross.');
+    this.payload('isrsweep', { x: I.spi.x, z: I.spi.z, r });
+  }
+
   _heal(n) {
     this.hp = Math.min(this.maxHp, this.hp + n);
     this.audio.click();
@@ -1358,16 +1407,45 @@ export class CellGame {
 
   // ---- recon quad (spotter) ----------------------------------------------------------
   _startQuad() {
-    if (this.role !== 'spotter') return;
+    if (this.role !== 'spotter' && !this.operative) return;
     const P = this.player;
     if (this.tablet.visible) this.tablet.close();
-    this.quad = { active: true, x: P.pos.x, y: P.pos.y + 2.2, z: P.pos.z, yaw: P.yaw, pitch: -0.2, bat: 40, hp: 30, vy: 0 };
+    if (this.isr.active) this.isr.exit();
+    this.quad = { active: true, parked: false, x: P.pos.x, y: P.pos.y + 2.2, z: P.pos.z, yaw: P.yaw, pitch: -0.2, bat: this.quadBat ?? QUAD_BAT, hp: 30, vy: 0 };
     this.audio.startLoop('quad', this.camera.position, 'drone', 0.25);
-    this.comms('Quad up. WASD fly, SPACE/C climb/descend, F tag, Q to land.', 'cyan', this.name);
+    this.comms('Quad up. Look at enemies to neurolink them. Q park \u00B7 hold Q recall \u00B7 SPACE/C climb.', 'cyan', this.name);
+  }
+  _quadOut() {
+    return !!(this.quad && (this.quad.active || this.quad.parked));
+  }
+  // Leave the quad hovering where it is: it keeps marking what it can see. Rotor noise still carries.
+  _parkQuad() {
+    const q = this.quad;
+    if (!q) return;
+    q.active = false;
+    q.parked = true;
+    this.sfx.ui(false);
+    this.comms('Quad parked. It keeps marking. Q to fly it, hold Q to recall.', 'cyan', this.name);
+  }
+  _resumeQuad() {
+    const q = this.quad;
+    if (!q || this.downed) return;
+    if (this.tablet.visible) this.tablet.close();
+    if (this.isr.active) this.isr.exit();
+    q.active = true;
+    q.parked = false;
+    this.sfx.ui(true);
+  }
+  // Quick calldown: the quad comes straight home and is ready again in a few seconds.
+  _recallQuad() {
+    if (!this.quad) return;
+    this.comms('Quad recalled.', 'cyan', this.name);
+    this.sfx.ui(false);
+    this._endQuad(false, true);
   }
   _updateQuad(dt, a) {
     const q = this.quad;
-    q.bat -= dt;
+    q.bat -= dt * 0.5;
     const sens = 0.0022;
     q.yaw -= a.lookX * sens;
     q.pitch = clamp(q.pitch - a.lookY * sens, -1.4, 0.6);
@@ -1393,10 +1471,12 @@ export class CellGame {
     this.post.uniforms.uStatic.value = 1;
     if (this.quad.hp <= 0) { this.comms('Quad shot down.', 'red', this.name); this._endQuad(true); }
   }
-  _endQuad(lost = false) {
+  _endQuad(lost = false, recall = false) {
     if (!this.quad) return;
+    this.quadBat = lost ? QUAD_BAT : Math.max(0, this.quad.bat);
     this.quad.active = false;
-    this.quadCd = lost ? 40 : 12;
+    this.quad.parked = false;
+    this.quadCd = lost ? 40 : recall ? 3 : this.quadBat <= 0 ? 20 : 6;
     if (this.ops) this.ops.cd.quad = this.quadCd;
     this.audio.stopLoop('quad');
     if (this.isHost) this.sentinel.quad = null;
@@ -1408,7 +1488,8 @@ export class CellGame {
     const S = this.sentinel, ob = this.obj;
     // Remote quad position feeds SENTINEL (guards shoot support drones).
     if (!this.solo && this.partner.quad) { const q = this.partner.quad; S.quad = { alive: true, x: q[0], y: q[1], z: q[2] }; }
-    else if (!(this.quad && this.quad.active)) S.quad = null;
+    else if (!this._quadOut()) S.quad = null;
+    else S.quad = { alive: true, x: this.quad.x, y: this.quad.y, z: this.quad.z };
     S.update(dt, this.agents());
     for (const ev of S.events) this._sentinelEvent(ev);
     S.events.length = 0;
@@ -1420,6 +1501,7 @@ export class CellGame {
     // Lights come back on.
     this._doors(dt);
     this._crates(dt);
+    this._iceHost(dt);
     this._medevacTick(dt);
     if (this.aiShoot) this._aiShooter(dt);
     this._objectives(dt);
@@ -1631,7 +1713,12 @@ export class CellGame {
     this._vanInteract(a, held, dt, opt);
     const sameFloor = (y) => Math.abs(y - p.y) < 1.6;
     const other = this.agents().find((b) => b.role !== role);
-    if (other && other.downed && other.alive && Math.hypot(other.pos.x - p.x, other.pos.z - p.z) < 2.2 && sameFloor(other.pos.y)) opt('revive', `Hold E — revive ${other.role === this.role ? this.name : this.partnerName}`, 3, () => { if (other.role === this.role) this._revived(55); else this._broadcast({ k: 'revive', role: other.role, hp: 55 }); });
+    // Revive: each operator carries one IFAK. Use it on your partner; after that it's the medevac drone.
+    if (other && other.downed && other.alive && Math.hypot(other.pos.x - p.x, other.pos.z - p.z) < 2.2 && sameFloor(other.pos.y)) {
+      const on = other.role === this.role ? this.name : this.partnerName;
+      if ((ob.ifak[role] || 0) > 0) opt('revive', `Hold E — patch up ${on} with your IFAK`, 3, () => { ob.ifak[role]--; this._toast(`IFAK used on ${on}.`, 'cyan'); if (other.role === this.role) this._revived(55); else this._broadcast({ k: 'revive', role: other.role, hp: 55 }); });
+      else opt('revivex', `No IFAK left — ${on} needs the medevac drone`, 0, null);
+    }
     // Knife takedown from behind (or on an unaware patrol at arm's length).
     for (const g of S.guards) {
       if (g.state === 'dead' || g.state === 'alert' || g.state === 'berserk' || g.tower) continue;
@@ -1784,6 +1871,7 @@ export class CellGame {
         ob.quiet = false;
         ob.ice = true;
         this.sentinel.iceAlert(BUILDING);
+        this._iceStart();
         this.hud.flash('ICE ALERT', 'red');
         this._broadcast({ k: 'ice' });
         this._toast('Upload forced through, but SENTINEL\u2019s ICE tripped. Guards are ringing the building — sneak out or go loud.', 'red');
@@ -1879,6 +1967,7 @@ export class CellGame {
     }
     // Partner's quad.
     if (Q.quad) { this.quadObj.visible = true; this.quadObj.position.set(Q.quad[0], Q.quad[1], Q.quad[2]); this.quadObj.rotation.y = Q.quad[3]; }
+    else if (this.quad && this.quad.parked) { this.quadObj.visible = true; this.quadObj.position.set(this.quad.x, this.quad.y, this.quad.z); this.quadObj.rotation.y = this.quad.yaw; }
     else if (!(this.quad && this.quad.active)) this.quadObj.visible = false;
     // Your own body when down (third person).
     const showSelf = (this.downed && !this.kia) || this.isr.active || !!(this.quad && this.quad.active);
@@ -1887,6 +1976,8 @@ export class CellGame {
   }
 
   _visuals(dt) {
+    this._iceClient(dt);
+    this._neuroTick(dt);
     this.fac.syncStations(this.obj, this.t);
     this._vanVisual(dt);
     this._lasersTick();
@@ -2149,13 +2240,13 @@ class CellHud {
     if (!t) return;
     const bar = document.createElement('div');
     bar.className = 'cell-tbar';
-    const extra = (g.role === 'spotter' || g.operative) ? [['cell-isr', 'ISR']] : [];
-    const common = [...extra, ['cell-light', 'LIGHT'], ['cell-drop', 'DROP'], ['cell-ping', 'PING \u25CE'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
+    const extra = (g.role === 'spotter' || g.operative) ? [['cell-isr', 'ISR'], ['cell-sweep', 'SWEEP']] : [];
+    const common = [...extra, ['cell-light', 'LIGHT'], ['cell-drop', 'DROP'], ['cell-ping', 'PING \u25CE'], ['cell-help', 'HELP \u271A'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
     const pills = g.operative
-      ? [['cell-tab', 'TABLET'], ['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-quad', 'QUAD'], ...common]
+      ? [['cell-tab', 'TABLET'], ['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-quad', 'QUAD'], ['cell-recall', 'RECALL'], ...common]
       : g.role === 'shooter'
         ? [['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-tab', 'MAP'], ...common]
-        : [['cell-tab', 'TABLET'], ['cell-ability', 'QUAD'], ['cell-yes', 'SEND \u2713'], ['cell-no', 'DENY \u2715'], ...common];
+        : [['cell-tab', 'TABLET'], ['cell-ability', 'QUAD'], ['cell-recall', 'RECALL'], ['cell-yes', 'SEND \u2713'], ['cell-no', 'DENY \u2715'], ...common];
     bar.innerHTML = pills.map(([a, l]) => `<div class="pill" data-act="${a}">${l}</div>`).join('') + '<div class="pill" id="cell-tpause">❚❚</div>';
     t.appendChild(bar);
     bar.querySelector('#cell-tpause').addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this.setPause(true); }, { passive: false });
@@ -2271,8 +2362,9 @@ class CellHud {
     if (g.cloak.on) chips.push('CAMO');
     if (ob.badge === g.role) chips.push('BADGE');
     if (ob.drive === g.role) chips.push('DRIVE');
+    if (ob.ifak && ob.ifak[g.role] > 0) chips.push('IFAK');
     if (g.role === 'spotter' && g.ops) chips.push(`BW ${Math.round(g.ops.bw)}`);
-    if (g.role === 'spotter') chips.push(g.quad && g.quad.active ? `QUAD ${Math.ceil(g.quad.bat)}s` : g.quadCd > 0 ? `QUAD ${Math.ceil(g.quadCd)}s` : 'QUAD READY');
+    if (g.role === 'spotter') chips.push(g._quadOut() ? `QUAD ${g.quad.parked ? 'PARKED ' : ''}${Math.round((g.quad.bat / QUAD_BAT) * 100)}%` : g.quadCd > 0 ? `QUAD ${Math.ceil(g.quadCd)}s` : 'QUAD READY');
     const ch = chips.map((c) => `<i>${c}</i>`).join('');
     if (ch !== this._ch) { this._ch = ch; this.el.chips.innerHTML = ch; }
     // Ammo.
@@ -2285,7 +2377,7 @@ class CellHud {
     this.el.amS.classList.toggle('loud', sec && !w.sup);
     // Prompt.
     let pr = g.prompts[g.role];
-    if (g.downed && !g.kia) pr = { label: `BLEEDING OUT ${Math.ceil(g.bleed)} s — ${g.solo ? 'medevac drone is your only way up' : g.partnerName + ' can revive you (hold E)'}`, p: g.bleed / BLEED };
+    if (g.downed && !g.kia) pr = { label: `BLEEDING OUT ${Math.ceil(g.bleed)} s — ${g.solo ? 'medevac drone is your only way up' : (g.obj.ifak && g.obj.ifak[g.partnerRole] > 0 ? g.partnerName + ' can patch you up with an IFAK' : g.partnerName + ' is out of IFAKs \u2014 medevac only')} \u00B7 V / HELP: call for pickup`, p: g.bleed / BLEED };
     if (g.kia) pr = { label: `KIA — watching ${g.partnerName}`, p: 0 };
     this.el.prompt.classList.toggle('on', !!pr && !g.tablet.visible);
     if (pr) { this.el.promptT.textContent = pr.label; this.el.promptB.style.width = `${Math.round((pr.p || 0) * 100)}%`; this.el.prompt.classList.toggle('bar', pr.p > 0); }
@@ -2349,6 +2441,7 @@ class CellHud {
       const behind = v.z > 1;
       return { x: (v.x * 0.5 + 0.5) * W, y: (-v.y * 0.5 + 0.5) * H, behind };
     };
+    this._proj = proj;
     const camP = cam.position;
     const edge = (p, m = 30) => { if (p.behind) { p.x = clamp(W - p.x, W * 0.3, W * 0.7); p.y = H - 70; } p.x = clamp(p.x, m, W - m); p.y = clamp(p.y, m, H - m); return p; };
     const scoped = P.def.scope && P.scopeT > 0.6 && !(g.quad && g.quad.active);
@@ -2434,6 +2527,7 @@ class CellHud {
       for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { c.beginPath(); c.moveTo(W / 2 + sx * o, H / 2 + sy * o); c.lineTo(W / 2 + sx * s, H / 2 + sy * s); c.stroke(); }
     }
     // Scope (Halo-style ring with a range readout) or a small crosshair.
+    g._neuroHud(c, proj, W, H);
     if (g.isr.active) this._isrHud(c, W, H);
     else if (scoped) this._scope(c, W, H);
     else if (g.quad && g.quad.active) this._quadHud(c, W, H);
@@ -2503,6 +2597,22 @@ class CellHud {
 
   _isrHud(c, W, H) {
     const I = this.g.isr;
+    // Ping sweep: an expanding ring on the ground, then a held circle while it fades.
+    const F = I.sweepFx;
+    if (F && F.t < 6) {
+      const k = Math.min(1, F.t / 1.2), a = F.t < 1.2 ? 0.9 : 0.9 * (1 - (F.t - 1.2) / 4.8);
+      c.strokeStyle = `rgba(255,70,90,${a.toFixed(3)})`;
+      c.lineWidth = 2;
+      for (const rr of [F.r * k, F.r * k * 0.66, F.r * k * 0.33]) {
+        c.beginPath();
+        for (let i = 0; i <= 48; i++) {
+          const t = (i / 48) * Math.PI * 2, x = F.x + Math.cos(t) * rr, z = F.z + Math.sin(t) * rr;
+          const p = this._proj(x, this.g.fac.groundAt(x, z, 60, 0.5) + 0.3, z);
+          if (i === 0) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y);
+        }
+        c.stroke();
+      }
+    }
     c.strokeStyle = 'rgba(235,245,255,0.85)';
     c.fillStyle = 'rgba(235,245,255,0.9)';
     c.lineWidth = 1.5;
@@ -2519,7 +2629,7 @@ class CellHud {
     c.fillText(`ISR // PREDATOR \u00B7 ${I.mode === 'IR' ? 'IR WHT-HOT' : 'EO'} \u00B7 FOV ${I.fov}\u00B0`, m + 10, m + 20);
     c.fillText(`ALT ${Math.round(I.pos.y)} m \u00B7 SLANT ${Math.round(I.slant())} m \u00B7 SPI ${Math.round(I.spi.x)} ${Math.round(-I.spi.z)}`, m + 10, m + 38);
     c.textAlign = 'right';
-    c.fillText('MOUSE/DRAG SLEW \u00B7 WHEEL ZOOM \u00B7 N IR/EO \u00B7 F TAG \u00B7 V PING \u00B7 I EXIT', W - m - 10, H - m - 12);
+    c.fillText(`MOUSE/DRAG SLEW \u00B7 WHEEL ZOOM \u00B7 N IR/EO \u00B7 F TAG \u00B7 P SWEEP${I.sweepCd > 0 ? ' ' + Math.ceil(I.sweepCd) + 's' : ''} \u00B7 V PING \u00B7 I EXIT`, W - m - 10, H - m - 12);
     c.textAlign = 'center';
   }
 
@@ -2533,7 +2643,7 @@ class CellHud {
     c.fillStyle = 'rgba(230,240,255,0.9)';
     c.font = '600 13px JetBrains Mono, monospace';
     c.fillText(`RECON QUAD · BAT ${Math.ceil(q.bat)} s · HULL ${Math.max(0, q.hp)}`, W / 2, 78);
-    c.fillText(`ALT ${(q.y - terrainHeight(q.x, q.z)).toFixed(1)} m · F TAG · Q LAND`, W / 2, 96);
+    c.fillText(`ALT ${(q.y - terrainHeight(q.x, q.z)).toFixed(1)} m · BAT ${Math.round((q.bat / 300) * 100)}% · Q PARK · HOLD Q RECALL`, W / 2, 96);
   }
 }
 
@@ -2544,3 +2654,5 @@ void PLAYER;
 
 installKit(CellGame);
 installKit2(CellGame);
+installIce(CellGame);
+installNeuro(CellGame);

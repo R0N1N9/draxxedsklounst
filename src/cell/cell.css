@@ -288,3 +288,19 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 #panel-staging .stg-opts button::after { display: none; }
 #panel-staging .stg-opts button.on { border-color: var(--cell); color: var(--cell); background: rgba(0, 255, 224, 0.1); }
 @media (max-width: 560px) { #panel-staging .stg { grid-template-columns: 1fr; } }
+
+/* ICE: quiet-or-loud vote */
+#cell-vote { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 40; display: none; width: min(520px, calc(100vw - 32px)); padding: 14px 16px; background: rgba(12, 6, 10, 0.86); border: 1px solid #ff3048; box-shadow: 0 0 24px rgba(255, 48, 72, 0.35); font-family: var(--mono, monospace); color: #f4e8ea; text-align: center; }
+#cell-vote.on { display: block; animation: cv-in 0.3s ease-out; }
+@keyframes cv-in { from { opacity: 0; transform: translate(-50%, -8px); } }
+#cell-vote .cv-h { font-size: 20px; letter-spacing: 0.22em; color: #ff3048; font-weight: 700; }
+#cell-vote .cv-sub { font-size: 12px; opacity: 0.8; margin: 4px 0 10px; }
+#cell-vote .cv-row { display: flex; gap: 10px; }
+#cell-vote button { flex: 1; padding: 10px 8px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.25); color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; }
+#cell-vote button b { display: block; font-size: 18px; letter-spacing: 0.18em; }
+#cell-vote button span { font-size: 11px; opacity: 0.75; }
+#cell-vote button i { font-style: normal; border: 1px solid currentColor; padding: 0 4px; margin-left: 4px; }
+#cell-vote button[data-v="quiet"] b { color: #30ffd0; }
+#cell-vote button[data-v="loud"] b { color: #ff5060; }
+#cell-vote button.sel { background: rgba(255, 255, 255, 0.14); border-color: #fff; }
+#cell-vote .cv-votes { margin-top: 10px; font-size: 12px; letter-spacing: 0.08em; opacity: 0.9; }

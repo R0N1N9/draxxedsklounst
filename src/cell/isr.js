@@ -4,6 +4,8 @@
 //   mouse / drag   slew the sensor point          wheel / +−  zoom (4 steps)
 //   N              IR (white-hot) ⇄ EO             F           tag what's under the cross
 //   V              pings & requests at the cross   I / Esc     back to first person
+//   P              ping sweep: a circle on the ground that marks every unit inside it
+//                  (people and machines; the tablet's pulse only hears electronics)
 // IR mode shows the operators' strobes and weapon lasers.
 import * as THREE from 'three';
 import { glowTexture } from '../textures.js';
@@ -61,6 +63,8 @@ export class ISR {
   }
 
   update(dt) {
+    this.sweepCd = Math.max(0, (this.sweepCd || 0) - dt);
+    if (this.sweepFx) { this.sweepFx.t += dt; if (this.sweepFx.t > 6) this.sweepFx = null; }
     const O = this.g.fac ? ORBIT : ORBIT;
     this.ang += (O.speed / O.r) * dt;
     const x = O.x + Math.cos(this.ang) * O.r, z = O.z + Math.sin(this.ang) * O.r;

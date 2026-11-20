@@ -18,8 +18,8 @@ export const KIT = {
   lure: { charges: 3, life: 7, radius: 16 },
   exec: { max: 2, start: 1, range: 35, targets: 3, gap: 0.22 },
 };
-const CALL_LINE = { look: 'Eyes on my mark.', enemy: 'Enemy, marked.', move: 'Moving to my mark.', hold: 'Hold position.', regroup: 'On me.', cover: 'Cover me.', sync: 'Sync target marked. Get on him.' };
-const COMMS_LABEL = { look: 'LOOK HERE', enemy: 'ENEMY', move: 'MOVE HERE', hold: 'HOLD', regroup: 'ON ME', cover: 'COVER ME', sync: 'SYNC TARGET' };
+const CALL_LINE = { look: 'Eyes on my mark.', enemy: 'Enemy, marked.', move: 'Moving to my mark.', hold: 'Hold position.', regroup: 'On me.', cover: 'Cover me.', sync: 'Sync target marked. Get on him.', pickup: 'I\'m down! I need a pickup on my position!' };
+const COMMS_LABEL = { look: 'LOOK HERE', enemy: 'ENEMY', move: 'MOVE HERE', hold: 'HOLD', regroup: 'ON ME', cover: 'COVER ME', sync: 'SYNC TARGET', pickup: 'PICK ME UP' };
 const REQ_LABEL = { supply: 'SUPPLY DROP', scan: 'PULSE SCAN', emp: 'EMP', decoy: 'DECOY', lights: 'CUT LIGHTS', drone: 'DRONE OVERWATCH' };
 const BOLT = {
   plasma: { color: '#60ff80', speed: 38, size: 0.5 },
@@ -77,6 +77,9 @@ export const KitMethods = {
       if (I.pressed('KeyX') || I.pressed('cell-lure')) this._throwLure();
       if (I.pressed('KeyT') || I.pressed('cell-exec')) this._execute();
     }
+    // Downed: V / PING / HELP calls for a pickup on your position.
+    this._helpCd = Math.max(0, (this._helpCd || 0) - dt);
+    if (this.downed && !this.kia && (I.pressed('KeyV') || I.pressed('cell-ping') || I.pressed('cell-help'))) this._pickupCall();
     // Ping wheel: V / middle mouse / PING (touch). Tap = smart ping, hold = wheel.
     const held = (I.held('KeyV') || this._mmb || I.held('T:cell-ping')) && !tab && live;
     if (held) {
@@ -292,8 +295,23 @@ export const KitMethods = {
     this.send({ t: 'cm', ...pin, id: enemyId || 0 });
     this.comms(label.charAt(0) + label.slice(1).toLowerCase() + '.', ROLES_COLOR[this.role], this.name);
     this._voice('me', CALL_LINE[k] || label.toLowerCase());
+    if (k === 'pickup') return;
     if (this.aiShoot) this._aiShooterCall(k, at, enemyId);
     if (this.aiSpot) this._aiSpotterCall(k, at, enemyId);
+  },
+
+  _pickupCall() {
+    if (this._helpCd > 0) return;
+    this._helpCd = 6;
+    const P = this.player.pos;
+    this._call('pickup', { x: P.x, z: P.z });
+    // An AI partner can't carry an IFAK to you from the cliff: it gets the medevac drone up.
+    if (this.solo && this.aiPartner && this.ops) {
+      const say = (m) => { this.comms(m, 'amber', this.partnerName); setTimeout(() => this._voice('partner', m), 2200); };
+      if (this.medevac) say('Medevac drone is already on you. Hang on.');
+      else if (this.ops.ready('medevac')) { this.ops.use('medevac'); say('Hang on, medevac drone is on the way!'); }
+      else say('Medevac\'s still cycling. Stay with me!');
+    }
   },
 
   _onCall(m) {

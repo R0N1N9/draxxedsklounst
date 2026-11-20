@@ -162,6 +162,17 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
    - A clean lock means a silent upload: no trace and no alarm, so you can walk the drive out.
    - Three misses trips SENTINEL's **ICE**. The upload still forces through, but the outside guards and a fireteam take posts around the building walls, and the guards inside search their floors. Sneak out between them, or go loud.
 6. **Extract:** the drive-release minigame.
+
+### If ICE trips
+
+1. **The report:** ISR Overwatch reports it, and the operators talk it over on the radio.
+2. **The vote:** each player votes **QUIET (1)** or **LOUD (2)**, or taps the buttons.
+   - The AI partner backs your call. In co-op, both players have to agree.
+   - If there's no agreement when the clock runs out, you stay quiet.
+3. **The sweep:** squads peel off the ring and clear the building room by room, ground floor first, then upstairs.
+   - Quiet is hide and seek: the shooter has camo, and the spotter has to stay nimble.
+   - Let a sweep walk past you and you'll hear about it. Get out through the ring and Overwatch sends you to the van.
+4. **The music:** a tense score plays while they sweep. Once they spot you, it switches to a full combat score with drums, choir and brass.
 7. Carry the drive (it shows on the carrier; drop it with **J** for your partner to pick up) to the **extraction van**. The spotter drives and the shooter rides shotgun.
 
 ### Stealth
@@ -196,11 +207,23 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 - P-9 pistol with a removable suppressor.
 - **CYBER OPS tablet** (TAB), with ground and upper floors.
-- Recon quad (Q).
+- **Recon quad (Q):**
+  - **Neurolink:** every enemy the quad can see within 45 m is marked for the team, with a lock-on animation and a red silhouette through walls. The mark stays as long as the quad keeps line of sight.
+  - **Controls:** tap Q to park it; parked, it keeps marking. Tap Q again to fly it. **Hold Q** (or RECALL) for a quick calldown.
+  - **Battery:** long-lasting; it recharges while the quad is home.
+  - **Noise:** the rotors are loud, so guards within about 10 m hear it.
 - **ISR Predator** (I): a high-altitude drone orbiting the map. Slew its sensor with the mouse; it has IR (white-hot) and EO modes. Tag, ping and request from it.
+  - **P (SWEEP)** runs a ping sweep: a circle on the ground that marks every unit inside it, people and machines, for 15 s, with red silhouettes through walls.
+  - The tablet's pulse scan only hears electronics (drones, cameras, devices).
 - The HUD shows both interfaces as small live squares; tap one to open it.
 
 **Staging-area perks:** extra lures, extra magazines or fast camo for the shooter; bandwidth, logistics (+2 drops) or light armour for the spotter.
+
+### Down, not out
+
+- **Bleeding out:** a downed operator has 30 s.
+- **IFAK:** each operator carries one. Patching up your partner uses yours; after that, only the medevac drone can get them up.
+- **Calling for help:** while downed, press **V** or **HELP** to radio for a pickup. An AI partner sends the medevac drone.
 
 ### Comms
 
@@ -234,6 +257,8 @@ The code is in `src/cell/`:
 | `tablet.js` | The CYBER OPS console |
 | `cinema.js` | Cut-scenes |
 | `chat.js` | Text and voice chat |
+| `ice.js`, `music.js` | The ICE vote, sweep and radio, and the procedural score |
+| `neuro.js` | The recon quad's neurolink marking |
 | `van.js`, `wheel.js`, `sfx.js` | The van, the ping wheel and synthesized sounds |
 | `cell.js` | Game loop, roles, netcode, objectives and HUD |
 

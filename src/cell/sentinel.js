@@ -21,7 +21,7 @@
 // Headshots kill anything, whatever the weapon. Infiltration keeps its plain security guards.
 // Reinforcements always come from OUTSIDE the building: the barracks door and the south gate.
 import * as THREE from 'three';
-import { lam, glowMat, SPOTS } from './facility.js';
+import { lam, glowMat, SPOTS, ROOMS } from './facility.js';
 import { clamp, mulberry32 } from '../util.js';
 
 export const DIFFS = {
@@ -247,6 +247,38 @@ export function buildUnit(type = 'guard', chief = false) {
 }
 export const buildGuard = (chief) => buildUnit('guard', chief);
 
+// Marked enemies show as red silhouettes through walls: every solid part of the model gets a
+// twin drawn with no depth test, switched on while the unit is tagged.
+let xrayMat;
+export function withXray(root) {
+  if (!xrayMat) xrayMat = new THREE.MeshBasicMaterial({ color: '#ff1830', transparent: true, opacity: 0.42, depthTest: false, depthWrite: false });
+  const U = root.userData || (root.userData = {});
+  const skip = new Set([U.shell, U.wall, U.beam, U.blade, U.tag].filter(Boolean));
+  const list = [];
+  const walk = (o) => {
+    if (skip.has(o)) return;
+    if (o.isMesh && !o.material.transparent) {
+      const x = new THREE.Mesh(o.geometry, xrayMat);
+      x.renderOrder = 990;
+      x.visible = false;
+      x.userData.xray = true;
+      list.push([o, x]);
+    }
+    for (const c of o.children.slice()) walk(c);
+  };
+  walk(root);
+  for (const [o, x] of list) o.add(x);
+  U.xray = list.map((p) => p[1]);
+  U.xrayOn = false;
+  return root;
+}
+export function setXray(root, on) {
+  const U = root.userData;
+  if (!U.xray || U.xrayOn === on) return;
+  U.xrayOn = on;
+  for (const x of U.xray) x.visible = on;
+}
+
 export function buildDrone() {
   const g = new THREE.Group();
   const dark = '#1d1f26';
@@ -469,7 +501,7 @@ export class Sentinel {
     };
     if (!post || !post.y) g.y = this.fac.groundAt(g.x, g.z, g.y + 0.5, 0.6);
     if (hunt) { g.state = 'search'; g.lkp = { ...hunt }; g.searchT = 18; }
-    g.obj = buildUnit(type, chief);
+    g.obj = withXray(buildUnit(type, chief));
     this.scene.add(g.obj);
     this.guards.push(g);
     return g;
@@ -478,7 +510,7 @@ export class Sentinel {
   spawnDrone(route, i) {
     const pad = SPOTS.dronePad;
     const d = { id: this.nextId++, kind: 'd', route, ri: i % route.length, x: pad.x, y: pad.y, z: pad.z, alt: 10 + (i % 2) * 2, yaw: 0, hp: DRONE_HP, state: 'patrol', aw: 0, zapT: 0, empT: 0, huntT: 0, lkp: null, tagT: 0, scanT: 0, fallV: 0 };
-    d.obj = buildDrone();
+    d.obj = withXray(buildDrone());
     this.scene.add(d.obj);
     this.drones.push(d);
     return d;
@@ -658,6 +690,7 @@ export class Sentinel {
   _alert(g, target, lkp) {
     if (g.state === 'dead' || g.state === 'flee') return;
     const was = g.state;
+    g.sweepRoom = null;
     if (g.state !== 'berserk') g.state = 'alert';
     g.aw = 1;
     if (target) g.target = target;
@@ -714,6 +747,47 @@ export class Sentinel {
       this._icePost(g, p);
     }
   }
+  // After the operators call it (quiet or loud), the ring starts piling into the building:
+  // squads pulled off the cordon clear it room by room, ground floor first, then upstairs.
+  sweepStart(plan) {
+    const order = ['lobby', 'security', 'staging', 'electrical', 'corridor', 'dha', 'noc', 'vault', 'corridor2', 'offices', 'break', 'comms', 'storage', 'dhb', 'srv', 'arch'];
+    this.sweep = { plan, t: 0, next: plan === 'loud' ? 4 : 8, squads: 0, rooms: order.map((id) => ROOMS.find((r) => r.id === id)).filter(Boolean) };
+    // The cordon holds while they clear.
+    for (const g of this.guards) if (g.icePost && g.state === 'search') g.searchT = 600;
+  }
+  _sweepTick(dt) {
+    const W = this.sweep;
+    if (!W) return;
+    W.t += dt;
+    W.next -= dt;
+    const loud = W.plan === 'loud' || this.alarm >= 1;
+    const max = loud ? 6 : 4;
+    if (W.next > 0 || W.squads >= max) return;
+    W.next = loud ? 9 : 15;
+    const n = loud ? 3 : 2;
+    const pool = this.guards.filter((g) => g.state !== 'dead' && !g.tower && !g.clear && g.icePost && g.state !== 'alert' && g.state !== 'berserk');
+    if (!pool.length) return;
+    const start = (W.squads * 3) % W.rooms.length;
+    const rooms = W.rooms.slice(start).concat(W.rooms.slice(0, start));
+    pool.sort((a, b) => Math.hypot(a.x, a.z + 2) - Math.hypot(b.x, b.z + 2));
+    for (const g of pool.slice(0, n)) { g.clear = rooms; g.clearI = -1; g.icePost = null; g.searchT = 0; this._nextRoom(g); }
+    W.squads++;
+    this.emit({ t: 'sweep', n: Math.min(n, pool.length), squad: W.squads });
+  }
+  _nextRoom(g) {
+    g.clearI = (g.clearI + 1) % g.clear.length;
+    const r = g.clear[g.clearI];
+    g.state = 'search';
+    g.aw = Math.max(g.aw, 0.55);
+    g.sweepRoom = r;
+    g.inRoom = false;
+    g.travelT = 0;
+    g.sweepAt = null;
+    g.lkp = { x: (r.x0 + r.x1) / 2, z: (r.z0 + r.z1) / 2, y: r.y0 || 0 };
+    g.searchT = (this.sweep && this.sweep.plan === 'loud' ? 7 : 11) + Math.min(10, ((r.x1 - r.x0) * (r.z1 - r.z0)) / 90);
+    g.path = null;
+  }
+
   _icePost(g, p) {
     g.state = 'search';
     g.aw = Math.max(g.aw, 0.55);
@@ -804,6 +878,7 @@ export class Sentinel {
     for (const d of this.drones) this._drone(d, dt, senseNow);
     for (const c of this.cams) this._cam(c, dt, senseNow);
     this._reinforce(dt);
+    this._sweepTick(dt);
     this._huntTick();
     this.guards = this.guards.filter((g) => {
       if (g.state === 'dead' && g.found && this.t - g.diedAt > 90) { this.scene.remove(g.obj); return false; }
@@ -917,6 +992,9 @@ export class Sentinel {
     g.pathT -= dt;
     if (!g.path || g.pathT <= 0 || !g.goal || Math.hypot(g.goal.x - tx, g.goal.z - tz, (g.goal.y - ty) * 2) > 3) {
       g.path = this.fac.path(g.x, g.z, tx, tz, g.y, ty);
+      // Don't double back to the nearest node when the next one is straight ahead.
+      const P = g.path;
+      if (P.length > 2 && Math.abs((P[1].y ?? g.y) - g.y) < 1 && this.fac.walkable(g.x, g.z, P[1].x, P[1].z, 0.4, g.y)) P.shift();
       g.goal = { x: tx, z: tz, y: ty };
       g.pathT = 2.5;
     }
@@ -1033,6 +1111,8 @@ export class Sentinel {
         const d = Math.hypot(q.x - g.x, q.y - g.y - EYE, q.z - g.z);
         const ang = Math.abs(angDiff(Math.atan2(-(q.x - g.x), -(q.z - g.z)), g.yaw + g.look));
         if (d < 28 && (ang < 0.9 || d < 8) && this.fac.los({ x: g.x, y: g.y + EYE, z: g.z }, q)) g.quadAw = Math.min(1, g.quadAw + 0.1 * (d < 10 ? 1.6 : 0.8));
+        // Rotor noise: close enough and they hear it through walls and behind them.
+        else if (d < 10 && Math.abs(q.y - g.y) < 5) g.quadAw = Math.min(1, g.quadAw + 0.035);
         else g.quadAw = Math.max(0, g.quadAw - 0.03);
       }
     }
@@ -1106,16 +1186,22 @@ export class Sentinel {
       }
       if (g.fleeT <= 0) { g.state = 'search'; g.lkp = { x: g.x, z: g.z }; g.searchT = 5; g.aw = 0.5; }
     } else if (g.state === 'sus' || g.state === 'search') {
-      g.searchT -= dt;
+      // A clearing squad's room clock only starts once it's actually in the room.
+      if (g.sweepRoom && !g.inRoom) {
+        g.travelT = (g.travelT || 0) + dt;
+        const r = this.fac.roomAt(g.x, g.z, g.y);
+        if ((r && r.id === g.sweepRoom.id) || g.travelT > 50) g.inRoom = true;
+      } else g.searchT -= dt;
       if (g.lkp && this._moveTo(g, g.lkp.x, g.lkp.z, dt, this._guardSpeed(g), g.lkp.y)) {
         g.look = Math.sin(this.t * 1.6 + g.id) * 1.2;
         if (g.state === 'search' && g.searchT > 2) {
-          const c0 = g.icePost || g.lkp, sw = g.icePost ? 7 : 12;
-          if (!g.sweepAt || Math.hypot(g.sweepAt.x - g.x, g.sweepAt.z - g.z) < 1) g.sweepAt = { x: c0.x + (this.rng() - 0.5) * sw, z: c0.z + (this.rng() - 0.5) * sw, y: g.lkp.y };
+          const c0 = g.icePost || g.lkp, sw = g.icePost ? 7 : 12, R = g.sweepRoom;
+          if (!g.sweepAt || Math.hypot(g.sweepAt.x - g.x, g.sweepAt.z - g.z) < 1) g.sweepAt = R ? { x: R.x0 + 1.5 + this.rng() * (R.x1 - R.x0 - 3), z: R.z0 + 1.5 + this.rng() * (R.z1 - R.z0 - 3), y: R.y0 || 0 } : { x: c0.x + (this.rng() - 0.5) * sw, z: c0.z + (this.rng() - 0.5) * sw, y: g.lkp.y };
           g.lkp = g.sweepAt;
         }
       }
-      if (g.searchT <= 0) { g.state = g.post ? 'post' : 'patrol'; g.aw = 0; g.look = 0; g.path = null; }
+      if (g.searchT <= 0 && g.clear) this._nextRoom(g);
+      else if (g.searchT <= 0) { g.state = g.post ? 'post' : 'patrol'; g.aw = 0; g.look = 0; g.path = null; }
     } else if (g.state === 'berserk') {
       // Charge with the blade. No shooting; melee lunge in reach.
       const tgt = (g.target && agents.find((a) => a.role === g.target)) || agents.slice().sort((a, b) => Math.hypot(a.pos.x - g.x, a.pos.z - g.z) - Math.hypot(b.pos.x - g.x, b.pos.z - g.z))[0];
@@ -1291,7 +1377,8 @@ export class Sentinel {
   // ---- intel ---------------------------------------------------------------------
   revealed(e, access, extra) {
     if (e.state === 'dead' && e.kind === 'g') return true;
-    if (e.tagT > 0 || this.scanT > 0) return true;
+    // The console's pulse scan only hears electronics; people need a tag, the quad or ISR.
+    if (e.tagT > 0 || (this.scanT > 0 && e.kind !== 'g')) return true;
     const zone = this.fac.zoneAt(e.x, e.z);
     const tier = zone === 'out' ? 0 : zone === 'yard' ? 1 : zone === 'floor' ? 2 : 3;
     if (access >= tier) return true;
@@ -1327,7 +1414,7 @@ export class Sentinel {
       let g = this.guards.find((q) => q.id === id);
       const type = TYPE_KEYS[ti] || 'guard';
       if (!g) {
-        g = { id, kind: 'g', type, x, y, z, yaw, look: 0, state: STATES[st], hp: 1, chief: !!(fl & 1), obj: buildUnit(type, !!(fl & 1)), fallT: 0, maxShield: TYPES[type].shield, shield: 0, hitFx: 0 };
+        g = { id, kind: 'g', type, x, y, z, yaw, look: 0, state: STATES[st], hp: 1, chief: !!(fl & 1), obj: withXray(buildUnit(type, !!(fl & 1))), fallT: 0, maxShield: TYPES[type].shield, shield: 0, hitFx: 0 };
         this.scene.add(g.obj);
         this.guards.push(g);
       }
@@ -1346,7 +1433,7 @@ export class Sentinel {
     for (const a of s.d) {
       const [id, x, y, z, yaw, st, aw, emp, tag, rev] = a;
       let d = this.drones.find((q) => q.id === id);
-      if (!d) { d = { id, kind: 'd', x, y, z, yaw, obj: buildDrone() }; this.scene.add(d.obj); this.drones.push(d); }
+      if (!d) { d = { id, kind: 'd', x, y, z, yaw, obj: withXray(buildDrone()) }; this.scene.add(d.obj); this.drones.push(d); }
       d.tx = x; d.ty = y; d.tz = z; d.tyaw = yaw;
       d.state = st === 2 ? 'dead' : st === 1 ? 'hunt' : 'patrol'; d.aw = aw; d.empT = emp; d.tagT = tag; d.rev = !!rev; d.hp = st === 2 ? 0 : 1;
     }
@@ -1372,6 +1459,7 @@ export class Sentinel {
         g.hitFx = Math.max(0, (g.hitFx || 0) - dt * 3);
       }
       const o = g.obj, U = o.userData;
+      setXray(o, g.tagT > 0 && g.state !== 'dead');
       o.position.set(g.x, g.y, g.z);
       o.rotation.y = g.yaw + (g.look || 0);
       const dead = g.state === 'dead';
@@ -1422,6 +1510,7 @@ export class Sentinel {
         d.x += (d.tx - d.x) * k; d.y += (d.ty - d.y) * k; d.z += (d.tz - d.z) * k; d.yaw += angDiff(d.tyaw, d.yaw) * k;
       }
       const o = d.obj;
+      setXray(o, d.tagT > 0 && d.state !== 'dead');
       o.position.set(d.x, d.y, d.z);
       o.rotation.y = d.yaw;
       if (d.state === 'dead') { o.rotation.z = 1.2; o.userData.beam.visible = false; continue; }
