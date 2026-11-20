@@ -1,6 +1,18 @@
-# Draxxed Sklounst
+<p align="center"><img src="icon.svg" width="120" alt="Draxxed Sklounst logo"></p>
+
+<h1 align="center">Draxxed Sklounst</h1>
+
+<p align="center"><em>One valley. Two rifles. Eight hundred metres.</em></p>
 
 A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tablets. No install, no server: one player hosts, the other opens the invite link, and the two connect peer-to-peer over WebRTC.
+
+![The practice range: looking out over the valley from the ridge with the Mk22 MRAD](docs/screenshots/practice-range.png)
+
+## Screenshots
+
+| Main menu and AO briefing map | Vs AI: round 1 insertion |
+| --- | --- |
+| ![Main menu with the topographic briefing map of the valley, ridges and uplinks A, B and C](docs/screenshots/main-menu-briefing-map.png) | ![Round 1 insertion against a Veteran AI: HUD with compass, uplink markers, loadout tools and ammo](docs/screenshots/vs-ai-insertion.png) |
 
 ## Play
 
