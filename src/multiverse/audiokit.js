@@ -122,8 +122,8 @@ const SFX = {
   // 1.5 s of rising tension that stops dead at the top: follow it with 'drop' or 'boom'.
   riser(T, N) {
     const d = 1.5;
-    N({ filter: 'bandpass', freq: 300, freqEnd: 7000, q: 2.5, dur: d, gain: 0.7, attack: d * 0.93 });
-    N({ filter: 'bandpass', freq: 600, freqEnd: 12000, q: 1.2, dur: d, gain: 0.25, attack: d * 0.95 });
+    N({ filter: 'bandpass', freq: 300, freqEnd: 7000, q: 2.5, dur: d, gain: 0.62, attack: d * 0.93 });
+    N({ filter: 'bandpass', freq: 600, freqEnd: 12000, q: 1.2, dur: d, gain: 0.18, attack: d * 0.95 });
     T({ type: 'sawtooth', freq: 110, freqEnd: 880, dur: d, gain: 0.07, attack: d * 0.92, detune: -16, pan: -0.4 });
     T({ type: 'sawtooth', freq: 110, freqEnd: 880, dur: d, gain: 0.07, attack: d * 0.92, detune: 16, pan: 0.4 });
     T({ type: 'sawtooth', freq: 55, freqEnd: 440, dur: d, gain: 0.07, attack: d * 0.92 });

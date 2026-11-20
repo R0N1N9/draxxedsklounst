@@ -368,7 +368,7 @@
 //     no timers that outlive dispose(), no rAF loops (the core calls update/render), no
 //     DOM outside the canvases you are given, no CSS, no localStorage.
 //  2. dispose() frees every geometry, material, texture, render target and audio node you
-//     created (kit3d.disposeTree(root) helps). The shared renderers and canvases stay.
+//     created (disposeTree(root) from kit.js helps). The shared renderers and canvases stay.
 //  3. Handle any size. Phones in landscape (667x375) up to 16:10 desktops (1728x1117) and
 //     4:3 iPads (1180x820). Re-read ctx.width / ctx.height every frame; never cache them.
 //  4. Budget: 60 fps on an M1 at devicePixelRatio 2. No per-frame allocations in hot loops,
@@ -379,6 +379,15 @@
 //  7. Fonts: 'Rajdhani' and 'JetBrains Mono' are loaded. Apple system fonts with a generic
 //     fallback are fair game for flavour ('Marker Felt', 'Chalkduster', 'Futura',
 //     'American Typewriter', 'Copperplate', 'Didot', 'Courier New', 'Menlo', 'Impact').
+//  8. Safari is the target browser (iPadOS and macOS); Chromium is only where the tests
+//     run. Things that work in Chromium and bite on Safari:
+//       - CanvasRenderingContext2D.filter is not supported: no g.filter = 'blur(...)'.
+//         Get blur and glow from shadowBlur (sparingly — it is slow at large radii),
+//         additive gradients, pre-rendered sprites, a down-scaled off-screen canvas, or a shader.
+//       - Off-screen canvases must stay within 4096 x 4096.
+//       - Render targets: HalfFloatType, never FloatType. Always declare `precision highp float;`
+//         in fragment shaders, and keep loops bounded by constants.
+//       - No pointer lock and no hover on touch: nothing may depend on the mouse being there.
 
 // -----------------------------------------------------------------------------
 // 8. DEV / TEST HARNESS
