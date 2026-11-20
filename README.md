@@ -45,6 +45,7 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
   - **Halo**: instant hit, no drop, wind or sway, 5×/10× zoom.
   - **Custom**: sliders for drop, bullet speed (slow to instant), wind, drag, sway and hitbox size.
   - Option: the rangefinder (F) auto-sets your zero to the measured distance.
+- **Bolt cycling** (standard Mk22 bolt): after a scoped shot, lifting your finger off fire drops you out of the scope so the bolt is worked, then you go straight back in if you're still holding (or have toggled) scope. Keep fire held to stay on target and watch the shot; turn this off in Settings to unscope by hand.
 - **Bipod** (Battlefield-style): go prone and hold still for half a second and it sets itself (turn that off in Settings to set it only by hand), or press **X** (BIPOD on touch). Your support hand reaches forward and flicks the legs down, then the rifle settles. You can't fire while your hand is off the rifle. Once set, the scope is dead still and recoil is reduced. Moving, standing, switching or pressing X again folds the legs; folding with X keeps it up until you move or get up.
 - **Supply drone** (V, then a 90 s cooldown): a cargo hexacopter flies in from behind your ridge and drops a parachute crate where you aim (within 60 m) or at your feet. Walk onto it to refill both weapons. Both players see and hear it, and the AI uses it to find you.
 - **No shooting or reloading while sprinting.** Walking and standing are fine, and starting a sprint cancels a reload.

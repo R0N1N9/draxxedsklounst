@@ -1144,7 +1144,7 @@ export class Game {
     else if (this.hacking >= 0) h = `HACKING UPLINK ${this.world.uplinks[this.hacking].name}… ${Math.round((this.uplinkState[this.hacking].progress / UPLINK.hackTime) * 100)}%`;
     else if (!P.alive && !this.replay.active) h = 'You are down — next round soon';
     else if (P.ammo === 0 && P.reserve === 0) h = 'Out of ammo';
-    else if (P.boltPending && P.scoped) h = 'Unscope to cycle the bolt';
+    else if (P.boltPending && P.scoped) h = P.autoCycle ? 'Release fire to cycle the bolt' : 'Unscope to cycle the bolt';
     else if (P.stance === 2 && !P.moving && P.def.slot === 'rifle' && (P.bipodState || 'stowed') === 'stowed' && P.scoped) h = `<b>${this.input.touch ? 'BIPOD' : 'X'}</b> set bipod`;
     const enemyHack = this.uplinkState.findIndex((u) => u.enemyHacking);
     if (enemyHack >= 0 && this.phase === 'live') h = (h ? h + ' · ' : '') + `⚠ ENEMY HACKING UPLINK ${this.world.uplinks[enemyHack].name}`;

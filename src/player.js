@@ -43,6 +43,7 @@ export class LocalPlayer {
     this.bipodState = 'stowed';
     this.bipodT = 0;
     this.bipodU = 0;
+    this.autoCycle = true; // drop out of the scope to work the bolt once you let go of fire
     this.autoBipod = true; // set the bipod by itself once you've been prone and still a moment
   }
 
@@ -297,7 +298,10 @@ export class LocalPlayer {
 
     // --- Scope
     const cyclingBolt = this.def.kind === 'bolt' && this.cycleT > 0 && !this.straightPull;
-    const wantScope = a.scope && this.alive && this.reloadT <= 0 && this.switchT <= 0 && !cyclingBolt;
+    // Auto-cycle: after a scoped shot with a standard bolt, come off the scope as soon as the
+    // trigger finger lifts. Toggle/held scope comes back in by itself once the bolt is home.
+    const autoOff = this.autoCycle && this.boltPending && this.def.kind === 'bolt' && !this.straightPull && !a.fireHeld;
+    const wantScope = a.scope && this.alive && this.reloadT <= 0 && this.switchT <= 0 && !cyclingBolt && !autoOff;
     // Weapon select: 1 / 2, or the wheel when not scoped.
     if (a.slot1) this.switchTo(0);
     if (a.slot2) this.switchTo(1);

@@ -282,6 +282,7 @@ export class Input {
       sprint: k('ShiftLeft') || k('ShiftRight') || k('T:sprint') || this.move.y < -0.9,
       breath: k('ShiftLeft') || k('ShiftRight') || this.breathLatched,
       fire: p('Fire') || p('fire'),
+      fireHeld: this.mouseFire || k('T:fire'),
       scope: scopeHeld,
       zoomIn: p('ZoomIn') || p('zoomin') || p('Equal'),
       zoomOut: p('ZoomOut') || p('zoomout') || p('Minus'),
