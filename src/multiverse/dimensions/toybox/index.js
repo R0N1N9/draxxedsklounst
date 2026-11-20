@@ -354,7 +354,7 @@ export default {
     function marbleThrough() {
       const m = W.marble;
       if (W.clink) { sfx.ping(W.clink.x, 'glass'); fx.ping(W.clink.x, 0.9, W.clink.z, 0, 0, 'glass'); }
-      if (!m.on || !(m.dx || m.dz)) return;
+      if (!m.on || !m.moving) return;
       for (const r of W.rows) {
         if (!r.on) continue;
         const rx = m.x - r.x, rz = m.z - r.z;
@@ -382,7 +382,7 @@ export default {
       if ((chuffT -= dt) <= 0) { chuffT = 0.44; if (W.cars[0].on) sfx.chuff(W.cars[0].x); }
       if (T > 0 && Math.floor((T + 4) / 12) !== tootN) { tootN = Math.floor((T + 4) / 12); if (W.cars[0].on) sfx.toot(W.cars[0].x); }
       if (W.head.k > 0 && !carOn) { carOn = true; sfx.car(Math.sign(W.head.p) || 1); } else if (W.head.k <= 0) carOn = false;
-      if (W.marble.on) { if (!marbleOn) sfx.flick(W.marble.x); if ((rumbleT -= dt) <= 0) { rumbleT = 0.11; sfx.rumble(W.marble.x); } }
+      if (W.marble.on) { if (!marbleOn) sfx.flick(W.marble.x); if (W.marble.moving && (rumbleT -= dt) <= 0) { rumbleT = 0.11; sfx.rumble(W.marble.x); } }
       marbleOn = W.marble.on;
       for (let i = clacks.length - 1; i >= 0; i--) if (T >= clacks[i].t) { sfx.domino(clacks[i].x, clacks[i].k); clacks.splice(i, 1); }
       if (sudMsg > 0 && (sudMsg -= dt) <= 0) ctx.hud.message('TIDY-UP TIME', 'The big light is on · the rug is rolling up', 3);

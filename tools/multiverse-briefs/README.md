@@ -28,7 +28,7 @@ build, so unfinished work can sit in the tree safely.
 
 ## Status
 
-Work was paused on 20 November 2026 to fit a usage limit. In matches now: seven worlds
+Work was paused on 20 November 2026 to fit a usage limit. In matches now: eight worlds
 and five transitions.
 
 | Module | Kind | State |
@@ -36,9 +36,8 @@ and five transitions.
 | dev-app | transition (the first-kill reveal) | in matches |
 | synapse, flashback, shatter, continue | transitions | in matches |
 | valley | world (the original game; always opens the match) | in matches |
-| neon, ww2, pixel, terminal, manga, toon | worlds | in matches |
+| neon, ww2, pixel, terminal, manga, toon, toybox | worlds | in matches |
 | surf | world | built, stopped early; second-engineer pass in progress when work paused |
-| toybox | world | built, stopped early; second-engineer pass in progress when work paused |
 | comic | world | built, stopped early, never fully tested; second-engineer pass in progress when work paused |
 | abyss | world (underwater; the owner's showpiece) | first build in progress when work paused |
 | paper | world (flat-drawn first person) | first build done (report in `reports/`); second-engineer pass not started |
@@ -62,7 +61,7 @@ In the owner's order of priority:
 3. **plunge** — the transition that carries that dive into abyss. The registry already
    chains surf → abyss through it (`then` / `via`); the chain wakes up when all three lose
    their `wip` flag.
-4. **toybox**, **comic**, **paper** — second-engineer passes.
+4. **comic**, **paper** — second-engineer passes.
 5. New worlds the owner asked for: **snow** (top-down 3D), **orbit** with the
    **telescope** transition (space; telescope replaces cosmic-zoom unless the owner wants
    both), **heli** with **radar**, **worm**.

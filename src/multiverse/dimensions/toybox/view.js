@@ -156,7 +156,7 @@ export function makeView(ctx, THREE, renderer, o) {
       if (iv > worst) worst = iv;
       let draw = true;
       if (!hadUpdate) { /* the core photographing the world for a transition: always a real frame */ }
-      else if ((++frames > 3 || lastCost > 0) && skipLeft > 0) { skipLeft--; draw = false; }
+      else if ((++frames > (Q.rich ? 3 : 2) || lastCost > 0) && skipLeft > 0) { skipLeft--; draw = false; } // (the full build gets a third look: its first frames compile shaders)
       S.w = ctx.width; S.h = ctx.height;
       // Words stay stuck to the picture they were written for: between real draws, the labels of the last one.
       drawOverlay(ctx.g, draw || !held ? S : held);

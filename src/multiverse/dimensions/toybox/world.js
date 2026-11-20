@@ -142,7 +142,7 @@ export function buildWorld(rng, names) {
         if (u < 0 || (u > f.n - 1 && !f.rest)) continue;
         const k = Math.min(f.n - 2, Math.floor(u)), w = Math.min(1, u - k);
         place(marble, lerp(f.xs[k], f.xs[k + 1], w), lerp(f.zs[k], f.zs[k + 1], w), 0);
-        marble.on = true; marble.dist = lerp(f.ds[k], f.ds[k + 1], w);
+        marble.on = true; marble.moving = u < f.n - 1; marble.dist = lerp(f.ds[k], f.ds[k + 1], w);
         marble.dx = f.xs[k + 1] - f.xs[k]; marble.dz = f.zs[k + 1] - f.zs[k];
         for (let j = 0; j < f.hits.length; j += 3) if (f.hits[j] > lastT && f.hits[j] <= T) W.clink = { x: f.hits[j + 1], z: f.hits[j + 2] };
       }

@@ -68,18 +68,18 @@ export default {
   hint: 'LEAP flies you to the rooftop you are looking at.',
   altToggle: true,
   roundTime: 60,
-  overTime: 2.6,
+  overTime: 3,
   angleFields: ['yaw', 'pitch'],
 
   create(ctx) {
     const { THREE, renderer } = ctx.three;
-    // A software rasteriser (no GPU, or a blocked one) builds every shader state it meets into
-    // machine code on the spot, seconds apiece: it gets the same page at half size from as few
-    // of them as will draw it (no cast shadows, glow or smoothing), redrawn only as often as it can.
-    const Q = { rich: true, scale: 1, bloom: true, fxaa: true, prepass: false, lite: false, shadows: true };
+    // A software rasteriser (no GPU, or a blocked one) pays for every pixel and every shader
+    // state it meets: it gets the same page smaller, from as few shaders as will draw it (no
+    // cast shadows, glow or smoothing), redrawn only as often as it can.
+    const Q = { rich: true, scale: 1, bloom: true, fxaa: true, lite: false, shadows: true };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { rich: false, scale: 0.5, bloom: false, fxaa: false, lite: true, shadows: false });
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { rich: false, scale: 0.42, bloom: false, fxaa: false, lite: true, shadows: false });
     } catch { /* masked: assume a real GPU */ }
     const W = buildWorld(ctx.rng);
     const scene = new THREE.Scene();
@@ -503,10 +503,11 @@ export default {
       // slices short enough for the collision code.
       update(dt) {
         if (ctx.phase === 'over') {
-          // the splash page holds almost still for a beat (the core is already in slow motion), then lets go
+          // the splash page holds almost still for a full second (the core is already in slow
+          // motion) so it can be read, then lets go
           const rdt = dt / 0.35;
           overT += rdt;
-          const sdt = overT < 0.5 ? dt * 0.04 : dt;
+          const sdt = overT < 1 ? dt * 0.04 : dt;
           frame(sdt, T + sdt, true, rdt);
           return;
         }

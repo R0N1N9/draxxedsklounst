@@ -139,9 +139,13 @@ void main() {
   if (kind == 5) unlit = 1.0;
   #ifdef MAP
     vec4 tx = texture2D(map, vUv2);
-    if (tx.a < 0.5) discard;
+    #ifdef CUT
+      if (tx.a < 0.5) discard;
+    #endif
     col = tx.rgb;
   #endif
+  // (Only what needs it may discard: a shader that can throws away a rasteriser's early depth test.)
+  #ifdef ERASE
   if (uErase > 0.0) {
     // Rubbed out: what is left of this prop is the artist's blue pencil.
     float s = fract((gl_FragCoord.x + gl_FragCoord.y) * 0.085 + h21(floor(vWp.xz)) * 3.0);
@@ -149,6 +153,7 @@ void main() {
     col = mix(col, vec3(0.52, 0.74, 0.98), uErase);
     unlit = 1.0;
   }
+  #endif
   float ndl = dot(n, uSun);
   float l = smoothstep(-0.35, 0.45, ndl);
   if (l > 0.12 && unlit < 0.5) l = min(l, mix(0.1, 1.0, sunShadow()));
@@ -162,11 +167,13 @@ export const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [((n 
 export function makeMats(THREE, sun, soft) {
   const shared = { uSun: { value: sun }, uTime: { value: 0 } };
   const all = [];
-  /** o: { inst, map, color '#hex', kind, lit (unlit ink), minL (never darker than this: the snipers), side, add (additive glow) } */
+  /** o: { inst, map, cut (map alpha cuts holes), erase (sudden death can rub it out), color '#hex', kind, lit (unlit ink), minL (never darker than this: the snipers), side } */
   const make = (o = {}) => {
     const defines = {};
     if (o.inst) defines.INST = '';
     if (o.map) defines.MAP = '';
+    if (o.cut) defines.CUT = '';
+    if (o.erase) defines.ERASE = '';
     if (soft) defines.SOFT = '';
     const m = new THREE.ShaderMaterial({
       lights: true, defines, vertexShader: VERT, fragmentShader: FRAG, side: o.side || THREE.FrontSide,
@@ -177,12 +184,6 @@ export function makeMats(THREE, sun, soft) {
     m.uniforms.uSun = shared.uSun;
     m.uniforms.uTime = shared.uTime;
     if (o.map) m.uniforms.map.value = o.map;
-    if (o.add) {
-      // Glow adds to the colour and leaves the light channel alone.
-      m.blending = THREE.CustomBlending; m.blendEquation = THREE.AddEquation;
-      m.blendSrc = THREE.OneFactor; m.blendDst = THREE.OneFactor; m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;
-      m.transparent = true; m.depthWrite = false;
-    }
     all.push(m);
     return m;
   };

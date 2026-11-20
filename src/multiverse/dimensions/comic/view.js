@@ -12,7 +12,6 @@ export function makeView(ctx, THREE, renderer, X) {
   const { scene, W, fx, post, P, G, letters, Q } = X;
   const camera = new THREE.PerspectiveCamera(FOV, ctx.width / Math.max(1, ctx.height), 0.3, 900);
   camera.rotation.order = 'YXZ';
-  camera.layers.enable(1);
   const me = P[ctx.me], foe = P[1 - ctx.me];
   const E = new THREE.Vector3(), F = new THREE.Vector3(), Rt = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), aimPt = new THREE.Vector3(), look = new THREE.Vector3();
   const mkArc = () => ({ a: 0, n: 0, pts: new Float32Array(ARC_N * 2), color: '#fff' });
@@ -20,7 +19,7 @@ export function makeView(ctx, THREE, renderer, X) {
     w: 1, h: 1, t: 0, ui: 1, touch: false, safeL: 0, safeR: 0, safeB: 0, live: false, alive: true, scope: 0, spreadPx: 10, blocked: false,
     ammo: 4, mag: 4, cycle: 0, reload: 0, range: 0, holds: [{ px: 0, label: '80' }, { px: 0, label: '100' }, { px: 0, label: '120' }],
     leap: { a: 0, n: 0, ready: false, pts: new Float32Array(ARC_N * 2), x: 0, y: 0, rx: 1, ry: 1, tag: '' }, arcs: [mkArc(), mkArc()],
-    marks: [], pops: [], prompt: '', note: '', noteA: 0, splash: { a: 0, t: 0, word: 'KAPOW', x: 0, y: 0, caption: '' },
+    marks: [], pops: [], prompt: '', note: '', noteA: 0, splash: { a: 0, t: 0, word: 'KAPOW', x: 0, y: 0, side: 1, caption: '' },
   };
   for (let i = 0; i < 5; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: '', color: '#fff', hollow: false, text: '' });
   for (let i = 0; i < 14; i++) S.pops.push({ on: false, word: 'BLAM', wx: 0, wy: 0, wz: 0, t: 0, dur: 1, rot: 0, size: 1, rise: 1, x: 0, y: 0, px: 10, pin: false });
@@ -112,7 +111,7 @@ export function makeView(ctx, THREE, renderer, X) {
       }
       kc = { v, t: 0, x: cx, y: cy, z: cz, roll: (Math.random() < 0.5 ? -1 : 1) * 0.13, depth: Math.hypot(cx - v.x, cy - v.y - 1, cz - v.z) + 1.3 };
       look.set(v.x, v.y + 1.1, v.z);
-      S.splash.word = word; S.splash.caption = text; S.splash.t = 0; S.splash.a = 1;
+      S.splash.word = word; S.splash.caption = text; S.splash.t = 0; S.splash.a = 1; S.splash.side = kc.roll > 0 ? 1 : -1;
       for (const p of S.pops) p.on = false;
       S.leap.a = 0; S.arcs[0].a = S.arcs[1].a = 0;
       drawAfter = 0; since = 99;
@@ -165,7 +164,7 @@ export function makeView(ctx, THREE, renderer, X) {
         camera.position.set(kc.x, kc.y + kc.t * 0.12, kc.z);
         camera.up.set(Math.sin(kc.roll), Math.cos(kc.roll), 0);
         camera.lookAt(look);
-        camera.fov = lerp(46, 58, smoothstep(0.4, 1.6, kc.t));
+        camera.fov = lerp(46, 58, smoothstep(1, 2.4, kc.t));
         scopeAmt = 0;
       } else {
         camera.position.copy(play.pos);
@@ -265,9 +264,10 @@ export function makeView(ctx, THREE, renderer, X) {
         spl.t = kc.t;
         project(kc.v.x, kc.v.y + 1.1, kc.v.z, pm);
         if (kc.t < 0.05) { spl.x = pm.x; spl.y = pm.y; }
-        const k = kc.t < 0.55 ? 1 : Math.max(0, 1 - (kc.t - 0.55) / 0.55);
+        // the burst holds while the page is read, then the city comes back behind the tumble
+        const k = kc.t < 1.5 ? 1 : Math.max(0, 1 - (kc.t - 1.5) / 0.6);
         u.uSplash.value.set(spl.x / ctx.width, 1 - spl.y / ctx.height, k, kc.depth);
-        spl.a = kc.t < 2.0 ? 1 : Math.max(0, 1 - (kc.t - 2.0) / 0.4);
+        spl.a = kc.t < 2.45 ? 1 : Math.max(0, 1 - (kc.t - 2.45) / 0.45);
       } else { u.uSplash.value.z = 0; spl.a = 0; }
 
       // ---- 2D layer state ----
@@ -317,8 +317,8 @@ export function makeView(ctx, THREE, renderer, X) {
     render() {
       // A machine with no GPU cannot draw this page sixty times a second. It draws one, waits
       // for the rasteriser to really finish it (left to queue, a software GPU falls further
-      // behind with every page and the whole browser stalls), rests twice as long as the page
-      // took, and keeps the duel and the 2D layer running true in between. A render with no
+      // behind with every page and the whole browser stalls), rests five times as long as the
+      // page took, and keeps the duel and the 2D layer running true in between. A render with no
       // update before it is the core photographing the world for a transition: always drawn.
       const inBand = fresh;
       fresh = false;
@@ -335,7 +335,7 @@ export function makeView(ctx, THREE, renderer, X) {
       if (!Q.rich) {
         try { const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); } catch { /* a lost context: nothing to wait for */ }
         cost = performance.now() - t0;
-        drawAfter = performance.now() + Math.min(3000, cost * 2);
+        drawAfter = performance.now() + Math.min(6000, cost * 5);
       }
     },
   });

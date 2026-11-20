@@ -203,7 +203,7 @@ void main() {
 // The lean build's page is drawn small; this only lays it on the screen.
 const BLIT = HEAD + 'void main() { gl_FragColor = vec4(texture2D(tSrc, vUv).rgb, 1.0); }';
 
-// q: { scale (page resolution relative to the drawing buffer), bloom, fxaa, prepass, lite (cheaper paper and clouds, no glow) }
+// q: { scale (page resolution relative to the drawing buffer), bloom, fxaa, lite (cheaper paper and clouds, no glow) }
 export function makePost(THREE, renderer, q) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
@@ -220,7 +220,6 @@ export function makePost(THREE, renderer, q) {
     uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunR: { value: new THREE.Vector3(1, 0, 0) }, uSunU: { value: new THREE.Vector3(0, 0, 1) },
     uScope: { value: 0 }, uSpeed: { value: 0 }, uFlash: { value: 0 }, uSudden: { value: 0 }, uSplash: { value: new THREE.Vector4(0.5, 0.5, 0, 1e6) }, uSplashCol: { value: new THREE.Vector3(1, 0.3, 0.3) },
   };
-  const mDepth = new THREE.MeshBasicMaterial({ colorWrite: false });
   const mPre = mat(PREFILTER), mBlur = mat(BLUR, { uDir: { value: new THREE.Vector2() } }), mComic = mat(COMIC, u, q.lite ? { LITE: '' } : {}), mPresent = mat(q.fxaa ? PRESENT : BLIT);
   const depth = new THREE.DepthTexture(4, 4);
   depth.type = THREE.UnsignedIntType;
@@ -262,16 +261,6 @@ export function makePost(THREE, renderer, q) {
       renderer.autoClear = true;
       renderer.setRenderTarget(scene);
       renderer.setClearColor(black, 1); // sky: no colour, "unlit", depth 1 — the pass paints it
-      if (q.prepass) {
-        // No GPU: lay the depth down first so every pixel is shaded once, however many walls
-        // stand behind one another. (Layer 1 holds what is cut out with discard.)
-        camera.layers.disable(1);
-        world.overrideMaterial = mDepth;
-        renderer.render(world, camera);
-        world.overrideMaterial = null;
-        camera.layers.enable(1);
-        renderer.autoClear = false;
-      }
       renderer.render(world, camera);
       const w = scene.width, h = scene.height;
       if (q.bloom) {
@@ -296,7 +285,7 @@ export function makePost(THREE, renderer, q) {
       renderer.setRenderTarget(null);
       for (const t of [scene, qa, qb, page]) t.dispose();
       depth.dispose();
-      for (const m of [mPre, mBlur, mComic, mPresent, mDepth]) m.dispose();
+      for (const m of [mPre, mBlur, mComic, mPresent]) m.dispose();
       geo.dispose();
     },
   };

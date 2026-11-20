@@ -298,7 +298,7 @@ export function makeView(ctx, THREE, renderer, S) {
       if (measure) { cost = iv; measure = false; }
       if (iv > worst) worst = iv; // a GPU running behind shows up as long frames between draws
       let draw = true;
-      if (api.freeze || Q.soft && !api.always && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < Math.min(6000, Math.max(cost, worst) * 5)) draw = false;
+      if (api.freeze || Q.soft && !api.always && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < Math.min(6000, Math.max(1000, cost * 5, worst * 5))) draw = false;
       fresh = false;
       if (!draw) {
         HUD.w = ctx.width; HUD.h = ctx.height;

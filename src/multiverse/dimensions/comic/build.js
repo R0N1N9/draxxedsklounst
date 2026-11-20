@@ -36,7 +36,7 @@ function batch(THREE, geo, mat) {
 export function buildCity(THREE, W, mats, art, seed) {
   const rng = makeRng(seed ^ 0x51ed), group = new THREE.Group();
   const boxG = new THREE.BoxGeometry(1, 1, 1), cylG = new THREE.CylinderGeometry(0.5, 0.5, 1, 12), coneG = new THREE.ConeGeometry(0.5, 1, 12);
-  const mStatic = mats.make({ inst: true }), mFar = mats.make({ inst: true }), mProp = mats.make({ inst: true });
+  const mStatic = mats.make({ inst: true }), mFar = mats.make({ inst: true }), mProp = mats.make({ inst: true, erase: true });
   const erasable = [mProp], owned = [boxG, cylG, coneG];
   const B = batch(THREE, boxG, mStatic), C = batch(THREE, cylG, mStatic), K = batch(THREE, coneG, mStatic), F = batch(THREE, boxG, mFar), FK = batch(THREE, coneG, mFar);
   const PB = batch(THREE, boxG, mProp), PC = batch(THREE, cylG, mProp), PK = batch(THREE, coneG, mProp);
@@ -124,19 +124,17 @@ export function buildCity(THREE, W, mats, art, seed) {
     }
   }
   // Hoardings and signs carry painted faces, towards the street.
-  const quad = new THREE.PlaneGeometry(1, 1), boardMeshes = [];
+  const quad = new THREE.PlaneGeometry(1, 1);
   owned.push(quad);
   boards.forEach((p, i) => {
     const sgn = p.kind === 'sign', s = p.side ? -1 : 1;
-    const m = mats.make({ map: sgn ? art.signs[(i + (p.seed * 4 | 0)) % art.signs.length] : art.ads[(i + (p.seed * 4 | 0)) % art.ads.length], lit: sgn, side: sgn ? THREE.DoubleSide : THREE.FrontSide });
+    const m = mats.make({ map: sgn ? art.signs[(i + (p.seed * 4 | 0)) % art.signs.length] : art.ads[(i + (p.seed * 4 | 0)) % art.ads.length], cut: sgn, erase: true, lit: sgn, side: sgn ? THREE.DoubleSide : THREE.FrontSide });
     erasable.push(m);
     const mesh = new THREE.Mesh(quad, m);
     mesh.scale.set(p.w - (sgn ? 0.4 : 0.3), sgn ? 2.7 : 4.0, 1);
     mesh.position.set(p.x, p.y + (sgn ? 3.05 : 3.45), p.z - s * (sgn ? 0 : 0.02));
     mesh.rotation.y = s > 0 ? Math.PI : 0;
     mesh.castShadow = !sgn; mesh.receiveShadow = !sgn;
-    if (sgn) mesh.layers.set(1); // cut out with discard: kept out of the depth pre-pass
-    boardMeshes.push(mesh);
     group.add(mesh);
   });
 
@@ -205,8 +203,7 @@ export function buildCity(THREE, W, mats, art, seed) {
       const was = erase > 0.5;
       erase = k;
       for (const m of erasable) m.uniforms.uErase.value = k;
-      for (const m of propMeshes) { m.castShadow = k < 0.5; m.layers.set(1); }
-      for (const m of boardMeshes) m.layers.set(1);
+      for (const m of propMeshes) m.castShadow = k < 0.5;
       return was !== k > 0.5;
     },
     dispose() { for (const g of owned) g.dispose(); for (const m of meshes) m.geometry.dispose(); },
