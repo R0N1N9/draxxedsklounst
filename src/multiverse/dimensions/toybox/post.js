@@ -34,9 +34,13 @@ void main() {
   // Tilt-shift: sharp across the rug, melting towards the top and bottom of the frame.
   float f = clamp((abs(vUv.y - uFocus.x) - uFocus.y) / max(0.5 - uFocus.y, 0.05), 0.0, 1.0);
   f = pow(f, 1.6) * uTilt; // (slow to start: whoever stands at the rug's edge stays crisp)
+#ifdef LITE
+  vec3 sharp = texture2D(tSrc, vUv).rgb; // (a software rasteriser pays for every texture read)
+#else
   // A breath of lateral colour at the edges; a real kick of it when someone is hit.
   vec2 ca = c * dot(c, c) * (0.006 + 0.012 * uPunch);
   vec3 sharp = vec3(texture2D(tSrc, vUv + ca).r, texture2D(tSrc, vUv).g, texture2D(tSrc, vUv - ca).b);
+#endif
   vec3 col = mix(sharp, texture2D(tHalf, vUv).rgb, clamp(f * 2.2, 0.0, 1.0));
   col = mix(col, texture2D(tQuarter, vUv).rgb, clamp(f * 2.2 - 1.0, 0.0, 1.0));
   col += texture2D(tBloom, vUv).rgb * 0.55 + texture2D(tWide, vUv).rgb * 0.5;
@@ -53,7 +57,8 @@ void main() {
   gl_FragColor = vec4(mix(col, vec3(1.0, 0.96, 0.9), uFlash), 1.0);
 }`;
 
-// q: { msaa (bool), scale (scene resolution relative to the drawing buffer), cap (most pixels the scene is ever drawn at) }
+// q: { msaa (bool: the full build; without it the final pass is the lighter one), scale (scene resolution
+//   relative to the drawing buffer), cap (most pixels the scene is ever drawn at) }
 export function makePost(THREE, renderer, q) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
@@ -69,6 +74,7 @@ export function makePost(THREE, renderer, q) {
     uTime: { value: 0 }, uTilt: { value: 1 }, uFlash: { value: 0 }, uPunch: { value: 0 }, uGrain: { value: 0.035 }, uAspect: { value: 1 },
   };
   const mDown = mat(DOWN), mBlur = mat(BLUR, { uDir: { value: new THREE.Vector2() } }), mBright = mat(BRIGHT), mFinal = mat(FINAL, fu);
+  if (!q.msaa) mFinal.defines = { LITE: 1 };
   const rt = (o) => new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false, ...o });
   const scene = rt({ depthBuffer: true, stencilBuffer: true }), ha = rt(), hb = rt(), qa = rt(), qb = rt(), ba = rt(), bb = rt(), ea = rt(), eb = rt();
   const size = new THREE.Vector2();
