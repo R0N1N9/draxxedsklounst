@@ -8,7 +8,6 @@
 // shoot, work the bolt behind cover. Hear a shell coming: run. Under fire in the open: smoke.
 import { clamp, angDiff, gauss } from '../../kit.js';
 import { shapeOf, EYE_STAND, EYE_PEEK } from './soldier.js';
-import { SHELL_LETHAL } from './map.js';
 
 export function makeBot(ctx, map, G) {
   const skill = clamp(ctx.botSkill, 0, 1);
@@ -19,7 +18,7 @@ export function makeBot(ctx, map, G) {
     return {
       state: 'hold', post: null, prev: null, path: null, pi: 0, holdT: 0, holdMax: 0.5 + rnd() * 1.6, peekT: 0, peeking: false,
       aggr: 0.3 + rnd() * 0.6, see: 0, knownX: 0, knownZ: 0, knownT: 0, pingSeen: -1, onT: 0, errY: 0, errP: 0, gY: 0, gP: 0, rollT: 0, leadErr: 0,
-      react: 0.5 + (1 - skill) * 0.8, underFire: 0, stuckT: 0, lx: p.x, lz: p.z, sweep: rnd() * 6, stand: 0, decoyLook: [0, 0, 0, 0], afterDecoy: false, fooled: -1, init: false,
+      react: 0.5 + (1 - skill) * 0.8, underFire: 0, stuckT: 0, stuckN: 0, lx: p.x, lz: p.z, sweep: rnd() * 6, stand: 0, decoyLook: [0, 0, 0, 0], afterDecoy: false, fooled: -1, init: false,
     };
   }
 
@@ -35,7 +34,7 @@ export function makeBot(ctx, map, G) {
   }
 
   function choosePost(p, b, sudden) {
-    const curDz = Math.abs(p.z - b.knownZ), minRange = sudden >= 0 ? 0 : Math.max(10, 62 - 26 * b.aggr - G.time() * 1.4);
+    const curDz = Math.abs(p.z - b.knownZ), minRange = sudden >= 0 ? 0 : Math.max(9, 54 - 26 * b.aggr - G.time() * 1.9);
     const safe = sudden >= 0 ? map.safeZ(sudden + 7) - 2.5 : 1e9;
     cand.length = 0;
     for (const post of map.posts) {
@@ -45,7 +44,7 @@ export function makeBot(ctx, map, G) {
       if (dSelf < 3 || dSelf > (sudden >= 0 ? 70 : 40) || dz < minRange || Math.abs(post.z) > safe) continue;
       if ((post.z - b.knownZ) * (p.z - b.knownZ) < 0) continue; // never a post behind the enemy
       // Early on the bot is content to trade shots down the length of the square; the longer the round runs, the more it wants to close.
-      const push = b.afterDecoy ? 0.05 : (0.35 + b.aggr) * clamp((G.time() - 4 + b.aggr * 10) / 16, 0.12, 1);
+      const push = b.afterDecoy ? 0.05 : (0.35 + b.aggr) * clamp((G.time() - 2 + b.aggr * 10) / 11, 0.12, 1);
       let s = -Math.abs(dSelf - 15) * 0.5 + (curDz - dz) * push + rnd() * 7;
       if (post.kind === 'pit') s += 1.5;
       if (post.y > 1) s += 2;
@@ -135,6 +134,8 @@ export function makeBot(ctx, map, G) {
       if (closing && b.state === 'hold') b.holdT = 99;
       if (b.state === 'hold') {
         b.holdT += dt * (time > 32 ? 1.6 : 1) * (b.knownT > 9 ? 1.5 : 1);
+        // Late in a round with nothing seen for a while, patience runs out faster still.
+        if (time > 30 && b.knownT > 6) b.holdT += dt;
         if (b.holdT > b.holdMax && (!target || closing) && p.bolt <= 0) {
           if (!goTo(p, b, choosePost(p, b, sudden))) { b.holdT = b.holdMax - 1.5; b.aggr = Math.min(1, b.aggr + 0.15); }
         }
@@ -146,7 +147,7 @@ export function makeBot(ctx, map, G) {
         if (dl < (b.pi === b.path.length - 1 ? 0.35 : 0.8)) {
           if (++b.pi >= b.path.length) {
             b.state = 'hold'; b.path = null; b.holdT = 0; b.peekT = 0.4 + rnd(); b.peeking = false;
-            b.holdMax = (9.5 - 6.5 * b.aggr) * (0.7 + rnd() * 0.6);
+            b.holdMax = (7.5 - 5 * b.aggr) * (0.7 + rnd() * 0.6);
             // Plant the decoy, then leave it to do its work from the next post over.
             if (p.decoyCd <= 0 && b.post.kind !== 'high' && !target && rnd() < 0.5) { cmd.a2 = true; b.holdMax = 1.0 + rnd(); b.afterDecoy = true; }
           }
@@ -155,7 +156,8 @@ export function makeBot(ctx, map, G) {
         if (moving) {
           b.stuckT += dt;
           if (b.stuckT > 1) {
-            if (Math.hypot(p.x - b.lx, p.z - b.lz) < 0.5 && !goTo(p, b, b.post)) { b.state = 'hold'; b.holdT = 99; }
+            // Not getting anywhere: try the route again, then give up on that post altogether.
+            if (Math.hypot(p.x - b.lx, p.z - b.lz) < 0.5 && (++b.stuckN > 2 || !goTo(p, b, b.post))) { b.stuckN = 0; if (!goTo(p, b, choosePost(p, b, sudden))) { b.state = 'hold'; b.holdT = 99; } }
             b.stuckT = 0; b.lx = p.x; b.lz = p.z;
           }
         }
@@ -176,16 +178,17 @@ export function makeBot(ctx, map, G) {
 
     // ---- where to look, and whether to shoot ----
     let wantYaw, wantPitch = 0;
-    if (target && hot <= 0) {
+    if (target && (hot <= 0 || sudden >= 0)) {
       b.onT += dt;
-      const ex = tx - eye.x, ez = tz - eye.z, d3 = Math.hypot(ex, ez) || 1, tf = d3 / G.V, lead = 0.6 + 0.4 * skill + b.leadErr;
+      // A remote sniper is drawn a little in the past: lead that much further.
+      const ex = tx - eye.x, ez = tz - eye.z, d3 = Math.hypot(ex, ez) || 1, tf = d3 / G.V + (e.remote && b.fooled < 0 ? 0.15 : 0), lead = 0.6 + 0.4 * skill + b.leadErr;
       const ax = ex + tvx * tf * lead, az = ez + tvz * tf * lead, ah = Math.hypot(ax, az) || 1;
-      const ay = ty - eye.y + 0.5 * G.GRAV * tf * tf * (0.75 + 0.25 * skill) - G.ZERO * ah;
+      const fall = d3 / G.V, ay = ty - eye.y + 0.5 * G.GRAV * fall * fall * (0.75 + 0.25 * skill) - G.ZERO * ah;
       // Aim error: a wandering offset that tightens the longer the sight picture is held.
       b.rollT -= dt;
       if (b.rollT <= 0) {
         b.rollT = 0.5 + rnd() * 0.6;
-        const sig = (0.028 - 0.017 * skill) * Math.exp(-b.onT / (1.7 - 0.9 * skill)) + 0.0042 - 0.003 * skill;
+        const sig = (0.028 - 0.017 * skill) * Math.exp(-b.onT / (1.4 - 0.75 * skill)) + 0.0042 - 0.003 * skill;
         b.gY = gauss(rnd) * sig; b.gP = gauss(rnd) * sig * 0.7; b.leadErr = gauss(rnd) * 0.3 * (1 - skill);
       }
       const k = Math.min(1, dt * 3);
@@ -197,7 +200,8 @@ export function makeBot(ctx, map, G) {
       const tol = 0.004 + 0.006 * (1 - skill);
       const aligned = Math.abs(angDiff(p.yaw, wantYaw)) < tol && Math.abs(p.pitch - wantPitch) < tol;
       // No snap shots off the starting line: everyone gets a moment to get their head down.
-      if (aligned && b.onT > b.react && time > 2.6 + (1 - skill) && (!needScope || p.scope > 0.93) && p.bolt <= 0 && p.reload <= 0 && p.ammo > 0 && !moving) {
+      // (On the move only at close quarters, or when the barrage leaves no time to stop.)
+      if (aligned && b.onT > b.react && time > 2.6 + (1 - skill) && (!needScope || p.scope > 0.93 || moving) && p.bolt <= 0 && p.reload <= 0 && p.ammo > 0 && (!moving || d3 < 24 || sudden >= 0)) {
         cmd.fire = true;
         b.onT = Math.min(b.onT, 0.5);
         b.react = b.onT + 0.25 + rnd() * 0.5 * (1.4 - skill);
@@ -232,5 +236,5 @@ export function makeBot(ctx, map, G) {
     return cmd;
   }
 
-  return { create, think, SHELL_LETHAL };
+  return { create, think };
 }

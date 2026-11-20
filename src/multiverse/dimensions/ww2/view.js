@@ -65,19 +65,21 @@ export function makeView(ctx, THREE, renderer, W) {
   Object.assign(api, {
     shake(level) { trauma = Math.min(1, trauma + level); },
     kick(k) { kickV += 0.34 * k; trauma = Math.min(1, trauma + 0.18 * k); },
-    beginIntro() { introT = 0; },
+    beginIntro() { introT = 0; skipLeft = 0; },
     // Direction from the eye to whatever the open-sight crosshair is on (false in the scope).
     aim(eye, out) { if (!aimOk) return false; out.subVectors(aimPt, eye).normalize(); return true; },
     killCam(v) {
-      // Prefer looking west past the victim, so the low sun is behind them; take the first clear angle.
+      // Stand off to the west of the victim, sun over the camera's shoulder, so the fall is lit
+      // and the church glows behind it; failing that, the first angle with a clear view.
       const T = G.time();
-      for (const ang of [0, 0.7, -0.7, 1.4, -1.4, 2.3, -2.3, 3.14]) for (const dist of [4.6, 3.3, 2.3]) {
-        const x = v.x + Math.cos(ang) * dist, z = v.z + Math.sin(ang) * dist, y = Math.max(map.floorAt(x, z, v.y + 1, T) + 0.55, v.y + 0.75);
-        if (Math.abs(x) > 29 || Math.abs(z) > 59 || !map.los(v.x, v.y + 1.1, v.z, x, y, z, T, true)) continue;
+      for (const dist of [5.4, 4.2, 3.2]) for (const ang of [2.5, -2.5, 3.14, 1.8, -1.8, 1.0, -1.0, 0]) {
+        const x = v.x + Math.cos(ang) * dist, z = v.z + Math.sin(ang) * dist, y = Math.max(map.floorAt(x, z, v.y + 1, T) + 0.9, v.y + 1.25);
+        if (Math.abs(x) > 29 || Math.abs(z) > 59 || !map.los(v.x, v.y + 1.1, v.z, x, y, z, T, true) || !map.los(v.x, v.y + 0.4, v.z, x, y, z, T, true)) continue;
         kc = { v, ang, dist, t: 0, y };
+        skipLeft = 0; // the kill is always drawn
         return;
       }
-      kc = { v, ang: 0, dist: 1.6, t: 0, y: v.y + 2.2 };
+      kc = { v, ang: 2.5, dist: 2.2, t: 0, y: v.y + 2.4 };
     },
     focus() {
       const r = ctx.result, v = P[r && r.victim >= 0 ? r.victim : 1 - ctx.me], m = project(v.x, v.y + 0.5, v.z, S.marks[4]);
@@ -113,11 +115,11 @@ export function makeView(ctx, THREE, renderer, W) {
         scopeAmt = 0;
       } else if (phase === 'over' && kc) {
         kc.t += dt;
-        const v = kc.v, a = kc.ang + kc.t * 0.42, d = Math.max(1.4, kc.dist - kc.t * 0.55);
-        camera.position.set(v.x + Math.cos(a) * d, kc.y + kc.t * 0.12, v.z + Math.sin(a) * d);
-        camera.position.y = Math.max(camera.position.y, map.height(camera.position.x, camera.position.z) + 0.4);
-        camera.lookAt(v.x + v.fx * 0.35 * Math.min(1, kc.t), v.y + lerp(1.15, 0.55, Math.min(1, kc.t / 0.9)), v.z + v.fz * 0.35 * Math.min(1, kc.t));
-        camera.fov = 44;
+        const v = kc.v, a = kc.ang + kc.t * 0.22, d = kc.dist - kc.t * 0.35;
+        camera.position.set(v.x + Math.cos(a) * d, kc.y - kc.t * 0.2, v.z + Math.sin(a) * d);
+        camera.position.y = Math.max(camera.position.y, map.height(camera.position.x, camera.position.z) + 0.5);
+        camera.lookAt(v.x + v.fx * 0.4 * Math.min(1, kc.t), v.y + lerp(1.2, 0.6, Math.min(1, kc.t / 0.9)), v.z + v.fz * 0.4 * Math.min(1, kc.t));
+        camera.fov = 40;
         scopeAmt = 0;
       } else {
         camera.position.copy(play.pos);
@@ -270,7 +272,8 @@ export function makeView(ctx, THREE, renderer, W) {
       cost = Math.min(worst, worstPrev || worst);
       worstPrev = worst;
       worst = 0;
-      skipLeft = cost > 75 ? Math.min(240, Math.round((cost - 50) / 12)) : 0;
+      // A little slow: drop the odd frame. Very slow: draw rarely and keep the duel in real time.
+      skipLeft = cost < 75 ? 0 : cost < 150 ? Math.round((cost - 50) / 25) : Math.min(240, Math.round((cost - 50) / 5));
       // Shadows: every frame on a GPU. In software the map is static — drawn at the start and
       // again once the wall is down — and the snipers do not cast into it.
       const fallen = G.time() > map.fallWall.t + 1.6;

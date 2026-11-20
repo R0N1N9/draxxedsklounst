@@ -50,10 +50,10 @@ function broken(g, x, y, amt, br, unit, draw) {
   }
 }
 
-// Text that stays legible on anything: a soft dark footing, then the fill.
-function inked(g, text, x, y, fill, a, track) {
-  g.fillStyle = `rgba(4,4,10,${0.6 * a})`;
-  const o = Math.max(1, parseFloat(g.font) * 0.045 || 1);
+// Text that stays legible on anything: a soft footing of the opposite value, then the fill.
+function inked(g, text, x, y, fill, a, track, foot = '4,4,10') {
+  g.fillStyle = `rgba(${foot},${0.6 * a})`;
+  const o = Math.max(1, (parseFloat((/([\d.]+)px/.exec(g.font) || [])[1]) || 16) * 0.05);
   if (track) tracked(g, text, x + o, y + o, track, g.textAlign); else g.fillText(text, x + o, y + o);
   g.fillStyle = rgba(fill, a);
   if (track) tracked(g, text, x, y, track, g.textAlign); else g.fillText(text, x, y);
@@ -89,7 +89,7 @@ export function drawAct1(g, w, h, t, S) {
   }
 
   // Light from the far side gathers at the wound before the pane goes.
-  const pre = ease.inQuad(seg(t, T.crack1, T.shatter));
+  const pre = ease.inQuad(seg(t, T.crack1, T.shatter)) * (1 - seg(t, T.shatter, T.shatter + 0.25));
   if (pre > 0) {
     const r = u * (0.08 + 0.2 * pre);
     g.globalCompositeOperation = 'lighter';
@@ -113,7 +113,7 @@ export function drawAct1(g, w, h, t, S) {
     g.lineWidth = Math.max(1, u * 0.0022);
     g.lineCap = 'round';
     for (const pass of [0, 1]) {
-      g.strokeStyle = pass ? rgba('#ffffff', 0.95 * out) : `rgba(4,4,10,${0.55 * out})`;
+      g.strokeStyle = pass ? rgba(S.ink, 0.95 * out) : `rgba(${S.foot},${0.55 * out})`;
       const o = pass ? 0 : 1.5;
       g.beginPath();
       g.arc(fx + o, fy + o, u * 0.012, 0, TAU);
@@ -131,17 +131,17 @@ export function drawAct1(g, w, h, t, S) {
     const room = Math.max(60, (sx > 0 ? w - tx : tx) - u * 0.03);
     g.font = `600 ${s1}px ${MONO}`;
     const over = S.tagOver.slice(0, Math.ceil(S.tagOver.length * kt));
-    inked(g, over, tx, y1 - s2 * 0.62, '#ffffff', 0.8 * out, s1 * 0.18);
+    inked(g, over, tx, y1 - s2 * 0.62, S.ink, 0.8 * out, s1 * 0.18, S.foot);
     fitText(g, S.tagMain, room, s2, SANS);
     g.font = '700 ' + g.font;
-    inked(g, S.tagMain, tx, y1 + s2 * 0.08, S.shotCol, out * seg(t, T.impact + 0.42, T.impact + 0.6));
+    inked(g, S.tagMain, tx, y1 + s2 * 0.08, S.tagCol, out * seg(t, T.impact + 0.42, T.impact + 0.6), 0, S.foot);
     if (S.tagSub.length) {
       g.font = `600 ${Math.max(10, u * 0.017)}px ${MONO}`;
       let cx = tx;
       const parts = sx > 0 ? S.tagSub : S.tagSub.slice().reverse();
       const a3 = out * seg(t, T.impact + 0.55, T.impact + 0.8);
       for (const p of parts) {
-        inked(g, p.text, cx, y1 + s2 * 0.82, p.color, a3);
+        inked(g, p.text, cx, y1 + s2 * 0.82, p.color, a3, 0, S.foot);
         cx += sx * g.measureText(p.text).width;
       }
     }
@@ -153,23 +153,23 @@ export function drawAct1(g, w, h, t, S) {
     const m = Math.max(14, u * 0.035), left = fx > w * 0.5 || fy < h * 0.55; // keep clear of the tag
     const x = left ? m : w - m, y = h - m, val = S.integrity(t), low = val <= 12;
     const blink = low ? 0.55 + 0.45 * Math.sin(t * 34) : 1;
-    const col = low ? S.warnCol : '#ffffff';
+    const col = low ? S.warnInk : S.ink;
     g.textAlign = left ? 'left' : 'right';
     g.textBaseline = 'alphabetic';
     const sN = Math.max(26, u * 0.085), sL = Math.max(9, u * 0.0135);
     g.font = `700 ${sN}px ${SANS}`;
-    inked(g, `${val}%`, x, y, col, ki * blink);
+    inked(g, `${val}%`, x, y, col, ki * blink, 0, S.foot);
     // A segmented gauge, emptying.
     const n = 24, gw = Math.max(90, u * 0.2), sw = gw / n, gy = y - sN * 0.98;
     for (let i = 0; i < n; i++) {
       const on = i < Math.ceil((val / 100) * n);
-      g.fillStyle = on ? rgba(col, 0.92 * ki * blink) : `rgba(255,255,255,${0.22 * ki})`;
+      g.fillStyle = on ? rgba(col, 0.92 * ki * blink) : rgba(S.ink, 0.22 * ki);
       const bx = left ? x + i * sw : x - gw + i * sw;
       g.fillRect(bx, gy, Math.max(1, sw - 2), Math.max(2, u * 0.006));
     }
     fitText(g, S.integLabel, w * 0.6, sL, MONO);
     g.font = '600 ' + g.font;
-    inked(g, S.integLabel, x, gy - sL * 0.75, '#ffffff', 0.82 * ki, sL * 0.16);
+    inked(g, S.integLabel, x, gy - sL * 0.75, S.ink, 0.82 * ki, sL * 0.16, S.foot);
   }
 }
 
@@ -223,6 +223,31 @@ export function drawVoid(g, w, h, t, S) {
       inked(g, S.flag, w / 2, y + sS * 0.82, S.warnCol, a2 * (0.65 + 0.35 * Math.sin(t * 9)), sF * 0.4);
     }
   }
+
+  // The glint on the incoming pane: an anamorphic streak through the point where it catches the light.
+  const kg = seg(t, T.white0 - 0.22, T.white0 + 0.12);
+  if (kg > 0) {
+    const gx = S.glint.x * w, gy = S.glint.y * h, a = ease.outCubic(kg), len = w * (0.25 + 1.1 * a), th = Math.max(1.5, u * (0.003 + 0.012 * a));
+    g.globalCompositeOperation = 'lighter';
+    // Radial falloffs squashed into streaks: soft on every side, no edges.
+    const blob = (rx, ry, col, alpha) => {
+      g.save();
+      g.translate(gx, gy);
+      g.scale(rx / ry, 1);
+      const rg = g.createRadialGradient(0, 0, 0, 0, 0, ry);
+      rg.addColorStop(0, rgba(col, alpha));
+      rg.addColorStop(0.35, rgba(col, alpha * 0.35));
+      rg.addColorStop(1, rgba(col, 0));
+      g.fillStyle = rg;
+      g.fillRect(-ry, -ry, ry * 2, ry * 2);
+      g.restore();
+    };
+    blob(len, th * 1.6, '#ffffff', 0.95 * a);
+    blob(len * 0.55, th * 5, S.accentLight, 0.45 * a);
+    blob(u * 0.14 * a, u * 0.14 * a, '#ffffff', 0.7 * a);
+    blob(th * 1.4, u * 0.2 * a, '#ffffff', 0.5 * a);
+    g.globalCompositeOperation = 'source-over';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -239,8 +264,8 @@ export function drawTitle(g, w, h, t, S) {
   const bh = u * 0.3;
   const band = g.createLinearGradient(0, cy - bh / 2, 0, cy + bh / 2);
   band.addColorStop(0, 'rgba(4,4,10,0)');
-  band.addColorStop(0.28, `rgba(4,4,10,${0.62 * a})`);
-  band.addColorStop(0.72, `rgba(4,4,10,${0.62 * a})`);
+  band.addColorStop(0.28, `rgba(4,4,10,${0.7 * a})`);
+  band.addColorStop(0.72, `rgba(4,4,10,${0.7 * a})`);
   band.addColorStop(1, 'rgba(4,4,10,0)');
   g.fillStyle = band;
   g.fillRect(0, cy - bh / 2, w, bh);
@@ -252,6 +277,10 @@ export function drawTitle(g, w, h, t, S) {
   broken(g, w / 2, cy, mend, S.breakT, u, () => {
     g.font = `700 ${sName}px ${SANS}`;
     const o = Math.max(1.5, sName * 0.035);
+    g.lineJoin = 'round';
+    g.lineWidth = sName * 0.07;
+    g.strokeStyle = `rgba(4,4,10,${0.45 * a})`; // an edge, so the white holds on frosted glass too
+    g.strokeText(S.title, w / 2, cy);
     g.fillStyle = rgba(S.accentDark, 0.95 * a);
     g.fillText(S.title, w / 2 + o, cy + o);
     g.fillStyle = rgba('#ffffff', a);

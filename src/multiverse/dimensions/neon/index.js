@@ -20,12 +20,14 @@
 //           south alley as moving cover, watcher drones crowd the glass, and now and then
 //           somebody's cursor wanders in to inspect a pillar. All timed from ctx.time.
 // BOT       Believes only what a player could know (sight, lit tiles, flashes, lasers, the
-//           pulse). Picks a peek spot at a range set by its nerve, plants and focuses for
-//           the long shot, hip-fires up close, breaks sight to recharge, banks ricochets
-//           at campers, side-steps lasers, throws decoys. See bot.js.
+//           pulse). Opens from its own third, holding a lane; then picks a peek spot at a
+//           range set by its nerve, plants and focuses for the long shot, hip-fires up
+//           close, breaks sight to recharge, banks ricochets at campers, side-steps lasers,
+//           throws decoys. See bot.js.
 // KILL      The victim shatters into light and the glass cracks under them; a shockwave
-//           runs through the grid, the shadows lift, the decisive rail hangs in the air,
-//           the watchers' flashbulbs go off and the camera pushes in.
+//           runs through the grid, the shadows lift, every hologram bursts, the decisive
+//           rail hangs in the air, the watchers' flashbulbs go off and the camera pushes
+//           in on victim and shooter both.
 // SUDDEN    The cover dissolves, the shadows lift, and the walls close to a small box.
 import { clamp, damp, angDamp, lerp, ease, segCircle } from '../../kit.js';
 import { W, H, R, SPAWNS, MID, ROUND_TIME, PULSE_EVERY, BEAT, RAIL_SPEED, SPEED, CRAWL, RELOAD, BEAM_FADE, buildWorld, mkPath } from './world.js';
@@ -50,6 +52,7 @@ export default {
   id: 'neon',
   name: 'NEON LATTICE',
   tagline: 'Lights out. Line of sight is everything.',
+  hint: 'FOCUS steadies the rail, and every rail bounces once.',
   perspective: 'TOP-DOWN 2D',
   renderer: '2d',
   aim: 'pointer',
@@ -201,7 +204,7 @@ export default {
           spot.x = x;
           spot.y = y;
           solids.push(spot, R + 2);
-          if (Math.hypot(spot.x - x, spot.y - y) > BLINK_SLIP || !solids.free(spot.x, spot.y, R + 1)) continue;
+          if (Math.hypot(spot.x - x, spot.y - y) > BLINK_SLIP || Math.hypot(spot.x - p.x, spot.y - p.y) < 60 || !solids.free(spot.x, spot.y, R + 1)) continue;
           x = spot.x;
           y = spot.y;
         }
@@ -647,6 +650,7 @@ export default {
       debug: () => S,
 
       dispose() {
+        sound.stop(0.3); // ours alone: a round abandoned mid-duel must not leave the bed playing
         S.bullets.length = 0;
         S.decoys.length = 0;
         S.parts.clear();

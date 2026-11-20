@@ -2,7 +2,7 @@
 // the skyline beyond. Everything static is merged per material (see kitbash.js); the few
 // things that move (the bell, the wall that falls) are returned as handles.
 import { clamp, lerp, smoothstep, fbm, mulberry32 } from '../../kit.js';
-import { Batch, ruinWall, SUN } from './kitbash.js';
+import { Batch, ruinWall } from './kitbash.js';
 import { TERRACE_Y } from './map.js';
 
 const PLASTER = ['#a89a80', '#978a73', '#8a887f', '#a08a72', '#7f8885', '#a2946f', '#928c7c', '#9c8266'];
@@ -69,9 +69,9 @@ export function buildTown(THREE, map, tex, seed, fog, Q) {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aMix;\nvarying vec2 vMix;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMix = aMix;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vMix;')
         // Mud swallows the setts; standing water darkens them.
-        .replace('#include <color_fragment>', '#include <color_fragment>\nfloat stoneL = dot( diffuseColor.rgb, vec3( 0.333 ) );\ndiffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.2, 0.155, 0.11 ) * ( 0.5 + stoneL * 2.2 ), vMix.x );\ndiffuseColor.rgb *= mix( 1.0, 0.5, vMix.y );')
+        .replace('#include <color_fragment>', '#include <color_fragment>\nfloat stoneL = dot( diffuseColor.rgb, vec3( 0.333 ) );\ndiffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.2, 0.155, 0.11 ) * ( 0.8 + stoneL * 0.9 ), vMix.x );\ndiffuseColor.rgb *= mix( 1.0, 0.5, vMix.y );')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, 0.1, vMix.y );')
-        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize( mix( normal, nonPerturbedNormal, max( vMix.x * 0.65, vMix.y * 0.88 ) ) );');
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize( mix( normal, nonPerturbedNormal, max( vMix.x * 0.9, vMix.y * 0.88 ) ) );');
     });
     const ground = new THREE.Mesh(geo, mat);
     ground.receiveShadow = true;

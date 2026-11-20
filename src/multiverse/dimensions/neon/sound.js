@@ -89,6 +89,6 @@ export function makeSound(ctx) {
       A.tone({ type: 'triangle', freq: 1320, freqEnd: 165, dur: 0.9, gain: 0.12, pan: pan(x) });
     },
     music(kind) { A.music(kind === 'hot' ? HOT : COOL); },
-    stop() { A.stopMusic(0.9); },
+    stop(fade = 0.9) { A.stopMusic(fade); },
   };
 }

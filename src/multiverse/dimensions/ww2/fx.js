@@ -5,7 +5,6 @@
 // Two kinds of API: particles with a life of their own (smoke / spark / clod / flash /
 // scorch), and "immediate" sprites that the game re-submits every frame between begin()
 // and update() (glow / star / tracer / marker) — a glint or a bullet has no state here.
-import { SUN } from './kitbash.js';
 
 const SMOKE_VERT = `
 attribute vec3 iPos; attribute vec4 iParam; attribute vec3 iCol;
@@ -375,6 +374,5 @@ export function buildFx(THREE, tex, map, fogShared, fogColor, fogDensity, Q) {
       trU.uMin.value = 1.1 / scale;
     },
     dispose() { for (const d of disposables) d.dispose(); },
-    sunWorld: SUN,
   };
 }

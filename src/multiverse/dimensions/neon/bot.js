@@ -2,7 +2,8 @@
 // It believes only what a player could know: what it has a clear line to, the tiles a
 // runner lights, muzzle flashes, lasers, and the four-bar pulse. Reaction time, aim error
 // and hesitation all shrink with ctx.botSkill; its nerve (range it likes to fight at) is
-// rolled per round, and rises with the clock so that duels close.
+// rolled per round, and rises with the clock so that duels close. The opening is played
+// from its own third: nobody is rushed, or sniped, while the lights are still going out.
 import { clamp, lerp, angDiff, angDamp, gauss, dist } from '../../kit.js';
 import { W, R, MID, RAIL_SPEED } from './world.js';
 import { pointSeg } from './geom.js';
@@ -26,7 +27,7 @@ export function makeBot(ctx, world, S, self) {
   let seen = 0, err = 0, errT = 0, hes = Math.random() * 0.3, sighting = false, duel = true, lostT = 0;
   let strafe = Math.random() < 0.5 ? 1 : -1, strafeT = 0;
   let bankA = 0, bankT = 1.5 + Math.random() * 2;
-  let painted = 0, dodgeT = 0, dodgeX = 0, dodgeY = 0, laserT = 0;
+  let painted = 0, dodgeT = 0, dodgeX = 0, dodgeY = 0, laserT = 0, frozen = 0;
   let stuck = 0, wait = 0, holdFocus = false, patrolI = -1;
   let decoyT = 3 + Math.random() * 5, blinkT = 3 + Math.random() * 3;
   const patience = 3.5 + Math.random() * 2.5; // nobody duels at range before they have found their feet
@@ -119,13 +120,14 @@ export function makeBot(ctx, world, S, self) {
     const pts = world.patrol;
     if (!pts.length) return;
     const lim = reach() + 30;
-    let best = 0, bs = -Infinity;
+    let best = -1, bs = -Infinity;
     for (let i = 0; i < pts.length; i++) {
       if (i === patrolI || depthOf(pts[i].x) > lim) continue;
       const toward = self.i === 0 ? pts[i].x : W - pts[i].x;
       const s = toward * 0.4 * aggression() + Math.random() * 500 - dist(pts[i].x, pts[i].y, self.x, self.y) * 0.25;
       if (s > bs) { bs = s; best = i; }
     }
+    if (best < 0) return; // nothing within reach yet: hold
     patrolI = best;
     setGoal(pts[best].x, pts[best].y);
   }
@@ -147,7 +149,7 @@ export function makeBot(ctx, world, S, self) {
     if (!sighting) {
       // A fresh sighting: stand and duel, or duck back and come at them from another angle?
       sighting = true;
-      duel = ctx.time > patience && (ctx.time > 38 || Math.random() < 0.25 + 0.55 * aggression());
+      duel = ctx.time > patience && (ctx.time > 32 || Math.random() < 0.45 + 0.5 * aggression());
     }
     lostT = 0;
     seen += dt;
@@ -305,8 +307,15 @@ export function makeBot(ctx, world, S, self) {
 
       // ---- painted by a laser: get off the line ----
       painted = paint < 30 ? painted + dt : Math.max(0, painted - dt * 2);
-      if (painted > 0.1 + 0.5 * (1 - skill) && dodgeT <= 0 && !ctx.sudden) {
+      frozen -= dt;
+      let dodge = false;
+      if (painted > 0.1 + 0.5 * (1 - skill) && dodgeT <= 0 && frozen <= 0 && !ctx.sudden) {
         painted = 0;
+        // Not every sniper catches the glint in time: a long shot has to be worth lining up.
+        if (Math.random() < 0.3 + 0.55 * skill) dodge = true;
+        else frozen = 0.7 + Math.random() * 0.5;
+      }
+      if (dodge) {
         const dx = self.x - px, dy = self.y - py, d = Math.hypot(dx, dy) || 1;
         let side = Math.random() < 0.5 ? 1 : -1;
         if (!solids.free(self.x + (-dy / d) * side * 70, self.y + (dx / d) * side * 70, R)) side = -side;

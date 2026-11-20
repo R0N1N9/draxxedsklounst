@@ -8,8 +8,8 @@ import { lerp, clamp01, seg, ease, TAU, mixHex, shade, rgba, roundRect, luminanc
 
 export const INK = '#2a1b17';
 const CREAM = '#f5e6c8', TERRA = '#c8553d', MUSTARD = '#e0a63a', SAGE = '#93a87e', TEAL = '#2f6f77', NAVY = '#2b3a55';
-const PEACH = '#f2c79b', PINK = '#e39a86', BRICK = '#a8483a', WOOD = '#8c5e3f', OLIVE = '#6f8a4f', GRASS = '#8fae5d', NIGHT = '#1c2748';
-const SKINS = ['#f1c9a2', '#d9a273', '#a9714b', '#7a4d33', '#f6d7b8'];
+const PINK = '#e39a86', BRICK = '#a8483a', WOOD = '#8c5e3f', OLIVE = '#6f8a4f', GRASS = '#8fae5d', NIGHT = '#1c2748';
+const SKINS = ['#f1c9a2', '#d9a273', '#a9714b', '#7a4d33', '#eec4a0'];
 const HAIRS = ['#3a2a22', '#6b4226', '#b5793a', '#1f1a1c', '#8e8a86', '#c0432f'];
 
 /** Integer hash → [0, 1): cosmetic scatter that is identical on every machine. */
@@ -263,7 +263,7 @@ function cake(g, W, H, u, tt, m) {
   const clap = Math.sin(tt * 16) * 0.2;
   person(g, cx - U * 0.42, H * 0.98, U * 0.6, extraPerson(2, { col: TEAL, kid: 0.5, hat: 'party', hatCol: PINK, armL: 2.1 + (out ? clap : 0), armR: 2.1 - (out ? clap : 0), mouth: 'grin', noLegs: true }));
   person(g, cx + U * 0.42, H * 0.98, U * 0.64, extraPerson(4, { col: BRICK, kid: 0.5, hat: 'party', hatCol: TEAL, armL: 2.1 - (out ? clap : 0), armR: 2.1 + (out ? clap : 0), mouth: 'grin', noLegs: true }));
-  person(g, cx, H * 0.96, U * 0.66, hero(m, { kid: 0.6, hat: 'party', hatCol: m.cool ? TERRA : MUSTARD, armL: 0.5, armR: 0.5, mouth: blow > 0 && !out ? 'o' : 'grin', lean: blow * (1 - seg(u, 0.62, 0.7)) * 0.03, noLegs: true }));
+  person(g, cx, H * 0.94, U * 0.72, hero(m, { kid: 0.6, hat: 'party', hatCol: m.cool ? TERRA : MUSTARD, armL: 0.5, armR: 0.5, mouth: blow > 0 && !out ? 'o' : 'grin', lean: blow * (1 - seg(u, 0.62, 0.7)) * 0.03, noLegs: true }));
   // table and cake
   box(g, 0, H * 0.78, W, H * 0.22, CREAM);
   g.fillStyle = rgba(TERRA, 0.55);

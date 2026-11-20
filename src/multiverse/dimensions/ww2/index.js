@@ -26,6 +26,12 @@
 // SUDDEN DEATH both snipers are marked for good, a flare hangs over the fountain and the
 //   barrage closes on it from both ends; anyone outside the line gets a shell of their own,
 //   and at the very end the last shell finds whoever is further from the fountain.
+//
+// FILES  map.js (heightfield, colliders, cover posts, navigation, the timetable) ·
+//   build.js / props.js / kitbash.js / tex.js (the town) · atmos.js (sky, searchlights,
+//   bombers, ash) · fx.js (particles, tracers, markers) · post.js (HDR, bloom, light shafts,
+//   grade, grain) · soldier.js · bot.js · events.js (barrage, flares, bell, the falling
+//   wall) · view.js (cameras, HUD state) · overlay.js (2D HUD) · sfx.js.
 import { clamp, lerp, damp, gauss, disposeTree, hexToRgb } from '../../kit.js';
 import { buildMap, SPAWN, hit, FLARE_RADIUS } from './map.js';
 import { makeTextures } from './tex.js';
@@ -58,7 +64,7 @@ export default {
   controls: { fire: 'FIRE', alt: 'SCOPE', a1: 'SMOKE', a2: 'DECOY', jump: 'CROUCH' },
   altToggle: true,
   roundTime: 60,
-  overTime: 3,
+  overTime: 2.7,
   angleFields: ['yaw', 'pitch'],
 
   create(ctx) {
@@ -130,7 +136,7 @@ export default {
       };
     });
     const me = P[ctx.me];
-    let T = 0, suddenAt = -1, flinch = 0, killInfo = null, tollT = -1, dustT = 0, emitAcc = 0;
+    let T = 0, suddenAt = -1, flinch = 0, killInfo = null, tollT = -1, dustT = 0, emitAcc = 0, tick = 0;
     const E = new THREE.Vector3(), D = new THREE.Vector3(), A = new THREE.Vector3(), B = new THREE.Vector3();
     const sh = {}, hits = [], notes = { text: '', a: 0 };
     for (let i = 0; i < 4; i++) hits.push({ ang: 0, a: 0, near: false, x: 0, z: 0 });
@@ -157,7 +163,7 @@ export default {
         ctx.net.send({ k: 'k', v: p.i, d: [+(p.x - x).toFixed(2), 0.5, +(p.z - z).toFixed(2)], h: 0, e: 1 });
         ctx.kill(p.i, { how });
       },
-      blast(x, y, z, r, how) { for (const p of P) if (local(p) && p.alive && Math.hypot(p.x - x, p.z - z) < r && Math.abs(p.y - y) < 3.5) G.env(p, how, x, y, z); },
+      blast(x, y, z, r, how) { for (let n = 0; n < 2; n++) { const p = P[n ^ tick]; if (local(p) && p.alive && Math.hypot(p.x - x, p.z - z) < r && Math.abs(p.y - y) < 3.5) G.env(p, how, x, y, z); } },
       lastShell() {
         const d0 = Math.hypot(P[0].x, P[0].z), d1 = Math.hypot(P[1].x, P[1].z), far = d0 > d1 ? P[0] : P[1];
         if (local(far)) { fx.flash(far.x, far.y + 1, far.z, 1, 0.6, 0.3, 9, 0.25); sfx.shell(far.x, far.y, far.z); G.env(far, 'THE LAST SHELL', far.x + 0.5, far.y, far.z + 0.5); }
@@ -273,7 +279,8 @@ export default {
     }
 
     function stepBullets(dt) {
-      for (const b of bullets) {
+      for (let n = 0; n < bullets.length; n++) {
+        const b = bullets[tick ? bullets.length - 1 - n : n];
         if (!b.on) continue;
         let rem = dt;
         while (rem > 1e-5 && b.on) {
@@ -481,7 +488,7 @@ export default {
       const hy = v.y + headY(v.k) + 0.05;
       flyHelmet(v.i, v.x, hy, v.z, dx, 0, dz);
       sfx.ring(v.x, hy, v.z, ki && ki.env ? 2.2 : 3);
-      for (let i = 0; i < 5; i++) fx.smoke(v.x, hy - 0.3 * i, v.z, v.fx * 2 + (Math.random() - 0.5), 0.5, v.fz * 2 + (Math.random() - 0.5), 0.3, 0.9, 1.2, 0.4, 0.55, 0.52, 0.47, 0, 0.5, 1.6, 0.2);
+      for (let i = 0; i < 3; i++) fx.smoke(v.x, hy - 0.4 * i, v.z, v.fx * 2.5 + (Math.random() - 0.5), 0.5, v.fz * 2.5 + (Math.random() - 0.5), 0.2, 0.7, 0.9, 0.22, 0.55, 0.52, 0.47, 0, 0.5, 1.6, 0.2);
       flinch = Math.min(flinch, 0.2);
       tollT = 0.09; // the bell answers, once
       dustT = 1.2;
@@ -494,7 +501,9 @@ export default {
         T = phase === 'over' ? T + dt : ctx.time;
         if (ctx.sudden && suddenAt < 0) { suddenAt = T; note('THE BARRAGE IS CLOSING ON THE FOUNTAIN', 4); }
         fx.begin();
-        for (const p of P) {
+        tick ^= 1; // neither sniper always moves first
+        for (let n = 0; n < 2; n++) {
+          const p = P[n ^ tick];
           if (p.remote) puppet(p, dt);
           else step(p, !p.bot ? humanCmd(p) : p.alive ? brain.think(p, P[1 - p.i], dt, p.cmd) : p.cmd, dt);
           if (p.dead >= 0) p.dead += dt;
@@ -635,8 +644,7 @@ export default {
         tex.dispose();
       },
     };
-    inst.view = view; // for the test scripts: view.shot = { x, y, z, tx, ty, tz, fov }
-    inst.dbg = { scene, post, sun, town, fx, atmos, P, map, tex };
+    inst.view = view; // test scripts only: view.shot = { x, y, z, tx, ty, tz, fov } pins the camera, view.force = n draws n frames now
     post.resize();
     return inst;
   },
