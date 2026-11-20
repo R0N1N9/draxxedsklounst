@@ -53,8 +53,8 @@ import { applyLook } from '../look.js';
 import { Chat } from './chat.js';
 
 export const MISSIONS = {
-  nightwatch: { name: 'NIGHTWATCH', title: 'SNIPER CELL: NIGHTWATCH', line: 'Kestrel Ridge \u00B7 0217 hrs \u00B7 SENTINEL\u2019s augmented garrison is on the night shift.' },
-  infiltration: { name: 'INFILTRATION', title: 'SNIPER CELL: INFILTRATION', line: 'Kestrel Ridge \u00B7 0140 hrs \u00B7 a skeleton crew of security guards.' },
+  nightwatch: { name: 'SENTINEL', title: 'NIGHTWATCH: SENTINEL', line: 'Kestrel Ridge \u00B7 0217 hrs \u00B7 SENTINEL\u2019s augmented garrison is on the night shift.' },
+  infiltration: { name: 'INFILTRATION', title: 'NIGHTWATCH: INFILTRATION', line: 'Kestrel Ridge \u00B7 0140 hrs \u00B7 a skeleton crew of security guards.' },
 };
 
 export const ROLES = {
@@ -914,7 +914,7 @@ export class CellGame {
   }
   // Title with the colour split: SNIPER (white) CELL (red) : MISSION (cyan).
   get titleHTML() {
-    return `<span class="t-w">SNIPER</span> <span class="t-r">CELL</span><span class="t-w">:</span> <span class="t-c">${MISSIONS[this.mission].name}</span>`;
+    return `<span class="t-w">NIGHT</span><span class="t-r">WATCH</span><span class="t-w">:</span> <span class="t-c">${MISSIONS[this.mission].name}</span>`;
   }
   get missionLine() {
     return MISSIONS[this.mission].line;

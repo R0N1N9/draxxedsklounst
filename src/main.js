@@ -131,9 +131,10 @@ function polloOn() {
 }
 function updateTitle() {
   const on = polloOn();
-  $('title').innerHTML = on ? 'DRAXXED<br />SKLOUNST<span class="reckon">: THE RECKONING</span>' : 'DRAXXED<br />SKLOUNST';
+  // The game is Sniper Cell; in the Pollo Hermano suit the menu wears its old name.
+  $('title').innerHTML = on ? 'DRAXXED<br />SKLOUNST' : 'SNIPER<br />CELL';
   $('tagline').textContent = on ? 'One pollo. Two hermanos. Eight hundred sauce packets.' : 'One valley. Two rifles. Eight hundred metres.';
-  document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Draxxed Sklounst';
+  document.title = on ? 'Draxxed Sklounst' : 'Sniper Cell';
   document.body.classList.toggle('reckoning', on);
   $('in-name').placeholder = on ? 'Pollo' : 'Ghost';
 }
@@ -538,10 +539,10 @@ function inviteLink() {
 
 $('btn-share').onclick = async () => {
   const link = inviteLink();
-  if (FILE_MODE && !navigator.share) return copy(`Join my Draxxed Sklounst match — code ${hostCode}`);
+  if (FILE_MODE && !navigator.share) return copy(`Join my Sniper Cell match — code ${hostCode}`);
   if (navigator.share) {
-    const text = `Join my Draxxed Sklounst match — code ${hostCode}`;
-    try { await navigator.share(FILE_MODE ? { title: 'Draxxed Sklounst', text } : { title: 'Draxxed Sklounst', text, url: link }); return; } catch {}
+    const text = `Join my Sniper Cell match — code ${hostCode}`;
+    try { await navigator.share(FILE_MODE ? { title: 'Sniper Cell', text } : { title: 'Sniper Cell', text, url: link }); return; } catch {}
   }
   copy(link);
 };
@@ -603,7 +604,7 @@ $('btn-join').onclick = async () => {
   }
 };
 
-// ---- Sniper Cell (co-op stealth) ----
+// ---- NightWatch (co-op stealth; code in src/cell/) ----
 // iOS lets speech start only from a tap: say nothing once on the way in.
 function primeTalk() { try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch {} }
 const CELL_CALL = { shooter: 'Ra', spotter: 'R\u014dnin' };
@@ -632,7 +633,7 @@ $('panel-staging').addEventListener('click', (e) => {
   renderStaging();
 });
 const cellSet = { role: store.get('cellRole', 'shooter'), diff: store.get('cellDiff', 'operative'), names: store.get('cellNames', {}), mission: store.get('cellMission', 'nightwatch') };
-const MISSION_DESC = { nightwatch: 'NightWatch: SENTINEL\u2019s augmented night garrison \u2014 cowardly officers, shielded juggernauts with energy blades, bulwarks behind hard-light walls, beam-rifle snipers on the towers.', infiltration: 'Infiltration: the original op against a crew of human security guards.' };
+const MISSION_DESC = { nightwatch: 'Sentinel: SENTINEL\u2019s augmented night garrison \u2014 cowardly officers, shielded juggernauts with energy blades, bulwarks behind hard-light walls, beam-rifle snipers on the towers.', infiltration: 'Infiltration: the original op against a crew of human security guards.' };
 const cellName = (role) => ((cellSet.names[role] || '').trim() || CELL_CALL[role]).replace(/[<>&"]/g, '').slice(0, 16);
 function syncCell() {
   document.querySelectorAll('#panel-cell .cell-role').forEach((b) => b.classList.toggle('on', b.dataset.role === cellSet.role));
@@ -709,8 +710,8 @@ $('btn-cell-host').onclick = async () => {
 };
 $('btn-cell-share').onclick = async () => {
   const link = inviteLink();
-  const text = `Join my Sniper Cell op in Draxxed Sklounst \u2014 code ${hostCode}`;
-  if (navigator.share) { try { await navigator.share(FILE_MODE ? { title: 'Sniper Cell', text } : { title: 'Sniper Cell', text, url: link }); return; } catch {} }
+  const text = `Join my NightWatch op in Sniper Cell \u2014 code ${hostCode}`;
+  if (navigator.share) { try { await navigator.share(FILE_MODE ? { title: 'NightWatch', text } : { title: 'NightWatch', text, url: link }); return; } catch {} }
   (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? text : link) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied to clipboard!'), () => prompt('Copy this link:', link));
 };
 $('btn-cell-copy').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? hostCode : inviteLink()) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied!'), () => prompt('Copy:', FILE_MODE ? hostCode : inviteLink()));

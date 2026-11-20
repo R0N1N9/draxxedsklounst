@@ -1,10 +1,10 @@
-<p align="center"><img src="icon.svg" width="120" alt="Draxxed Sklounst logo"></p>
+<p align="center"><img src="icon.svg" width="120" alt="Sniper Cell logo"></p>
 
-<h1 align="center">Draxxed Sklounst</h1>
+<h1 align="center">Sniper Cell</h1>
 
 <p align="center"><em>One valley. Two rifles. Eight hundred metres.</em></p>
 
-A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tablets. No install, no server: one player hosts, the other opens the invite link, and the two connect peer-to-peer over WebRTC.
+A 1v1 long-range sniper duel, plus **NightWatch**, a co-op night stealth mode, that runs in the browser on desktop, phones and tablets. (Formerly *Draxxed Sklounst*; the old name still turns up as an easter egg.) No install, no server: one player hosts, the other opens the invite link, and the two connect peer-to-peer over WebRTC.
 
 ![The practice range: looking out over the valley from the ridge with the Mk22 MRAD](docs/screenshots/practice-range.png)
 
@@ -38,7 +38,7 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 - Both players start on opposite ridgelines, about 800 m apart. Spawns are random among three points per ridge, and sides swap every round.
 - You get one life per round. First to 4 rounds wins.
 - **Predator UAV**: a drone circles high over the valley. Every 60 s of live play it pings both players in red on each other's HUD. For 8 s afterwards you can press **U** to tune into its live thermal feed of the enemy. A UAV jammer blocks the ping and the feed.
-- **Pollo Hermano** (easter egg): pick the Thermal poncho, then the *Pollo Hermano* poncho skin. You wear a yellow chicken suit and your rifle flings yellow chickens instead of bullets: held by the beak, pulled back by the feet, slingshot style. They fly exactly like the rifle's bullets under the current sniping style and do the same damage on a direct hit. A chicken that lands gets up and runs at the enemy (5 m/s) and pecks them (4 damage every 0.6 s) until it's shot: the pistol is ideal. Fling yours at the ground near enemy chickens and they brawl. Up to 8 live chickens each; they wander off after 45 s. The AI shoots chickens near it with its pistol. With the suit selected, the main menu becomes *Draxxed Sklounst: The Reckoning*. Pecked to death? You don't just die: a kraken bursts out of the ground and swallows the town, then a vast AI overlord reaches down from the sky and flicks you off the map: "The AI Overlords have deemed this one unworthy." (Both players watch it instead of the killcam.) In flight a chicken glows and trails yellow like a tracer.
+- **Pollo Hermano** (easter egg): pick the Thermal poncho, then the *Pollo Hermano* poncho skin. You wear a yellow chicken suit and your rifle flings yellow chickens instead of bullets: held by the beak, pulled back by the feet, slingshot style. They fly exactly like the rifle's bullets under the current sniping style and do the same damage on a direct hit. A chicken that lands gets up and runs at the enemy (5 m/s) and pecks them (4 damage every 0.6 s) until it's shot: the pistol is ideal. Fling yours at the ground near enemy chickens and they brawl. Up to 8 live chickens each; they wander off after 45 s. The AI shoots chickens near it with its pistol. With the suit selected, the main menu takes the game's old name, *Draxxed Sklounst*. Pecked to death? You don't just die: a kraken bursts out of the ground and swallows the town, then a vast AI overlord reaches down from the sky and flicks you off the map: "The AI Overlords have deemed this one unworthy." (Both players watch it instead of the killcam.) In flight a chicken glows and trails yellow like a tracer.
 - **Sniping style** (main menu, host's choice applies to both players). Two bars: the shooting style (bullet physics) and, underneath, the shooting distance:
   - **Halo** (the default): instant hit, no drop, wind or sway, 5×/10×/20× zoom. Plays at Close range.
   - **Call of Duty**: fast bullets, light drop, no wind, slightly bigger hitboxes. Plays at Medium range.
@@ -51,7 +51,7 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
   - **Inked** (the default): comic-book ink lines around everything (silhouettes and folds, found in the depth buffer and fading with distance) and three-tone cel shading on props, figures and your rifle, with fuller color. Grass is left uninked so the slopes don't turn to noise.
   - **OG**: the original look, with soft shading, a light silhouette-only outline and a slightly desaturated filmic grade.
   - On Low quality there's no post-processing, so Inked gets the cel shading but no ink lines.
-  - Sniper Cell (NightWatch and Infiltration) follows the same setting, with the same choice on its own menu (Inked / OG graphics). The host's choice goes to the partner with the mission.
+  - NightWatch (Sentinel and Infiltration missions) follows the same setting, with the same choice on its own menu (Inked / OG graphics). The host's choice goes to the partner with the mission.
 - **Bolt cycling** (standard Mk22 bolt): after a scoped shot, lifting your finger off fire drops you out of the scope so the bolt is worked, then you go straight back in if you're still holding (or have toggled) scope. Keep fire held to stay on target and watch the shot; turn this off in Settings to unscope by hand.
 - **Bipod** (Battlefield-style): go prone and hold still for half a second and it sets itself (turn that off in Settings to set it only by hand), or press **X** (BIPOD on touch). Your support hand reaches forward and flicks the legs down, then the rifle settles. You can't fire while your hand is off the rifle. Once set, the scope is dead still and recoil is reduced. Moving, standing, switching or pressing X again folds the legs; folding with X keeps it up until you move or get up.
 - **Supply drone** (V, then a 90 s cooldown): a cargo hexacopter flies in from behind your ridge and drops a parachute crate where you aim (within 60 m) or at your feet. Walk onto it to refill both weapons. Both players see and hear it, and the AI uses it to find you.
@@ -112,15 +112,15 @@ Click the game view with the mouse and it switches to mouse mode: the mouse aims
 | Pause menu | Esc | II |
 | Sandbox tools | B | TOOLS |
 
-## Sniper Cell
+## NightWatch (co-op)
 
-A night stealth mode for one or two players, built around the feel of a classic night sniping level: a dark valley, a lit compound below, a suppressed rifle with a night-vision scope and a white vapour trail on every shot. Its rules are adapted from **Cold Archive**'s co-op infiltration (agent + Overwatch, SENTINEL's alarm, bandwidth-based payloads). The players use the Draxxed Sklounst operator models in Multicam Black. The shooter wears a chest rig and a dark urban-digital poncho; the spotter wears a plate carrier and a cap.
+A night stealth mode for one or two players, built around the feel of a classic night sniping level: a dark valley, a lit compound below, a suppressed rifle with a night-vision scope and a white vapour trail on every shot. Its rules are adapted from **Cold Archive**'s co-op infiltration (agent + Overwatch, SENTINEL's alarm, bandwidth-based payloads). The players use the duel's operator models in Multicam Black. The shooter wears a chest rig and a dark urban-digital poncho; the spotter wears a plate carrier and a cap.
 
-Pick **SNIPER CELL** on the main menu, then a mission, the **staging area** loadout, and how to play.
+Pick **NIGHTWATCH** on the main menu, then a mission, the **staging area** loadout, and how to play.
 
 ### Missions
 
-- **NightWatch** (default): SENTINEL's augmented night garrison.
+- **Sentinel** (default): SENTINEL's augmented night garrison.
   - **Officers:** cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
   - **Juggernauts:** a recharging energy shell. When it breaks, they berserk with an energy blade.
   - **Bulwarks:** behind a hard-light wall. Snipe through its sight-port, or catch them when they lower it to fire. Tower bulwarks carry beam rifles and you see a red laser before they fire.
@@ -354,7 +354,7 @@ The first time one sniper shoots the other, the game is "hijacked": a cheerful d
 
 ## Single-file version
 
-`dist/draxxed-sklounst.html` is the whole game in one file. Double-click it to play, or send it to a friend; it needs an internet connection only to find the other player. Since a file has no web address, the host shares the 5-letter code rather than a link. Rebuild it after code changes with `npm install && npm run build:single`.
+`dist/sniper-cell.html` is the whole game in one file. Double-click it to play, or send it to a friend; it needs an internet connection only to find the other player. Since a file has no web address, the host shares the 5-letter code rather than a link. Rebuild it after code changes with `npm install && npm run build:single`.
 
 ## Hosting
 
@@ -396,4 +396,4 @@ Resolution also scales dynamically to hold the frame rate. You can override the 
 | `src/briefmap.js` | Topographic briefing map drawn from the real terrain |
 | `src/net.js` | PeerJS / BroadcastChannel transport |
 | `src/config.js` | Gameplay tuning |
-| `src/cell/` | Sniper Cell: NightWatch / Infiltration (co-op stealth mode) |
+| `src/cell/` | NightWatch: Sentinel / Infiltration missions (co-op stealth mode) |
