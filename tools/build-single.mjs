@@ -1,6 +1,6 @@
 // Builds dist/draxxed-sklounst.html: the whole game in one file that runs when opened directly (file://).
 import { build } from 'esbuild';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,6 +19,13 @@ const result = await build({
     name: 'three-addons',
     setup(b) {
       b.onResolve({ filter: /^three\/addons\// }, (a) => ({ path: r('vendor/addons/' + a.path.slice('three/addons/'.length)) }));
+      // The registry lists worlds and transitions that are not built yet (wip): bundle a
+      // stub for those, so loading one fails cleanly instead of breaking the build.
+      b.onResolve({ filter: /^\.\/(dimensions|transitions)\// }, (a) => {
+        const file = resolve(a.resolveDir, a.path);
+        return existsSync(file) ? null : { path: file, namespace: 'missing-module' };
+      });
+      b.onLoad({ filter: /.*/, namespace: 'missing-module' }, () => ({ contents: 'export default null;', loader: 'js' }));
     },
   }],
   logLevel: 'warning',
