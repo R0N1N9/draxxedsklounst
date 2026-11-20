@@ -32,10 +32,14 @@ export function makeFigureKit(THREE, mats) {
     texs.push(t);
     return t;
   };
-  const quad = new THREE.PlaneGeometry(1, FIG_H).translate(0, FIG_H / 2, 0);
+  // the printed card: front and back sheets in ONE mesh (the back is the front seen from behind, never mirrored)
+  const cardGeo = new THREE.BufferGeometry();
+  cardGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-0.5, 0, HOLD, 0.5, 0, HOLD, -0.5, FIG_H, HOLD, 0.5, FIG_H, HOLD, 0.5, 0, -HOLD, -0.5, 0, -HOLD, 0.5, FIG_H, -HOLD, -0.5, FIG_H, -HOLD]), 3));
+  cardGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0, 1, 1, 1]), 2));
+  cardGeo.setIndex([0, 1, 2, 2, 1, 3, 4, 5, 6, 6, 5, 7]);
   const slabGeo = new THREE.BoxGeometry(0.34, 1.94, 0.05).translate(0, 0.97, 0);
   const shadowGeo = new THREE.CircleGeometry(0.6, 20).rotateX(-Math.PI / 2);
-  geos.push(quad, slabGeo, shadowGeo);
+  geos.push(cardGeo, slabGeo, shadowGeo);
   const cardMat = (tex) => {
     const m = new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide }); // double-sided so every card, sign and cloud shares one shader program
     matl.push(m);
@@ -48,7 +52,7 @@ export function makeFigureKit(THREE, mats) {
   const mLive = tex.live.map(cardMat), mStand = tex.standee.map(cardMat);
   const coreMats = ID.map((c) => { const m = new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide }); matl.push(m); return m; });
   const standCore = new THREE.MeshBasicMaterial({ color: '#b98a55', side: THREE.DoubleSide });
-  const shadowMat = new THREE.MeshBasicMaterial({ color: GROUND_SHADE, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const shadowMat = new THREE.MeshBasicMaterial({ color: GROUND_SHADE, side: THREE.DoubleSide });
   matl.push(standCore, shadowMat);
 
   // crumpled paper ball, shared by every figure that dies (one geometry, one set of edge lines per ball)
@@ -70,13 +74,9 @@ export function makeFigureKit(THREE, mats) {
     const pivot = new THREE.Group(), tilt = new THREE.Group();
     root.add(pivot);
     pivot.add(tilt);
-    const front = new THREE.Mesh(quad, kind === 'standee' ? mStand[i] : mLive[i]);
-    front.position.z = HOLD;
-    const back = new THREE.Mesh(quad, front.material);
-    back.rotation.y = Math.PI;
-    back.position.z = -HOLD;
+    const card = new THREE.Mesh(cardGeo, kind === 'standee' ? mStand[i] : mLive[i]);
     const core = new THREE.Mesh(slabGeo, kind === 'standee' ? standCore : coreMats[i]);
-    tilt.add(core, front, back);
+    tilt.add(core, card);
     // ruled edge of the core: visible as a thin black line from the side, hidden behind the card from the front
     const ls = new LineSet(THREE, 12, mats.fig);
     const hw = 0.17, h = 1.94, d = 0.025;

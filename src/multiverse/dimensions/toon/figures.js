@@ -91,9 +91,9 @@ function head(g, p, E, mood, look, hat) {
     g.stroke();
   }
   blob(g, -15, -80, 5, 7, p.i + 90, FACE_COL, 2.8, 0.5, 8); // ear
-  blob(g, 0, -80, 23, 24.5, p.i + 5, scorch ? C.g5 : FACE_COL, 3.6, 1.1, 14);
+  blob(g, 0, -80, 23, 24.5, p.i + 5, scorch ? C.g4 : FACE_COL, 3.6, 1.1, 14);
   if (scorch) {
-    g.fillStyle = C.ink; g.globalAlpha = 0.55;
+    g.fillStyle = C.ink; g.globalAlpha = 0.4;
     blobPath(g, 2, -78, 20, 21, 7, 1.4, 12); g.fill();
     g.globalAlpha = 1;
   } else { // a soft cheek of shadow on the back of the head
@@ -227,7 +227,7 @@ export function drawSniper(g, p, E, mood) {
   blob(g, 0, 0, 17.5, 19, p.i + 31, p.col, 3.6, 0.9, 12);
   g.fillStyle = 'rgba(247,240,222,0.55)';
   g.beginPath(); g.ellipse(-6, -6, 5, 9, 0.25, 0, 6.283); g.fill(); // a shine on the vest
-  if (mood === 'scorch') { g.fillStyle = 'rgba(27,22,18,0.62)'; blobPath(g, 0, 0, 16, 18, p.i + 31, 0.9, 12); g.fill(); }
+  if (mood === 'scorch') { g.fillStyle = 'rgba(27,22,18,0.45)'; blobPath(g, 0, 0, 16, 18, p.i + 31, 0.9, 12); g.fill(); }
   g.fillStyle = FACE_COL; // shirt front and collar
   poly(g, [-5, -17, 7, -17, 1, -5], p.i + 33, mood === 'scorch' ? C.g4 : FACE_COL, 2.4, 0.4, C.ink, 0.3);
   g.fillStyle = C.ink;

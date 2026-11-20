@@ -3,10 +3,11 @@
 // tablet), plus the crane move that opens a round and the push-in that ends one. It also
 // owns the mapping between the screen and the floor, which is how a mouse aims here.
 import { clamp, lerp, damp, noise2, ease } from '../../kit.js';
-import { RUG_A, RUG_B, SPAWN } from './world.js';
+import { RUG_A, RUG_B } from './world.js';
 import { drawOverlay } from './overlay.js';
 
-const HEAD = 2.3; // room above the rug's far edge for whoever stands there
+const HEAD = 2.7; // room above the rug's far edge for whoever stands there
+const FOOT = 1.1; // half a soldier's width, base and rifle
 
 export function makeView(ctx, THREE, renderer, o) {
   const { room, post, P, W, Q, S } = o;
@@ -23,23 +24,39 @@ export function makeView(ctx, THREE, renderer, o) {
   function fit() {
     const w = ctx.width, h = ctx.height, sf = ctx.safe, phone = h < 480;
     const top = phone ? 30 + sf.top : 56, bottom = phone ? 6 : 14, aw = w - (phone ? 8 : 24), ah = h - top - bottom;
-    let s = aw / (2 * RUG_A * 1.02);
+    let s = Math.max(1, aw / (2 * RUG_A * 1.02)); // (a canvas with no size yet must not make a lens with none)
     const sin = clamp((ah / s - HEAD * 0.7) / (2 * RUG_B), 0.6, 0.8), phi = Math.asin(sin), cos = Math.cos(phi);
-    s = Math.min(s, ah / (2 * RUG_B * sin + HEAD * cos));
-    let cy = 0;
-    for (let i = 0; i < 12; i++) {
-      const used = (2 * RUG_B * sin + HEAD * cos) * s;
-      cy = top + HEAD * cos * s + RUG_B * sin * s + (ah - used) * 0.5;
-      if (!sf.bottom) break;
-      // Both spawns must stand clear of the thumbs: lift the picture, and if that is not enough, shrink it.
-      const by = cy + SPAWN[0].z * sin * s + 6, line = h - sf.bottom - 4;
-      const clearX = w / 2 + SPAWN[0].x * s > sf.left + 14 && w / 2 + SPAWN[1].x * s < w - sf.right - 14;
-      if (by <= line || clearX) break;
-      const lift = by - line, room2 = cy - RUG_B * sin * s - HEAD * cos * s - (phone ? 18 : 40);
-      if (lift <= room2) { cy -= lift; break; }
-      s *= 0.96;
-    }
+    s = Math.max(1, Math.min(s, ah / (2 * RUG_B * sin + HEAD * cos)));
+    const cy = top + HEAD * cos * s + RUG_B * sin * s + (ah - (2 * RUG_B * sin + HEAD * cos) * s) * 0.5;
     fitted.s = s; fitted.phi = phi; fitted.cx = w / 2; fitted.cy = cy;
+  }
+
+  // Thumbs: on a touch screen no soldier may stand under a cluster of buttons. When one walks
+  // into a lower corner, the picture slides up to bring them clear; if the other soldier is too
+  // close to the top for that, it also draws back a little. (Aiming on touch is a direction,
+  // not a spot on the screen, so a moving picture costs the player nothing.)
+  let lift = 0, zoom = 1;
+  const tmp = { x: 0, y: 0 };
+  function thumbs(dt) {
+    const sf = ctx.safe, w = ctx.width, h = ctx.height;
+    if (ctx.phase === 'over') return; // (the kill's camera move starts from wherever the picture was)
+    let wantLift = 0, wantZoom = 1;
+    if (sf.bottom > 0) {
+      const s = L.s, A = h < 480 ? 26 + sf.top : 50, line = h - sf.bottom - 6 - 1.2 * s * L.sp; // (the moulded base and its ring stand in front of the feet)
+      let need = 0, feet = 0, head = 1e9;
+      for (const p of P) {
+        if (!p.alive) continue;
+        // where they would be on the unmoved picture (last frame's lens, with this slide and zoom undone)
+        const f = toScreen(p.x, 0, p.z, tmp), x = w / 2 + (f.x - w / 2) / zoom, fy = (f.y + lift - A) / zoom + A;
+        head = Math.min(head, (toScreen(p.x, 2.9, p.z, tmp).y + lift - A) / zoom + A);
+        if ((x - FOOT * s < sf.left || x + FOOT * s > w - sf.right) && fy - line > need) { need = fy - line; feet = fy; }
+      }
+      if (need > 0) {
+        if (need <= head - A) wantLift = need;
+        else { wantZoom = clamp((line - A) / Math.max(1, feet - head), 0.62, 1); wantLift = Math.max(0, wantZoom * (head - A)); }
+      }
+    }
+    lift = damp(lift, wantLift, 5, dt); zoom = damp(zoom, wantZoom, 4, dt);
   }
 
   function toScreen(x, y, z, out) {
@@ -89,7 +106,9 @@ export function makeView(ctx, THREE, renderer, o) {
       punch = Math.max(0, punch - dt * (slow ? 2.4 : 1.2));
       flashA = Math.max(0, flashA - dt * (slow ? 14 : 6));
       // Play: the lens barely moves — it leans a little with you, so tall things show their sides.
-      let psi = -0.05 * clamp(me.x / RUG_A, -1, 1) + 0.012 * Math.sin(wt * 0.31), phi = fitted.phi + 0.006 * Math.sin(wt * 0.23), s = fitted.s, tx = 0, tz = 0, cx = fitted.cx, cy = fitted.cy;
+      thumbs(dt);
+      const anchor = ctx.height < 480 ? 26 + ctx.safe.top : 50;
+      let psi = -0.05 * clamp(me.x / RUG_A, -1, 1) + 0.012 * Math.sin(wt * 0.31), phi = fitted.phi + 0.006 * Math.sin(wt * 0.23), s = fitted.s * zoom, tx = 0, tz = 0, cx = fitted.cx, cy = anchor + zoom * (fitted.cy - anchor) - lift;
       if (phase === 'intro') {
         // The arrival: a slow crane round and down onto the rug.
         if (introT >= 0) introT += dt;

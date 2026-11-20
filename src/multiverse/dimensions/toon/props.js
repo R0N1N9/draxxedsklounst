@@ -1,7 +1,7 @@
 // The set dressing that moves: ladders, springboards, the seesaw rock with its crate tower, the handcar, the
 // train, anvils, tumbleweeds, the vulture, portable holes, corks, the sun, clouds and the dancing cacti.
 import { clamp } from '../../kit.js';
-import { C, blob, blobPath, poly, hose, jit, letters } from './ink.js';
+import { C, blob, blobPath, blobAdd, poly, hose, jit, letters } from './ink.js';
 import { GY, FLOOR, PIV, PLANK, CRATE, CAR_Y, CAR_W, ladderTop } from './world.js';
 import { drawHat } from './figures.js';
 
@@ -230,12 +230,18 @@ export function drawAnvil(g, x, y, k, fall, T) {
   g.restore();
 }
 
-export function drawWeed(g, x, y, rot, r, T) {
+export function drawWeed(g, x, y, rot, r, T, hz = 1, dir = 1) {
   g.save();
   g.translate(x, y);
+  g.scale(hz, hz);
+  // speed lines and a scuff of dust trailing behind it
+  g.strokeStyle = C.ink; g.lineCap = 'round'; g.lineWidth = 3;
+  g.beginPath();
+  for (let k = -1; k <= 1; k++) { const o = (T * 7 + k) % 1 * 10; g.moveTo(-dir * (r + 10 + o), k * 13 + 4); g.lineTo(-dir * (r + 34 + o + (k ? 0 : 14)), k * 13 + 4); }
+  g.stroke();
   g.rotate(rot);
-  blob(g, 0, 0, r, r, 9, 'rgba(231,220,196,0.92)', 0, 1.6, 12);
-  g.strokeStyle = C.ink; g.lineWidth = 2; g.lineCap = 'round';
+  blob(g, 0, 0, r, r, 9, C.g2, 0, 1.6, 12);
+  g.strokeStyle = C.ink; g.lineWidth = 2.6;
   for (let k = 0; k < 7; k++) {
     g.save(); g.rotate(k * 0.9);
     g.beginPath();
@@ -243,16 +249,16 @@ export function drawWeed(g, x, y, rot, r, T) {
     g.stroke();
     g.restore();
   }
-  g.lineWidth = 3.2;
+  g.lineWidth = 4.4;
   blobPath(g, 0, 0, r, r, 12, 1.8, 12); g.stroke();
   g.restore();
 }
 
 /** The vulture: gangly, bald, scruffy ruff and big hooked beak. dir = +1 faces right. */
-export function drawVulture(g, x, y, dir, T, hat, hatStyle, hatCol, flap = 1) {
+export function drawVulture(g, x, y, dir, T, hat, hatStyle, hatCol, flap = 1, hz = 1) {
   g.save();
   g.translate(x, y);
-  g.scale(dir * 1.55, 1.55);
+  g.scale(dir * 1.55 * hz, 1.55 * hz);
   const f = Math.sin(T * 12) * flap;
   g.lineCap = 'round'; g.lineJoin = 'round';
   // tail
@@ -335,14 +341,19 @@ export function drawSun(g, x, y, T, E) {
   g.translate(x, y);
   for (let k = 1; k <= 2; k++) { g.strokeStyle = `rgba(27,22,18,${0.16 / k})`; g.lineWidth = 3; blobPath(g, 0, 0, r + 22 * k + E.pulse * 3, r + 22 * k + E.pulse * 3, 600 + k, 1.4, 16); g.stroke(); }
   // rays
-  g.save(); g.rotate(T * 0.12);
+  // the rays: one path of fourteen bowed spikes
+  g.beginPath();
   for (let i = 0; i < 14; i++) {
-    const a = (i / 14) * 6.283, l = (i & 1 ? 26 : 40) + Math.sin(T * 5 + i) * 4 + E.pulse * 6;
-    g.save(); g.rotate(a);
-    poly(g, [r - 2, -8, r + l, 0, r - 2, 8], 620 + i, PAPER, 3, 0.8, C.ink, 0.4);
-    g.restore();
+    const a = (i / 14) * 6.283 + T * 0.12, l = (i & 1 ? 26 : 40) + Math.sin(T * 5 + i) * 4 + E.pulse * 6;
+    const ca = Math.cos(a), sa = Math.sin(a), j = (k) => jit(620 + i * 7 + k, 0.8);
+    const bx = ca * (r - 2), by = sa * (r - 2), tx = ca * (r + l) + j(1), ty = sa * (r + l) + j(2);
+    g.moveTo(bx - sa * 8, by + ca * 8);
+    g.quadraticCurveTo((bx - sa * 8 + tx) / 2 + j(3), (by + ca * 8 + ty) / 2 + j(4), tx, ty);
+    g.quadraticCurveTo((bx + sa * 8 + tx) / 2 + j(5), (by - ca * 8 + ty) / 2 + j(6), bx + sa * 8, by - ca * 8);
+    g.closePath();
   }
-  g.restore();
+  g.fillStyle = PAPER; g.fill();
+  g.strokeStyle = C.ink; g.lineWidth = 3; g.lineJoin = 'round'; g.stroke();
   blob(g, 0, 0, r, r, 640, PAPER, 4.4, 1.4, 16);
   // a face in bliss: closed happy eyes, rosy cheeks, a grin
   g.strokeStyle = C.ink; g.lineWidth = 4.2; g.lineCap = 'round';
@@ -360,9 +371,11 @@ export function drawCloud(g, x, y, s, seed, idx = 1) {
   g.translate(x, y);
   g.scale(s, s);
   const cs = [[-46, 8, 20], [-22, -8, 28], [10, -14, 32], [42, -2, 25], [66, 10, 17], [14, 10, 26], [-12, 12, 22]];
+  // all the puffs in one path: stroked fat, then filled, so only the outer edge of the ink survives
   g.fillStyle = PAPER; g.strokeStyle = C.ink; g.lineWidth = 7; g.lineJoin = 'round';
-  for (const [cx, cy, r] of cs) { blobPath(g, cx, cy, r, r, seed + cx, 1.6, 12); g.stroke(); }
-  for (const [cx, cy, r] of cs) { blobPath(g, cx, cy, r, r, seed + cx, 1.6, 12); g.fill(); }
+  g.beginPath();
+  for (const [cx, cy, r] of cs) blobAdd(g, cx, cy, r, r, seed + cx, 1.6, 12);
+  g.stroke(); g.fill();
   g.strokeStyle = 'rgba(27,22,18,0.16)'; g.lineWidth = 3; g.lineCap = 'round';
   g.beginPath(); g.arc(14, -4, 18, 0.6, 1.9); g.arc(-18, 6, 14, 0.7, 1.9); g.stroke();
   if (idx % 2 === 0) { // a sleepy face: closed eyes, a tiny smile

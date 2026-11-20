@@ -1,7 +1,8 @@
 // Old film on top of everything (grain, scratches, dust, flicker, vignette, cue marks) and the world's
 // own interface: the reticle, the dotted arc, speech-bubble prompts, name tags, the iris and the spotlights.
 import { clamp, makeCanvas } from '../../kit.js';
-import { C, FONT, boil, hash1, blobPath } from './ink.js';
+import { C, FONT, boil, hash1, blobPath, letters } from './ink.js';
+import { inkText, textWidth } from './letters.js';
 
 export function makeFilm() {
   const tiles = [];
@@ -35,9 +36,10 @@ export function makeFilm() {
       // grain: a different tile at a random offset every frame
       g.save();
       g.globalAlpha = 0.5 * strength;
-      g.translate(Math.floor(Math.random() * 160), Math.floor(Math.random() * 160));
+      const ox = Math.floor(Math.random() * 160), oy = Math.floor(Math.random() * 160);
+      g.translate(ox, oy);
       g.fillStyle = pats[f % 3] || pats[0];
-      if (g.fillStyle) g.fillRect(-160, -160, w + 320, h + 320);
+      g.fillRect(-ox, -oy, w, h); // exactly the screen: the pattern is what moves
       g.restore();
       // vignette + flicker
       g.globalAlpha = clamp(0.88 + (hash1(f * 1.9) - 0.5) * 0.3 + Math.sin(T * 7.3) * 0.05, 0.6, 1); // the lamp flickers
@@ -100,17 +102,12 @@ export function drawSpots(g, w, h, spots, alpha, T) {
   g.restore();
 }
 
-const widthCache = new Map();
-function textW(g, s, px) {
-  const key = s + '|' + px;
-  let v = widthCache.get(key);
-  if (v === undefined) { g.font = `700 ${px}px ${FONT}`; v = g.measureText(s).width; if (widthCache.size > 200) widthCache.clear(); widthCache.set(key, v); }
-  return v;
-}
+const textW = (g, s, px) => textWidth(s, px);
+const BUB = { fill: null, ink: C.ink, weight: 1.3 };
 
 /** A speech bubble: tail at (x, y), body above it. u = world units per screen pixel. */
 export function bubble(g, x, y, lines, u, T, col, alpha = 1, lo = -1e9, hi = 1e9, top = -1e9) {
-  const px = Math.round(13 * u * 100) / 100, pad = 8 * u, lh = px * 1.25;
+  const px = Math.round(14 * u * 100) / 100, pad = 8 * u, lh = px * 1.12;
   let wmax = 0;
   for (const l of lines) wmax = Math.max(wmax, textW(g, l, px));
   const bw = wmax + pad * 2, bh = lines.length * lh + pad * 1.6;
@@ -130,10 +127,7 @@ export function bubble(g, x, y, lines, u, T, col, alpha = 1, lo = -1e9, hi = 1e9
   g.fillStyle = '#fbf6e8'; g.fill();
   g.strokeStyle = C.ink; g.lineWidth = 3 * u; g.stroke();
   g.fillStyle = col; g.fillRect(bx + 2 * u, by + bh - 6 * u, bw - 4 * u, 3 * u);
-  g.font = `700 ${px}px ${FONT}`;
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillStyle = C.ink;
-  lines.forEach((l, i) => g.fillText(l, bx + bw / 2, by + pad * 0.8 + lh * (i + 0.5)));
+  lines.forEach((l, i) => inkText(g, l, bx + bw / 2, by + pad * 0.8 + lh * (i + 0.5), px, 0, BUB));
   g.restore();
 }
 
@@ -188,9 +182,7 @@ export function drawTag(g, x, y, name, local, col, u, T) {
     const by = y - 6 * u + Math.sin(T * 6) * 3 * u;
     g.beginPath(); g.moveTo(x, by); g.lineTo(x - 11 * u, by - 14 * u); g.lineTo(x + 11 * u, by - 14 * u); g.closePath();
     g.fillStyle = col; g.fill(); g.strokeStyle = C.ink; g.lineWidth = 3 * u; g.lineJoin = 'round'; g.stroke();
-    g.font = `900 ${px}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-    g.lineWidth = 4 * u; g.strokeStyle = C.ink; g.strokeText('YOU', x, by - 18 * u);
-    g.fillStyle = '#fff'; g.fillText('YOU', x, by - 18 * u);
+    letters(g, 'YOU', x, by - 23 * u, 15 * u, 0, '#fff');
   } else {
     g.font = `800 ${px}px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
     g.lineWidth = 4 * u; g.strokeStyle = C.ink; g.lineJoin = 'round'; g.strokeText(name, x, y - 8 * u);

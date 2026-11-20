@@ -57,11 +57,11 @@ export default {
   renderer: 'three',
   aim: 'pointer',
   palette: { bg: '#1b1524', fg: '#f6ead2', accent: '#ff7a4a' },
-  controls: { fire: 'SHOOT', alt: 'BRACE', a1: 'ROLL', a2: 'COPTER' },
-  hint: 'Brace to steady your aim. Whoever stands in the light is the easy target.',
+  controls: { fire: 'SHOOT', alt: 'BRACE', a1: 'ROLL', a2: 'SPOTLIGHT' },
+  hint: 'Brace to steady your laser, and keep out of the lamplight.',
   altToggle: true,
   roundTime: 50,
-  overTime: 2.8,
+  overTime: 2.5,
   angleFields: ['a', 'sa'],
 
   create(ctx) {
@@ -212,8 +212,9 @@ export default {
           c.lit = damp(c.lit, d < 5 ? 1 : 0, 6, dt);
           if (d < 0.6 || c.t > 5) { c.on = 2; c.t = 0; if (e === me && !me.bot) sfx.spotted(); }
         } else if (c.on === 2) {
-          // over them: it keeps up with a walk, but a roll gets out from under it for a moment
-          const v = Math.min(d, 6.4 * dt);
+          // over them: a little slower than a walk, so whoever keeps running slips out of the light
+          // (and spoils their own aim doing it); whoever stays put is the easy target
+          const v = Math.min(d, 4.4 * dt);
           if (d > 1e-3) { c.x += (dx / d) * v; c.z += (dz / d) * v; }
           c.yaw += dt * 0.9; c.tilt = damp(c.tilt, 0, 4, dt); c.lit = damp(c.lit, 1, 8, dt);
           if (c.t > COP_LIFE || !e.alive) { c.on = 3; c.t = 0; }
@@ -296,7 +297,7 @@ export default {
       } else p.vx = p.vz = 0;
       // The barrel wanders: most on the move, least braced — and much less at a rival who is lit.
       const sp = Math.hypot(p.vx, p.vz), stance = p.roll >= 0 ? 7 : sp > 0.8 ? 5.2 : lerp(2.6, 0.9, p.k);
-      const want = stance * DEG * lerp(1, 0.28, e.alive ? e.lit : 0) + p.kickA * 3 * DEG;
+      const want = stance * DEG * lerp(1, 0.38, e.alive ? e.lit : 0) + p.kickA * 3 * DEG;
       p.amp = damp(p.amp, want, want > p.amp ? 14 : 3.6, dt);
       p.swayT += dt;
       p.sway = p.amp * (0.62 * Math.sin(p.swayT * 1.9 + p.i * 2.1) + 0.38 * Math.sin(p.swayT * 3.13 + p.i + 1.3));
@@ -382,7 +383,7 @@ export default {
       S.t = view.wt; S.device = inp.device; S.live = live; S.sudden = ctx.sudden; S.top = ctx.height < 480 ? 34 : 60;
       for (const [p, o] of [[me, S.me], [foe, S.foe]]) {
         view.toScreen(p.x, 0, p.z, s2); o.x = s2.x; o.y = s2.y;
-        view.toScreen(p.x, lerp(2.55, 2.0, p.k), p.z, s2); o.hx = s2.x; o.hy = s2.y;
+        view.toScreen(p.x, lerp(2.9, 2.3, p.k), p.z, s2); o.hx = s2.x; o.hy = s2.y;
         o.color = PLASTIC[p.i]; o.alive = p.alive;
       }
       S.intro = damp(S.intro, phase === 'intro' && flags.introOn ? 1 : 0, 7, dt);

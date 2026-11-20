@@ -324,6 +324,7 @@ export function makeGame(ctx, sea, world, fx) {
     p.turn = r.ln / 0.3;
     p.braced = !!r.br; p.brace = damp(p.brace, r.br ? 1 : 0, 11, dt);
     p.air = !!r.ai;
+    p.white = r.wh || 0; // (so their board wobbles in the white water on this screen too)
     const was = p.dive > 0;
     p.dive = r.dv ? 0.5 : 0;
     if (was && !p.dive) fx.dive(p, 1);

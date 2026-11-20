@@ -14,7 +14,7 @@ export function makeBot(ctx, env) {
 
   function init(p) {
     p.bot = {
-      mode: 'feel', modeT: 0, feelT: 9 - 3 * skill() + rnd() * 3, fireOk: 9.6 + rnd() * 1.6, goal: { x: p.x, z: p.z }, goalT: 99,
+      mode: 'feel', modeT: 0, feelT: 7.5 - 3 * skill() + rnd() * 2, fireOk: 9.6 + rnd() * 1.4, goal: { x: p.x, z: p.z }, goalT: 99,
       seen: 0, lost: 0, ey: 0, ep: 0, errT: 0, lead: 1, wig: 0, wigT: 0, still: 0, fireDelay: 0, hideT: 0,
       field: env.nav.newField(), last: { x: 0, z: 0, t: -99 }, decoyId: -1, ignore: new Set(), dodged: new Set(), standT: 5 + rnd() * 6,
     };
@@ -109,7 +109,7 @@ export function makeBot(ctx, env) {
         b.fireDelay = 0.4 + rnd() * 1.4 * (1 - sk);
         b.errT = 0;
         if (decoy) { b.ignore.add(decoy.id); b.decoyId = -1; }
-        if (b.mode === 'snipe' || b.mode === 'feel') { b.hideT = 1.4 + rnd() * 1.6; b.goalT = 99; } // duck out of sight while the bolt works
+        if (b.mode === 'snipe' || b.mode === 'feel') { b.hideT = 0.9 + rnd() * 1.1; b.goalT = 99; } // duck out of sight while the bolt works
       }
     } else b.still = 0;
     cmd.alt = seeing && dist > 24 && b.seen > 0.1 && b.hideT <= 0;

@@ -2,11 +2,13 @@
 // re-rolls a few times a second: that is the "boil" of a 1930s cel, where each frame was traced
 // afresh and no two lines agree. Nothing allocates: the point scratch buffers are shared.
 import { TAU } from '../../kit.js';
+import { inkText } from './letters.js';
 
 export const C = {
   ink: '#1b1612', paper: '#f2eAd8', paper2: '#e6dcc4', g1: '#d6ccb6', g2: '#b9af99', g3: '#8f8675', g4: '#625a4d', g5: '#3a342c',
 };
-export const FONT = '"Marker Felt", "Chalkboard SE", Impact, "Arial Black", "Rajdhani", sans-serif';
+// Only for player names (any character can turn up in a callsign); every other word is hand-lettered.
+export const FONT = '"Rajdhani", "Arial Rounded MT Bold", "Helvetica Neue", Arial, sans-serif';
 
 /** The ink frame: bumped by the renderer ~12 times a second. */
 export const boil = { f: 0 };
@@ -22,13 +24,18 @@ const PX = new Float32Array(64), PY = new Float32Array(64);
 
 /** Trace a smooth closed ellipse-ish outline (no fill or stroke). */
 export function blobPath(g, cx, cy, rx, ry, seed, amp = 1.1, n = 12, rot = 0) {
+  g.beginPath();
+  blobAdd(g, cx, cy, rx, ry, seed, amp, n, rot);
+}
+
+/** The same outline added to the current path as one more closed sub-path (batch many into one fill). */
+export function blobAdd(g, cx, cy, rx, ry, seed, amp = 1.1, n = 12, rot = 0) {
   n = Math.min(n, 30);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * TAU + rot;
     PX[i] = cx + Math.cos(a) * rx + jit(seed + i * 1.37, amp);
     PY[i] = cy + Math.sin(a) * ry + jit(seed + i * 1.37 + 50, amp);
   }
-  g.beginPath();
   g.moveTo((PX[n - 1] + PX[0]) / 2, (PY[n - 1] + PY[0]) / 2);
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
@@ -91,19 +98,10 @@ export function starPath(g, x, y, r, rot = 0, inner = 0.45) {
   g.closePath();
 }
 
-/** Lettering with a thick ink outline, like a title card's. */
-export function letters(g, text, x, y, px, rot = 0, fill = C.paper, lw = 0.2) {
-  g.save();
-  g.translate(x, y);
-  g.rotate(rot);
-  g.font = `900 ${px}px ${FONT}`;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.lineJoin = 'round';
-  g.lineWidth = px * lw;
-  g.strokeStyle = C.ink;
-  g.strokeText(text, 0, 0);
-  g.fillStyle = fill;
-  g.fillText(text, 0, 0);
-  g.restore();
+/** Lettering with a thick ink outline, like a title card's (lw 0: one plain stroke in `fill`). */
+export function letters(g, text, x, y, px, rot = 0, fill = C.paper, lw = 0.2, bounce = 0, t = 0) {
+  LO.fill = lw > 0 ? fill : null; LO.ink = lw > 0 ? C.ink : fill; LO.weight = lw > 0 ? 1 : 1.25;
+  LO.bounce = bounce; LO.t = t; LO.shadow = lw > 0 && px > 26;
+  inkText(g, text, x, y, px, rot, LO);
 }
+const LO = { fill: null, ink: null, weight: 1, bounce: 0, t: 0, shadow: false };

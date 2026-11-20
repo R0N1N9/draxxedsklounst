@@ -269,6 +269,7 @@ export function makeSim(ctx, w, S, sound, fx) {
         if (!near) { hl.arm[p.i] = true; continue; }
         if (hl.arm[p.i] && dx < 26 && p.ground && p.stun <= 0) {
           p.tele = { t: 0, tx: other.x, ty: other.y, from: hl, to: other };
+          S.teles[p.i]++;
           hl.arm[p.i] = false; other.arm[p.i] = false;
           p.vx = 0; p.vy = 0; p.charge = 0;
           sound.drop(p.x);
@@ -330,7 +331,9 @@ export function makeSim(ctx, w, S, sound, fx) {
     const mv = Math.abs(p.vx) > 25 || !p.ground ? 1 : 0.35;
     const sway = (0.05 * mv + 0.006) * (1 - 0.9 * p.charge) * (p.st === 1 ? 0.6 : 1);
     p.aim = cmd.a;
-    p.a = p.aim + sway * (0.6 * Math.sin(T * 5.3 + p.i) + 0.4 * Math.sin(T * 11.1));
+    // ... and the telescoped barrel droops and bobs: a long shot is timed to the moment it swings through true
+    const wob = 0.014 * p.charge * Math.sqrt(p.charge) * Math.sin(T * 7.4 + p.i * 1.7);
+    p.a = p.aim + sway * (0.6 * Math.sin(T * 5.3 + p.i) + 0.4 * Math.sin(T * 11.1)) + wob;
     if (Math.abs(Math.cos(p.a)) > 0.12) p.face = Math.cos(p.a) >= 0 ? 1 : -1;
     // inside a hole: sinking, travelling, popping out of the twin
     if (p.tele) {
@@ -357,7 +360,7 @@ export function makeSim(ctx, w, S, sound, fx) {
       p.vx = p.vy = 0;
       if (dy && ((p.climb * 1.7) | 0) !== ((p.climbPrev * 1.7) | 0)) sound.rung(p.x);
       p.climbPrev = p.climb;
-      if (p.y <= top) { p.y = top; p.lad = null; p.st = 0; p.ground = true; p.plat = 'solid'; if (l.k === 'cliff') p.x += l.x < W / 2 ? -44 : 44; else if (l.k === 'pillar') p.x = l.x; p.vy = 0; }
+      if (p.y <= top) { p.y = top; p.lad = null; p.st = 0; p.ground = true; p.plat = 'solid'; if (l.k === 'cliff') p.x += l.x < W / 2 ? -80 : 80; /* clear of the springboard at the lip */ else if (l.k === 'pillar') p.x = l.x; p.vy = 0; }
       else if (p.y >= l.bot) { p.y = l.bot; p.lad = null; p.st = 0; p.ground = true; p.plat = 'solid'; p.vy = 0; }
       else if (live && cmd.jump) { p.lad = null; p.st = 0; p.vy = -JUMP * 0.75; p.vx = clamp(cmd.mx, -1, 1) * RUN * 0.8; p.ground = false; sound.jump(p.x); }
       return;
@@ -473,7 +476,11 @@ export function makeSim(ctx, w, S, sound, fx) {
     const t = ctx.time;
     if (ctx.phase !== 'live') return;
     for (const e of w.ev) {
-      if (t < e.t0 - 0.1) break;
+      if (t < e.t0 - 1.3) break;
+      if (t < e.t0) { // a tumbleweed is heard (and seen kicking up dust at the edge) before it arrives
+        if (e.k === 'weed' && !e.pre && t >= e.t0 - 1.2) { e.pre = true; sound.weedWarn(e.side ? W : 0); }
+        continue;
+      }
       if (t > e.t0 + e.dur + 0.2) { if (e.k === 'anvil' && !e.gone) { e.gone = true; fx.puff(e.x, anvilState(e, e.t0 + 1, w, as).ground - 30, 0, -20, 30, 0.6); } continue; }
       if (e.k === 'anvil') {
         anvilState(e, t, w, as);

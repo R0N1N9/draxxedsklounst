@@ -104,7 +104,12 @@ export function drawOverlay(g, S) {
 
   // ---- bottom centre: the sea between you, and what is in the rifle ----
   if (S.gauge && S.bars < 0.6) {
-    const a = 1 - S.bars / 0.6, gw = clamp(w * 0.15, 104, 200), gh = 34 * u, gx = w * 0.565 - gw / 2, gy = h - S.pad - gh - 6, gc = gx + gw / 2;
+    // between the touch clusters if there is room for it (and the rounds and speed to its
+    // left), otherwise lifted clear above them
+    const sf = S.safe, a = 1 - S.bars / 0.6, gw = clamp(w * 0.15, 104, 200), gh = 34 * u, need = gw + 120 * u;
+    const l0 = sf.left + 8, r0 = w - sf.right - 8, fits = r0 - l0 >= need;
+    const gx = fits ? clamp(w * 0.565 - gw / 2, l0 + need - gw, r0 - gw) : clamp(w * 0.5 - gw / 2 + 50 * u, l0, r0 - gw);
+    const gy = (fits ? h - S.pad - 6 : h - sf.bottom - 14) - gh, gc = gx + gw / 2;
     g.globalAlpha = a;
     roundRect(g, gx - 6, gy - 6, gw + 12, gh + 12, 8);
     g.fillStyle = rgba(INK, 0.62); g.fill();

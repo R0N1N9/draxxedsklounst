@@ -2,12 +2,11 @@
 // light. Also the one shader patch every material shares: the copters' spotlights and the
 // headlights that sweep in through the blind are added there, analytically, so they cost
 // no shadow maps and no extra light slots.
-import { clamp, lerp, makeRng, rand, TAU } from '../../kit.js';
+import { clamp, lerp, makeRng, makeCanvas, rand, TAU } from '../../kit.js';
 import { RUG_A, RUG_B, LOOP, SPOT_R, TIDY } from './world.js';
 import { TOY } from './tex.js';
 
 export const LAMP_HEAD = { x: -18.4, y: 5.7, z: -8.8 }, LAMP_BASE = { x: -23.6, z: -11.4 };
-let HEMI = 1.0;
 const LIGHT_POS = { x: -8.5, y: 17.5, z: -11.5 }; // where the light really comes from: higher, for a rounder pool
 
 const PATCH_PARS = `
@@ -27,13 +26,13 @@ const PATCH_LIGHT = `
 }`;
 
 export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
-  if (!Q.pbr) HEMI = 1.5; // (no reflections in the software build: a little more sky instead)
+  const HEMI = Q.pbr ? 1.0 : 1.5; // (no reflections in the software build: a little more sky instead)
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0.012, 0.01, 0.02);
   const rng = makeRng(0x7075);
   const U = {
     head: { value: new THREE.Vector4(0, 0, W.head.ca, W.head.sa) }, headDir: { value: new THREE.Vector3(0, 1, 0) }, headCol: { value: new THREE.Color(12, 10.5, 8) },
-    spot: { value: [new THREE.Vector4(), new THREE.Vector4()] }, spotCol: { value: new THREE.Color(6, 6.9, 8.4) }, up: { value: new THREE.Vector3(0, 1, 0) }, lim: { value: 99 },
+    spot: { value: [new THREE.Vector4(), new THREE.Vector4()] }, spotCol: { value: new THREE.Color(4.4, 5.0, 6.1) }, up: { value: new THREE.Vector3(0, 1, 0) }, lim: { value: 99 },
   };
   const owned = []; // materials and geometries made here
   const keep = (x) => { owned.push(x); return x; };
@@ -75,7 +74,8 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
     domino: std({ map: tex.domino, roughness: 0.28 }, { cell: true }),
     glass: gloss({ vertexColors: true, roughness: 0.08 }),
     plush: patch(Q.rich ? new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 1, metalness: 0, sheen: 1, sheenRoughness: 0.55, sheenColor: new THREE.Color('#ffd9a8') }) : Q.pbr ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }) : new THREE.MeshLambertMaterial({ vertexColors: true })),
-    roll: std({ color: '#6f2a30', roughness: 0.95 }),
+    roll: std({ map: tex.rollSide, roughness: 0.95 }),
+    rollCap: std({ map: tex.rollCap, roughness: 0.95 }),
     glow: keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.82, 0.3), side: THREE.DoubleSide })),
     bulb: keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(14, 10, 5) })),
   };
@@ -105,7 +105,7 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
     add(mesh(g, M.rim, false));
   }
   const rollGeo = keep(new THREE.CylinderGeometry(1, 1, 1, 22).rotateX(Math.PI / 2));
-  const rolls = [-1, 1].map((s) => { const m = add(mesh(rollGeo, M.roll)); m.visible = false; m.userData.s = s; return m; });
+  const rolls = [-1, 1].map((s) => { const m = add(mesh(rollGeo, [M.roll, M.rollCap, M.rollCap])); m.visible = false; m.userData.s = s; return m; });
 
   // ---- the track ----
   {
@@ -195,6 +195,19 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   add(mesh(lampGeo.body, std({ vertexColors: true, roughness: 0.32, side: THREE.DoubleSide }), false, false));
   add(mesh(lampGeo.glow, M.glow, false, false));
   add(mesh(lampGeo.bulb, M.bulb, false, false));
+  // The glow round the bulb and the mouth of the shade: the one hot thing in a dark room, and
+  // the light the whole picture is lit by. A soft disc that always faces the lens.
+  const glowTex = keep(new THREE.CanvasTexture((() => {
+    const c = makeCanvas(128, 128), g = c.g, r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(0.12, 'rgba(255,255,255,0.7)'); r.addColorStop(0.35, 'rgba(255,255,255,0.18)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = r; g.fillRect(0, 0, 128, 128);
+    return c.canvas;
+  })()));
+  [[1.0, 3.2, new THREE.Color(5, 3.2, 1.5)], [2.3, 9.5, new THREE.Color(0.9, 0.52, 0.22)]].forEach(([at, size, color]) => {
+    const sp = new THREE.Sprite(keep(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, toneMapped: false })));
+    sp.position.set(LAMP_HEAD.x + ld.x * at, LAMP_HEAD.y + ld.y * at, LAMP_HEAD.z + ld.z * at); sp.scale.setScalar(size); sp.renderOrder = 6;
+    add(sp);
+  });
 
   // ---- the big soft things round the edge (they never move: one mesh per material) ----
   {
@@ -231,7 +244,7 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   const hemi = add(new THREE.HemisphereLight(new THREE.Color(0.3, 0.44, 1.0), new THREE.Color(0.15, 0.14, 0.22), HEMI));
   const fill = add(new THREE.DirectionalLight(new THREE.Color(0.4, 0.56, 1), 0.85)); // the last of the dusk, from the window
   fill.position.set(14, 12, 16);
-  const lamp = new THREE.SpotLight(new THREE.Color(1, 0.8, 0.56), 3900, 0, 0.46, 0.85, 2);
+  const LAMP_I = 3900, lamp = new THREE.SpotLight(new THREE.Color(1, 0.8, 0.56), LAMP_I, 0, 0.46, 0.85, 2);
   lamp.position.set(LIGHT_POS.x, LIGHT_POS.y, LIGHT_POS.z);
   lamp.castShadow = Q.shadow > 0;
   lamp.shadow.mapSize.set(Q.shadow, Q.shadow);
@@ -338,7 +351,9 @@ void main() {
       dustMat.uniforms.uT.value = wt; dustMat.uniforms.uPx.value = pxPerUnit * 0.045 * renderer.getPixelRatio();
       // Sudden death: somebody turns the big light on.
       bigK += ((ts >= 0 ? 1 : 0) - bigK) * Math.min(1, dt * 5);
-      big.intensity = bigK * 1.5; hemi.intensity = HEMI + bigK * 0.5; beamMat.uniforms.uA.value = 0.06 * (1 - bigK * 0.7);
+      // (the room gets brighter, not whiter: the lamp's pool gives way rather than stacking up)
+      big.intensity = bigK * (Q.pbr ? 1.25 : 0.9); hemi.intensity = HEMI + bigK * (Q.pbr ? 0.3 : 0.12); lamp.intensity = LAMP_I * (1 - bigK * 0.45);
+      beamMat.uniforms.uA.value = 0.06 * (1 - bigK * 0.7);
       // The train, and whatever is being tidied away.
       for (const v of views) {
         const o = v.o, obj = v.obj;

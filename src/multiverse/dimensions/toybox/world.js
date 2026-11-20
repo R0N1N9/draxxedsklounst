@@ -1,13 +1,13 @@
 // TOY BOX — the battlefield as numbers: the rug, the things standing on it, the train's
 // timetable, where the light falls. No three.js in here: the simulation and the bot read
-// this, the builders dress it. World units are "toy inches": a soldier is 1.7 tall.
+// this, the builders dress it. World units are "toy inches": a soldier stands about 2.3 tall.
 // x runs across the screen, z towards the camera; the map mirrors left to right.
 import { clamp, lerp, smoothstep, rand, shuffle, TAU } from '../../kit.js';
 
 export const RUG_A = 21, RUG_B = 12.5;      // the rug is an ellipse; soldiers never leave it
-export const BODY_R = 0.66, FIG = 1.36;     // a soldier's footprint; how much bigger than the model it is drawn
-export const MUZZLE = 1.9;                  // how far in front of its feet the muzzle is
-export const gunY = (k) => 1.7 - 0.34 * k;  // muzzle height, standing (k = 0) to kneeling (k = 1)
+export const BODY_R = 0.66, FIG = 1.55;     // a soldier's footprint; how much bigger than the model it is drawn
+export const MUZZLE = 2.2;                  // how far in front of its feet the muzzle is
+export const gunY = (k) => 1.92 - 0.37 * k; // muzzle height, standing (k = 0) to kneeling (k = 1)
 export const SPAWN = [{ x: -17, z: -1.3 }, { x: 17, z: -1.3 }];
 export const LOOP = { x: 0, z: 0.6, a: 10.2, b: 4.7 }; // centre line of the train track
 export const CAR_N = 3, CAR_HW = 1.38, CAR_HD = 0.72, CAR_GAP = 3.15, LAP = 24; // seconds per lap
@@ -246,6 +246,6 @@ export function buildWorld(rng, names) {
     }
   }
   // A few open spots along the edge of the lamp light, so there is always somewhere to go.
-  for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU + 0.3; posts.push({ x: Math.cos(a) * 15.5, z: Math.sin(a) * 8.4, o: null }); }
+  for (let i = 0; i < 10; i++) { const a = ((i + 0.5) / 10) * TAU; posts.push({ x: Math.cos(a) * 15.5, z: Math.sin(a) * 8.4, o: null }); } // (mirror-symmetric)
   return W;
 }

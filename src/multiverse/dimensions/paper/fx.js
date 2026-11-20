@@ -68,7 +68,7 @@ export function makeFx(THREE, mats) {
     return t;
   })();
   const NM = 36;
-  const markMat = new THREE.MeshBasicMaterial({ map: markTex, alphaTest: 0.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+  const markMat = new THREE.MeshBasicMaterial({ map: markTex, alphaTest: 0.5, side: THREE.DoubleSide });
   mls.push(markMat);
   const marks = new THREE.InstancedMesh(quad, markMat, NM);
   marks.frustumCulled = false;

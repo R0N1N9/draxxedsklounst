@@ -24,7 +24,7 @@
 //           of ctx.time.
 // KILL      The victim crumples into a paper ball, bounces once and unfolds flat on the ground in a flutter of
 //           scraps while the camera slowly pushes in (the victim's own view: the page folds up around them).
-// SUDDEN    Beacons on both snipers, edge-on and standees off, and two paper curtains slide in from the ends until
+// SUDDEN    Beacons on both snipers, edge-on and standees off, and two paper curtains slide in from the ends in about 16 s until
 //           the yard is a short stage: the ending is forced well inside 40 s.
 //
 // FILES     layout.js (yard plan, timetables, nav grid) · world.js (static yard) · set.js (everything that moves) ·
@@ -47,7 +47,7 @@ import { EYE, RADIUS, SPAWN_Z, YARD_X, windAt, craneAt, yardLimit } from './layo
 const LOOK = 0.0022, RUN = 5.4, SCOPE_RUN = 2.2, EDGE_RUN = 3.6;
 const MAG = 4, CYCLE = 1.05, CYCLE_SD = 0.7, RELOAD = 2.0;
 const EDGE_MAX = 1.8, EDGE_CD = 5.0, STAND_LIFE = 16, STAND_RE = 13, WIND_K = 5.5;
-const ROUND = 42, FOV_SCOPE = 15, OVER_SLOW = 0.35;
+const ROUND = 32, FOV_SCOPE = 15, OVER_SLOW = 0.35;
 const TH0 = (G * ZERO) / (2 * V0 * V0); // the rifle is zeroed at ZERO metres: it points this far above the sight line
 const ease = (u) => u * u * (3 - 2 * u);
 
@@ -70,14 +70,13 @@ export default {
   hint: 'Edge-on, you are a paper-thin line: hard to hit, but you cannot shoot.',
   altToggle: true,
   roundTime: ROUND,
-  overTime: 2.6,
+  overTime: 2.4,
   angleFields: ['yaw', 'pitch'],
 
   create(ctx) {
     const { THREE, renderer } = ctx.three;
     setThree(THREE);
     const scene = new THREE.Scene();
-    if (globalThis.__PAPER_DBG) Object.assign(globalThis.__PAPER_DBG, { scene, ctx }); // DBG
     const camera = new THREE.PerspectiveCamera(60, ctx.width / ctx.height, 0.25, 900);
     camera.rotation.order = 'YXZ';
     const mats = makeLineMats(THREE);
@@ -95,6 +94,10 @@ export default {
     const snd = makeSound(ctx);
     const S = ov.S;
     const size = new THREE.Vector2();
+    // Compile the shaders on worker threads while the page keeps its frame rate: the first frames draw only the flat
+    // 2D layer until they are ready (a few tens of ms on a real GPU, so nobody sees it; a hard stop after 4 s regardless).
+    let ready = !renderer.compileAsync;
+    const readyBy = performance.now() + 4000;
     const v3 = new THREE.Vector3();
 
     // ---- the two snipers ----
@@ -491,6 +494,7 @@ export default {
       } else { S.prompt = ''; S.promptKey = ''; S.spot = ''; S.spotKey = ''; }
     }
 
+    if (!ready) renderer.compileAsync(scene, camera).then(() => { ready = true; }, () => { ready = true; }); // everything is in the scene now
     return {
       update(dt) {
         anim += dt; frameDt += dt;
@@ -548,7 +552,9 @@ export default {
         cameraRig(fdt);
         renderer.getDrawingBufferSize(size);
         mats.set(size.x, size.y, clamp(ctx.height / 235, 1.9, 4.6) * renderer.getPixelRatio(), camera.near);
-        renderer.render(scene, camera);
+        if (!ready && performance.now() > readyBy) ready = true;
+        if (ready) renderer.render(scene, camera);
+        else { renderer.setClearColor(0xf7f1e3, 1); renderer.clear(); } // paper while the shaders compile
         fillOverlay(fdt);
         ov.draw();
       },

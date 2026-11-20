@@ -20,7 +20,7 @@ export function makeBot(ctx, sea, world, G) {
     return {
       skill, t: 0, plan: 'open', planT: 0, openT: 3.6 + (1 - skill) * 1.6 + rnd() * 1.2, weave: rnd() < 0.5 ? 1 : -1, weaveT: 1.5 + rnd() * 2,
       seen: 0, lost: 9, braceT: 0, wantBrace: false, relocate: 0, settle: 1, eY: 0, eP: 0, tY: 0, tP: 0, errT: 0, underFire: 0, wasFire: 0,
-      lx: 0, lz: 0, side: rnd() < 0.5 ? 1 : -1, pref: 74 + rnd() * 26, near: 44 + rnd() * 14, closer: rnd() < 0.42 + 0.2 * skill, lead: 1, shots: 0, follow: false, grace: GRACE + rnd() * 3.5,
+      lx: 0, lz: 0, side: rnd() < 0.5 ? 1 : -1, pref: 74 + rnd() * 26, near: 44 + rnd() * 14, closer: rnd() < 0.56 - 0.24 * skill, lead: 1, shots: 0, follow: false, grace: GRACE + rnd() * 3.5,
     };
   }
 
@@ -69,7 +69,7 @@ export function makeBot(ctx, sea, world, G) {
     if (b.plan !== 'open') {
       b.planT -= dt;
       if (b.planT <= 0) { b.plan = b.plan === 'hold' && (rnd() < 0.6 || T > 22) ? 'close' : rnd() < 0.5 ? 'hold' : 'close'; b.planT = 8 + rnd() * 6; }
-      if (T > 28 || ctx.sudden) b.plan = 'close';
+      if (T > 31 || ctx.sudden) b.plan = 'close';
     }
 
     // ---- brace and fire ----
@@ -78,10 +78,13 @@ export function makeBot(ctx, sea, world, G) {
     const react = lerp(0.55, 0.28, skill);
     if (b.plan !== 'open' && see && b.seen > react && b.relocate <= 0 && !hip && !b.wantBrace) { b.wantBrace = true; b.settle = lerp(0.7, 0.42, skill) + rnd() * 0.5 * (1.2 - skill); }
     if (b.wantBrace && (b.lost > 2.4 || hip || b.relocate > 0 || p.reload > 0)) b.wantBrace = false; // (it holds its knee through a passing crest)
+    // White water shakes the rifle: a bot that knows the sea rides out of it before it shoots.
+    const churn = p.white > 0.55 && skill > 0.3;
+    if (churn) b.wantBrace = false;
     cmd.alt = b.wantBrace;
     b.braceT = p.brace > 0.85 ? b.braceT + dt : 0;
     const onAim = Math.abs(angDiff(cmd.yaw, wantYaw)) < 0.004 + 0.012 * (1 - p.brace) && Math.abs(cmd.pitch - wantPitch) < 0.006;
-    if (b.plan !== 'open' && see && canShoot && onAim && b.seen > react * (p.brace > 0.9 ? 0.5 : 1)) {
+    if (b.plan !== 'open' && see && canShoot && onAim && !churn && b.seen > react * (p.brace > 0.9 ? 0.5 : 1)) {
       if ((p.brace > 0.9 && b.braceT > b.settle) || (hip && b.seen > react + 0.25)) {
         cmd.fire = true;
         b.shots++;
@@ -99,6 +102,9 @@ export function makeBot(ctx, sea, world, G) {
     if (b.plan === 'open') { wx += ux * 0.15; wz += uz * 0.15; }
     else if (b.plan === 'hold') { const r = clamp((dist - b.pref) / 25, -1, 1) * 0.7; wx += ux * r; wz += uz * r; }
     else { const r = clamp((dist - (ctx.sudden || T > 36 ? 24 : b.near)) / 14, -0.8, 1.1); wx = wx * 0.62 + ux * r; wz = wz * 0.62 + uz * r; }
+    // Out of the white water: across the line the breaking crest is moving along (it pushes, so
+    // the bot carves away from it sideways rather than fighting it).
+    if (p.white > 0.3) { const fl = sea.flow(p.x, p.z), bl = Math.hypot(fl.bx, fl.bz) || 1, sx = -fl.bz / bl, sz = fl.bx / bl, sd = sx * wx + sz * wz >= 0 ? 1 : -1; wx += sx * sd * 2 * p.white; wz += sz * sd * 2 * p.white; }
     // Not into the fin, not out through the buoys.
     const fin = world.fin, fd = Math.hypot(p.x - fin.x, p.z - fin.z);
     if (fin.up && fd < 13) { wx += ((p.x - fin.x) / fd) * 1.6; wz += ((p.z - fin.z) / fd) * 1.6; }

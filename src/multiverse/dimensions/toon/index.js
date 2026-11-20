@@ -7,7 +7,8 @@
 // RULES     One bonk wins. The rifle is a cork pop-gun: the cork is a visible projectile that ARCS (it drops, so
 //           aim above a far target and lead a moving one) and bounces once off rock. TAKE AIM (alt) telescopes
 //           the barrel: the longer you hold, the flatter and faster the shot and the more of its path the dotted
-//           arc shows — but you are rooted, the barrel glints for everyone to see, and the kick shoves you back.
+//           arc shows (only the near part: the far end is judgement) — but you are rooted, the barrel glints for
+//           everyone to see, the long barrel bobs (time the release), and the kick shoves you back.
 //           Anvils, a train, tumbleweeds and a hat-stealing vulture only stun or shove; they never score.
 // ROUTES    Hold your mesa (a rock with a face to crouch behind, a perch up a ladder), work up to the lip, spring
 //           across the canyon onto the seesaw island (its crate tower splits it; a cork knocks a crate off), or
@@ -16,21 +17,25 @@
 //           aim stick · fire = pop a cork · alt TAKE AIM · a1 HOLE (portable hole: slap one, then its twin; walk
 //           into either to come out of the other — anyone can) · a2 DECOY (a waving cut-out of you).
 // BOT       Feels the other sniper out for the first ~10 s, then plays a plan (hold, rock, perch, lip, spring,
-//           descend), solves the arc with a lead that improves with skill, charges for long shots, hops rocks,
-//           ducks and jumps corks it has seen, drops decoys and holes, and can be fooled by a decoy.
+//           descend, and home again), solves the arc with a range judgement and lead that improve with skill,
+//           charges for long shots and waits out the barrel's bob, keeps moving while the other barrel glints,
+//           hops rocks, ducks and jumps corks it has seen, leaves a portable hole behind when it springs across
+//           (its twin on the island is the way home), drops decoys, and can be fooled by a decoy.
 // ONLINE    Each client simulates its own sniper and judges its own corks; the other is a puppet. Shots, decoys,
 //           holes, knocked crates and stolen hats are events; every hazard is a pure function of ctx.time + seed.
 // KILL      A white flash and a BONK; the victim is flung, flattened, then left scorched and blinking with stars
-//           and birds circling; the hat lands last — and an iris closes on them.
+//           and birds circling in a pool of paper light; the hat lands last — and an iris closes on them. The
+//           ground around them is repainted at the push-in's resolution during the hit-stop.
+// LETTERS   Every word is hand-lettered from a stroke alphabet (letters.js): no system font is needed.
 // SUDDEN    The house lights drop and a spotlight finds each sniper; the crates burst, the cover rocks get up and
 //           leave, corks fly flat and fast, the reload halves and anvils rain on the mesas.
 import { clamp, damp, ease, shade, Shake } from '../../kit.js';
-import { C, boil, FONT } from './ink.js';
+import { C, boil, letters } from './ink.js';
 import {
-  W, H, GY, FLOOR, PW, PH, SPAWN, SHOULDER, TRAIN, WEED, CRATE,
+  W, H, GY, FLOOR, LIP, PW, PH, SPAWN, SHOULDER, TRAIN, WEED, CRATE,
   buildWorld, anvilState, trainState, weedState, birdState, moveBody, traceCork, shotParams,
 } from './world.js';
-import { bakeStage, ARCH } from './art.js';
+import { bakeStage, bakeCrop, ARCH } from './art.js';
 import { makeFx } from './fx.js';
 import { makeFilm, drawIris, drawSpots, bubble, drawReticle, drawArc, drawTag } from './post.js';
 import { makeSound, BPM, BPM_HOT } from './sound.js';
@@ -42,6 +47,7 @@ import { drawLadder, drawBoard, drawSpring, drawSeesaw, crate, drawHandcar, draw
 const ROUND = 45;
 const r1 = (v) => Math.round(v * 10) / 10;
 const OVER_SLOW = 0.35;
+const BAND = 780; // world units of height a screen must show: tags over the perch (y 15) to under the floor
 
 // what the world tells you about the device in your hand, until you have done it
 const PROMPT1 = { touch: ['DRAG to aim,', 'LET GO to shoot'], gamepad: ['RIGHT STICK aims', 'RT shoots'], kbm: ['CLICK to shoot', 'corks drop: aim high'] };
@@ -57,7 +63,7 @@ export default {
   aim: 'pointer',
   palette: { bg: '#1b1612', fg: '#f2ead8', accent: '#e9c46a' },
   controls: { move: 'RUN · CLIMB', aim: 'AIM', fire: 'SHOOT', alt: 'TAKE AIM', a1: 'HOLE', a2: 'DECOY', jump: 'JUMP' },
-  hint: 'Corks arc, so aim above far targets. Hold TAKE AIM for a longer, flatter shot.',
+  hint: 'Corks drop: aim high at range. Hold TAKE AIM for a flatter, faster shot.',
   altToggle: true,
   roundTime: ROUND,
   angleFields: ['a'],
@@ -70,7 +76,7 @@ export default {
     const film = makeFilm();
     const shake = new Shake(14, 0);
     const S = {
-      T: 0, tl: 0, P: null, corks: [], decoys: [], holes: [], hats: [], shots: [0, 0], shake, springHit: [0, 0],
+      T: 0, tl: 0, P: null, corks: [], decoys: [], holes: [], hats: [], shots: [0, 0], teles: [0, 0], shake, springHit: [0, 0],
       firstShot: false, usedAlt: false, tookAim: false, usedDecoy: false, sd: false, sdA: 0, introT: 0, kill: null, hit: null,
       beat0: 0, beatN: 0, sdT0: 0, flashW: 0, freeze: 0,
     };
@@ -95,20 +101,29 @@ export default {
     const V = { s0: 1, s: 1, cw: 1, ch: 1, u: 1 };
     const tx = (x) => (x - cam.x) * V.s + V.cw / 2;
     const ty = (y) => (y - cam.y) * V.s + V.ch / 2;
+    S.tx = tx; S.ty = ty; // for the test tools: world → CSS px
     function layout() {
       V.cw = ctx.width; V.ch = ctx.height;
-      V.s0 = Math.max(1e-3, Math.min(V.cw / W, V.ch / H));
+      V.s0 = Math.max(1e-3, Math.min(V.cw / W, V.ch / BAND));
       V.s = V.s0 * cam.z;
       V.u = 1 / V.s;
     }
-    const homeY = () => { const extra = Math.max(0, V.ch / V.s0 - H); return H / 2 - 0.05 * extra; };
+    // Home framing: the whole width always; vertically at least the band from the perch snipers' name
+    // tags to just under the canyon floor, centred on it when that is all that fits, with more sky as the
+    // screen gets taller — and never with a sniper's tag under the scoreboard on a short screen.
+    const homeY = () => {
+      const vh = V.ch / V.s0;
+      const y = vh < H ? 405 + ((vh - BAND) / (H - BAND)) * 45 : H / 2 - 0.05 * (vh - H);
+      return Math.min(y, 15 + (V.ch / 2 - 46) / V.s0);
+    };
     layout();
     cam.y = homeY();
-    let bakedP = 0, art = null;
-    const needP = () => clamp(Math.round(V.s0 * ctx.dpr * 12) / 10, 0.8, 1.3);
+    let bakedP = 0, art = null, crop = null;
+    const needP = () => clamp(Math.round(V.s0 * ctx.dpr * 12) / 10, 0.8, 1.6);
+    const free = (L) => { if (L) { L.canvas.width = 1; L.canvas.height = 1; } };
     const bake = () => {
       bakedP = needP();
-      if (art) for (const L of [art.far, art.near, art.wall, art.terr]) { L.canvas.width = 1; L.canvas.height = 1; }
+      if (art) { free(art.back); free(art.terr); }
       art = bakeStage(ctx.seed, bakedP);
     };
     bake();
@@ -116,7 +131,7 @@ export default {
     // the sky is a paper gradient with a halftone dot fade (bigger dots lower down), baked per size
     function bakeSky() {
       skyW = V.cw; skyH = V.ch;
-      sky = document.createElement('canvas');
+      if (!sky) sky = document.createElement('canvas');
       sky.width = Math.round(skyW * ctx.dpr); sky.height = Math.round(skyH * ctx.dpr);
       const sg = sky.getContext('2d');
       sg.scale(ctx.dpr, ctx.dpr);
@@ -134,6 +149,8 @@ export default {
     const arcBuf = new Float32Array(160);
     const sp = { v: 0, g: 0 };
     const human = { mx: 0, my: 0, jump: false, jumpBtn: false, a: 0, fire: false, alt: false, a1: false, a2: false };
+    let halo = null;
+    const spots = [{ x: 0, y: 0, r: 0, col: '' }, { x: 0, y: 0, r: 0, col: '' }];
     let prevUp = false, music = false, hudCharges = -9, as = { ph: 0, x: 0, y: 0, k: 0, ground: 0 }, ts = { u: 0, on: false, head: 0, tail: 0, warn: 0 }, ws = { on: false, x: 0, y: 0, rot: 0, gx: 0 }, bs = { u: 0, on: false, x: 0, y: 0, dir: 1, low: false };
 
     // ---- the person at the controls -------------------------------------------------------------------------
@@ -158,7 +175,7 @@ export default {
       const v = P[res.victim], wn = P[res.winner];
       const dir = S.hit ? Math.sign(S.hit.vx) || 1 : Math.sign(v.x - wn.x) || 1;
       v.alive = false; v.dead = true; v.lad = null; v.tele = null; v.sink = 0; v.stun = 0; v.charge = 0;
-      v.vx = dir * 330; v.vy = -360; v.ground = false; v.sq.v = 16; v.hw = PW;
+      v.vx = dir * 250; v.vy = -380; v.ground = false; v.sq.v = 16; v.hw = PW;
       v.hat = false;
       const hx = v.x, hy = v.y - 104;
       S.kill = { v, w: wn, t: 0, dir, hat: { x: hx, y: hy, vx: dir * 90, vy: -640, rot: 0, vr: dir * 7, land: false }, smoke: 0, birds: false, x: hx, y: v.y - 60 };
@@ -168,7 +185,11 @@ export default {
       sound.stop(0.15);
       fx.burst(hx, hy + 24, 16, 700, 0.45);
       fx.ring(hx, hy + 20, 14, 130, 0.45);
-      fx.text('BONK!', hx - dir * 10, hy - 58, 70, '#f7f0de', 1.6, -0.1 * dir);
+      fx.text('BONK!', hx - dir * 95, hy + 30, 74, '#f7f0de', 1.6, -0.1 * dir); // beside the victim: the core's banner owns the top
+      // repaint the ground around the victim at the push-in's resolution (masked by the hit-stop)
+      free(crop);
+      const hw = V.cw / (2 * V.s0 * 1.55) + 210, hh = V.ch / (2 * V.s0 * 1.55) + 150;
+      crop = bakeCrop(ctx.seed, v.x + dir * 90 - hw, v.y - 78 - hh, v.x + dir * 90 + hw, v.y - 78 + hh, V.s0 * ctx.dpr * 1.7);
       for (const c of S.corks) if (c.live && c.owner === wn.i) c.live = false;
       for (const d of S.decoys) sim.popDecoy(d, false);
     }
@@ -252,9 +273,10 @@ export default {
       dispose() {
         sound.stop(0.3);
         fx.clear();
-        sky = null;
+        if (sky) { sky.width = 1; sky.height = 1; } sky = null;
         S.corks.length = 0; S.decoys.length = 0; S.holes.length = 0; S.hats.length = 0;
-        if (art) for (const L of [art.far, art.near, art.wall, art.terr]) { L.canvas.width = 1; L.canvas.height = 1; }
+        if (art) { free(art.back); free(art.terr); }
+        free(crop); crop = null; halo = null;
         art = null;
         ctx.canvas.style.cursor = '';
       },
@@ -341,6 +363,7 @@ export default {
     function updateTrainFx(dt) {
       if (ctx.phase !== 'live') return;
       for (const e of w.ev) {
+        if (e.k === 'weed' && ctx.time > e.t0 - 1.1 && ctx.time < e.t0 && Math.random() < dt * 9) fx.dust(e.side ? W - 20 : 20, GY, 1, e.side ? -1 : 1, 12);
         if (e.k !== 'train' || ctx.time < e.t0 || ctx.time > e.t0 + e.dur) continue;
         trainState(e, ctx.time, ts);
         if (ts.on) {
@@ -386,18 +409,17 @@ export default {
       const T = S.T;
       // sky
       // far mesas bob to the beat
-      const F = art.far; g.drawImage(F.canvas, F.x0, F.y0 - E.pulse * 7, F.w, F.h + E.pulse * 7);
-      const Nr = art.near; g.drawImage(Nr.canvas, Nr.x0, Nr.y0 + E.pulse * 4, Nr.w, Nr.h - E.pulse * 4);
+      const F = art.back; g.drawImage(F.canvas, F.x0, F.y0 - E.pulse * 6, F.w, F.h + E.pulse * 6);
       // clouds drift and bounce
       for (let i = 0; i < CLOUDS.length; i++) {
         const [x0, y0, s, seed] = CLOUDS[i];
         const x = ((x0 + 300 + T * (5 + i * 1.6)) % 2600) - 450;
         drawCloud(g, x, y0 + Math.sin(T * 1.9 + i) * 4 - E.pulse * 3, s * (1 + 0.02 * E.pulse), seed, i);
       }
-      drawSun(g, 1190, 118 + Math.sin(T * 1.4) * 3, T, E);
+      drawSun(g, 1040, 140 + Math.sin(T * 1.4) * 3, T, E); // clear of the right-hand perch, where a sniper's head would sit in it
       drawFlock(g, T);
-      const Wl = art.wall; g.drawImage(Wl.canvas, Wl.x0, Wl.y0, Wl.w, Wl.h);
       const Tt = art.terr; g.drawImage(Tt.canvas, Tt.x0, Tt.y0, Tt.w, Tt.h);
+      if (crop && cam.z > 1.15) g.drawImage(crop.canvas, crop.x0, crop.y0, crop.w, crop.h);
     }
 
     function draw() {
@@ -406,10 +428,13 @@ export default {
       if (art && needP() !== bakedP) bake();
       beat();
       const cw = V.cw, ch = V.ch, T = S.T;
+      if (!(cw >= 2 && ch >= 2)) return; // a collapsed canvas has nothing to show (and a 0-px sky would throw)
       const sh = shake.out;
       const weave = (Math.sin(boil.f * 12.9) * 0.5 + Math.sin(boil.f * 4.1) * 0.4) * 0.9;
       if (!sky || skyW !== cw || skyH !== ch) bakeSky();
-      g.drawImage(sky, 0, 0, cw, ch);
+      // the sky only shows above world y ~480 (below that the wall and the mesas cover every pixel): skip the rest
+      const skyB = clamp(ty(500) + 30, 1, ch);
+      g.drawImage(sky, 0, 0, sky.width, Math.max(1, Math.min(sky.height, Math.round((skyB / skyH) * sky.height))), 0, 0, cw, skyB);
       g.save();
       g.translate(cw / 2 + sh.x + weave, ch / 2 + sh.y + weave * 0.6);
       g.scale(V.s, V.s);
@@ -452,7 +477,7 @@ export default {
           g.translate(a.x, FLOOR - 188);
           g.fillStyle = on ? '#fff' : C.ink; g.strokeStyle = C.ink; g.lineWidth = 4;
           g.beginPath(); g.arc(0, 0, 14, 0, 6.283); g.fill(); g.stroke();
-          g.fillStyle = on ? C.ink : '#fff'; g.font = `900 20px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('!', 0, 1);
+          letters(g, '!', 0, 1, 24, 0, on ? C.ink : '#fff', 0);
           g.restore();
           g.strokeStyle = C.ink; g.lineWidth = 3;
           for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(a.x + i * 40, FLOOR - 40); g.lineTo(a.x + i * 40 + Math.sin(T * 40 + i) * 3, FLOOR - 120); g.stroke(); }
@@ -504,18 +529,29 @@ export default {
 
     function drawActors(g, T) {
       // anvil shadows first, then holes and decoys, then the snipers
+      const hz = clamp(V.u * 0.5, 1, 1.3); // hazards grow a little on a phone so they still read
       for (const e of w.ev) {
-        if (e.k !== 'anvil' || ctx.time < e.t0 || ctx.time > e.t0 + e.dur) continue;
-        anvilState(e, ctx.time, w, as);
-        if (as.ph === 0) drawAnvilShadow(g, e.x, as.ground, as.k, T);
-        else if (as.ph === 1) drawAnvilShadow(g, e.x, as.ground, 1, T);
+        if (ctx.phase !== 'live' && ctx.phase !== 'over') break;
+        if (ctx.time < e.t0 || ctx.time > e.t0 + e.dur) continue;
+        if (e.k === 'anvil') {
+          anvilState(e, ctx.time, w, as);
+          if (as.ph === 0) drawAnvilShadow(g, e.x, as.ground, as.k, T);
+          else if (as.ph === 1) drawAnvilShadow(g, e.x, as.ground, 1, T);
+        } else if (e.k === 'bird') { // the vulture's shadow runs along the mesa: it shows where the swoop will pass
+          birdState(e, ctx.time, bs);
+          if (bs.on && (bs.x < LIP[0] - 10 || bs.x > LIP[1] + 10)) {
+            const k = clamp(1 - (GY - bs.y) / 520, 0, 1);
+            g.fillStyle = `rgba(27,22,18,${0.12 + 0.3 * k})`;
+            g.beginPath(); g.ellipse(bs.x, GY + 2, (22 + 26 * k) * hz, (4 + 3 * k) * hz, 0, 0, 6.283); g.fill();
+          }
+        }
       }
       for (const q of S.holes) {
         drawHole(g, q.a, T, P[q.owner].col, true);
         if (q.b) drawHole(g, q.b, T, P[q.owner].col, true);
       }
       for (const d of S.decoys) {
-        d.x += 0; drawDecoy(g, d, E, P[d.owner].col, d.owner);
+        drawDecoy(g, d, E, P[d.owner].col, d.owner);
       }
       for (let n = 0; n < 2; n++) {
         const i = ctx.me === 0 ? 1 - n : n; // the local sniper is drawn on top
@@ -536,6 +572,11 @@ export default {
           g.beginPath(); g.ellipse(p.x, p.y + 1, 27, 5, 0, 0, 6.283); g.fill();
           if (p.i === ctx.me) { g.strokeStyle = p.col; g.globalAlpha = 0.85; g.lineWidth = 3.4 * Math.max(1, V.u * 0.6); g.beginPath(); g.ellipse(p.x, p.y + 1, 31, 6.5, 0, 0, 6.283); g.stroke(); g.globalAlpha = 1; }
         }
+        if (p.dead) { // a pool of paper light behind the victim, so the scorched figure reads against any background
+          if (!halo) { halo = g.createRadialGradient(0, 0, 20, 0, 0, 125); halo.addColorStop(0, 'rgba(250,244,228,0.92)'); halo.addColorStop(0.6, 'rgba(250,244,228,0.6)'); halo.addColorStop(1, 'rgba(250,244,228,0)'); }
+          g.save(); g.translate(p.x, p.y - 62); g.scale(1, 1.15); g.fillStyle = halo; g.globalAlpha = clamp(p.k * 4, 0, 1);
+          g.beginPath(); g.arc(0, 0, 125, 0, 6.283); g.fill(); g.restore();
+        }
         drawSniper(g, p, E, mood);
         if (p.dead && p.k > 0.55) {
           drawDizzy(g, p.x, p.y - 128, S.T, p.col);
@@ -551,17 +592,18 @@ export default {
       for (const c of S.corks) if (c.live) drawCork(g, c, P[c.owner].col, T, V.u);
       // slapstick
       for (const e of w.ev) {
-        if (ctx.time < e.t0 - 0.2 || ctx.time > e.t0 + e.dur + 0.2) continue;
+        if (ctx.time < e.t0 - (e.k === 'weed' ? 1.3 : 0.2) || ctx.time > e.t0 + e.dur + 0.2) continue;
+        if (e.k === 'weed' && ctx.time < e.t0) { if (ctx.phase === 'live') drawWeedWarn(g, e, T, hz); continue; }
         if (e.k === 'anvil') {
           anvilState(e, ctx.time, w, as);
           if (as.ph === 1) drawAnvil(g, e.x, as.y, as.k, true, T);
           else if (as.ph === 2) drawAnvil(g, e.x, as.ground, as.k, false, T);
         } else if (e.k === 'weed') {
           weedState(e, ctx.time, ws);
-          if (ws.on) drawWeed(g, ws.x, ws.y, ws.rot, WEED.r, T);
+          if (ws.on) drawWeed(g, ws.x, ws.y, ws.rot, WEED.r, T, hz, e.side ? -1 : 1);
         } else if (e.k === 'bird') {
           birdState(e, ctx.time, bs);
-          if (bs.on) drawVulture(g, bs.x, bs.y, bs.dir, T, !!e.carry, e.carry ? e.carry - 1 : 0, e.carry ? P[e.carry - 1].col : '#fff');
+          if (bs.on) drawVulture(g, bs.x, bs.y, bs.dir, T, !!e.carry, e.carry ? e.carry - 1 : 0, e.carry ? P[e.carry - 1].col : '#fff', 1, hz);
         }
       }
       fx.draw(g);
@@ -576,12 +618,32 @@ export default {
       }
     }
 
+    // a tumbleweed on its way: a flashing sign and gusts at the edge of the mesa it will roll in from
+    function drawWeedWarn(g, e, T, hz) {
+      const dir = e.side ? -1 : 1, x = e.side ? W - 40 : 40, k = clamp((ctx.time - e.t0 + 1.3) / 1.3, 0, 1);
+      const on = Math.sin(T * 16) > 0;
+      g.save();
+      g.translate(x, GY - 172);
+      g.scale(hz, hz);
+      g.fillStyle = on ? '#fff' : C.ink; g.strokeStyle = C.ink; g.lineWidth = 4;
+      g.beginPath(); g.arc(0, 0, 15, 0, 6.283); g.fill(); g.stroke();
+      letters(g, '!', 0, 1, 24, 0, on ? C.ink : '#fff', 0);
+      g.restore();
+      g.strokeStyle = C.ink; g.lineCap = 'round';
+      for (let i = 0; i < 3; i++) {
+        const ph = (T * 2.2 + i / 3) % 1, gx = x - dir * 30 + dir * ph * 170, gy = GY - 26 - i * 22;
+        g.globalAlpha = Math.sin(ph * Math.PI) * k; g.lineWidth = 3.4 * hz;
+        g.beginPath(); g.moveTo(gx - dir * 46, gy); g.quadraticCurveTo(gx - dir * 10, gy - 7, gx + dir * 16, gy - 2); g.stroke();
+      }
+      g.globalAlpha = 1;
+    }
+
     function drawPreview(g, me, u) {
       shotParams(me.charge, ctx.sudden, sp);
       const L = GUN.base + 9 + me.charge * GUN.sect * GUN.n;
       const sx = me.x + me.face * 7, sy = me.y - (SHOULDER - 2) * (me.st === 1 ? 0.66 : 1);
       const x0 = sx + Math.cos(me.a) * L, y0 = sy + Math.sin(me.a) * L;
-      const tmax = 0.28 + 1.0 * me.charge * me.charge + 0.5 * me.charge;
+      const tmax = 0.26 + 0.26 * me.charge; // the arc shows the near part of the flight; the far end is your judgement
       const n = traceCork(w, x0, y0, Math.cos(me.a) * sp.v, Math.sin(me.a) * sp.v, sp.g, tmax, 0.04, arcBuf);
       drawArc(g, arcBuf, n, u, me.col, 0.5);
       me.aimHeld = true;
@@ -600,8 +662,7 @@ export default {
       const me = P[ctx.me];
       // sudden death: the house lights drop and a spotlight finds each sniper
       if (S.sdA > 0.01 && ctx.phase !== 'over') {
-        const spots = [];
-        for (const p of P) spots.push({ x: tx(p.x), y: ty(p.y - 60), r: (170 + Math.sin(T * 5) * 6) * V.s0 * 1.0 + 40, col: p.col });
+        for (const p of P) { const q = spots[p.i]; q.x = tx(p.x); q.y = ty(p.y - 60); q.r = (170 + Math.sin(T * 5) * 6) * V.s0 + 40; q.col = p.col; }
         drawSpots(g, cw, ch, spots, S.sdA, T);
       }
       // reticle: the cursor of this world

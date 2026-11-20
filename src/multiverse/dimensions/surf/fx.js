@@ -82,9 +82,14 @@ varying float vA;
 varying float vS;
 varying vec2 vP;
 void main() {
-  float lace = texture2D(tDetail, vP * 0.21).b * 0.7 + texture2D(tDetail, vP * 0.063 + 0.4).b * 0.6;
-  float e = 1.0 - vS * vS;
-  float a = clamp(vA * e * (0.3 + lace * 1.2 + e * 0.3), 0.0, 1.0);
+  // churned white where it is fresh, tearing into lace and then into nothing as it ages and
+  // spreads: the lace is warped and broken up by the blotch channel so it never reads as tiles
+  vec4 b = texture2D(tDetail, vP * 0.041 + 0.17);
+  vec2 warp = (b.xy - 0.5) * 0.35;
+  float lace = texture2D(tDetail, vP * 0.17 + warp).b * 0.65 + texture2D(tDetail, vP * 0.06 - warp + 0.4).b * 0.55;
+  float e = 1.0 - vS * vS, fresh = smoothstep(0.35, 0.9, vA);
+  float body = mix(lace * (0.5 + b.w), 0.75 + lace * 0.25, fresh);
+  float a = clamp(vA * e * body * smoothstep(0.15, 0.55, b.w + e * 0.35 + fresh * 0.4) * 1.3, 0.0, 1.0);
   gl_FragColor = vec4(uFoam * a, a);
 }`;
 const BOW_F = `precision highp float;
@@ -95,7 +100,10 @@ void main() {
   vec2 c = vec2((vUv.x - 0.5) * 2.0, vUv.y);
   float r = length(c), h = clamp((r - 0.74) / 0.15, 0.0, 1.0);
   vec3 col = clamp(abs(mod((1.0 - h) * 4.6 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); // red on the outside
-  float a = smoothstep(0.0, 0.25, h) * smoothstep(1.0, 0.75, h) * smoothstep(0.02, 0.4, vUv.y) * (0.6 + 0.5 * noise(c * 6.0));
+  col = mix(col, vec3(0.8, 0.75, 0.7), 0.3); // a bow in spray is pastel, not neon
+  // it only shows where there is mist to hang in: torn by noise, gone near the water and at the ends
+  float mist = smoothstep(0.3, 0.75, noise(c * 3.0 + 4.0) * 0.6 + noise(c * 9.0) * 0.4);
+  float a = smoothstep(0.0, 0.3, h) * (1.0 - smoothstep(0.7, 1.0, h)) * smoothstep(0.12, 0.5, vUv.y) * mist;
   gl_FragColor = vec4(col * a * uA, 0.0);
 }`;
 
@@ -272,26 +280,37 @@ export function makeFx(THREE, sky, detail, sunCol, Q) {
         w.lx = rd.x; w.lz = rd.z;
       }
       const pos = w.pos.array, al = w.al.array;
-      let px = rd.x, pz = rd.z;
+      let px = rd.x, pz = rd.z, ok = false;
       for (let j = 0; j < WAKE_N; j++) {
         const nd = w.nodes[(w.head - j + WAKE_N * 2) % WAKE_N], o = j * 6;
         nd.age += dt;
         let dx = px - nd.x, dz = pz - nd.z;
         const l = Math.hypot(dx, dz) || 1;
         dx /= l; dz /= l;
-        const live = nd.age < WAKE_LIFE && l < 6, half = live ? 0.55 + nd.age * 0.6 : 0, y = live ? sea.height(nd.x, nd.z) + 0.07 : 0;
-        pos[o] = nd.x - dz * half; pos[o + 1] = y; pos[o + 2] = nd.z + dx * half;
-        pos[o + 3] = nd.x + dz * half; pos[o + 4] = y; pos[o + 5] = nd.z - dx * half;
-        al[j * 2] = al[j * 2 + 1] = live ? nd.k * Math.min(1, j * 0.5 + 0.2) * Math.pow(1 - nd.age / WAKE_LIFE, 1.5) : 0;
-        if (live) { px = nd.x; pz = nd.z; }
+        // (each edge sits on the water under it: a wide wake on a sloping face must not cut into it)
+        const live = ok || j === 0 ? nd.age < WAKE_LIFE && l < 6 : false;
+        if (!live) {
+          // the tail folds up onto the last live pair: no stretched triangles reaching back to old nodes
+          if (j === 0) { pos.fill(0); al.fill(0); break; }
+          for (let k = 0; k < 6; k++) pos[o + k] = pos[o - 6 + k];
+          al[j * 2] = al[j * 2 + 1] = 0;
+          ok = false;
+          continue;
+        }
+        ok = true;
+        const half = 0.55 + nd.age * 0.45, ax = nd.x - dz * half, az = nd.z + dx * half, bx = nd.x + dz * half, bz = nd.z - dx * half;
+        pos[o] = ax; pos[o + 1] = sea.height(ax, az) + 0.09; pos[o + 2] = az;
+        pos[o + 3] = bx; pos[o + 4] = sea.height(bx, bz) + 0.09; pos[o + 5] = bz;
+        al[j * 2] = al[j * 2 + 1] = nd.k * Math.min(1, j * 0.5 + 0.2) * Math.pow(1 - nd.age / WAKE_LIFE, 1.5);
+        px = nd.x; pz = nd.z;
       }
       w.pos.needsUpdate = w.al.needsUpdate = true;
     }
 
     if (bowT >= 0) {
       bowT += dt;
-      bowU.uA.value = clamp(bowT * 7, 0, 0.9);
-      bow.scale.set(44, 22, 1);
+      bowU.uA.value = clamp((bowT - 0.12) * 4, 0, 0.42) * clamp((2.6 - bowT) * 0.8, 0, 1); // (sim seconds: it hangs while the mist does)
+      bow.scale.set(30, 15, 1);
       bow.rotation.set(0, Math.atan2(camera.position.x - bow.position.x, camera.position.z - bow.position.z), 0);
     }
   };

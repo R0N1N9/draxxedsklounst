@@ -29,7 +29,7 @@ export function makeView(ctx, THREE, renderer, W) {
   const S = {
     w: 1, h: 1, t: 0, live: false, alive: true, under: false, brace: 0, rx: 0, ry: 0, spreadPx: 10, clear: false, wall: false, ready: true, cycle: 0,
     prompt: '', prompt2: '', promptA: 0, note: '', noteA: 0, noteHot: false, bars: 1, pad: 8, gauge: true, prof: new Float32Array(game.los.n + 1), eyeA: 0, eyeB: 0,
-    colA: me.color, colB: foe.color, touch: false, ammo: 4, mag: R.mag, reloading: false, dist: 0, kmh: 0, push: 0, white: 0, marks: [], hits: [],
+    colA: me.color, colB: foe.color, safe: ctx.safe, touch: false, ammo: 4, mag: R.mag, reloading: false, dist: 0, kmh: 0, push: 0, white: 0, marks: [], hits: [],
   };
   for (let i = 0; i < 3; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: 'foe', color: '#fff', hollow: false, text: '', sub: '' });
   for (let i = 0; i < 3; i++) S.hits.push({ ang: 0, a: 0, x: 0, z: 0 });
@@ -52,7 +52,14 @@ export function makeView(ctx, THREE, renderer, W) {
     const need = sea.height(play.pos.x, play.pos.z) + 0.75 - play.pos.y;
     lift = need > lift ? need : damp(lift, Math.max(0, need), 3, dt);
     if (lift > 0) play.pos.y += lift;
-    play.yaw = yaw; play.pitch = pitch; play.lift = AIM_LIFT * ks; play.fov = zoomed(ks);
+    play.yaw = yaw; play.pitch = pitch; play.fov = zoomed(ks);
+    // Third person, always: if the lens has been lifted over a crest, or the aim is up, the
+    // rider would drop out of the foot of the frame — so the lens tips down onto them and the
+    // sight line (drawn as the reticle) stays where it was, higher in the frame.
+    const half = (play.fov * Math.PI) / 360;
+    const feet = Math.atan2(p.y + 0.15 - play.pos.y, Math.max(1, Math.hypot(p.x - play.pos.x, p.z - play.pos.z)));
+    const want = Math.min(half * 0.8, Math.max(AIM_LIFT * ks, pitch - half * 0.8 - feet));
+    play.lift = dt > 0 ? damp(play.lift, want, 10, dt) : want;
     const cross = p.air ? 0 : sea.slope(p.x, p.z, Rt.x, Rt.z);
     play.roll = damp(play.roll, (p.lean * 0.22 + cross * 0.3) * (1 - 0.6 * ks), 6, dt);
   }
@@ -90,13 +97,21 @@ export function makeView(ctx, THREE, renderer, W) {
     lA.lerp(lB, ab).lerp(lC, bc);
     const floor = sea.height(pA.x, pA.z) + lerp(0.9, 0.3, bc);
     if (pA.y < floor) pA.y = floor;
-    const e = smoothstep(0, 0.85, t);
-    camera.position.copy(pA);
+    // From whichever lens this client had to the A shot in one move that never lets go of the
+    // falling rider: the lens turns onto them at once, then travels (up and over, never through
+    // the winner) while the zoom holds them at the size they were — a crash zoom on the winner's
+    // screen, a pull-back across the bay on the victim's.
+    const e = smoothstep(0.05, 1.0, t);
+    const hA = 2 * pA.distanceTo(lA) * Math.tan((fA * Math.PI) / 360);
+    camera.position.lerpVectors(kc.p0, pA, e);
+    camera.position.y += Math.sin(Math.PI * e) * kc.arc;
+    const fl2 = sea.height(camera.position.x, camera.position.z) + 0.3;
+    if (camera.position.y < fl2) camera.position.y = fl2;
     camera.lookAt(lA);
     q1.copy(camera.quaternion);
-    camera.position.lerpVectors(kc.p0, pA, e);
-    camera.quaternion.copy(kc.q0).slerp(q1, smoothstep(0, 0.65, t));
-    camera.fov = lerp(kc.f0, lerp(lerp(fA, 46, ab), 60, bc), e);
+    camera.quaternion.copy(kc.q0).slerp(q1, smoothstep(0, 0.3, t));
+    const fD = e < 1 ? clamp((2 * Math.atan(lerp(kc.h0, hA, e) / (2 * Math.max(1, camera.position.distanceTo(lA)))) * 180) / Math.PI, 2.5, 70) : fA;
+    camera.fov = lerp(lerp(fD, 46, ab), 60, bc);
     // the lens goes under: the waterline climbs the frame and stops a fifth of the way from the top
     const wl = t < KILL.sink ? -1 : lerp(-0.12, 0.775, smoothstep(KILL.sink, KILL.under, t)) + 0.012 * Math.min(1, Math.max(0, t - KILL.under) * 2);
     post.u.uWater.value.set(wl, 0.05 * Math.sin(t * 2.1), clamp((t - KILL.sink) * 2, 0, 1));
@@ -113,7 +128,12 @@ export function makeView(ctx, THREE, renderer, W) {
     killCam() {
       trauma = Math.min(1, trauma + 0.4);
       if (!Q.soft) flashA = 0.4;
-      kc = { p0: camera.position.clone(), q0: camera.quaternion.clone(), f0: camera.fov, y: game.kill.w.y, look: new THREE.Vector3(game.kill.x, game.kill.y + 1, game.kill.z) };
+      const k = game.kill, look = new THREE.Vector3(k.v.body.x, k.v.body.y + 0.4, k.v.body.z), w = k.w;
+      // how tall a slice of the world the lens framed at the victim (held through the move), and
+      // how high the move arcs: enough to clear the winner's head on the victim's side of the bay
+      const h0 = 2 * camera.position.distanceTo(look) * Math.tan((camera.fov * Math.PI) / 360);
+      const arc = clamp(Math.hypot(camera.position.x - w.x, camera.position.z - w.z) * 0.1, 0, 12);
+      kc = { p0: camera.position.clone(), q0: camera.quaternion.clone(), f0: camera.fov, h0, arc, y: w.y, look };
       drawAt = -1e9; debt = 0;
     },
     // Where the picture's centre of interest is as the round ends: the spot the winner went in.

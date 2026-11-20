@@ -3,7 +3,7 @@
 // they are three pre-jittered Path2D variants that the renderer cycles ~12 times a second, so the rock itself
 // boils like a cel while its (costly) hatching stays in the bitmap.
 import { clamp, makeCanvas, makeRng, rand, noise2 } from '../../kit.js';
-import { C, hash1 } from './ink.js';
+import { C, hash1, letters } from './ink.js';
 import { W, GY, FLOOR, PIV, LIP } from './world.js';
 
 export const BOUNDS = { x0: -450, y0: -260, x1: 2050, y1: 1180 };
@@ -141,11 +141,8 @@ function billboard(g, rng, x, y, text, rot = 0) {
   g.fillStyle = C.paper;
   g.strokeStyle = C.ink; g.lineWidth = 4;
   g.beginPath(); g.rect(-62, -44, 124, 52); g.fill(); g.stroke();
-  g.fillStyle = C.ink;
-  g.font = '900 15px "Marker Felt","Chalkboard SE",Impact,"Rajdhani",sans-serif';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
   const lines = text.split('\n');
-  lines.forEach((l, i) => g.fillText(l, 0, -18 + i * 17 - (lines.length - 1) * 6 + 8));
+  lines.forEach((l, i) => letters(g, l, 0, -18 + (i - (lines.length - 1) / 2) * 18, 15.5, 0, C.ink, 0));
   g.restore();
 }
 
@@ -176,99 +173,109 @@ function farRange(g, rng, col, col2, top, bot, count, wmin, wmax, alpha) {
   }
 }
 
-/** Everything static. ppu = pixels per world unit for the sharp terrain layer. */
+// the back wall of the canyon, with the painted tunnel mouths and the warning boards
+function paintWall(g, rng) {
+  g.beginPath();
+  g.moveTo(300, FLOOR + 10); g.lineTo(300, 520);
+  for (let x = 300; x <= 1300; x += 30) g.lineTo(x, 470 - Math.abs(noise2(x * 0.006, 1.7)) * 110 + (x > 640 && x < 960 ? -30 : 0));
+  g.lineTo(1300, FLOOR + 10);
+  g.closePath();
+  g.save(); g.clip();
+  g.fillStyle = '#ada28c'; g.fillRect(300, 330, 1000, FLOOR - 320);
+  for (let y = 400, i = 0; y < FLOOR; y += 34 + rng() * 26, i++) { g.fillStyle = i % 2 ? '#a0957f' : '#b8ad97'; g.fillRect(300, y, 1000, 14 + rng() * 14); }
+  const grd = g.createLinearGradient(0, 420, 0, FLOOR);
+  grd.addColorStop(0, 'rgba(27,22,18,0)'); grd.addColorStop(1, 'rgba(27,22,18,0.42)');
+  g.fillStyle = grd; g.fillRect(300, 330, 1000, FLOOR - 320);
+  hatch(g, 300, 430, 1300, FLOOR, 13, 0.1, 1.5);
+  speckle(g, rng, 300, 400, 1300, FLOOR, 160, 'rgba(27,22,18,0.22)', 1.4);
+  g.restore();
+  g.lineWidth = 4; g.strokeStyle = C.ink; g.stroke();
+  for (const a of ARCH) arch(g, a.x, a.y);
+  billboard(g, rng, 545, 440, 'MIND THE\nANVILS', -0.05);
+  billboard(g, rng, 1058, 440, 'LOOK LEFT\nLOOK RIGHT', 0.04);
+}
+
+// terrain: both mesas, the floor, the pillar, pebbles, rail ties
+function paintTerr(g, rng) {
+  // the pillar under the seesaw
+  g.save();
+  g.beginPath();
+  g.moveTo(722, FLOOR + 6); g.lineTo(738, PIV.y + 40); g.quadraticCurveTo(730, PIV.y + 2, 760, PIV.y + 2);
+  g.lineTo(840, PIV.y + 2); g.quadraticCurveTo(870, PIV.y + 2, 862, PIV.y + 40); g.lineTo(878, FLOOR + 6);
+  g.closePath(); g.clip();
+  g.fillStyle = '#e9dfc8'; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y + 10);
+  for (let y = PIV.y + 20, i = 0; y < FLOOR; y += 24 + rng() * 14, i++) { g.fillStyle = i % 2 ? '#d9cfb8' : '#f1e8d3'; g.fillRect(700, y, 200, 8 + rng() * 6); g.fillStyle = 'rgba(27,22,18,0.35)'; g.fillRect(700, y + 8, 200, 2); }
+  const side = g.createLinearGradient(722, 0, 878, 0);
+  side.addColorStop(0, 'rgba(27,22,18,0)'); side.addColorStop(0.55, 'rgba(27,22,18,0.1)'); side.addColorStop(1, 'rgba(27,22,18,0.5)');
+  g.fillStyle = side; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y + 10);
+  hatch(g, 800, PIV.y, 900, FLOOR, 7, 0.45, 1.7);
+  const gr = g.createLinearGradient(0, PIV.y, 0, FLOOR);
+  gr.addColorStop(0, 'rgba(27,22,18,0)'); gr.addColorStop(1, 'rgba(27,22,18,0.4)');
+  g.fillStyle = gr; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y);
+  speckle(g, rng, 700, PIV.y, 900, FLOOR, 70, 'rgba(27,22,18,0.28)', 1.4);
+  g.restore();
+  mesa(g, rng, 0);
+  mesa(g, rng, 1);
+  // the floor of the canyon
+  g.save();
+  g.beginPath(); g.rect(LIP[0] - 20, FLOOR, LIP[1] - LIP[0] + 40, 500); g.clip();
+  g.fillStyle = C.g2; g.fillRect(LIP[0] - 20, FLOOR, 800, 500);
+  g.fillStyle = C.paper2; g.fillRect(LIP[0] - 20, FLOOR, 800, 12);
+  hatch(g, LIP[0], FLOOR, LIP[1], FLOOR + 300, 9, 0.25, 1.6);
+  speckle(g, rng, LIP[0], FLOOR + 8, LIP[1], FLOOR + 300, 120, 'rgba(27,22,18,0.3)', 1.6);
+  const fg = g.createLinearGradient(0, FLOOR, 0, FLOOR + 170);
+  fg.addColorStop(0, 'rgba(27,22,18,0.05)'); fg.addColorStop(1, 'rgba(27,22,18,0.72)');
+  g.fillStyle = fg; g.fillRect(LIP[0] - 20, FLOOR, 800, 500);
+  g.restore();
+  for (let i = 0; i < 16; i++) {
+    const x = rand(rng, LIP[0] + 20, LIP[1] - 20), y = FLOOR + 14 + rng() * 60;
+    g.fillStyle = C.g2; g.strokeStyle = C.ink; g.lineWidth = 2;
+    g.beginPath(); g.ellipse(x, y, 4 + rng() * 7, 2.5 + rng() * 3, 0, 0, 6.283); g.fill(); g.stroke();
+  }
+  // rail ties along the floor
+  g.fillStyle = C.g5;
+  for (let x = LIP[0] + 6; x < LIP[1]; x += 26) g.fillRect(x, FLOOR - 4, 14, 8);
+  g.fillStyle = C.ink; g.fillRect(LIP[0], FLOOR - 8, LIP[1] - LIP[0], 3);
+  // pebbles and tufts on the mesa tops
+  for (const side of [0, 1]) {
+    for (let i = 0; i < 9; i++) {
+      const x = side ? W - rand(rng, 30, 440) : rand(rng, 30, 440), y = GY + 3 + rng() * 8;
+      g.fillStyle = C.g2; g.strokeStyle = C.ink; g.lineWidth = 1.6;
+      g.beginPath(); g.ellipse(x, y, 3 + rng() * 4, 2 + rng() * 2, 0, 0, 6.283); g.fill(); g.stroke();
+    }
+  }
+}
+
+// Each painter draws from its own seeded stream, so any part of the stage can be repainted on its own
+// (sharper, for the kill moment's push-in) and come out identical.
+const paintNear = (g, seed) => { paintWall(g, makeRng(seed ^ 0x3a11)); paintTerr(g, makeRng(seed ^ 0x7e57)); };
+
+/** Everything static. ppu = pixels per world unit for the sharp terrain layer (capped so it fits 4096 px). */
 export function bakeStage(seed, ppu) {
+  const p = clamp(Math.round(ppu * 10) / 10, 0.8, 1.6);
+  // far mesas, both ranges in one soft, low-resolution layer: they are the distance
+  const back = layer(BOUNDS.x0, 140, BOUNDS.x1, 560, Math.min(0.8, p));
   const rng = makeRng(seed ^ 0x51ed);
-  const p = clamp(Math.round(ppu * 10) / 10, 0.8, 1.3);
+  farRange(back.g, rng, '#e9e0cb', '#e0d6c0', 300, 560, 6, 200, 360, 0.05);
+  farRange(back.g, rng, '#d3c9b1', '#cabfa7', 380, 560, 8, 150, 300, 0.08);
+  // the canyon wall and the terrain in front of it in one layer: one blit a frame
+  const terr = layer(BOUNDS.x0, GY - 80, BOUNDS.x1, BOUNDS.y1, p);
+  paintNear(terr.g, seed);
+  return { back, terr, paths: outlines() };
+}
 
-  // far mesas (soft, low resolution: they are the distance)
-  const far = layer(BOUNDS.x0, 140, BOUNDS.x1, 560, Math.min(0.8, p));
-  farRange(far.g, rng, '#e9e0cb', '#e0d6c0', 300, 560, 6, 200, 360, 0.05);
-  const near = layer(BOUNDS.x0, 140, BOUNDS.x1, 560, Math.min(0.8, p));
-  farRange(near.g, rng, '#d3c9b1', '#cabfa7', 380, 560, 8, 150, 300, 0.08);
-
-  // the back wall of the canyon, with the painted tunnel mouths and the warning boards
-  const wall = layer(330, 330, 1270, FLOOR + 6, Math.min(1, p));
-  {
-    const g = wall.g;
-    g.beginPath();
-    g.moveTo(300, FLOOR + 10); g.lineTo(300, 520);
-    for (let x = 300; x <= 1300; x += 30) g.lineTo(x, 470 - Math.abs(noise2(x * 0.006, 1.7)) * 110 + (x > 640 && x < 960 ? -30 : 0));
-    g.lineTo(1300, FLOOR + 10);
-    g.closePath();
-    g.save(); g.clip();
-    g.fillStyle = '#ada28c'; g.fillRect(300, 330, 1000, FLOOR - 320);
-    for (let y = 400, i = 0; y < FLOOR; y += 34 + rng() * 26, i++) { g.fillStyle = i % 2 ? '#a0957f' : '#b8ad97'; g.fillRect(300, y, 1000, 14 + rng() * 14); }
-    const grd = g.createLinearGradient(0, 420, 0, FLOOR);
-    grd.addColorStop(0, 'rgba(27,22,18,0)'); grd.addColorStop(1, 'rgba(27,22,18,0.42)');
-    g.fillStyle = grd; g.fillRect(300, 330, 1000, FLOOR - 320);
-    hatch(g, 300, 430, 1300, FLOOR, 13, 0.1, 1.5);
-    speckle(g, rng, 300, 400, 1300, FLOOR, 160, 'rgba(27,22,18,0.22)', 1.4);
-    g.restore();
-    g.lineWidth = 4; g.strokeStyle = C.ink; g.stroke();
-    for (const a of ARCH) arch(g, a.x, a.y);
-    // a rail of two stripes leads from each arch to the floor
-    billboard(g, rng, 545, 440, 'MIND THE\nANVILS', -0.05);
-    billboard(g, rng, 1058, 440, 'LOOK LEFT\nLOOK RIGHT', 0.04);
-  }
-
-  // terrain: both mesas, the floor, the pillar, the boulders, rail ties
-  const t = layer(BOUNDS.x0, GY - 80, BOUNDS.x1, BOUNDS.y1, p);
-  {
-    const g = t.g;
-    // the pillar under the seesaw
-    g.save();
-    g.beginPath();
-    g.moveTo(722, FLOOR + 6); g.lineTo(738, PIV.y + 40); g.quadraticCurveTo(730, PIV.y + 2, 760, PIV.y + 2);
-    g.lineTo(840, PIV.y + 2); g.quadraticCurveTo(870, PIV.y + 2, 862, PIV.y + 40); g.lineTo(878, FLOOR + 6);
-    g.closePath(); g.clip();
-    g.fillStyle = '#e9dfc8'; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y + 10);
-    for (let y = PIV.y + 20, i = 0; y < FLOOR; y += 24 + rng() * 14, i++) { g.fillStyle = i % 2 ? '#d9cfb8' : '#f1e8d3'; g.fillRect(700, y, 200, 8 + rng() * 6); g.fillStyle = 'rgba(27,22,18,0.35)'; g.fillRect(700, y + 8, 200, 2); }
-    const side = g.createLinearGradient(722, 0, 878, 0);
-    side.addColorStop(0, 'rgba(27,22,18,0)'); side.addColorStop(0.55, 'rgba(27,22,18,0.1)'); side.addColorStop(1, 'rgba(27,22,18,0.5)');
-    g.fillStyle = side; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y + 10);
-    hatch(g, 800, PIV.y, 900, FLOOR, 7, 0.45, 1.7);
-    const gr = g.createLinearGradient(0, PIV.y, 0, FLOOR);
-    gr.addColorStop(0, 'rgba(27,22,18,0)'); gr.addColorStop(1, 'rgba(27,22,18,0.4)');
-    g.fillStyle = gr; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y);
-    speckle(g, rng, 700, PIV.y, 900, FLOOR, 70, 'rgba(27,22,18,0.28)', 1.4);
-    g.restore();
-    mesa(g, rng, 0);
-    mesa(g, rng, 1);
-    // the floor of the canyon
-    g.save();
-    g.beginPath(); g.rect(LIP[0] - 20, FLOOR, LIP[1] - LIP[0] + 40, 500); g.clip();
-    g.fillStyle = C.g2; g.fillRect(LIP[0] - 20, FLOOR, 800, 500);
-    g.fillStyle = C.paper2; g.fillRect(LIP[0] - 20, FLOOR, 800, 12);
-    hatch(g, LIP[0], FLOOR, LIP[1], FLOOR + 300, 9, 0.25, 1.6);
-    speckle(g, rng, LIP[0], FLOOR + 8, LIP[1], FLOOR + 300, 120, 'rgba(27,22,18,0.3)', 1.6);
-    const fg = g.createLinearGradient(0, FLOOR, 0, FLOOR + 170);
-    fg.addColorStop(0, 'rgba(27,22,18,0.05)'); fg.addColorStop(1, 'rgba(27,22,18,0.72)');
-    g.fillStyle = fg; g.fillRect(LIP[0] - 20, FLOOR, 800, 500);
-    g.restore();
-    for (let i = 0; i < 16; i++) {
-      const x = rand(rng, LIP[0] + 20, LIP[1] - 20), y = FLOOR + 14 + rng() * 60;
-      g.fillStyle = C.g2; g.strokeStyle = C.ink; g.lineWidth = 2;
-      g.beginPath(); g.ellipse(x, y, 4 + rng() * 7, 2.5 + rng() * 3, 0, 0, 6.283); g.fill(); g.stroke();
-    }
-    // rail ties along the floor
-    g.fillStyle = C.g5;
-    for (let x = LIP[0] + 6; x < LIP[1]; x += 26) g.fillRect(x, FLOOR - 4, 14, 8);
-    g.fillStyle = C.ink; g.fillRect(LIP[0], FLOOR - 8, LIP[1] - LIP[0], 3);
-    // pebbles and tufts on the mesa tops
-    for (const side of [0, 1]) {
-      for (let i = 0; i < 9; i++) {
-        const x = side ? W - rand(rng, 30, 440) : rand(rng, 30, 440), y = GY + 3 + rng() * 8;
-        g.fillStyle = C.g2; g.strokeStyle = C.ink; g.lineWidth = 1.6;
-        g.beginPath(); g.ellipse(x, y, 3 + rng() * 4, 2 + rng() * 2, 0, 0, 6.283); g.fill(); g.stroke();
-      }
-    }
-  }
-  return { far, near, wall, terr: t, paths: outlines(rng) };
+/** A sharper repaint of one window of the terrain (world rect), for the kill moment's push-in. */
+export function bakeCrop(seed, x0, y0, x1, y1, ppu) {
+  x0 = Math.max(BOUNDS.x0, x0); x1 = Math.min(BOUNDS.x1, x1); y0 = Math.max(GY - 80, y0); y1 = Math.min(BOUNDS.y1, y1);
+  if (x1 - x0 < 10 || y1 - y0 < 10) return null;
+  const k = Math.min(ppu, 4000 / (x1 - x0), 4000 / (y1 - y0), Math.sqrt(6e6 / ((x1 - x0) * (y1 - y0))));
+  const L = layer(x0, y0, x1, y1, k);
+  paintNear(L.g, seed);
+  return L;
 }
 
 /** The ink on the rock: 3 variants of the same lines, each jittered differently. */
-function outlines(rng) {
+function outlines() {
   const out = [];
   for (let v = 0; v < 3; v++) {
     const edge = new Path2D(), strata = new Path2D();

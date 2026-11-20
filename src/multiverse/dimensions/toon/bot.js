@@ -8,6 +8,7 @@ import { GY, FLOOR, W, PW, PH, SHOULDER, PIV, ANVIL, shotParams, traceCork, onPl
 import { GUN } from './figures.js';
 
 const PLANS = ['hold', 'rock', 'perch', 'lip', 'launch', 'descend'];
+const CLIFF = 472; // the left cliff ladder (mirrored for the right-hand sniper)
 const WEIGHT = [[0.4, 0.3, 0.12, 0.12, 0.04, 0.02], [0.22, 0.2, 0.2, 0.15, 0.14, 0.09], [0.12, 0.14, 0.22, 0.16, 0.22, 0.14]];
 
 export function makeBot(ctx, w, S, p) {
@@ -16,9 +17,9 @@ export function makeBot(ctx, w, S, p) {
   const X = (x) => (me ? W - x : x); // a coordinate written for the left side, mirrored for the right
   const cmd = { mx: 0, my: 0, jump: false, jumpBtn: false, a: p.aim, fire: false, alt: false, a1: false, a2: false };
   const b = {
-    plan: '', planT: 0, stage: 0, goalX: p.x, wait: 0, readyAt: 9.5 + Math.random() * 5 + (1 - skill) * 4, fired: 0, held: 0, chargeGoal: 0, seen: 0,
+    plan: '', planT: 0, stage: 0, goalX: p.x, wait: 0, readyAt: 5.5 + Math.random() * 3 + (1 - skill) * 2, fired: 0, held: 0, chargeGoal: 0, seen: 0,
     err: 0, errT: 0, target: null, lockT: 0, dodgeT: 0, dodgeKind: 0, spotted: 0, react: 0.62 - 0.46 * skill, jumpT: 0, side: 0, sideT: 0, strafeT: 1,
-    noOk: 0, blockT: 0, leadK: 1, charging: false, stuck: 0, lastX: p.x, lastY: p.y, decoyT: 4 + Math.random() * 8, holeStage: 0, holeT: 14 + Math.random() * 10, desired: p.aim, fireWait: 0, spot: [0, 0],
+    noOk: 0, blockT: 0, leadK: 1, range: 0, charging: false, stuck: 0, lastX: p.x, lastY: p.y, decoyT: 4 + Math.random() * 8, holeStage: 0, holeT: 14 + Math.random() * 10, desired: p.aim, fireWait: 0, spot: [0, 0],
     pose: 0,
   };
   const sp = { v: 0, g: 0 };
@@ -26,6 +27,7 @@ export function makeBot(ctx, w, S, p) {
   const sol = { a: 0, t: 0, ok: false };
 
   function enemy() { return S.P[1 - me]; }
+  function myPair() { for (const q of S.holes) if (q.owner === me) return q; return null; }
 
   /** Solve the arc from (sx, sy) to (tx, ty) with charge c; high = take the lob. Writes sol. */
   function solve(sx, sy, tx, ty, c, high) {
@@ -48,13 +50,20 @@ export function makeBot(ctx, w, S, p) {
   function pickPlan() {
     const e = enemy();
     // out in the middle of the canyon there is only one thing to do
-    if (p.ground && p.y > GY + 40) { b.plan = p.y < FLOOR - 40 && onPlank(p.x) ? 'island' : 'descend'; b.stage = 0; b.planT = 8 + Math.random() * 6; b.stuck = 0; return; }
+    if (p.ground && p.y > GY + 40) {
+      // out in the canyon: hold the island a while, then go home (through a hole of mine if one leads there)
+      const island = p.y < FLOOR - 40 && onPlank(p.x);
+      const home = Math.random() < (island ? (b.plan === 'island' ? 0.6 : 0.25) : 0.55) || (ctx.sudden && Math.random() < 0.3);
+      b.plan = home ? 'return' : island ? 'island' : 'descend';
+      b.stage = 0; b.planT = home ? 14 : 7 + Math.random() * 6; b.stuck = 0;
+      return;
+    }
     const wt = WEIGHT[skill < 0.4 ? 0 : skill < 0.75 ? 1 : 2].slice();
     for (let i = 0; i < wt.length; i++) {
       if (PLANS[i] === b.plan) wt[i] *= 0.2;
       if ((PLANS[i] === 'launch' || PLANS[i] === 'descend') && (S.tl < 5 || (e.y > GY + 40))) wt[i] *= 0.2;
       if (ctx.sudden && (PLANS[i] === 'hold' || PLANS[i] === 'rock')) wt[i] *= 0.3;
-      if (S.tl > 20 && (PLANS[i] === 'hold' || PLANS[i] === 'rock')) wt[i] *= 0.5; // the stand-off gets old
+      if (S.tl > 18 && (PLANS[i] === 'hold' || PLANS[i] === 'rock')) wt[i] *= 0.3; // the stand-off gets old
     }
     let r = Math.random() * wt.reduce((s, v) => s + v, 0), k = 0;
     while (k < wt.length - 1 && (r -= wt[k]) > 0) k++;
@@ -108,7 +117,14 @@ export function makeBot(ctx, w, S, p) {
         break;
       }
       case 'launch': {
-        if (b.stage === 0) { if (p.ground && p.y < GY - 100) { b.plan = 'hold'; break; } if (walk(X(350), 12)) b.stage = 1; } else if (b.stage === 1) {
+        if (b.stage === 0) {
+          if (p.ground && p.y < GY - 100) { b.plan = 'hold'; break; }
+          if (walk(X(350), 12)) {
+            // leave a portable hole behind first: its twin goes down on the island, and it is the way home
+            if (skill > 0.3 && p.a1cd <= 0 && p.a1lock <= 0 && (!myPair() || myPair().b) && p.ground) { cmd.a1 = true; b.wait = 0.45; } else b.wait = 0;
+            b.stage = 1;
+          }
+        } else if (b.stage === 1 && b.wait > 0) { b.wait -= dt; } else if (b.stage === 1) {
           cmd.mx = mir; // run at the springboard
           if (!p.ground && p.vy < -850) b.stage = 2; // the springboard threw us
           if (!p.ground && p.y > GY + 20) b.stage = 2;
@@ -125,6 +141,19 @@ export function makeBot(ctx, w, S, p) {
         if (p.ground && onPlank(p.x) && Math.abs(p.x - gx) > 14 && p.y > GY + 40) walk(gx, 14);
         else if (p.ground && p.y > GY + 40 && !onPlank(p.x)) b.plan = 'descend';
         if (b.planT < 2 && Math.random() < dt * 0.2) b.planT += 3;
+        break;
+      }
+      case 'return': {
+        if (p.ground && p.y < GY + 10) { b.plan = 'hold'; b.stage = 0; b.planT = 4 + Math.random() * 4; break; } // home
+        const pair = myPair();
+        if (pair && pair.b && p.ground && !p.lad) {
+          const here = Math.abs(pair.a.y - p.y) < 20 ? pair.a : Math.abs(pair.b.y - p.y) < 20 ? pair.b : null;
+          const there = here === pair.a ? pair.b : pair.a;
+          if (here && there.y < GY + 10) { if (!here.arm[me]) walk(here.x - mir * 55, 4); else walk(here.x, 3); break; }
+        }
+        if (p.lad) { cmd.my = p.lad.k === 'cliff' ? -1 : 1; break; } // up the cliff, or down off the pillar
+        if (p.ground && p.y > FLOOR - 30) { if (walk(X(CLIFF), 6)) cmd.my = -1; } // across the floor to my ladder
+        else if (p.ground) cmd.mx = -mir; // off my end of the island
         break;
       }
       case 'descend': {
@@ -147,6 +176,7 @@ export function makeBot(ctx, w, S, p) {
     if (p.lad) {
       // on a ladder: whatever the plan said, keep going the way it wants
       if (b.plan === 'island' || b.plan === 'hold') cmd.my = p.y > GY + 100 ? -1 : 0;
+      else if (b.plan === 'return' && p.lad.k === 'cliff') cmd.my = -1;
     }
   }
 
@@ -192,9 +222,9 @@ export function makeBot(ctx, w, S, p) {
     if (!live) { cmd.a = angLerp(p.aim, dxe > 0 ? -0.2 : Math.PI + 0.2, 1 - Math.exp(-dt * 3)); return cmd; }
     if (!b.plan || b.planT <= 0) pickPlan();
     // stuck: nothing moved for a while although we wanted to
-    if (Math.abs(p.x - b.lastX) + Math.abs(p.y - b.lastY) < 3 && (b.plan === 'launch' || b.plan === 'descend' || b.plan === 'perch')) b.stuck += dt; else b.stuck = 0;
+    if (Math.abs(p.x - b.lastX) + Math.abs(p.y - b.lastY) < 3 && (b.plan === 'launch' || b.plan === 'descend' || b.plan === 'perch' || b.plan === 'return')) b.stuck += dt; else b.stuck = 0;
     b.lastX = p.x; b.lastY = p.y;
-    if (b.stuck > 2.5) { b.plan = 'hold'; b.stage = 0; b.planT = 4; b.stuck = 0; }
+    if (b.stuck > 2.5) { b.plan = p.y > GY + 40 && b.plan !== 'return' ? 'return' : 'hold'; b.stage = 0; b.planT = 4; b.stuck = 0; }
 
     navigate(dt);
     // the rock is in the way: hop it, with a run-up
@@ -230,6 +260,10 @@ export function makeBot(ctx, w, S, p) {
     if (b.dodgeT > 0 && !p.lad) {
       if (b.dodgeKind === 1 && p.ground && b.jumpT <= 0) { cmd.jump = true; b.jumpT = 0.7; } else if (b.dodgeKind === 2) cmd.my = 1; else if (b.dodgeKind === 3) cmd.mx = (p.x < 400 || p.x > 1200) ? mir * -1 : Math.sign(Math.random() - 0.5) || 1;
     }
+    // ---- the other barrel glints: do not stand still for it ----
+    if (e.charge > 0.55 && !b.charging && b.dodgeT <= 0 && p.ground && !p.lad && Math.random() < dt * (0.6 + 2.4 * skill)) {
+      b.side = Math.random() < 0.5 ? -1 : 1; b.sideT = 0.5 + Math.random() * 0.7;
+    }
     // ---- sidestep around, now and then, so the other bot has to lead ----
     if (!p.lad && p.ground && b.sideT <= 0 && (b.plan === 'hold' || b.plan === 'lip' || b.plan === 'island') && b.dodgeT <= 0) {
       b.sideT = 0.5 + Math.random() * 1.2;
@@ -248,7 +282,7 @@ export function makeBot(ctx, w, S, p) {
       let pair = null;
       for (const q of S.holes) if (q.owner === me) pair = q;
       if (skill > 0.3 && p.a1cd <= 0 && p.a1lock <= 0) {
-        if (!pair && b.holeT <= 0 && (b.plan === 'hold' || b.plan === 'lip' || b.plan === 'perch') && b.stage >= 1 && Math.random() < dt * 0.4) { cmd.a1 = true; b.holeStage = 1; b.holeT = 12 + Math.random() * 12; b.hx = p.x; }
+        if (!pair && b.holeT <= 0 && skill > 0.6 && (b.plan === 'hold' || b.plan === 'lip' || b.plan === 'perch') && b.stage >= 1 && Math.random() < dt * 0.4) { cmd.a1 = true; b.holeStage = 1; b.holeT = 12 + Math.random() * 12; b.hx = p.x; }
         else if (pair && !pair.b && Math.abs(p.x - pair.a.x) > 140 && Math.abs(p.y - pair.a.y) < 30 || pair && !pair.b && Math.abs(p.y - pair.a.y) > 60) cmd.a1 = true;
       }
       // step into a hole of mine when somebody is shooting at me and it is near
@@ -270,14 +304,15 @@ export function makeBot(ctx, w, S, p) {
     cmd.alt = b.charging;
     const c = p.charge;
     // predicted target position: lead by the flight time, with skill deciding how well it is judged
-    let tx = tg.x, ty = tg.y - tg.h * 0.45;
-    if (b.errT <= 0) { b.errT = 0.6 + Math.random() * 0.8; b.err = gauss(Math.random) * (0.06 - 0.047 * skill) * (1 - 0.5 * c) * (1 + 1.5 * Math.max(0, 1 - b.fired / 3)) * (1 - 0.4 * clamp((S.tl - 18) / 25, 0, 1)); b.leadK = 0.3 + 0.7 * skill + gauss(Math.random) * 0.15 * (1 - skill); }
+    // misjudging the range (how far the cork will carry) is what makes the long shot hard; close up it hardly matters
+    let tx = tg.x + (tg.x - sx) * b.range, ty = tg.y - tg.h * 0.45;
+    if (b.errT <= 0) { b.errT = 0.6 + Math.random() * 0.8; b.err = gauss(Math.random) * (0.06 - 0.045 * skill) * (1 - 0.25 * c) * (1 + 1.5 * Math.max(0, 1 - b.fired / 3)) * (1 - 0.6 * clamp((S.tl - 14) / 16, 0, 1)); b.leadK = 0.3 + 0.7 * skill + gauss(Math.random) * 0.15 * (1 - skill); b.range = gauss(Math.random) * (0.1 - 0.065 * skill) * (1 - 0.35 * Math.min(1, b.fired / 4)); }
     let ok = false;
     for (let pass = 0; pass < 2 && !ok; pass++) {
       const high = pass === 1;
       let ex = tx, ey = ty;
       solve(sx, sy, ex, ey, c, high);
-      for (let it = 0; it < 2 && sol.ok; it++) { ex = tg.x + tg.vx * sol.t * b.leadK; ey = ty; solve(sx, sy, ex, ey, c, high); }
+      for (let it = 0; it < 2 && sol.ok; it++) { ex = tx + tg.vx * sol.t * b.leadK; ey = ty; solve(sx, sy, ex, ey, c, high); }
       if (!sol.ok || sol.t > (high ? 2.7 : 1.9)) continue;
       // is the arc clear all the way?
       const L = GUN.base + 9 + c * GUN.sect * GUN.n;
@@ -285,7 +320,7 @@ export function makeBot(ctx, w, S, p) {
       const n = traceCork(w, sx + Math.cos(sol.a) * L, sy + Math.sin(sol.a) * L, Math.cos(sol.a) * sp.v, Math.sin(sol.a) * sp.v, sp.g, sol.t + 0.1, 0.05, tr);
       const hx = tr[(n - 1) * 2], hy = tr[(n - 1) * 2 + 1];
       ok = Math.hypot(hx - ex, hy - ey) < 80 || n * 0.05 > sol.t + 0.02;
-      if (ok) { tx = ex; ty = ey; }
+      if (ok) { ty = ey; }
     }
     // the crate tower is in the way: knock it down
     let tower = false;
@@ -303,7 +338,9 @@ export function makeBot(ctx, w, S, p) {
     b.seen = ok ? b.seen + dt : 0;
     const settled = Math.abs(((cmd.a - want + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.014 + 0.02 * (1 - skill);
     const nerve = ctx.sudden ? 0.15 : 1;
-    if (live && ok && S.tl >= b.readyAt * nerve && p.rt <= 0 && p.stun <= 0 && !p.lad && settled && b.seen > b.react * 0.6 + 0.1) {
+    // the long barrel wobbles: a good shot waits for it to swing through true (a poor one does not bother)
+    const steady = Math.abs(p.a - p.aim) < 0.004 + 0.03 * (1 - skill) * (1 - skill);
+    if (live && ok && S.tl >= b.readyAt * nerve && p.rt <= 0 && p.stun <= 0 && !p.lad && settled && steady && b.seen > b.react * 0.6 + 0.1) {
       if (b.charging) { if (c >= b.chargeGoal) { cmd.fire = true; b.charging = false; } } else if (!wantsCharge) cmd.fire = true;
     }
     if (cmd.fire) { b.seen = 0; b.fired++; b.errT = 0; }

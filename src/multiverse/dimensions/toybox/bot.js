@@ -2,6 +2,10 @@
 // lean out, kneel, wait for the laser to settle on you, shoot, duck back, come a little closer.
 // Skill sets how soon it notices, how well it leads, how tight a moment it waits for, and
 // how often it gets out of the way of a pellet it can see coming.
+// Every round it also picks a temper, so no two rounds play out alike:
+//   HOLD   a marksman: stays far back, kneels long, waits for you to cross its line;
+//   STALK  goes round through the dark, rarely shows itself, takes you from close;
+//   PUSH   comes straight at you from cover to cover and fires early and often.
 import { clamp, lerp, angDiff, gauss, TAU } from '../../kit.js';
 import { hit, BODY_R } from './world.js';
 
@@ -11,16 +15,26 @@ export function makeBot(ctx, W, G) {
   const skill = clamp(ctx.botSkill, 0, 1);
   const R = Math.random;
 
+  // far, near: the range it wants at the start and at the end of its approach; t0, t1: when
+  // the approach starts and how long it takes. open: until then its shots are only ranging fire.
+  // dark: how much it hates the light; hidden: how much it likes a post they cannot see.
+  const TEMPERS = {
+    hold: { far: 28, near: 14, t0: 12, t1: 30, open: [7, 5], dark: 1.4, hidden: 1.2, patience: [7, 4.6], rest: [0.4, 1.0], range: 0.45 },
+    stalk: { far: 24, near: 7, t0: 4, t1: 24, open: [8, 6], dark: 3.6, hidden: 4.5, patience: [3.2, 2.2], rest: [0.8, 1.6], range: 1 },
+    push: { far: 18, near: 6, t0: 1, t1: 14, open: [5, 4], dark: 1.2, hidden: 2.2, patience: [3.6, 2.4], rest: [0.1, 0.5], range: 0.8 },
+  };
+
   function create(p) {
+    const r = R(), style = r < 0.4 ? 'hold' : r < 0.76 ? 'stalk' : 'push', K = TEMPERS[style];
     return {
-      mode: 'hide', gx: p.x, gz: p.z, post: null, wait: 0.8 + R() * 1.6, aimT: 0, seen: 0, lost: 0, err: 0, errTo: 0, errT: 0, off: R() < 0.5 ? 1 : -1,
-      threat: 0, lastX: p.x, lastZ: p.z, stuckT: 0, still: 0, strafe: R() < 0.5 ? 1 : -1, strafeT: 0, pel: -1, pelT: 0, pelGo: false, open: 10.1 + R() * 1.6, nerve: 0.7 + R() * 0.6, tx: 0, tz: 0, snap: 0, cop: 3 + R() * 6,
+      style, K, mode: 'hide', gx: p.x, gz: p.z, post: null, wait: 0.8 + R() * 1.6, aimT: 0, seen: 0, lost: 0, err: 0, errTo: 0, errT: 0, nx: 0, nz: 0, shaken: false, off: R() < 0.5 ? 1 : -1,
+      threat: 0, lastX: p.x, lastZ: p.z, stuckT: 0, still: 0, strafe: R() < 0.5 ? 1 : -1, strafeT: 0, pel: -1, pelT: 0, pelGo: false, open: K.open[0] + R() * K.open[1], nerve: 0.75 + R() * 0.5, tx: 0, tz: 0, snap: 0, cop: 4 + R() * 12,
     };
   }
 
-  // Somewhere to be: behind something, about as far from them as the round's age says.
+  // Somewhere to be: behind something, about as far from them as its temper and the round's age say.
   function pickPost(p, e, b, T) {
-    const sudden = W.suddenAt >= 0, want = sudden ? 7 : lerp(27, 8, clamp((T - 9) / 22, 0, 1)) * b.nerve;
+    const K = b.K, sudden = W.suddenAt >= 0, want = sudden ? 7 : lerp(K.far, K.near, clamp((T - K.t0) / K.t1, 0, 1)) * b.nerve;
     let best = null, bs = -1e9;
     for (let i = 0; i < W.posts.length; i++) {
       const q = W.posts[i];
@@ -28,8 +42,8 @@ export function makeBot(ctx, W, G) {
       if (!W.onRug(q.x, q.z, 0.8)) continue;
       const d = Math.hypot(q.x - e.x, q.z - e.z), travel = Math.hypot(q.x - p.x, q.z - p.z);
       if (d < 5) continue;
-      let s = -Math.abs(d - want) * 0.3 - travel * 0.13 - W.light(q.x, q.z) * 1.6 + R() * 1.4;
-      if (!W.los(q.x, q.z, e.x, e.z)) s += 3;
+      let s = -Math.abs(d - want) * 0.3 - travel * 0.13 - W.light(q.x, q.z) * K.dark + R() * 1.4;
+      if (!W.los(q.x, q.z, e.x, e.z)) s += K.hidden;
       if (q === b.post) s -= T < 10 ? -1.5 : 1.2;
       if (s > bs) { bs = s; best = q; }
     }
@@ -40,8 +54,9 @@ export function makeBot(ctx, W, G) {
   // The nearest spot beside the post from which the other sniper can be seen.
   function pickPeek(p, e, b) {
     let best = -1, bd = 1e9;
-    for (let k = 0; k < 16; k++) {
-      const a = (k / 16) * TAU, r = k & 1 ? 1.5 : 2.6, x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
+    const k0 = Math.floor(R() * 16); // (no favourite side: in the dark, every spot ties)
+    for (let j = 0; j < 16; j++) {
+      const k = (j + k0) & 15, a = (k / 16) * TAU, r = k & 1 ? 1.5 : 2.6, x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
       if (!W.onRug(x, z, 0.8) || W.inside(x, z, BODY_R + 0.15) || !W.los(p.x, p.z, x, z, 0.3)) continue;
       if (!W.los(x, z, e.x, e.z, 0.12)) continue;
       const d = r + W.light(x, z) * 1.5;
@@ -94,9 +109,16 @@ export function makeBot(ctx, W, G) {
       if (Math.abs(lat) > 0.8) b.off = lat > 0 ? -1 : 1;
       tx += (-dz / dist) * b.off * 2.4; tz += (dx / dist) * b.off * 2.4;
     }
-    b.tx = tx; b.tz = tz;
     b.errT -= dt;
-    if (b.errT <= 0) { b.errT = 0.45 + R() * 0.5; b.errTo = gauss(R) * lerp(0.05, 0.009, skill) * (ranging ? 0.4 : 1); }
+    if (b.errT <= 0) {
+      b.errT = 0.45 + R() * 0.5; b.errTo = gauss(R) * lerp(0.05, 0.009, skill) * (ranging ? 0.4 : 1);
+      // How well it can make them out: a plastic man in the dark on the far side of the rug is a
+      // guess. The guess is off by more the further away they are, and by less when they are lit.
+      const blur = lerp(0.034, 0.009, skill);
+      b.nx = gauss(R) * blur; b.nz = gauss(R) * blur;
+    }
+    if (!ranging) { const k = dist * (1 - 0.6 * e.lit); tx += b.nx * k; tz += b.nz * k; }
+    b.tx = tx; b.tz = tz;
     b.err += (b.errTo - b.err) * Math.min(1, dt * 3);
     const want = Math.atan2(tz - p.z, tx - p.x) + b.err;
     cmd.a = p.a + angDiff(p.a, want) * (1 - Math.exp(-dt * (4 + 9 * skill)));
@@ -118,6 +140,13 @@ export function makeBot(ctx, W, G) {
       if (along > 0 && off < 1.1) dodge = true;
     }
     const flee = b.threat > lerp(0.75, 0.3, skill) && p.reload > 0.2;
+    // They have just fired at me and missed: whoever is not about to fire back gets moving.
+    const fired = e.reload > e.reloadMax - 0.1;
+    if (!fired) b.shaken = false;
+    else if (!b.shaken && b.mode !== 'duel') {
+      b.shaken = true;
+      if ((b.mode === 'aim' && (p.reload > 0 || R() < (b.style === 'hold' ? 0.3 : 0.6))) || (b.mode === 'hide' && R() < 0.4)) { b.mode = 'hide'; pickPost(p, e, b, T); b.wait = 0.2 + R() * 0.6; }
+    }
 
     // ---- the plan ----
     b.wait -= dt;
@@ -136,12 +165,12 @@ export function makeBot(ctx, W, G) {
     } else if (b.mode === 'aim') {
       cmd.alt = true;
       b.aimT += dt;
-      const patience = lerp(4.6, 3.0, skill) * b.nerve;
+      const patience = lerp(b.K.patience[0], b.K.patience[1], skill) * b.nerve;
       if (flee || b.lost > 1.1 || b.aimT > patience || (p.reload > 0 && p.reload < p.reloadMax - 0.15)) {
         // Shot taken, or it is getting hot: back behind something, usually somewhere new.
         b.mode = 'hide'; cmd.alt = false;
         if (R() < 0.75 || flee) pickPost(p, e, b, T); else if (b.post) { b.gx = b.post.x; b.gz = b.post.z; }
-        b.wait = (ranging ? 0.5 : lerp(1.3, 0.35, skill)) * (0.6 + R() * 0.9);
+        b.wait = (ranging ? 0.5 : lerp(1.3, 0.35, skill)) * (0.6 + R() * 0.9) + b.K.rest[0] + R() * b.K.rest[1];
       }
     } else {
       // Sudden death: nothing left to hide behind. Jink across their line, stop, kneel, shoot.
@@ -161,8 +190,11 @@ export function makeBot(ctx, W, G) {
     if (p.reload <= 0 && sees && p.roll < 0) {
       const sa = p.shotA, cx = Math.cos(sa), sz = Math.sin(sa), rx = tx - p.x, rz = tz - p.z;
       const along = rx * cx + rz * sz, miss = Math.abs(rx * sz - rz * cx);
-      const tol = (ranging ? 0.5 : 0.24 + (1 - skill) * 0.42) * (p.k > 0.8 ? 1 : 0.8);
-      const ready = b.seen > lerp(0.85, 0.3, skill) && (p.k > 0.9 ? b.aimT > lerp(0.8, 0.3, skill) : b.snap > 0.35 || dist < 7);
+      // Far off, a target that is neither kneeling nor lit is a poor bet: it waits for a better one.
+      const poor = !ranging && dist > 20 && e.k < 0.5 && e.lit < 0.5 ? clamp(1.3 - (dist - 20) * 0.05 / b.K.range, 0.45, 1) : 1;
+      const tol = (ranging ? 0.5 : 0.24 + (1 - skill) * 0.42) * (p.k > 0.8 ? 1 : 0.8) * poor;
+      // (across the rug it takes a moment longer to be sure — long enough for them to see the laser and go)
+      const ready = b.seen > lerp(0.85, 0.3, skill) * (dist > 16 ? 1.6 : 1) && (p.k > 0.9 ? b.aimT > lerp(0.8, 0.3, skill) : b.snap > 0.35 || dist < 7);
       if (ready && along > 0 && miss < tol && W.cast(p.x, p.z, cx, sz, along) >= along - 0.7) cmd.fire = true;
     }
 
@@ -176,7 +208,7 @@ export function makeBot(ctx, W, G) {
       if (b.mode === 'aim') { b.mode = 'hide'; pickPost(p, e, b, T); b.wait = 0.4 + R() * 0.5; }
     }
     b.cop -= dt;
-    if (p.copCd <= 0 && b.cop <= 0 && T > 9 && e.alive && e.lit < 0.35 && dist > 9 && !sudden) { cmd.a2 = true; b.cop = 4 + R() * 6; }
+    if (p.copCd <= 0 && b.cop <= 0 && T > (b.style === 'push' ? 8 : 12) && e.alive && e.lit < 0.35 && dist > 9 && !sudden) { cmd.a2 = true; b.cop = 4 + R() * 6; }
 
     // ---- not getting anywhere? go somewhere else ----
     b.stuckT += dt;

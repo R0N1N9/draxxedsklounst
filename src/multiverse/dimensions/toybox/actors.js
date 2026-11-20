@@ -88,7 +88,14 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
     // The pieces it comes apart into.
     const bits = toys.pieces.map((pc) => { const m = new THREE.Mesh(pc.geo, plastic); m.castShadow = true; m.visible = false; scene.add(m); return { m, r: pc.r, c: pc.c, vx: 0, vy: 0, vz: 0, wx: 0, wy: 0, wz: 0, rest: false }; });
     for (let k = 0; k < (Q.rich ? 16 : 8); k++) { const m = new THREE.Mesh(toys.shard, plastic); m.castShadow = true; m.visible = false; scene.add(m); bits.push({ m, r: 0.06, c: null, vx: 0, vy: 0, vz: 0, wx: 0, wy: 0, wz: 0, rest: false }); }
-    return { i, plastic, root, pivot, poses, ring, ringMat, beam, stub, bounce, dot, bits, burst: false, squash: 0, land: 0 };
+    // The hit's shock ring: a flat wave of the victim's colour that runs out across the floor.
+    const wave = new THREE.Mesh(ringGeo, keep(new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uCol: { value: hdr(colors[i], 2.4) }, uT: { value: 0 } },
+      vertexShader: 'varying vec2 vU; void main() { vU = uv * 2.0 - 1.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'precision highp float; uniform vec3 uCol; uniform float uT; varying vec2 vU;\nvoid main() { float r = length(vU), w = mix(0.1, 0.03, uT); float band = smoothstep(1.0 - w * 2.0, 1.0 - w, r) * (1.0 - smoothstep(1.0 - w, 1.0, r)); gl_FragColor = vec4(uCol * band * pow(1.0 - uT, 1.5), 1.0); }',
+    })));
+    wave.visible = false; wave.renderOrder = 3; scene.add(wave);
+    return { i, plastic, root, pivot, poses, ring, ringMat, beam, stub, bounce, dot, bits, wave, waveT: 0, burst: false, squash: 0, land: 0 };
   });
 
   // ---- pellets: a hot bead, its streak, and its own little shadow ----
@@ -106,7 +113,19 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
   const copters = [0, 1].map((i) => {
     const g = new THREE.Group(), body = new THREE.Mesh(toys.copter, room.std({ color: new THREE.Color(colors[i]), vertexColors: true, roughness: 0.35, emissive: new THREE.Color(colors[i]).multiplyScalar(0.25) }));
     const rotor = new THREE.Mesh(toys.rotor, room.M.paint), key = new THREE.Mesh(toys.key, room.M.paint);
-    const disc = new THREE.Mesh(discGeo, keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.7, 0.75, 0.8), transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide })));
+    // A spinning rotor is a blur, not a cross: two soft smears that turn, and a faint rim.
+    const disc = new THREE.Mesh(discGeo, keep(new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, uniforms: { uSpin: { value: 0 }, uA: { value: 1 } },
+      vertexShader: 'varying vec2 vU; void main() { vU = uv * 2.0 - 1.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `precision highp float; uniform float uSpin, uA; varying vec2 vU;
+void main() {
+  float r = length(vU), a = atan(vU.y, vU.x) - uSpin;
+  float smear = pow(abs(cos(a)), 6.0) * 0.5 + pow(abs(cos(a + 1.5708)), 6.0) * 0.5;
+  float rim = smoothstep(0.84, 0.95, r) * (1.0 - smoothstep(0.95, 1.0, r));
+  float alpha = (smear * 0.32 * smoothstep(0.1, 0.3, r) + rim * 0.22 + 0.05) * (1.0 - smoothstep(0.97, 1.0, r)) * uA;
+  gl_FragColor = vec4(vec3(0.86, 0.9, 0.95), alpha);
+}`,
+    })));
     const lens = new THREE.Mesh(dotGeo, keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 10, 12) })));
     body.castShadow = rotor.castShadow = true;
     rotor.position.y = 0.78; disc.position.y = 0.8; key.position.set(-0.1, 0, 0.42); lens.position.set(0.25, -0.5, 0); lens.scale.setScalar(1.6);
@@ -116,10 +135,10 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
     const cone = new THREE.Mesh(coneGeo, keep(new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uA: { value: 0 } },
       vertexShader: 'varying float vY; void main() { vY = -position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'precision highp float; uniform float uA; varying float vY; void main() { gl_FragColor = vec4(vec3(0.75, 0.86, 1.0) * uA * (0.07 + 0.26 * pow(1.0 - vY, 2.0)), 1.0); }',
+      fragmentShader: 'precision highp float; uniform float uA; varying float vY; void main() { gl_FragColor = vec4(vec3(0.75, 0.86, 1.0) * uA * (0.045 + 0.17 * pow(1.0 - vY, 2.0)), 1.0); }',
     })));
     cone.visible = false; cone.renderOrder = 7; scene.add(cone);
-    return { g, rotor, key, cone };
+    return { g, rotor, key, cone, disc };
   });
 
   // ---- particles: sparks (additive), chips (opaque flecks that bounce), puffs (soft) ----
@@ -216,8 +235,11 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       }
       for (let k = 0; k < 26; k++) chips.emit(x, 0.5 + R() * 1.1, z, dx * (2 + R() * 8) + S() * 9, 2 + R() * 8, dz * (2 + R() * 8) + S() * 9, 0.7 + R() * 0.7, 0.16, 0.07, pc[i][0], pc[i][1], pc[i][2], 1, 24, 0.5, true);
       for (let k = 0; k < 16; k++) sparks.emit(x, 0.9, z, S() * 22, R() * 12, S() * 22, 0.2 + R() * 0.25, 0.26, 0.04, 3 + pc[i][0] * 3, 3 + pc[i][1] * 3, 3 + pc[i][2] * 3, 1, 14, 2);
+      // flakes of the same plastic, and a few bright ones that catch the light
+      for (let k = 0; k < 22; k++) { const a = R() * TAU, v = 3 + R() * 9, w = k < 6 ? 1.8 : 1; chips.emit(x, 0.8 + R() * 0.8, z, Math.cos(a) * v + dx * 4, 4 + R() * 9, Math.sin(a) * v + dz * 4, 0.9 + R() * 0.8, 0.24, 0.12, pc[i][0] * w, pc[i][1] * w, pc[i][2] * w, 1, 26, 0.4, true); }
       sparks.emit(x, 1, z, 0, 0, 0, 0.12, 3, 0.6, 2.2, 2, 1.7, 1, 0, 0);
       flash.position.set(x, 2, z); flash.intensity = 20;
+      s.wave.position.set(x, 0.05, z); s.wave.visible = true; s.waveT = 0;
     },
 
     // p: the simulation's soldier. aim: { on, x1, z1, bx, bz, hasB, full } — where its laser goes.
@@ -289,7 +311,11 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       v.g.rotation.set(Math.sin(wt * 5) * 0.05, -c.yaw, c.tilt * 0.3 + (1 - spin) * 0.5);
       v.rotor.rotation.y += dt * 46 * spin;
       v.key.rotation.z -= dt * 3 * spin;
-      v.g.children[3].visible = spin > 0.3;
+      // Flat out, the blades are only a blur; winding down, they come back as the blur fades.
+      v.rotor.visible = spin < 0.6;
+      v.disc.visible = spin > 0.15;
+      v.disc.material.uniforms.uSpin.value = wt * 9;
+      v.disc.material.uniforms.uA.value = clamp((spin - 0.15) / 0.45, 0, 1);
       if (v.cone.visible) { v.cone.position.set(c.x, c.y - 0.5, c.z); v.cone.scale.set(1, c.y - 0.5, 1); v.cone.material.uniforms.uA.value = c.lit; }
     },
 
@@ -301,6 +327,12 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       // Plastic in flight: gravity, a floor, and less spin with every bounce.
       for (const s of men) {
         if (!s.burst) continue;
+        if (s.wave.visible) {
+          s.waveT += dt / 0.75;
+          s.wave.visible = s.waveT < 1;
+          s.wave.scale.setScalar(0.4 + Math.sqrt(s.waveT) * 4.6);
+          s.wave.material.uniforms.uT.value = Math.min(1, s.waveT);
+        }
         for (const b of s.bits) {
           if (b.rest) continue;
           const m = b.m;
