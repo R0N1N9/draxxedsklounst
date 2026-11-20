@@ -5,8 +5,9 @@ import { clamp, rgba, TAU } from '../../kit.js';
 
 const PAPER = '#e9dfc8', EMBER = '#e8853a', RED = '#e2472f', MONO = "'JetBrains Mono', Menlo, monospace";
 
+let minPx = 8.5; // the smallest label: raised on a phone, where it is read at arm's length on a small glass
 function label(g, text, x, y, size, color, align = 'center', alpha = 1) {
-  g.font = `600 ${Math.max(8.5, size)}px ${MONO}`; // (never below what a phone at arm's length can read)
+  g.font = `600 ${Math.max(minPx, size)}px ${MONO}`;
   g.textAlign = align;
   g.textBaseline = 'middle';
   g.fillStyle = `rgba(0,0,0,${0.7 * alpha})`;
@@ -32,6 +33,7 @@ function chevron(g, x, y, s, color, alpha, hollow) {
 // S: the frame's view state, assembled by the game (see index.js → hudState).
 export function drawOverlay(g, S) {
   const { w, h } = S, cx = w / 2, cy = h / 2, u = clamp(Math.min(w, h) / 720, 0.62, 1.35); // UI scale
+  minPx = h < 480 ? 11 : 8.5;
   g.lineCap = 'butt';
   g.lineJoin = 'miter';
 
@@ -53,7 +55,10 @@ export function drawOverlay(g, S) {
       }
     } else if (m.kind !== 'ping') {
       // Off screen: an arrow on an ellipse inside the frame, clear of the corners' controls.
-      const rx = w * 0.4, ry = h * 0.34, ax = cx + Math.sin(m.ang) * rx, ay = cy - Math.cos(m.ang) * ry;
+      const rx = w * 0.4, ry = h * 0.34, ax = cx + Math.sin(m.ang) * rx;
+      let ay = cy - Math.cos(m.ang) * ry;
+      // ...and, on a phone, above the thumbs' buttons (S.sl / S.sr / S.sb: ctx.safe, 0 elsewhere).
+      if (S.sb > 0 && ay > h - S.sb - 14 && (ax < S.sl + 12 || ax > w - S.sr - 12)) ay = h - S.sb - 14;
       g.save();
       g.translate(ax, ay);
       g.rotate(m.ang);

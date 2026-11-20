@@ -94,6 +94,11 @@
  * @property {number} width   stage width in CSS pixels (live getter)
  * @property {number} height  stage height in CSS pixels (live getter)
  * @property {number} dpr     device pixel ratio in use (<= 2)
+ * @property {{left:number, right:number, top:number, bottom:number}} safe  live CSS-pixel margins taken by
+ *             the touch controls and system insets (all 0 without touch): the left / right
+ *             clusters reach `left` / `right` px in from their edge and the taller one rises `bottom`
+ *             px from the bottom, so a point is clear if y < height - bottom or left < x < width - right.
+ *             Read it every frame; on a phone (height < 480) keep spawns and essential UI clear of it.
  * @property {HTMLCanvasElement} canvas   the 2D canvas
  * @property {CanvasRenderingContext2D} g The core sets the transform so that 1 unit = 1 CSS
  *             pixel before every render(). Draw in a [0,width] x [0,height] space.

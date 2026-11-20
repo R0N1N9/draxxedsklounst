@@ -368,6 +368,7 @@ export class Director {
       get width() { return d.stage.width; },
       get height() { return d.stage.height; },
       get dpr() { return d.stage.dpr; },
+      get safe() { return d.input.safe; },
       canvas: this.stage.canvas,
       g: this.stage.g,
       three: mod.renderer === 'three' ? this.stage.three() : undefined,

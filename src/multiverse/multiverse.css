@@ -2,9 +2,9 @@
    < #mv-touch 8 < #mv-fx 18 (transitions) < #mv-modal 19 < .screen 20 (menus). */
 :root { --mv-bg: #0a0b12; --mv-fg: #e8e6f0; --mv-accent: #f2b35b; }
 
-#mv-stage { position: fixed; inset: 0; z-index: 2; display: none; background: #000; overflow: hidden; touch-action: none; }
+#mv-stage { position: fixed; inset: 0; z-index: 2; display: none; background: #000; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
 #mv-stage canvas, #mv-fx canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-#mv-fx { position: fixed; inset: 0; z-index: 18; display: none; overflow: hidden; touch-action: none; }
+#mv-fx { position: fixed; inset: 0; z-index: 18; display: none; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 
 /* ---------------- HUD ---------------- */
 #mv-hud { position: fixed; inset: 0; z-index: 7; display: none; pointer-events: none; font-family: var(--sans); color: var(--mv-fg);
@@ -119,4 +119,38 @@
   .mv-pips, .mv-dim { display: none; }
   .mv-name { max-width: 16vw; font-size: 13px; }
   .mv-top { gap: 8px; padding: 5px 10px 6px; }
+}
+
+/* Phones held sideways: every pixel of height counts. A slimmer score bar, a title card that sits
+   above the touch controls and keeps its legend between the two clusters (input.js publishes
+   their reach as --mv-safe-l / -r / -t / -b, the same numbers as ctx.safe). */
+@media (max-height: 479px) {
+  #mv-hud { --pad-t: max(6px, var(--mv-safe-t, 0px)); --pad-x: max(14px, env(safe-area-inset-left)); }
+  .mv-top { padding: 3px 12px 4px; gap: 10px; }
+  .mv-name { font-size: 12px; }
+  .mv-name i { font-size: 8px; margin-left: 4px; padding: 0 3px; vertical-align: 1px; }
+  .mv-score { font-size: 17px; line-height: 1; }
+  .mv-clock { font-size: 10px; line-height: 1.1; }
+  .mv-mid { min-width: 60px; }
+  .mv-sudden { top: calc(var(--pad-t) + 40px); font-size: 10px; }
+  .mv-center { top: 30%; }
+  .mv-msg { font-size: clamp(20px, 7vh, 34px); }
+  .mv-kill { top: 24%; padding: 5px 16px; }
+  .mv-title { top: 36%; }
+  .mv-title::before { content: ''; position: absolute; inset: -14px -6% -10px; z-index: -1; pointer-events: none; background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.3) 55%, transparent 75%); }
+  .mv-t-kicker { font-size: 9px; letter-spacing: 0.3em; }
+  .mv-t-name { font-size: clamp(28px, 11vh, 52px); margin: 3px 0 4px; }
+  .mv-t-tag { font-size: 13px; }
+  .mv-t-keys, .mv-t-hint { position: relative; left: calc((var(--mv-safe-l, 0px) - var(--mv-safe-r, 0px)) / 2); width: calc(100vw - var(--mv-safe-l, 0px) - var(--mv-safe-r, 0px) - 24px); max-width: 100%; margin-left: auto; margin-right: auto; }
+  .mv-t-keys { margin-top: 9px; gap: 4px 12px; font-size: 10px; letter-spacing: 0.1em; }
+  .mv-t-keys kbd { font-size: 8.5px; margin-right: 4px; }
+  .mv-t-hint { margin-top: 7px; font-size: 12px; line-height: 1.25; }
+  .mv-count { top: 62%; font-size: clamp(30px, 14vh, 56px); }
+  .mv-card { padding: 16px 20px 14px; }
+  .mv-card h2 { font-size: 20px; margin-bottom: 6px; }
+  .mv-card p { margin-bottom: 8px; }
+  .mv-btns { margin-top: 10px; }
+  .mv-btns button { padding: 9px 10px; }
+  .mv-history { max-height: 26vh; }
+  .mv-final-score { margin-bottom: 6px; font-size: 18px; }
 }

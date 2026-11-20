@@ -647,7 +647,7 @@ export default {
           g.strokeStyle = C.ink;
           g.fillStyle = C.ink;
           g.lineWidth = 2;
-          g.font = '800 10px "Arial Narrow", Futura, sans-serif';
+          g.font = `800 ${ctx.height < 480 ? 12 : 10}px "Arial Narrow", Futura, sans-serif`;
           g.textAlign = 'center';
           for (let d = 10; d < L - 2; d += 10) {
             const tx = v.sx(me.x + uv.x * d), ty = v.sy(me.z + uv.z * d, CHEST), nx = -Math.sin(me.a), ny = Math.cos(me.a);
