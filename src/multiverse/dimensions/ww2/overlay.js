@@ -6,7 +6,7 @@ import { clamp, rgba, TAU } from '../../kit.js';
 const PAPER = '#e9dfc8', EMBER = '#e8853a', RED = '#e2472f', MONO = "'JetBrains Mono', Menlo, monospace";
 
 function label(g, text, x, y, size, color, align = 'center', alpha = 1) {
-  g.font = `600 ${size}px ${MONO}`;
+  g.font = `600 ${Math.max(8.5, size)}px ${MONO}`; // (never below what a phone at arm's length can read)
   g.textAlign = align;
   g.textBaseline = 'middle';
   g.fillStyle = `rgba(0,0,0,${0.7 * alpha})`;

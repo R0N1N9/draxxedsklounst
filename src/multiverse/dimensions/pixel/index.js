@@ -41,12 +41,12 @@ export default {
   id: 'pixel',
   name: 'CARTRIDGE CANYON',
   tagline: 'Sixteen colours. One bullet. Aim high.',
-  hint: 'Shots drop with distance: aim above the target.',
+  hint: 'Bullets drop: aim above your target.',
   perspective: 'SIDE-ON PIXEL ART',
   renderer: '2d',
   aim: 'pointer',
   palette: { bg: PAL.night, fg: PAL.cream, accent: PAL.coral },
-  controls: { move: 'RUN · DUCK', aim: 'AIM', fire: 'SHOOT', alt: 'PRONE', a1: 'SMOKE', a2: 'DECOY', jump: 'JETPACK' },
+  controls: { move: 'RUN · DUCK', aim: 'AIM', fire: 'SHOOT', alt: 'LIE DOWN', a1: 'SMOKE', a2: 'DECOY', jump: 'HOP/FLY' },
   altToggle: true, // the aim thumb is busy: on touch PRONE latches
   roundTime: ROUND,
   angleFields: ['a'],
@@ -64,14 +64,14 @@ export default {
       i, col: ctx.players[i].color, colD: shade(ctx.players[i].color, -0.42),
       x: world.spawns[i].x, y: world.GY, vx: 0, vy: 0, ground: true, wasGround: true, wall: false, bounce: false, face: i ? -1 : 1, st: 0, run: 0, airT: 0, fuel: 1, jet: false,
       aim: i ? Math.PI + 0.03 : -0.03, a: i ? Math.PI + 0.03 : -0.03, sway: 0.012, swPh: Math.random() * 9,
-      reload: 0, recoil: 0, flash: 0, alive: true, smokeCd: 0, decoyCd: 0, casing: -1, dipY: 0,
+      reload: 0, recoil: 0, flash: 0, alive: true, smokeCd: 0, decoyCd: 0, casing: -1, dipY: 0, stun: 0, birdCd: 0, hotCd: 0, landT: 0,
       remote: online && i !== ctx.me, bot: null,
     }));
     const S = {
       t: 0, P, bullets: [], smokes: [], grenades: [], decoys: [], motes: [], fx, world,
       padSquash: [0, 0], cam: { x: FW / 2, y: FH / 2, z: 1 }, kill: null, introT: -1, liveT: 0, readyT: 0, flashW: 0, sdOn: false,
       arc: Object.assign(new Float32Array(260), { n: 0 }), arcHit: { x: -1, y: -1 }, arcFull: false,
-      hides: null, shots: [0, 0],
+      hides: null, shots: [0, 0], pops: [], firstShot: -1,
     };
     // Smoke hides anything whose centre is inside a mature cloud.
     S.hides = (x, y) => {
@@ -114,7 +114,7 @@ export default {
       human.mx = flip ? -inp.moveX : inp.moveX;
       human.crouch = inp.moveY > 0.55;
       const sa = inp.aimAngle(scr.x, scr.y, flip ? Math.PI - p.aim : p.aim);
-      human.a = flip ? Math.PI - sa : sa;
+      human.a = Number.isFinite(sa) ? (flip ? Math.PI - sa : sa) : p.aim; // a collapsed stage gives NaN: keep the old aim
       human.fire = inp.firePressed;
       human.alt = inp.alt;
       human.jump = inp.jumpPressed || (up && !prevUp);
@@ -134,12 +134,13 @@ export default {
       p.st = prone ? 2 : live && cmd.crouch && p.ground ? 1 : ctx.phase === 'over' ? p.st : 0; // after a kill everyone holds their pose
       if (p.st === 2 && prevSt !== 2) { if (p.i === ctx.me) sound.prone(p.x); fx.emit(p.x - p.face * 5, p.y - 1, -p.face * 12, -18, 0.3, PAL.cream, 1, 40, 0, 2); }
       const spd = Math.abs(p.vx);
-      const wantSway = p.st === 2 ? 0.0022 : p.st === 1 ? 0.0075 : !p.ground ? 0.03 : spd > 10 ? 0.021 : 0.012;
+      const wantSway = p.stun > 0 ? 0.06 : p.st === 2 ? 0.0022 : p.st === 1 ? 0.0075 : !p.ground ? 0.03 : spd > 10 ? 0.021 : 0.012;
       p.sway = damp(p.sway, wantSway, p.sway > wantSway ? 4 : 9, dt);
       p.swPh += dt * (p.st === 2 ? 1.5 : 3.1);
       p.a = p.aim + p.sway * wobble(p.swPh);
       p.recoil = Math.max(0, p.recoil - dt * 5);
       p.flash = Math.max(0, p.flash - dt);
+      p.stun = Math.max(0, p.stun - dt); p.birdCd = Math.max(0, p.birdCd - dt); p.hotCd = Math.max(0, p.hotCd - dt); p.landT = Math.max(0, p.landT - dt);
       if (p.casing > 0 && (p.casing -= dt) <= 0) eject(p);
       p.dipY = 0;
       const before = p.reload;
@@ -171,6 +172,7 @@ export default {
         if (p.bounce) bounce = true;
       }
       p.x = clamp(p.x, 4, FW - 4);
+      if (p.ground && !p.wasGround && landV > 110) p.landT = 0.14;
       if (p.ground && !p.wasGround && landV > 110 && p.i === ctx.me) { sound.land(p.x); fx.sparks(p.x, p.y, -Math.PI / 2, 2.4, 4, 50, [PAL.cream, PAL.peach]); }
       p.wasGround = p.ground;
       if (bounce) { sound.spring(p.x); S.padSquash[p.x < FW / 2 ? 0 : 1] = 1; fx.sparks(p.x, p.y, -Math.PI / 2, 1.6, 6, 70, [PAL.coral, PAL.cream]); }
@@ -178,7 +180,7 @@ export default {
       if (p.jet) { if (p.i === ctx.me) sound.jet(p.x, dt); if (Math.random() < dt * 40) fx.emit(p.x - p.face * 5, p.y - 2, (Math.random() - 0.5) * 20, 50 + Math.random() * 40, 0.3, Math.random() < 0.5 ? PAL.coral : PAL.peach, 1, 0, 0, 1); }
       if (Math.abs(p.vx) > 6 && p.ground) { p.run += Math.abs(p.vx) * dt * 0.2; dust(p, dt); }
       if (!live) return;
-      if (cmd.fire && p.reload <= 0) fire(p);
+      if (cmd.fire && p.reload <= 0 && p.stun < 0.3) fire(p);
       if (cmd.a1 && p.smokeCd <= 0) throwSmoke(p);
       if (cmd.a2 && p.decoyCd <= 0) plantDecoy(p);
     }
@@ -225,6 +227,7 @@ export default {
       const b = { owner, x, y, vx: Math.cos(a) * C.BULLET_V, vy: Math.sin(a) * C.BULLET_V, judge, live: true, age: 0, ox: x, oy: y, tx: new Float32Array(8), ty: new Float32Array(8), ti: 0, tn: 0, whiz: false };
       S.bullets.push(b);
       S.shots[owner]++;
+      if (owner === ctx.me && S.firstShot < 0) S.firstShot = S.liveT;
       const p = P[owner];
       p.recoil = 1; p.flash = 0.09; p.casing = 0.5;
       if (p.remote) p.reload = reloadT();
@@ -247,11 +250,12 @@ export default {
     const dRect = { x: 0, y: 0, w: 6, h: 16 };
     function howLabel(b, foe, hy, hx) {
       const bd = BODY[foe.st], m = Math.round(Math.hypot(foe.x - b.ox, foe.y - b.oy) * C.METRE);
-      const head = foe.st === 2 ? Math.abs(hx - (foe.x + foe.face * 6)) < 4 : hy < foe.y - bd.h + 4;
+      const head = foe.st === 2 ? (hx - foe.x) * foe.face > 5.2 && hy < foe.y - bd.h + 2.5 : hy < foe.y - bd.h + (foe.st === 1 ? 4 : 3); // the cap only: a real headshot is a small target
       if (head) return 'HEADSHOT';
-      if (!foe.ground) return 'AIR SHOT';
+      if (!foe.ground) return m > 150 ? 'AIR SHOT' : 'SKY HIGH';
       if (m < 70) return 'POINT BLANK';
-      return m >= 330 ? `SNIPED ${m} M` : `${m} M`;
+      if (m >= 330) return `SNIPED ${m} M`;
+      return Math.abs(foe.vx) > 30 && m > 110 ? 'LEAD SHOT' : `${m} M`;
     }
     function stepBullets(dt) {
       const n = Math.max(1, Math.ceil(dt / BSUB)), h = dt / n, flip = (frame++ & 1) === 1, nb = S.bullets.length;
@@ -393,25 +397,42 @@ export default {
       }
     }
 
-    // ---- hazards that can end a round: the bird and the lava ----
+    // ---- hazards: nuisances, never executioners. A point has to come from the other sniper's rifle. ----
+    // The bird shoves you and rattles your aim; the lava (sudden death) spits you back out of the chasm.
+    function stagger(p, vx, vy, secs) {
+      p.stun = secs; p.vx = vx; p.vy = vy; p.ground = false; p.airT = 0; p.fuel = Math.max(0, p.fuel - 0.35);
+      p.reload = Math.max(p.reload, 0.8);
+    }
     function hazards() {
       if (ctx.phase !== 'live') return;
       const bd = world.bird;
       for (const p of P) {
         if (p.remote || !p.alive) continue;
-        if (bd.on) {
+        if (bd.on && p.birdCd <= 0) {
           const bx = bd.x - 11, by = bd.y - 7; // 22 wide, 13 high
           const r = bodyRect(p);
-          if (r.x < bx + 22 && r.x + r.w > bx && r.y < by + 13 && r.y + r.h > by) { ctx.kill(p.i, { how: 'BIRD STRIKE' }); return; }
+          if (r.x < bx + 22 && r.x + r.w > bx && r.y < by + 13 && r.y + r.h > by) {
+            p.birdCd = 2.2;
+            stagger(p, bd.dir * 95, -135, 0.8);
+            fx.confetti(p.x, p.y - 12, 14, 70, [PAL.rose, PAL.coral, PAL.peach, PAL.cream]);
+            fx.ring(p.x, p.y - 12, 2, 13, 0.3, PAL.cream);
+            shake.add(0.45);
+            if (p.i === ctx.me) { sound.squawk(p.x); S.pops.push({ x: p.x, y: p.y - 30, t: 0, s: 'SQUAWK!' }); }
+          }
         }
-        if (p.y > world.lavaY + 1) { ctx.kill(p.i, { how: 'FLOOR IS LAVA' }); return; }
+        if (p.y > world.lavaY + 1 && p.hotCd <= 0) {
+          p.hotCd = 0.9;
+          stagger(p, (FW / 2 - p.x) * 0.3, -C.SPRING_V * 0.9, 0.6);
+          fx.sparks(p.x, p.y, -Math.PI / 2, 1.6, 12, 120, [PAL.cream, PAL.peach, PAL.coral]);
+          if (p.i === ctx.me) { sound.spring(p.x); S.pops.push({ x: p.x, y: p.y - 24, t: 0, s: 'HOT!' }); }
+        }
       }
     }
 
     // ---- camera: a flourish before the round, a punch-in on the kill ----
     function camera(dt) {
       const c = S.cam, me = P[ctx.me], foe = P[1 - ctx.me];
-      let tx = FW / 2, ty = FH / 2 - 4, tz = 1, rate = 6;
+      let tx = FW / 2, ty = FH / 2, tz = 1, rate = 6;
       if (ctx.phase === 'intro' && S.introT >= 0) {
         const u = S.introT;
         if (u < 0.9) { tz = 2; tx = me.x; ty = me.y - 14; rate = 20; }
@@ -419,10 +440,11 @@ export default {
         else { tz = 1; tx = FW / 2; ty = FH / 2; rate = 5; }
       } else if (S.kill) {
         const k = S.kill;
-        if (k.t > 0.06) { tz = 2; tx = k.x; ty = k.y - 12; rate = 9; }
+        if (k.t > 0.1) { tz = 2; tx = k.x; ty = k.y - 12; rate = 9; }
       }
-      c.x = damp(c.x, tx, rate, dt); c.y = damp(c.y, ty, rate, dt); c.z = damp(c.z, tz, rate * 0.8, dt);
-      if (Math.abs(c.z - tz) < 0.02) c.z = tz;
+      // zoom only ever takes whole steps: a half-way crop would give uneven pixels. The punch-ins are hard cuts with a flash.
+      if (tz !== c.z) { c.z = tz; if (c.z === 1) S.flashW = Math.max(S.flashW, 0.22); }
+      c.x = damp(c.x, tx, rate, dt); c.y = damp(c.y, ty, rate, dt);
     }
 
     function atmos(dt) {
@@ -481,16 +503,22 @@ export default {
         for (const p of P) if (!p.remote) cmds[p.i] = p.bot ? p.bot.think(dt) : humanCmd(p);
         for (const p of P) { if (p.remote) puppet(p, dt); else step(p, cmds[p.i], dt); }
         // someone standing on the bridge presses it down: the snipers draw at the dipped height
-        stepGrenades(dt);
-        stepDecoys(dt);
-        stepBullets(dt);
+        const wdt = S.kill && S.kill.t < 0.1 ? dt * 0.1 : dt; // hit-stop: the world hangs for a beat when the shot lands
+        stepGrenades(wdt);
+        stepDecoys(wdt);
+        stepBullets(wdt);
         hazards();
-        fx.update(dt, world);
+        fx.update(wdt, world);
         atmos(dt);
+        for (let i = S.pops.length - 1; i >= 0; i--) { const q = S.pops[i]; q.t += dt; if (q.t > 1.1) S.pops.splice(i, 1); }
         if (S.kill) {
           const k = S.kill;
           const t0 = k.t;
           k.t += dt;
+          if (k.t < 0.34) { const v = P[k.victim]; k.x = v.x; k.y = v.y; } else if (k.t > 0.5) { // the winner dances: little stars
+            const w = P[k.winner];
+            if ((k.spark -= dt) <= 0) { k.spark = 0.07; fx.emit(w.x + (Math.random() - 0.5) * 14, w.y - 26 - Math.random() * 6, (Math.random() - 0.5) * 30, -26, 0.5, Math.random() < 0.5 ? PAL.cream : w.col, 1, 60, 0, 1); }
+          }
           if (t0 < 0.34 && k.t >= 0.34) {
             fx.confetti(k.x, k.y - 8, 70, 150, [k.vcol, k.vcolD, PAL.cream, PAL.peach, PAL.coral, PAL.cream]);
             fx.ring(k.x, k.y - 10, 3, 22, 0.5, PAL.cream);
@@ -523,11 +551,14 @@ export default {
           if (!res || res.victim < 0 || res.winner < 0) return;
           const v = P[res.victim], w = P[res.winner];
           const how = res.how || '';
-          S.kill = { victim: v.i, winner: w.i, x: v.x, y: v.y, t: 0, col: w.col, vcol: v.col, vcolD: v.colD, label: how === 'BIRD STRIKE' ? 'SQUAWK!' : how === 'FLOOR IS LAVA' ? 'TOAST!' : 'K.O.!' };
-          S.flashW = 0.5;
-          shake.add(0.6);
+          S.kill = { victim: v.i, winner: w.i, x: v.x, y: v.y, t: 0, col: w.col, vcol: v.col, vcolD: v.colD, label: 'K.O.!', dir: w.x < v.x ? 1 : -1, spark: 0 };
+          S.flashW = 0.55;
+          shake.add(0.7);
           sound.impact(v.x);
           fx.sparks(v.x, v.y - 8, Math.PI * (w.x < v.x ? 0 : 1), 2.4, 16, 200, [PAL.cream, PAL.peach, PAL.coral]);
+          fx.sparks(v.x, v.y - 12, Math.PI * (w.x < v.x ? 1 : 0), 1.2, 8, 110, [PAL.cream, PAL.cream, PAL.peach]); // the exit side
+          v.vx = S.kill.dir * 70; v.vy = -95; v.ground = false; // the hit lifts them off their feet
+          for (const b of S.bullets) if (b.live && b.owner === w.i) b.live = false;
           for (const d of S.decoys) if (d.alive) popDecoy(d, false);
         }
       },
@@ -537,7 +568,7 @@ export default {
         try {
           const them = 1 - ctx.me;
           if (msg.k === 'shot') {
-            if ([msg.x, msg.y, msg.a].every(Number.isFinite)) launch(them, msg.x, msg.y, msg.a, false);
+            if ([msg.x, msg.y, msg.a].every(Number.isFinite) && S.bullets.length < 40) launch(them, msg.x, msg.y, msg.a, false);
           } else if (msg.k === 'smoke') {
             if ([msg.x, msg.y, msg.vx, msg.vy].every(Number.isFinite) && S.grenades.length < 6) spawnGrenade(msg.id, msg.x, msg.y, msg.vx, msg.vy, them);
           } else if (msg.k === 'decoy') {

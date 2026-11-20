@@ -7,7 +7,7 @@ import { FW, FH } from './palette.js';
 export const C = {
   RUN: 62, CROUCH_RUN: 26, ACC_G: 900, ACC_A: 420, GRAV: 640, JUMP_V: 226,
   JET_ACC: 1500, JET_CAP: 108, JET_BURN: 0.5, JET_REGEN: 1.0, JET_DELAY: 0.1, SPRING_V: 345,
-  BULLET_V: 540, BULLET_G: 135, RELOAD: 1.25, SD_RELOAD: 0.8, METRE: 1.5, // px -> metres
+  BULLET_V: 440, BULLET_G: 125, RELOAD: 1.6, SD_RELOAD: 1.0, METRE: 1.5, // px -> metres
   CRATE: 13, PF: 168, SAG: 4, BIRD_Y: 24, BIRD_DUR: 6.6, LAVA_V: 3.6, BALLOON_R: 14,
   SMOKE_CD: 13, SMOKE_LIFE: 8, SMOKE_R: 24, DECOY_CD: 15, DECOY_LIFE: 9, DECOY_V: 32,
 };
@@ -40,8 +40,10 @@ export function buildWorld(rng) {
     else { addCrate(cx - 12, g); addCrate(cx, g); addCrate(cx - 6, g - C.CRATE); }
   };
   const kinds = ['single', 'pair', 'tri'];
-  const near = randInt(rng, 46, 58), far = randInt(rng, E - 28, E - 18);
-  const left = [[near, pick(rng, kinds)], [far, pick(rng, ['single', 'single', 'pair'])]];
+  // Spawn lane: the crate nearest each spawn is a single (13 high) so a standing sniper shoots clean over it from the first second;
+  // the tall stacks stand out by the edge, where you run to for real cover.
+  const near = randInt(rng, 38, 46), far = randInt(rng, E - 26, E - 17);
+  const left = [[near, 'single'], [far, pick(rng, kinds)]];
   for (const [cx, k] of left) group(cx, k);
   const nL = crates.length;
   for (let i = 0; i < nL; i++) { const c = crates[i]; addCrate(W - c.x - c.w, c.y); }
@@ -103,7 +105,7 @@ export function buildWorld(rng) {
         bd.flap = dt * 7;
       }
     }
-    world.lavaY = sd >= 0 ? 178 - sd * C.LAVA_V : 999;
+    world.lavaY = sd >= 0 ? Math.max(GY + 18, 178 - sd * C.LAVA_V) : 999; // it climbs the chasm but never reaches the ledges: a nuisance, not a way to win
   };
   /** Thermal lift (px/s^2, positive = up) at column x: strongest over the middle of the chasm. */
   world.lift = (x) => {

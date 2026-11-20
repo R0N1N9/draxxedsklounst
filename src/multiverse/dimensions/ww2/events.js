@@ -66,7 +66,8 @@ export function makeEvents(ctx, map, fx, sfx, town, afterMesh, atmos, G) {
             ctx.net.send({ k: 'ps', x: +x.toFixed(1), z: +z.toFixed(1), t: +(time + 0.95).toFixed(2) });
           });
         }
-        if (ts > 31 && !lastShell) { lastShell = true; G.lastShell(); }
+        if (ts > 31 && !lastShell) { lastShell = true; G.lastShell(false); }
+        if (ts > 32.5 && lastShell === true) { lastShell = 2; G.lastShell(true); }
       }
       dangers.length = 0;
       for (let i = pending.length - 1; i >= 0; i--) {

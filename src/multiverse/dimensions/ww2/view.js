@@ -23,7 +23,7 @@ export function makeView(ctx, THREE, renderer, W) {
   };
   for (let i = 0; i < 5; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: '', color: '#fff', hollow: false, text: '', ring: false });
   for (let i = 0; i < 4; i++) S.hits.push({ ang: 0, a: 0, near: false });
-  let wt = 0, boom = 2.8, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, blocked = false, bellA = 0, raysK = 0;
+  let wt = 0, boom = 2.8, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, blocked = false, bellA = 0, raysK = 0, flashA = 0;
   const warm = Q.rich ? 3 : 1; // frames always drawn at the start
   let frames = 0, tPrev = 0, worst = 0, worstPrev = 0, cost = 0, skipLeft = 0, fresh = false, wasFallen = false, drawnScope = 0, debt = 0, drawAt = 0;
   const api = { camera, shot: null, force: 0, wt: 0, scopeAmount: 0, pointScale: 600 };
@@ -52,6 +52,11 @@ export function makeView(ctx, THREE, renderer, W) {
     return out;
   }
   const play = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, fov: FOV };
+  // Distance along the ray (s, F) to the point abreast of (x, y, z), if that is nearer than t and the ray passes close by.
+  const nearer = (sx, sy, sz, x, y, z, t) => {
+    const cx = x - sx, cy = y - sy, cz = z - sz, tc = cx * F.x + cy * F.y + cz * F.z;
+    return tc > 0.5 && tc < t && (cx - F.x * tc) ** 2 + (cy - F.y * tc) ** 2 + (cz - F.z * tc) ** 2 < 2.6 ? tc : t;
+  };
 
   function project(x, y, z, m) {
     tmp.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
@@ -70,6 +75,9 @@ export function makeView(ctx, THREE, renderer, W) {
     // Direction from the eye to whatever the open-sight crosshair is on (false in the scope).
     aim(eye, out) { if (!aimOk) return false; out.subVectors(aimPt, eye).normalize(); return true; },
     killCam(v) {
+      // The frame the round ends on: a hard knock and a breath of overexposure, as if the film itself flinched.
+      trauma = Math.min(1, trauma + 0.45);
+      if (Q.rich) flashA = 0.5; // (a software rasteriser draws too rarely to show a flash and not get stuck on it)
       // Stand off to the west of the victim, sun over the camera's shoulder, so the fall is lit
       // and the church glows behind it; failing that, the first angle with a clear view.
       const T = G.time();
@@ -88,6 +96,7 @@ export function makeView(ctx, THREE, renderer, W) {
       return m.on ? { x: m.x, y: m.y } : { x: ctx.width / 2, y: ctx.height / 2 };
     },
     resize(w, h) {
+      if (!(w > 0 && h > 0)) return; // a collapsed window: keep the last good lens
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       post.resize();
@@ -148,7 +157,12 @@ export function makeView(ctx, THREE, renderer, W) {
       if (phase === 'live' && me.alive && scopeAmt < 0.6 && !me.bot) {
         dirOf(play.yaw, play.pitch, F);
         const skip = boom + 0.4, sx = play.pos.x + F.x * skip, sy = play.pos.y + F.y * skip, sz = play.pos.z + F.z * skip;
-        const t = map.ray(sx, sy, sz, F.x, F.y, F.z, 320, T, false);
+        let t = map.ray(sx, sy, sz, F.x, F.y, F.z, 320, T, false);
+        // With the crosshair on (or near) a sniper or a decoy, converge at THEIR depth: aimed at
+        // the wall fifty metres behind, a round from the shoulder passes most of a metre wide
+        // of the figure the crosshair is covering.
+        if (foe.alive) t = nearer(sx, sy, sz, foe.x, foe.y + 0.25 + headY(foe.k) * 0.5, foe.z, t);
+        for (let i = 0; i < decoys.length; i++) { const dc = decoys[i]; if (dc.alive && dc.owner !== ctx.me) t = nearer(sx, sy, sz, dc.x, dc.y + 1.38, dc.z, t); }
         aimPt.set(sx + F.x * t, sy + F.y * t, sz + F.z * t);
         aimOk = true;
         G.eye(me, E);
@@ -194,12 +208,14 @@ export function makeView(ctx, THREE, renderer, W) {
       raysK = ahead ? 1 - smoothstep(1.0, 2.2, off) : 0;
       const u = post.u;
       u.uTime.value = wt;
-      u.uRays.value = raysK * 0.9;
+      u.uRays.value = raysK * 0.72;
       u.uSunCol.value.copy(sunCol);
       u.uExposure.value = 1.0;
       u.uFlinch.value = G.flinch();
       u.uScope.value = scopeAmt;
       u.uFade.value = 1;
+      u.uFlash.value = flashA;
+      flashA = Math.max(0, flashA - dt * 9);
 
       // ---- HUD state ----
       S.t = wt;

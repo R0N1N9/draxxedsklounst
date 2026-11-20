@@ -33,26 +33,29 @@ export function drawSniper(g, o) {
   const edge = o.decoy ? PAL.cream : PAL.ink, hi = flat || PAL.cream;
   n = 0;
   const st = o.st;
-  const bob = o.moving && !o.air && st === 0 ? (Math.sin(o.run * 2) > 0 ? 1 : 0) : 0;
+  const bob = (o.moving && !o.air && st === 0 ? (Math.sin(o.run * 2) > 0 ? 1 : 0) : 0) - (o.land > 0 && !o.moving && !o.air && st === 0 ? 1 : 0);
   const rc = o.recoil > 0 ? Math.round(o.recoil * 2) : 0; // the whole body kicks back
   const breathe = !o.decoy && !o.moving && Math.sin(o.t * 2.3) > 0.45 ? 1 : 0; // a still sniper still breathes: the head rides up a pixel
   const flutter = Math.round(Math.sin(o.t * 9 + 1));
+  const blink = !o.decoy && ((o.t * 0.9) % 3.1) < 0.13;
   if (st === 0) {
-    const run = o.moving && !o.air, sw = run ? Math.round(Math.sin(o.run) * 3) : 0;
-    const lift = run ? Math.round(Math.max(0, Math.cos(o.run)) * 2) : 0, lift2 = run ? Math.round(Math.max(0, -Math.cos(o.run)) * 2) : 0;
+    // a four-beat stride: legs scissor wide, the trailing foot lifts clear, the body drops a pixel on each contact
+    const run = o.moving && !o.air, sw = run ? Math.round(Math.sin(o.run) * 4) : 0;
+    const lift = run ? Math.round(Math.max(0, Math.cos(o.run)) * 3) : 0, lift2 = run ? Math.round(Math.max(0, -Math.cos(o.run)) * 3) : 0;
+    const sq = o.land > 0 && !run ? 1 : 0; // landing squash: everything above the knees sinks a pixel
     if (o.air) {
       const up = o.vy < 0;
       part(-3, up ? -4 : -5, 3, up ? 3 : 4, trou); part(0, up ? -3 : -4, 3, up ? 2 : 3, trou);
       part(-3, -1, 3, 1, PAL.ink); part(1, up ? -1 : 0, 3, 1, PAL.ink);
     } else {
-      part(-3 + sw, -5 - lift, 3, 5, trou); part(0 - sw, -5 - lift2, 3, 5, trou);
+      part(-3 + sw, -5 - lift, 3, 5 - sq, trou); part(0 - sw, -5 - lift2, 3, 5 - sq, trou);
       part(-4 + sw, -1 - lift, 4, 1, PAL.ink); part(0 - sw, -1 - lift2, 4, 1, PAL.ink);
     }
     part(-3 - rc, -13 - bob, 7, 8, body); part(-3 - rc, -7 - bob, 7, 1, dark); part(-3 - rc, -13 - bob, 1, 5, hi); // coat, belt, shoulder light
     part(0 - rc, -12 - bob, 1, 4, dark); // bandolier
     part(-7 - rc, -13 - bob, 4, 8, steel); part(-7 - rc, -9 - bob, 4, 1, dark); part(-6 - rc, -5 - bob, 2, 1, PAL.coral); // jetpack
     part(-3 - rc, -14 - bob, 7, 1, dark); // scarf at the neck
-    part(-2 - rc, -18 - bob - breathe, 6, 4, skin); part(3 - rc, -17 - bob - breathe, 1, 1, PAL.ink); part(2 - rc, -16 - bob - breathe, 2, 1, cheek); // face, eye, cheek
+    part(-2 - rc, -18 - bob - breathe, 6, 4, skin); part(3 - rc, -17 - bob - breathe, 1, 1, blink ? skin : PAL.ink); part(2 - rc, -16 - bob - breathe, 2, o.win ? 2 : 1, cheek); // face, eye, cheek
     part(-3 - rc, -22 - bob - breathe, 7, 4, body); part(-3 - rc, -22 - bob - breathe, 2, 1, hi); part(4 - rc, -19 - bob - breathe, 2, 1, dark); part(-3 - rc, -19 - bob - breathe, 7, 1, dark); // cap, light, brim
     part(-9 - rc + flutter, -14 - bob, 3, 1, dark); part(-11 - rc, -13 - bob + flutter, 2, 1, dark); // scarf tail
   } else if (st === 1) {

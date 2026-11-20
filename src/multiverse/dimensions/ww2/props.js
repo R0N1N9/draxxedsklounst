@@ -5,7 +5,7 @@ import { ruinWall } from './kitbash.js';
 import { TERRACE_Y } from './map.js';
 
 const RUST = ['#4a3f36', '#3a332d', '#5a4030', '#2a2623', '#463c34'];
-const BRICK = ['#6a4436', '#74503e', '#857c6c', '#6f6a60', '#3a3430', '#7c7062', '#5c4034'];
+const BRICK = ['#63493d', '#6c5446', '#857c6c', '#6f6a60', '#3a3430', '#7c7062', '#55443a'];
 const LEAF = ['#b8651e', '#c98a2a', '#8a4a1a', '#a8741c', '#6e4a22'];
 
 export function buildProps(THREE, map, tex, seed, fog, town, Q) {

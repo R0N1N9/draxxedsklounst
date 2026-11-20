@@ -15,9 +15,9 @@ export function makeBot(ctx, world, S, p) {
   const b = {
     plan: '', planT: 0, step: 0, aim: p.aim, err: 0, seenT: 0, react: 0.9 - 0.65 * skill, stuckT: 0, lastX: p.x,
     peek: 0, peekDur: 1.5, hold: 0, duckT: 0, dodgeAt: 0, dodgeBullet: null, decoyLock: null, lockUntil: 0, fvx: 0, fvy: 0, fx: -1, fy: -1,
-    smokeRoll: 0, settle: 5.5 + Math.random() * 4.5 + (1 - skill) * 3, goalX: p.x, goalY: p.y,
+    smokeRoll: 0, settle: 7 + Math.random() * 5.5 + (1 - skill) * 3, goalX: p.x, goalY: p.y,
   };
-  const sigma = 0.058 - 0.036 * skill;
+  const sigma = 0.07 - 0.04 * skill;
   const rate = 3.5 + 10 * skill;
   const gs = () => (ctx.sudden ? 0.45 : 1);
 
@@ -29,9 +29,12 @@ export function makeBot(ctx, world, S, p) {
   };
   function choose() {
     const w = WEIGHTS[skill < 0.4 ? 0 : skill < 0.75 ? 1 : 2].slice();
+    const foe = S.P[1 - p.i], pushed = Math.abs(foe.x - (p.i ? 22 : W - 22)) > 40 || Math.abs(p.x - ex(22)) > 60; // somebody is already out in front
     for (let i = 0; i < w.length; i++) {
       if (PLANS[i] === b.plan) w[i] *= 0.15;
       if (ctx.sudden && (PLANS[i] === 'edge' || PLANS[i] === 'cover')) w[i] *= 0.25;
+      // a duel is two snipers feeling each other out: only one of them commits to the crossing at a time, and not in the first seconds
+      if ((PLANS[i] === 'bridge' || PLANS[i] === 'raid') && (pushed || S.liveT < 7)) w[i] *= 0.08;
     }
     let r = Math.random() * w.reduce((s, v) => s + v, 0), k = 0;
     while (k < w.length - 1 && (r -= w[k]) > 0) k++;

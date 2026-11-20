@@ -80,7 +80,7 @@ export function makeTextures(THREE, renderer, seed, maxAniso = 8, normals = true
   const cobH = makeCanvas(S, S), cobA = makeCanvas(S, S);
   cobH.g.fillStyle = '#1c1c1c';
   cobH.g.fillRect(0, 0, S, S);
-  cobA.g.fillStyle = '#231f1b';
+  cobA.g.fillStyle = '#332d27'; // joints: dark, not black — without a normal map black joints turn the square into polka dots
   cobA.g.fillRect(0, 0, S, S);
   const N = 16, cs = S / N;
   for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
@@ -99,7 +99,7 @@ export function makeTextures(THREE, renderer, seed, maxAniso = 8, normals = true
       grad = cobA.g.createRadialGradient(x - 2, y - 2, 1, x, y, cs * 0.66);
       const R = (118 + warm * 14) * tone, G = (110 + warm * 6) * tone, B = (100 - warm * 6) * tone;
       grad.addColorStop(0, `rgb(${R},${G},${B})`);
-      grad.addColorStop(1, `rgb(${R * 0.62},${G * 0.62},${B * 0.62})`);
+      grad.addColorStop(1, `rgb(${R * 0.7},${G * 0.7},${B * 0.7})`);
       cobA.g.fillStyle = grad;
       roundRect(cobA.g, x - w / 2, y - h / 2, w, h, cs * 0.24);
       cobA.g.fill();
@@ -114,61 +114,85 @@ export function makeTextures(THREE, renderer, seed, maxAniso = 8, normals = true
   const nrm = (canvas, k) => (normals ? tex(normalFromHeight(canvas, k), { srgb: false }) : null); // not built where they will not be used
   const cobble = tex(cobA.canvas), cobbleN = nrm(cobH.canvas, 3.2);
 
-  // ---- masonry: lime plaster flaking off brick ----
+  // ---- masonry: lime plaster over brick, the brick showing only where it has come away ----
   const masH = makeCanvas(S, S), masA = makeCanvas(S, S);
   const bw = 64, bh = 32;
   masH.g.fillStyle = '#585858';
   masH.g.fillRect(0, 0, S, S);
-  masA.g.fillStyle = '#6a5c50';
+  masA.g.fillStyle = '#6e6359';
   masA.g.fillRect(0, 0, S, S);
   for (let r = 0; r < S / bh; r++) for (let c = -1; c < S / bw; c++) {
-    const x = c * bw + (r & 1 ? bw / 2 : 0) + 2, y = r * bh + 2, t = 0.75 + rnd() * 0.45, hh = 120 + rnd() * 40;
+    const x = c * bw + (r & 1 ? bw / 2 : 0) + 2, y = r * bh + 2, t = 0.78 + rnd() * 0.4, hh = 120 + rnd() * 40, w = rnd();
     for (const ox of [0, S]) {
       masH.g.fillStyle = `rgb(${hh},${hh},${hh})`;
       masH.g.fillRect(x + ox, y, bw - 4, bh - 4);
-      masA.g.fillStyle = `rgb(${128 * t},${88 * t},${70 * t})`;
+      masA.g.fillStyle = `rgb(${(150 + w * 14) * t},${(114 + w * 4) * t},${(98 - w * 6) * t})`; // a pale, sooty red: against plaster in shade anything darker reads as a hole
       masA.g.fillRect(x + ox, y, bw - 4, bh - 4);
     }
   }
-  speckle(masA.g, S, rnd, 3000, 0.25);
-  // Plaster where the mask says so; its broken edge is a step in the height map.
-  const mask = noiseCanvas(128, 4, 23, 4).getContext('2d').getImageData(0, 0, 128, 128).data;
-  const pl = makeCanvas(128, 128), plImg = pl.g.createImageData(128, 128);
-  for (let i = 0; i < 128 * 128; i++) {
-    const on = mask[i * 4] > 96 ? 255 : 0;
+  speckle(masA.g, S, rnd, 3000, 0.2);
+  // Where the plaster holds: big ragged sheets with a soft broken edge (a hard-thresholded
+  // mask reads as camouflage from across a square).
+  const MS = 256, mask = noiseCanvas(MS, 6, 23, 4).getContext('2d').getImageData(0, 0, MS, MS).data;
+  const pl = makeCanvas(MS, MS), plImg = pl.g.createImageData(MS, MS);
+  // A handful of wounds per tile, each a ragged blob: noise alone tends to open a band right
+  // across the tile, and a band repeated up a facade is a stripe.
+  const wounds = [];
+  for (let i = 0; i < 3; i++) wounds.push([rnd() * MS, rnd() * MS, (i < 1 ? 22 : 8) + rnd() * (i < 1 ? 12 : 8), 0.55 + rnd() * 0.9]);
+  for (let y = 0; y < MS; y++) for (let x = 0; x < MS; x++) {
+    let q = 9;
+    for (const [wx, wy, wr, asp] of wounds) {
+      let dx = Math.abs(x - wx), dy = Math.abs(y - wy);
+      if (dx > MS / 2) dx = MS - dx;
+      if (dy > MS / 2) dy = MS - dy;
+      q = Math.min(q, Math.hypot(dx * asp, dy) / wr);
+    }
+    const i = y * MS + x, v = (q + (mask[i * 4] / 255 - 0.5) * 1.5 - 0.92) / 0.1, a = v <= 0 ? 0 : v >= 1 ? 1 : v * v * (3 - 2 * v);
     plImg.data[i * 4] = plImg.data[i * 4 + 1] = plImg.data[i * 4 + 2] = 255;
-    plImg.data[i * 4 + 3] = on;
+    plImg.data[i * 4 + 3] = a * 255;
   }
   pl.g.putImageData(plImg, 0, 0);
   const plaster = makeCanvas(S, S);
   plaster.g.imageSmoothingEnabled = true;
   plaster.g.drawImage(pl.canvas, 0, 0, S, S);
   plaster.g.globalCompositeOperation = 'source-in';
-  plaster.g.fillStyle = '#d2cbbc';
+  plaster.g.fillStyle = '#c6bdaa';
   plaster.g.fillRect(0, 0, S, S);
   plaster.g.globalCompositeOperation = 'source-atop';
-  plaster.g.globalAlpha = 0.35;
+  // Weather: broad damp patches, then finer mottling, both only on the plaster.
+  plaster.g.globalAlpha = 0.3;
+  plaster.g.drawImage(noiseCanvas(64, 2, 37, 3), 0, 0, S, S);
+  plaster.g.globalAlpha = 0.22;
   plaster.g.drawImage(noiseCanvas(128, 8, 31), 0, 0, S, S);
   plaster.g.globalAlpha = 1;
-  speckle(plaster.g, S, rnd, 2500, 0.12);
+  speckle(plaster.g, S, rnd, 2500, 0.1);
   // Rain streaks and hairline cracks, plaster only (source-atop keeps them off the brick).
-  for (let i = 0; i < 40; i++) {
-    const x = rnd() * S, y = rnd() * S, len = 30 + rnd() * 120;
+  for (let i = 0; i < 46; i++) {
+    const x = rnd() * S, y = rnd() * S, len = 40 + rnd() * 150;
     const grad = plaster.g.createLinearGradient(0, y, 0, y + len);
-    grad.addColorStop(0, 'rgba(40,34,28,0.28)');
-    grad.addColorStop(1, 'rgba(40,34,28,0)');
+    grad.addColorStop(0, 'rgba(46,40,33,0.15)');
+    grad.addColorStop(1, 'rgba(46,40,33,0)');
     plaster.g.fillStyle = grad;
-    plaster.g.fillRect(x, y, 2 + rnd() * 5, len);
+    plaster.g.fillRect(x, y, 1 + rnd() * 3, len);
   }
-  plaster.g.strokeStyle = 'rgba(30,26,22,0.5)';
+  plaster.g.strokeStyle = 'rgba(30,26,22,0.4)';
   plaster.g.lineWidth = 1;
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 12; i++) {
     let x = rnd() * S, y = rnd() * S;
     plaster.g.beginPath();
     plaster.g.moveTo(x, y);
     for (let k = 0; k < 8; k++) { x += (rnd() - 0.5) * 30; y += 8 + rnd() * 22; plaster.g.lineTo(x, y); }
     plaster.g.stroke();
   }
+  // The sheet has thickness: its broken edge throws a thin shadow onto the brick behind.
+  const edge = makeCanvas(S, S);
+  edge.g.drawImage(pl.canvas, 0, 0, S, S);
+  edge.g.globalCompositeOperation = 'source-in';
+  edge.g.fillStyle = '#15110e';
+  edge.g.fillRect(0, 0, S, S);
+  masA.g.globalAlpha = 0.38;
+  for (const [ox, oy] of [[0, 0], [-S, 0], [0, -S], [-S, -S]]) masA.g.drawImage(edge.canvas, ox + 2, oy + 3);
+  masA.g.globalAlpha = 1;
   masA.g.drawImage(plaster.canvas, 0, 0);
   const plH = makeCanvas(S, S);
   plH.g.drawImage(pl.canvas, 0, 0, S, S);
@@ -180,6 +204,59 @@ export function makeTextures(THREE, renderer, seed, maxAniso = 8, normals = true
   masH.g.drawImage(noiseCanvas(128, 16, 41), 0, 0, S, S);
   masH.g.globalAlpha = 1;
   const masonry = tex(masA.canvas), masonryN = nrm(masH.canvas, 2.6);
+
+  // ---- ashlar: the church's dressed limestone, in courses half a metre high ----
+  const asA = makeCanvas(S, S), asH = makeCanvas(S, S);
+  asA.g.fillStyle = '#4d473e';
+  asA.g.fillRect(0, 0, S, S);
+  asH.g.fillStyle = '#3c3c3c';
+  asH.g.fillRect(0, 0, S, S);
+  for (let r = 0; r < 8; r++) {
+    let x = Math.floor(rnd() * 96);
+    const end = x + S;
+    while (x < end) {
+      let w = 96 + Math.floor(rnd() * 3) * 32;
+      if (end - x - w < 80) w = end - x;
+      const t = 0.84 + rnd() * 0.28, warm = rnd(), hh = 150 + rnd() * 45, y = r * 64;
+      for (const ox of [0, -S]) {
+        asA.g.fillStyle = `rgb(${(186 + warm * 10) * t},${(178 + warm * 3) * t},${(160 - warm * 8) * t})`;
+        asA.g.fillRect(x + ox + 2, y + 2, w - 3, 61);
+        // Tooling: each block a shade lighter along its top arris, darker at its foot.
+        asA.g.fillStyle = 'rgba(255,250,235,0.1)';
+        asA.g.fillRect(x + ox + 2, y + 2, w - 3, 4);
+        asA.g.fillStyle = 'rgba(20,16,12,0.16)';
+        asA.g.fillRect(x + ox + 2, y + 56, w - 3, 7);
+        asH.g.fillStyle = `rgb(${hh},${hh},${hh})`;
+        asH.g.fillRect(x + ox + 3, y + 3, w - 5, 59);
+        if (rnd() < 0.35) { // a spalled arris, or where a splinter struck
+          const cx = x + ox + (rnd() < 0.5 ? 2 + rnd() * 8 : w - 2 - rnd() * 8), cy = y + (rnd() < 0.5 ? 2 : 62), cr = 3 + rnd() * 6;
+          asA.g.fillStyle = 'rgba(40,34,28,0.5)';
+          asA.g.beginPath(); asA.g.arc(cx, cy, cr, 0, 6.283); asA.g.fill();
+          asH.g.fillStyle = '#505050';
+          asH.g.beginPath(); asH.g.arc(cx, cy, cr, 0, 6.283); asH.g.fill();
+        }
+      }
+      x += w;
+    }
+  }
+  speckle(asA.g, S, rnd, 4500, 0.12);
+  asA.g.globalCompositeOperation = 'multiply';
+  asA.g.globalAlpha = 0.45;
+  asA.g.drawImage(noiseCanvas(128, 3, 57, 4), 0, 0, S, S);
+  asA.g.globalAlpha = 1;
+  asA.g.globalCompositeOperation = 'source-over';
+  for (let i = 0; i < 30; i++) { // soot and rain down the face
+    const x = rnd() * S, y = rnd() * S, len = 60 + rnd() * 200;
+    const grad = asA.g.createLinearGradient(0, y, 0, y + len);
+    grad.addColorStop(0, 'rgba(30,26,22,0.17)');
+    grad.addColorStop(1, 'rgba(30,26,22,0)');
+    asA.g.fillStyle = grad;
+    asA.g.fillRect(x, y, 2 + rnd() * 4, len);
+  }
+  asH.g.globalAlpha = 0.14;
+  asH.g.drawImage(noiseCanvas(128, 16, 43), 0, 0, S, S);
+  asH.g.globalAlpha = 1;
+  const ashlar = tex(asA.canvas), ashlarN = nrm(asH.canvas, 2.2);
 
   // ---- planks ----
   const wdA = makeCanvas(256, 256), wdH = makeCanvas(256, 256);
@@ -289,5 +366,5 @@ export function makeTextures(THREE, renderer, seed, maxAniso = 8, normals = true
   wh.g.fillRect(0, 0, 2, 2);
   const white = tex(wh.canvas, { mips: false });
 
-  return { white, cobble, cobbleN, masonry, masonryN, wood, woodN, sack, sackN, puff, glow, star, scorch, cloud, dispose() { for (const t of all) t.dispose(); } };
+  return { white, cobble, cobbleN, masonry, masonryN, ashlar, ashlarN, wood, woodN, sack, sackN, puff, glow, star, scorch, cloud, dispose() { for (const t of all) t.dispose(); } };
 }

@@ -108,6 +108,12 @@ export function makeSound(ctx) {
       A.tone({ type: 'sawtooth', freq: 520, freqEnd: 1400, dur: 0.18, gain: 0.1, pan: pan(x) });
       A.tone({ type: 'square', freq: 1400, freqEnd: 400, dur: 0.3, gain: 0.07, delay: 0.16, pan: pan(x) });
     },
+    squawk(x) {
+      const p = pan(x);
+      A.tone({ type: 'sawtooth', freq: 900, freqEnd: 300, dur: 0.16, gain: 0.12, pan: p });
+      A.tone({ type: 'square', freq: 1200, freqEnd: 500, dur: 0.12, gain: 0.08, delay: 0.1, pan: p });
+      A.noise({ filter: 'bandpass', freq: 1800, dur: 0.12, gain: 0.2, pan: p });
+    },
     kill(x) {
       const p = pan(x);
       A.sfx('boom', { gain: 0.6, pan: p });

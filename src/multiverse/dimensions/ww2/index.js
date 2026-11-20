@@ -18,9 +18,11 @@
 // CONTROLS     move · look · FIRE · alt SCOPE · a1 SMOKE (2, blocks sight for bots and
 //   people) · a2 DECOY (a helmet on a stick: if it draws a shot the shooter is marked for
 //   you) · jump CROUCH (toggle).
-// THE BOT      holds a post, glasses the square in bursts, hops post to post towards your
-//   last known position, stops to shoot when it sees you, runs from shells, smokes when
-//   pinned, plants decoys. Skill scales notice time, settle time, lead and drop judgement.
+// THE BOT      opens from its barricade, trading a round or two down the centre lane, then
+//   hops post to post towards your last known position, lies in ambush once it has a view
+//   of it, stops to shoot when it sees you, runs from shells, smokes when pinned, plants
+//   decoys. Its first shot at anything is a snap shot; the ones after are the dangerous
+//   ones. Skill scales notice time, settle time, lead and drop judgement.
 // THE KILL     slow motion: the helmet rings and spins away, the body folds, dust comes
 //   down from the rafters, the bell tolls once, the camera orbits low with the sun behind.
 // SUDDEN DEATH both snipers are marked for good, a flare hangs over the fountain and the
@@ -51,6 +53,7 @@ const LOOK = 0.0022;
 const V = 250, GRAV = 7, ZERO = (0.5 * GRAV * (60 / V) ** 2) / 60; // the rifle is zeroed at 60 m
 const BOLT = 1.25, RELOAD = 2.7, MAG = 5, RUN = 5.6, CREEP = 2.4;
 const SMOKE_CD = 5, SMOKE_LIFE = 11, DECOY_CD = 16, DECOY_LIFE = 16;
+const BOLT_CUES = [0.12, 0.34, 0.6, 0.82]; // up, back, forward, down
 const FOG_D = 0.0066;
 
 export default {
@@ -62,6 +65,7 @@ export default {
   aim: 'look',
   palette: { bg: '#1b1a17', fg: '#e9dfc8', accent: '#e8853a' },
   controls: { fire: 'FIRE', alt: 'SCOPE', a1: 'SMOKE', a2: 'DECOY', jump: 'CROUCH' },
+  hint: 'Kneeling hides you. Scoping lifts your head over the cover.',
   altToggle: true,
   roundTime: 60,
   overTime: 2.7,
@@ -164,9 +168,11 @@ export default {
         ctx.kill(p.i, { how });
       },
       blast(x, y, z, r, how) { for (let n = 0; n < 2; n++) { const p = P[n ^ tick]; if (local(p) && p.alive && Math.hypot(p.x - x, p.z - z) < r && Math.abs(p.y - y) < 3.5) G.env(p, how, x, y, z); } },
-      lastShell() {
+      // `both`: a second later, should the two clients have disagreed about who was further out
+      // (each sees the other a little in the past), nobody is spared: whichever claim lands first counts.
+      lastShell(both) {
         const d0 = Math.hypot(P[0].x, P[0].z), d1 = Math.hypot(P[1].x, P[1].z), far = d0 > d1 ? P[0] : P[1];
-        if (local(far)) { fx.flash(far.x, far.y + 1, far.z, 1, 0.6, 0.3, 9, 0.25); sfx.shell(far.x, far.y, far.z); G.env(far, 'THE LAST SHELL', far.x + 0.5, far.y, far.z + 0.5); }
+        for (const p of P) if ((both || p === far) && local(p) && p.alive) { fx.flash(p.x, p.y + 1, p.z, 1, 0.6, 0.3, 9, 0.25); sfx.shell(p.x, p.y, p.z); G.env(p, 'THE LAST SHELL', p.x + 0.5, p.y, p.z + 0.5); }
       },
     };
     const events = makeEvents(ctx, map, fx, sfx, town, props.afterMesh, atmos, G);
@@ -436,7 +442,7 @@ export default {
       if (p.bolt > 0) {
         p.bolt -= dt;
         const ph = 1 - p.bolt / BOLT;
-        if (p === me && p.boltStep < 4 && ph > [0.12, 0.34, 0.6, 0.82][p.boltStep]) {
+        if (p === me && p.boltStep < 4 && ph > BOLT_CUES[p.boltStep]) {
           sfx.bolt(p.boltStep++);
           if (p.boltStep === 2) { eyeOf(p, E); fx.clods.emit(E.x + cy * 0.25, E.y - 0.1, E.z - sy * 0.25, cy * 2.2 + (Math.random() - 0.5), 2.2, -sy * 2.2 + (Math.random() - 0.5), 1.4, 0.035, 0.8, 0.62, 0.25, 12); } // the spent case
         }
@@ -656,7 +662,6 @@ export default {
       },
     };
     inst.view = view; // test scripts only: view.shot = { x, y, z, tx, ty, tz, fov } pins the camera, view.force = n draws n frames now
-    inst.dbg = { P, G, map, events, fx, post, bullets, decoys }; // TEMP-HARDEN
     post.resize();
     return inst;
   },

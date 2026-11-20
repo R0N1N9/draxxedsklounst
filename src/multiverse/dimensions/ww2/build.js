@@ -13,7 +13,7 @@ export function buildTown(THREE, map, tex, seed, fog, Q) {
   const R = (a, b) => a + rnd() * (b - a);
   const pick = (a) => a[Math.floor(rnd() * a.length)];
   const group = new THREE.Group();
-  const masonry = new Batch(THREE, 0.42), stone = new Batch(THREE, 0.09), wood = new Batch(THREE, 1.0), plain = new Batch(THREE, 1);
+  const masonry = new Batch(THREE, 0.42), stone = new Batch(THREE, 0.25), wood = new Batch(THREE, 1.0), plain = new Batch(THREE, 1);
   const far = new Batch(THREE, 0.2, null);
   const M = new THREE.Matrix4(), U = new THREE.Vector3(), V = new THREE.Vector3(0, 1, 0), W = new THREE.Vector3();
   // Wall space → world: u runs from A to B, the thickness goes to the left of that.
@@ -69,8 +69,8 @@ export function buildTown(THREE, map, tex, seed, fog, Q) {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aMix;\nvarying vec2 vMix;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMix = aMix;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vMix;')
         // Mud swallows the setts; standing water darkens them.
-        .replace('#include <color_fragment>', '#include <color_fragment>\nfloat stoneL = dot( diffuseColor.rgb, vec3( 0.333 ) );\ndiffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.2, 0.155, 0.11 ) * ( 0.8 + stoneL * 0.9 ), vMix.x );\ndiffuseColor.rgb *= mix( 1.0, 0.5, vMix.y );')
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, 0.1, vMix.y );')
+        .replace('#include <color_fragment>', '#include <color_fragment>\nfloat stoneL = dot( diffuseColor.rgb, vec3( 0.333 ) );\ndiffuseColor.rgb = mix( diffuseColor.rgb, vec3( 0.094, 0.069, 0.048 ) * ( 0.7 + stoneL * 1.3 ), vMix.x );\ndiffuseColor.rgb *= mix( 1.0, 0.5, vMix.y );')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix( roughnessFactor, 0.24, vMix.y );')
         .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize( mix( normal, nonPerturbedNormal, max( vMix.x * 0.9, vMix.y * 0.88 ) ) );');
     });
     const ground = new THREE.Mesh(geo, mat);
@@ -358,7 +358,7 @@ export function buildTown(THREE, map, tex, seed, fog, Q) {
     // Same shape of material everywhere (map + vertex colours, two-sided): without the normal
     // maps they all compile to one shader program.
     masonry: fog.patch(new THREE.MeshLambertMaterial({ map: tex.masonry, normalMap: Q.rich ? tex.masonryN : null, vertexColors: true, side: THREE.DoubleSide })),
-    stone: fog.patch(new THREE.MeshLambertMaterial({ map: tex.cobble, normalMap: Q.rich ? tex.cobbleN : null, normalScale: new THREE.Vector2(0.7, 0.7), vertexColors: true, side: THREE.DoubleSide })),
+    stone: fog.patch(new THREE.MeshLambertMaterial({ map: tex.ashlar, normalMap: Q.rich ? tex.ashlarN : null, normalScale: new THREE.Vector2(0.8, 0.8), vertexColors: true, side: THREE.DoubleSide })),
     wood: fog.patch(new THREE.MeshLambertMaterial({ map: tex.wood, normalMap: Q.rich ? tex.woodN : null, vertexColors: true, side: THREE.DoubleSide })),
     plain: fog.patch(new THREE.MeshLambertMaterial({ map: tex.white, vertexColors: true, side: THREE.DoubleSide })),
     far: fog.patch(new THREE.MeshLambertMaterial({ map: tex.white, vertexColors: true, side: THREE.DoubleSide })),

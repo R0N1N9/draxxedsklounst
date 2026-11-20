@@ -8,7 +8,7 @@ import { line, ring } from './px.js';
 import { drawSniper, drawMarker, muzzle } from './sprites.js';
 import { drawCrate, drawSpring, drawBird, drawBalloon, drawFlag, drawLamp, drawSmoke, drawGrenade } from './art.js';
 import { drawFlash } from './fx.js';
-import { C } from './world.js';
+import { C, BODY } from './world.js';
 
 export function makeView(ctx, world, S, art) {
   const fb = makeCanvas(FW, FH), ov = makeCanvas(FW, FH);
@@ -16,7 +16,7 @@ export function makeView(ctx, world, S, art) {
   fg.imageSmoothingEnabled = false;
   og.imageSmoothingEnabled = false;
   const L = { s: 1, ox: 0, oy: 0, k: 1, cx: 0, cy: 0, cw: FW, ch: FH, shx: 0, shy: 0 };
-  const o = { x: 0, y: 0, face: 1, st: 0, run: 0, moving: false, air: false, vy: 0, aim: 0, recoil: 0, col: '', colD: '', t: 0, jet: false, tint: '', decoy: false };
+  const o = { x: 0, y: 0, face: 1, st: 0, run: 0, moving: false, air: false, vy: 0, aim: 0, recoil: 0, col: '', colD: '', t: 0, jet: false, tint: '', decoy: false, win: false, stun: 0, land: 0, vx: 0 };
   const mz = { x: 0, y: 0, sx: 0, sy: 0 };
   // A dithered vignette (pixels, not a gradient): baked once, stamped into the overlay.
   const vig = makeCanvas(FW, FH);
@@ -35,14 +35,15 @@ export function makeView(ctx, world, S, art) {
     const raw = Math.min(w / FW, h / FH);
     let s = Math.floor(raw * dpr + 1e-6) / dpr;
     if (s * dpr < 1) s = raw;
+    if (!(s > 0.01)) s = 0.01; // a collapsed stage must not divide by zero
     L.s = s;
     L.ox = Math.round(((w - FW * s) / 2) * dpr) / dpr;
     L.oy = Math.round(((h - FH * s) / 2) * dpr) / dpr;
     // camera crop
     const c = S.cam, z = Math.max(1, c.z);
     L.cw = FW / z; L.ch = FH / z;
-    L.cx = clamp(fxOf(c.x) - L.cw / 2, 0, FW - L.cw);
-    L.cy = clamp(c.y - L.ch / 2, 0, FH - L.ch);
+    L.cx = Math.round(clamp(fxOf(c.x) - L.cw / 2, 0, FW - L.cw)); // whole source pixels, so the grid never shimmers
+    L.cy = Math.round(clamp(c.y - L.ch / 2, 0, FH - L.ch));
     L.k = s * z;
   }
   const toCssX = (x) => L.ox + (fxOf(x) - L.cx + L.shx) * L.k;
@@ -84,6 +85,12 @@ export function makeView(ctx, world, S, art) {
   function playerOpts(p, tint) {
     o.x = p.x; o.y = p.y + (p.ground && world.bridgeY(p.x) >= 0 ? Math.round(dipAt(p.x)) : 0); o.face = p.face; o.st = p.st; o.run = p.run; o.moving = Math.abs(p.vx) > 6 && p.ground; o.air = !p.ground; o.vy = p.vy;
     o.aim = p.a; o.recoil = p.recoil; o.col = p.col; o.colD = p.colD; o.t = S.t + p.i * 0.37; o.jet = p.jet; o.tint = tint || ''; o.decoy = false;
+    o.vx = p.vx; o.stun = p.stun; o.land = p.landT; o.win = false;
+    const k = S.kill;
+    if (k && k.winner === p.i && k.t > 0.5) { // victory: rifle thrown up, a little hop
+      o.win = true; o.aim = p.face > 0 ? -1.25 : -Math.PI + 1.25; o.recoil = 0; o.air = false; o.moving = false;
+      o.y -= Math.round(Math.abs(Math.sin((k.t - 0.5) * 9)) * 3);
+    }
     return o;
   }
   function drawPlayer(g, p) {
@@ -99,6 +106,10 @@ export function makeView(ctx, world, S, art) {
     drawSniper(g, o);
     g.globalAlpha = 1;
     if (p.flash > 0) { muzzle(o, mz); drawFlash(g, mz.x, mz.y, p.a, p.flash / 0.09); }
+    if (p.stun > 0 && !k) { // dizzy: stars orbit the head
+      const hx = Math.round(p.x), hy = Math.round(p.y - BODY[p.st].h - 4);
+      for (let i = 0; i < 3; i++) { const a = S.t * 9 + i * 2.094; g.fillStyle = i % 2 ? PAL.cream : PAL.peach; g.fillRect(hx + Math.round(Math.cos(a) * 6), hy + Math.round(Math.sin(a) * 2), 2, 2); }
+    }
   }
 
   function drawDecoy(g, d) {
@@ -107,7 +118,7 @@ export function makeView(ctx, world, S, art) {
     g.fillStyle = PAL.ink; g.fillRect(Math.round(d.x) - 5, Math.round(d.y), 11, 2);
     g.fillStyle = PAL.wood; g.fillRect(Math.round(d.x) - 4, Math.round(d.y), 9, 1);
     const pl = S.P[d.owner];
-    o.x = d.x; o.y = d.y; o.face = d.face; o.st = 0; o.run = d.run; o.moving = d.moving; o.air = false; o.vy = 0; o.aim = d.aim; o.recoil = 0; o.col = pl.col; o.colD = pl.colD; o.t = 0; o.jet = false; o.tint = ''; o.decoy = true;
+    o.x = d.x; o.y = d.y; o.face = d.face; o.st = 0; o.run = d.run; o.moving = d.moving; o.air = false; o.vy = 0; o.aim = d.aim; o.recoil = 0; o.col = pl.col; o.colD = pl.colD; o.t = 0; o.jet = false; o.tint = ''; o.decoy = true; o.win = false; o.stun = 0; o.land = 0; o.vx = 0;
     drawSniper(g, o);
     if (own && ((S.t * 2) | 0) % 2 === 0) { g.fillStyle = PAL.cream; g.fillRect(Math.round(d.x) - 1, Math.round(d.y) - 22, 3, 1); g.fillRect(Math.round(d.x), Math.round(d.y) - 23, 1, 3); }
   }
@@ -277,17 +288,26 @@ export function makeView(ctx, world, S, art) {
     g.fillStyle = PAL.cream; g.fillRect(bx + 1 + half, y0 + 2, 1, 5);
     g.fillStyle = u >= 0 ? PAL.leaf : PAL.coral;
     drawText(g, u >= 0 ? '^' : 'v', x0 + 28, y0 + 1, g.fillStyle);
-    // first-seconds tips
-    if (ctx.phase === 'live' && S.liveT > 0.6 && S.liveT < 9.5) {
-      const dev = ctx.input.device;
-      const msg = S.liveT < 4.6 ? 'SHOTS DROP: AIM HIGH' : dev === 'touch' ? 'TAP PRONE FOR A STEADY ARC' : dev === 'gamepad' ? 'HOLD LT: PRONE + ARC' : 'HOLD RMB: PRONE + ARC';
-      const w = textWidth(msg) + 8, x = Math.round((FW - w) / 2), y = 154;
-      g.fillStyle = PAL.ink; g.fillRect(x, y, w, 11);
-      g.fillStyle = PAL.night; g.fillRect(x + 1, y + 1, w - 2, 9);
-      drawText(g, msg, FW / 2, y + 2, PAL.cream, 1, 'c');
+    // first-seconds tips: how to shoot, then what the bullet does, then the steady arc. They step aside once you have done it.
+    const me = S.P[ctx.me], dev = ctx.input.device;
+    if (ctx.phase === 'live' && me.alive && S.liveT > 0.4) {
+      const fs = S.firstShot;
+      let msg = '';
+      if (fs < 0) { if (S.liveT < 16) msg = dev === 'touch' ? 'DRAG TO AIM / LET GO TO SHOOT' : dev === 'gamepad' ? 'STICK AIMS / RT SHOOTS' : 'MOUSE AIMS / CLICK SHOOTS'; }
+      else if (S.liveT - fs < 6) msg = S.liveT - fs < 3.2 ? 'SHOTS DROP / AIM ABOVE THEM' : dev === 'touch' ? 'TAP LIE DOWN FOR A STEADY ARC' : dev === 'gamepad' ? 'HOLD LT TO LIE DOWN: STEADY ARC' : 'HOLD RIGHT MOUSE TO LIE DOWN';
+      if (msg) {
+        const w = textWidth(msg) + 8, x = Math.round((FW - w) / 2), y = 30;
+        g.fillStyle = PAL.ink; g.fillRect(x, y, w, 11);
+        g.fillStyle = PAL.night; g.fillRect(x + 1, y + 1, w - 2, 9);
+        g.fillStyle = me.col; g.fillRect(x + 1, y + 9, w - 2, 1);
+        drawText(g, msg, FW / 2, y + 2, PAL.cream, 1, 'c');
+      }
+    }
+    for (const q of S.pops) { // short pixel callouts that float up from where something happened
+      if (S.cam.z > 1) break;
+      drawText(g, q.s, fxOf(q.x), q.y - Math.round(ease.outCubic(Math.min(1, q.t / 0.5)) * 10), q.t > 0.8 && ((q.t * 30) | 0) % 2 ? PAL.coral : PAL.cream, 1, 'c', PAL.ink);
     }
     // reticle
-    const me = S.P[ctx.me];
     if (me.alive && ctx.phase === 'live') {
       let rx, ry;
       if (ctx.input.device === 'kbm') { rx = (ctx.input.pointerX - L.ox) / L.s; ry = (ctx.input.pointerY - L.oy) / L.s; }
@@ -353,7 +373,7 @@ export function makeView(ctx, world, S, art) {
     if (ox >= 3) { g.fillRect(ox - e * 2, oy, e, dh); g.fillRect(ox + dw + e, oy, e, dh); }
     // marquee text in a tall bottom bar
     if (oy > 16 * L.s * 0.5 && oy > 28) {
-      const k = Math.max(1, Math.floor(oy / 40));
+      const k = Math.max(1, Math.min(Math.floor(oy / 40), Math.floor((w - 8) / (textWidth('CARTRIDGE CANYON') + 48)))); // never wider than the screen
       const y = oy + dh + (oy - 7 * k) / 2;
       const tw = textWidth('CARTRIDGE CANYON') * k, gap = 10 * k;
       drawText(g, 'CARTRIDGE CANYON', w / 2, y, PAL.peach, k, 'c', PAL.ink);
