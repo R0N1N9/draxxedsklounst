@@ -116,11 +116,11 @@ Pick **SNIPER CELL** on the main menu, then a mission, the **staging area** load
 ### Missions
 
 - **NightWatch** (default): SENTINEL's augmented night garrison.
-  - **Sentries:** cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
+  - **Officers:** cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
   - **Juggernauts:** a recharging energy shell. When it breaks, they berserk with an energy blade.
   - **Bulwarks:** behind a hard-light wall. Snipe through its sight-port, or catch them when they lower it to fire. Tower bulwarks carry beam rifles and you see a red laser before they fire.
   - **Titans:** heavy armour. Body hits do half damage, and a helmet eats the first headshot; the follow-up kills.
-  - **The Overseer:** a shielded, helmeted officer carrying a master badge that opens every rack room.
+  - **The Overseer:** a shielded, helmeted commander carrying a master badge that opens every rack room.
 - **Infiltration:** the same op against human guards.
 
 Headshots kill anything except a helmet's first hit.

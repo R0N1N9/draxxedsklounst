@@ -378,7 +378,7 @@ export class CellGame {
     this.clock = new THREE.Clock();
     this.comms(this.operative ? 'Lone operative: rifle, camo and the CYBER OPS tablet are all yours (TAB).' : this.role === 'shooter' ? 'Ra in position. Kestrel Ridge below \u2014 lights in the yard, towers manned.' : 'R\u014dnin on the wire. CYBER OPS console synced (TAB).', ROLES[this.role].color, this.name);
     this.comms(this.operative ? 'Hold V for the ping wheel; payloads run straight from your tablet.' : this.aiPartner ? (this.role === 'shooter' ? 'R\u014dnin (AI) runs the console. Hold V for pings and requests.' : 'Ra (AI) holds the cliff. Tag targets (F) or ping TAKE SHOT and Ra fires.') : `${this.partnerName} is the ${ROLES[this.partnerRole].name.toLowerCase()}. Hold V for pings and requests.`, 'dim');
-    if (this.mission === 'nightwatch') this.comms('Sentries spook when they\u2019re alone. Juggernauts\u2019 shells break \u2014 then they charge. Bulwarks: shoot the port in the wall.', 'dim');
+    if (this.mission === 'nightwatch') this.comms('Officers spook when they\u2019re alone. Juggernauts\u2019 shells break \u2014 then they charge. Bulwarks: shoot the port in the wall.', 'dim');
     this.sfx.ambience();
     this.chat = new Chat(this);
     this.cine = new Cinema(this);
@@ -1205,7 +1205,7 @@ export class CellGame {
     // Noise: a suppressed shot carries ~10 m, an unsuppressed pistol 70 m and it's loud.
     this._noise(P.pos, rifle ? 10 : sup ? 8 : 70, !sup);
     if (!sup) this.sentinel.stats.loudShots = (this.sentinel.stats.loudShots || 0) + 1, this._loud = true;
-    // Rounds snapping past make sentries bolt.
+    // Rounds snapping past make officers bolt.
     for (const g of this.sentinel.guards) {
       if (g.state === 'dead' || (res && res.enemy === g)) continue;
       const c = { x: g.x, y: g.y + 1.2, z: g.z };
