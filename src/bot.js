@@ -3,7 +3,7 @@
 // messages (state, shots, hits, deaths, uplink captures). That keeps the AI honest and
 // means vs-AI matches exercise the real multiplayer code paths.
 import * as THREE from 'three';
-import { BALLISTICS, DAMAGE, PLAYER, UPLINK, WEAPON } from './config.js';
+import { BALLISTICS, DAMAGE, PLAYER, UPLINK, WEAPON, VEST } from './config.js';
 import { stepProjectile } from './ballistics.js';
 import { worldCapsules } from './avatar.js';
 import { segSegClosest, clamp } from './util.js';
@@ -223,7 +223,7 @@ export class BotPeer {
       const dtp = Math.max(this.t - this.player.t, 1e-3);
       this.playerVel.lerp(p.clone().sub(this.player.p).divideScalar(dtp), 0.3);
     }
-    this.player = { p, yaw: m.y, pitch: m.pi, st: m.st, sc: m.sc, z: m.z, al: m.al, mv: m.mv, t: this.t, kf: m.kf, tp: m.tp, jm: m.jm };
+    this.player = { p, yaw: m.y, pitch: m.pi, st: m.st, sc: m.sc, z: m.z, al: m.al, mv: m.mv, t: this.t, kf: m.kf, tp: m.tp, jm: m.jm, vs: m.vs };
   }
 
   _onPlayerShot(m) {
@@ -423,7 +423,8 @@ export class BotPeer {
         } else if (hit && (!wh || hit.s <= wh.t)) {
           const ip = b.prev.clone().lerp(b.p, hit.s);
           const part = hit.c.part;
-          const dmg = b.def.damage[part];
+          let dmg = b.def.damage[part];
+          if (part === 'torso' && this.player && this.player.vs === 'plate') dmg = Math.round(dmg * VEST.plateTorso);
           this._emit({ t: 'hit', id: b.id, part, dmg, dist: Math.round(b.o.distanceTo(ip)), ip: ip.toArray() });
           dead = true;
         } else if (wh) dead = true;
@@ -765,6 +766,7 @@ export class BotPeer {
       lc: (this.loadout && this.loadout.lens) || '#e0283a',
       th: (this.loadout && this.loadout.theme) || '',
       hw: (this.loadout && this.loadout.hat) || '',
+      vs: (this.loadout && this.loadout.vest) || 'plate',
       ew: (this.loadout && this.loadout.eyes) || '',
       ko: this.loadout ? `${this.loadout.scout},${this.loadout.stealth},${this.loadout.tactical}` : '',
       jm: this.jammer ? 1 : 0,

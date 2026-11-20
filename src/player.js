@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PLAYER, WEAPON, MAP } from './config.js';
+import { PLAYER, WEAPON, MAP, VEST } from './config.js';
 import { clamp, lerp, noise2 } from './util.js';
 import { zeroAngle } from './ballistics.js';
 import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
@@ -29,7 +29,7 @@ export class LocalPlayer {
     const mk = (key) => {
       const d = WEAPONS[key];
       const z = d.zooms.indexOf(12);
-      return { def: d, mag: d.mag, chamber: 1, reserve: d.mag * d.spareMags, zoomIdx: z >= 0 ? z : d.zooms.length - 1, zero: d.fixedZero || 400 };
+      return { def: d, mag: d.mag, chamber: 1, reserve: d.mag * this._spare(d), zoomIdx: z >= 0 ? z : d.zooms.length - 1, zero: d.fixedZero || 400 };
     };
     this.arms = [mk(this.rifleKey), mk('m18')];
     this.slot = 0;
@@ -176,11 +176,16 @@ export class LocalPlayer {
     if (this.bipodState === 'stowed') this._flicked = false;
   }
 
+  // Spare magazines for a weapon: the chest rig carries extra.
+  _spare(d) {
+    return d.spareMags + (this.vest === 'rig' ? VEST.rigExtraMags[d.slot] || 0 : 0);
+  }
+
   refill() {
     for (const w of this.arms) {
       w.mag = w.def.mag;
       w.chamber = 1;
-      w.reserve = w.def.mag * w.def.spareMags;
+      w.reserve = w.def.mag * this._spare(w.def);
     }
   }
 

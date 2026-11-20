@@ -632,18 +632,37 @@ export class Avatar {
       parent.add(m);
       return m;
     };
-    put(slab(0.29, 0.3, 0.055, 0.02), P.rig, 0, 0.37, -0.135, -0.06);
-    put(slab(0.29, 0.31, 0.05, 0.02), P.rig, 0, 0.37, 0.13, 0.05);
-    put(new THREE.CylinderGeometry(0.2, 0.205, 0.12, 22, 1, true).scale(1.04, 1, 0.8), P.rig, 0, 0.255, 0);
-    for (const sx of [-1, 1]) put(slab(0.065, 0.03, 0.27, 0.01), P.rig, sx * 0.11, 0.535, 0.0, 0, 0, sx * -0.18);
-    // Front: triple mag shingle (mags + pull tabs), admin pouch with a team patch.
+    // Vest: plate carrier (plates + cummerbund, triple mag shingle, admin pouch) or an open
+    // chest rig (harness and a wide pouch panel holding more magazines).
+    this.vests = { plate: new THREE.Group(), rig: new THREE.Group() };
+    this.spine.add(this.vests.plate, this.vests.rig);
+    const pv = this.vests.plate, rv = this.vests.rig;
+    put(slab(0.29, 0.3, 0.055, 0.02), P.rig, 0, 0.37, -0.135, -0.06, 0, 0, pv);
+    put(slab(0.29, 0.31, 0.05, 0.02), P.rig, 0, 0.37, 0.13, 0.05, 0, 0, pv);
+    put(new THREE.CylinderGeometry(0.2, 0.205, 0.12, 22, 1, true).scale(1.04, 1, 0.8), P.rig, 0, 0.255, 0, 0, 0, 0, pv);
+    for (const sx of [-1, 1]) put(slab(0.065, 0.03, 0.27, 0.01), P.rig, sx * 0.11, 0.535, 0.0, 0, 0, sx * -0.18, pv);
     for (let i = -1; i <= 1; i++) {
-      put(slab(0.074, 0.1, 0.05, 0.01), P.rig, i * 0.086, 0.26, -0.185);
-      put(slab(0.05, 0.04, 0.03, 0.006), P.mag, i * 0.086, 0.325, -0.185);
-      put(slab(0.02, 0.035, 0.008, 0.003), P.tab, i * 0.086, 0.35, -0.205, -0.3);
+      put(slab(0.074, 0.1, 0.05, 0.01), P.rig, i * 0.086, 0.26, -0.185, 0, 0, 0, pv);
+      put(slab(0.05, 0.04, 0.03, 0.006), P.mag, i * 0.086, 0.325, -0.185, 0, 0, 0, pv);
+      put(slab(0.02, 0.035, 0.008, 0.003), P.tab, i * 0.086, 0.35, -0.205, -0.3, 0, 0, pv);
     }
-    put(slab(0.19, 0.085, 0.032, 0.01), P.rig, 0, 0.425, -0.172, -0.06);
-    put(slab(0.075, 0.04, 0.006, 0.003), accent, 0.04, 0.43, -0.19, -0.06);
+    put(slab(0.19, 0.085, 0.032, 0.01), P.rig, 0, 0.425, -0.172, -0.06, 0, 0, pv);
+    put(slab(0.075, 0.04, 0.006, 0.003), accent, 0.04, 0.43, -0.19, -0.06, 0, 0, pv);
+    // Chest rig: wide low panel with five mag pouches, a map pocket above, H-harness + back X.
+    put(slab(0.36, 0.15, 0.035, 0.015), P.rig, 0, 0.24, -0.15, -0.04, 0, 0, rv);
+    for (let i = -2; i <= 2; i++) {
+      put(slab(0.064, 0.105, 0.048, 0.01), P.rig, i * 0.07, 0.25, -0.18, -0.04, 0, 0, rv);
+      put(slab(0.044, 0.04, 0.028, 0.006), P.mag, i * 0.07, 0.315, -0.178, -0.04, 0, 0, rv);
+      put(slab(0.018, 0.032, 0.008, 0.003), P.tab, i * 0.07, 0.34, -0.2, -0.3, 0, 0, rv);
+    }
+    put(slab(0.2, 0.07, 0.022, 0.008), P.web, 0, 0.355, -0.155, -0.08, 0, 0, rv);
+    put(slab(0.06, 0.035, 0.006, 0.003), accent, 0.05, 0.36, -0.168, -0.08, 0, 0, rv);
+    for (const sx of [-1, 1]) {
+      put(slab(0.045, 0.012, 0.3, 0.004), P.web, sx * 0.1, 0.5, -0.01, -0.2, 0, sx * -0.12, rv); // over the shoulders
+      put(slab(0.045, 0.3, 0.012, 0.004), P.web, sx * 0.1, 0.4, -0.145, -0.05, 0, 0, rv); // front straps
+      put(slab(0.04, 0.38, 0.012, 0.004), P.web, 0, 0.36, 0.145, 0.05, 0, sx * 0.55, rv); // back X
+      put(slab(0.07, 0.11, 0.06, 0.012), P.rig, sx * 0.19, 0.24, -0.09, 0, sx * -0.6, 0, rv); // side utility pouches
+    }
     // Tourniquet on the left strap, radio on the left side, med pouch on the right.
     put(new THREE.CylinderGeometry(0.019, 0.019, 0.1, 10), '#1d1d1f', -0.115, 0.49, -0.115, 0.15);
     put(slab(0.025, 0.018, 0.02, 0.004), '#a8402e', -0.115, 0.545, -0.12);
@@ -950,7 +969,7 @@ export class Avatar {
     const kit = look.kit || {};
     const hat = HATS[look.hat] ? look.hat : DEFAULT_GEAR[outfit].hat;
     const eyes = EYEWEAR[look.eyes] ? look.eyes : DEFAULT_GEAR[outfit].eyes;
-    const key = [outfit, thermal, lens, themeId, hat, eyes, kit.scout, kit.stealth, kit.tactical].join('|');
+    const key = [outfit, thermal, lens, themeId, hat, eyes, look.vest, kit.scout, kit.stealth, kit.tactical].join('|');
     if (this.look === key) return;
     this.look = key;
     const wraith = outfit === 'wraith';
@@ -970,6 +989,9 @@ export class Avatar {
       g.position.z = thermal ? 0.09 : 0; // strapped on over the poncho
     }
     this.smokeKit.visible = kit.tactical === 'smoke';
+    const vest = look.vest === 'rig' ? 'rig' : 'plate';
+    this.vests.plate.visible = vest === 'plate';
+    this.vests.rig.visible = vest === 'rig';
     const sup = kit.stealth === 'suppressor';
     this.rifle.userData.can.visible = sup;
     this.rifle.userData.brake.visible = !sup;

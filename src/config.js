@@ -42,6 +42,8 @@ export const PLAYER = {
 };
 
 export const DAMAGE = { head: 200, torso: 72, limb: 40 };
+// Vests: plates soak torso hits; the chest rig carries extra magazines instead.
+export const VEST = { plateTorso: 0.65, rigExtraMags: { rifle: 2, pistol: 1 } };
 
 export const WEAPON = {
   mag: 5,

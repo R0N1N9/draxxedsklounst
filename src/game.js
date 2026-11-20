@@ -5,7 +5,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-import { BALLISTICS, ROUND, WEAPON, UPLINK, NET, DAMAGE, PLAYER } from './config.js';
+import { BALLISTICS, ROUND, WEAPON, UPLINK, NET, DAMAGE, PLAYER, VEST } from './config.js';
 import { PALETTES, applyPalette, withHaze, hazeUniforms } from './atmosphere.js';
 import { World } from './world.js';
 import { Wind, stepProjectile } from './ballistics.js';
@@ -817,7 +817,8 @@ export class Game {
       }
       return;
     }
-    const dmg = (WEAPONS[shot && shot.wk] || WEAPONS.mk22).damage[cap.part];
+    let dmg = (WEAPONS[shot && shot.wk] || WEAPONS.mk22).damage[cap.part];
+    if (cap.part === 'torso' && this.tools.remote.vs === 'plate') dmg = Math.round(dmg * VEST.plateTorso);
     this.net.send({ t: 'hit', id: b.id, part: cap.part, dmg, dist: Math.round(dist), ip: ip.toArray().map((x) => Math.round(x * 100) / 100) });
     this.audio.hitConfirm(head, 0);
     this.hud.hitMarker(head);

@@ -22,7 +22,7 @@ export function renderLoadout(el, loadout, onChange) {
     <div class="lo-slot"><div class="lo-head"><span>Eyewear</span></div><div class="lo-chips" data-row="eyes">${Object.entries(EYEWEAR).map(([k, n]) => `<button class="lo-chip" data-key="eyes" data-v="${k}">${n}</button>`).join('')}</div></div>
     <div class="lo-slot"><div class="lo-head"><span>Lenses</span><em>goggles &amp; glasses</em></div>${swatches('lens', LENS_COLORS)}</div></div></div><div class="lo-list"></div>`;
   const list = el.querySelector('.lo-list'), prev = el.querySelector('.lo-prev'), outfits = el.querySelector('.lo-outfits');
-  const look = () => ({ outfit: lo.outfit, poncho: lo.stealth === 'poncho', lens: lo.lens, theme: lo.theme, hat: lo.hat, eyes: lo.eyes, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } });
+  const look = () => ({ outfit: lo.outfit, poncho: lo.stealth === 'poncho', lens: lo.lens, theme: lo.theme, hat: lo.hat, eyes: lo.eyes, vest: lo.vest, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } });
   const current = (key) => (key === 'theme' ? themeOf(lo.theme, lo.outfit) : lo.lens);
   const markSwatches = () => {
     el.querySelector('.lo-theme-name').textContent = THEMES[themeOf(lo.theme, lo.outfit)].name;
@@ -61,7 +61,11 @@ export function renderLoadout(el, loadout, onChange) {
         <button class="lo-opt${lo.bolt !== 'straight' ? ' on' : ''}" data-slot="bolt" data-tool="standard"><b>Standard bolt</b><span>Fire scoped, then come off the scope to work the bolt before the next shot.</span></button>
         <button class="lo-opt${lo.bolt === 'straight' ? ' on' : ''}" data-slot="bolt" data-tool="straight"><b>Straight-pull bolt</b><span>Cycles while you stay scoped, and a little faster. Slightly more muzzle climb.</span></button>
       </div>` : ''}</div>`;
-    list.innerHTML = rifles + SLOTS.map((s) => {
+    const vest = `<div class="lo-slot"><div class="lo-head"><span>Vest</span><em>armor or ammo</em></div><div class="lo-opts">
+      <button class="lo-opt${lo.vest !== 'rig' ? ' on' : ''}" data-slot="vest" data-tool="plate"><b>Plate carrier</b><span>Plates take a third off torso hits: an Mk22 body shot no longer two-taps you (3 hits). Headshots still kill.</span></button>
+      <button class="lo-opt${lo.vest === 'rig' ? ' on' : ''}" data-slot="vest" data-tool="rig"><b>Chest rig</b><span>No plates, more magazines: +2 rifle mags and +1 pistol mag.</span></button>
+    </div></div>`;
+    list.innerHTML = rifles + vest + SLOTS.map((s) => {
       const opts = Object.entries(TOOLS).filter(([, t]) => t.slot === s.key);
       return `<div class="lo-slot"><div class="lo-head"><span>${s.label}</span><em>${s.keyHint === 'passive' ? 'always on' : 'key ' + s.keyHint}</em></div>
         <div class="lo-opts">${opts.map(([k, t]) => `<button class="lo-opt${lo[s.key] === k ? ' on' : ''}" data-slot="${s.key}" data-tool="${k}">
