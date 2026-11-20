@@ -10,7 +10,7 @@ export const WEAPONS = {
     mag: 7,
     spareMags: 3,
     muzzle: 720,
-    damage: { head: 200, torso: 72, legs: 40 },
+    damage: { head: 200, torso: 110, legs: 40 }, // body shot kills unless plated (110 × 0.65 = 72)
     cycle: 1.35, // bolt throw
     reload: 3.0,
     reloadEmpty: 3.8,
@@ -19,7 +19,7 @@ export const WEAPONS = {
     glint: 1,
     recoil: 0.024,
     sway: 1,
-    desc: 'Bolt-action .300 PRC, 7+1. One-shot headshots, two body shots. Slow bolt throw. 4–20× scope.',
+    desc: 'Bolt-action .300 PRC, 7+1. One-shot headshots and body shots (two body shots on plates). Slow bolt throw. 4–20× scope.',
   },
   dmr: {
     key: 'dmr',

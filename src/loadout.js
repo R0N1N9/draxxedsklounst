@@ -62,8 +62,8 @@ export function renderLoadout(el, loadout, onChange) {
         <button class="lo-opt${lo.bolt === 'straight' ? ' on' : ''}" data-slot="bolt" data-tool="straight"><b>Straight-pull bolt</b><span>Cycles while you stay scoped, and a little faster. Slightly more muzzle climb.</span></button>
       </div>` : ''}</div>`;
     const vest = `<div class="lo-slot"><div class="lo-head"><span>Vest</span><em>armor or ammo</em></div><div class="lo-opts">
-      <button class="lo-opt${lo.vest !== 'rig' ? ' on' : ''}" data-slot="vest" data-tool="plate"><b>Plate carrier</b><span>Plates take a third off torso hits: an Mk22 body shot no longer two-taps you (3 hits). Headshots still kill.</span></button>
-      <button class="lo-opt${lo.vest === 'rig' ? ' on' : ''}" data-slot="vest" data-tool="rig"><b>Chest rig</b><span>No plates, more magazines: +2 rifle mags and +1 pistol mag.</span></button>
+      <button class="lo-opt${lo.vest !== 'rig' ? ' on' : ''}" data-slot="vest" data-tool="plate"><b>Plate carrier</b><span>Plates take a third off torso hits: you survive one Mk22 body shot (it takes 2). Headshots still kill.</span></button>
+      <button class="lo-opt${lo.vest === 'rig' ? ' on' : ''}" data-slot="vest" data-tool="rig"><b>Chest rig</b><span>No plates (an Mk22 body shot kills), more magazines: +2 rifle mags and +1 pistol mag.</span></button>
     </div></div>`;
     list.innerHTML = rifles + vest + SLOTS.map((s) => {
       const opts = Object.entries(TOOLS).filter(([, t]) => t.slot === s.key);
