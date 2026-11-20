@@ -222,9 +222,12 @@ export function bakeStage(seed, ppu) {
     g.moveTo(722, FLOOR + 6); g.lineTo(738, PIV.y + 40); g.quadraticCurveTo(730, PIV.y + 2, 760, PIV.y + 2);
     g.lineTo(840, PIV.y + 2); g.quadraticCurveTo(870, PIV.y + 2, 862, PIV.y + 40); g.lineTo(878, FLOOR + 6);
     g.closePath(); g.clip();
-    g.fillStyle = C.g1; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y + 10);
-    for (let y = PIV.y + 20, i = 0; y < FLOOR; y += 26 + rng() * 14, i++) { g.fillStyle = i % 2 ? C.paper2 : C.g2; g.fillRect(700, y, 200, 9 + rng() * 6); }
-    hatch(g, 806, PIV.y, 900, FLOOR, 8, 0.4, 1.7);
+    g.fillStyle = '#e9dfc8'; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y + 10);
+    for (let y = PIV.y + 20, i = 0; y < FLOOR; y += 24 + rng() * 14, i++) { g.fillStyle = i % 2 ? '#d9cfb8' : '#f1e8d3'; g.fillRect(700, y, 200, 8 + rng() * 6); g.fillStyle = 'rgba(27,22,18,0.35)'; g.fillRect(700, y + 8, 200, 2); }
+    const side = g.createLinearGradient(722, 0, 878, 0);
+    side.addColorStop(0, 'rgba(27,22,18,0)'); side.addColorStop(0.55, 'rgba(27,22,18,0.1)'); side.addColorStop(1, 'rgba(27,22,18,0.5)');
+    g.fillStyle = side; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y + 10);
+    hatch(g, 800, PIV.y, 900, FLOOR, 7, 0.45, 1.7);
     const gr = g.createLinearGradient(0, PIV.y, 0, FLOOR);
     gr.addColorStop(0, 'rgba(27,22,18,0)'); gr.addColorStop(1, 'rgba(27,22,18,0.4)');
     g.fillStyle = gr; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y);

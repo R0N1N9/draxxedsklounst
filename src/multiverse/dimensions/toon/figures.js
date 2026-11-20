@@ -227,8 +227,9 @@ export function drawSniper(g, p, E, mood) {
   blob(g, 0, 0, 17.5, 19, p.i + 31, p.col, 3.6, 0.9, 12);
   g.fillStyle = 'rgba(247,240,222,0.55)';
   g.beginPath(); g.ellipse(-6, -6, 5, 9, 0.25, 0, 6.283); g.fill(); // a shine on the vest
+  if (mood === 'scorch') { g.fillStyle = 'rgba(27,22,18,0.62)'; blobPath(g, 0, 0, 16, 18, p.i + 31, 0.9, 12); g.fill(); }
   g.fillStyle = FACE_COL; // shirt front and collar
-  poly(g, [-5, -17, 7, -17, 1, -5], p.i + 33, FACE_COL, 2.4, 0.4, C.ink, 0.3);
+  poly(g, [-5, -17, 7, -17, 1, -5], p.i + 33, mood === 'scorch' ? C.g4 : FACE_COL, 2.4, 0.4, C.ink, 0.3);
   g.fillStyle = C.ink;
   g.beginPath(); g.arc(3, 1, 2, 0, 6.283); g.arc(3, 9, 2, 0, 6.283); g.fill();
   g.restore();

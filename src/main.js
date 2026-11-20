@@ -298,6 +298,8 @@ async function startMultiverse(mode, opts = {}) {
     match: opts.match,
     target: settings.mvTarget,
     first: opts.first,
+    only: opts.only,
+    off: store.get('mvOff', null),
     dev: { ...DEV, ...(opts.dev || {}) },
     valley: { build: (o) => buildValley(o.mode, { ...o, pal: opts.pal, code: opts.code }) },
     hello: () => ({ rules: { ...RULES } }),
@@ -407,29 +409,58 @@ const syncMode = () => {
 document.querySelector('[data-setting="mode"]').addEventListener('change', syncMode);
 syncMode();
 
-// Dimension lab: any dimension against the AI, or a transition on a loop.
-$('btn-lab').onclick = async () => {
+// The owner's menu: which worlds and transitions "Do you want to develop an app?" may use,
+// and a way to play any one of them alone. It would spoil the surprise, so nothing in the
+// menu names it: it opens from the recording light on the briefing map (beside the version
+// number on screens too narrow for the map), which reads as set dressing and is left out
+// altogether on an invite link — or from the Lab button on a page opened with ?lab, which
+// also lists what is still being built.
+const openLab = async () => {
   showPanel('panel-lab');
   const { DIMENSIONS, TRANSITIONS, loadDimension, loadTransition } = await import('./multiverse/registry.js');
-  const fill = (box, list, load, onPick) => {
+  const all = params.has('lab');
+  const listed = (list) => list.filter((x) => !x.dev && (all || !x.wip));
+  const off = { dims: [], fx: [], ...(store.get('mvOff', null) || {}) };
+  const go = (opts) => { audio.unlock(); primeGyro(); goFullscreen(); startMultiverse('ai', { difficulty: aiDiff, ...opts }); };
+  const fill = (box, key, list, load, note, onPlay) => {
     box.innerHTML = '';
-    for (const e of list.filter((x) => !x.dev)) {
-      const b = document.createElement('button');
-      b.className = 'ghost';
-      b.textContent = e.id;
-      b.onclick = () => onPick(e.id);
-      box.appendChild(b);
-      load(e.id).then((m) => { b.innerHTML = `${m.name}<small>${m.perspective || `${m.duration} s`}</small>`; }, () => { b.disabled = true; });
+    for (const e of listed(list)) {
+      const row = document.createElement('div');
+      row.className = 'lab-row';
+      row.innerHTML = '<label><input type="checkbox" /><span></span></label><button class="ghost" title="Play">▶</button>';
+      const [tick, name, play] = [row.querySelector('input'), row.querySelector('span'), row.querySelector('button')];
+      const label = (title, sub) => { name.textContent = title; const sm = document.createElement('small'); sm.textContent = [sub, note(e)].filter(Boolean).join(' · '); name.appendChild(sm); };
+      label(e.id, '');
+      tick.checked = !off[key].includes(e.id);
+      tick.onchange = () => {
+        off[key] = off[key].filter((id) => id !== e.id);
+        if (!tick.checked) off[key].push(e.id);
+        store.set('mvOff', off);
+      };
+      play.onclick = () => onPlay(e);
+      box.appendChild(row);
+      load(e.id).then((m) => label(m.name, m.perspective || `${m.duration} s`), () => { play.disabled = true; row.classList.add('dead'); });
     }
     if (!box.children.length) box.innerHTML = '<p class="hint small">Nothing here yet.</p>';
   };
-  const go = (opts) => { audio.unlock(); primeGyro(); goFullscreen(); startMultiverse('ai', { difficulty: aiDiff, ...opts }); };
-  fill($('lab-dims'), DIMENSIONS, loadDimension, (id) => go({ first: id }));
-  fill($('lab-fx'), TRANSITIONS, loadTransition, (id) => {
-    const dims = DIMENSIONS.filter((d) => !d.dev && d.id !== 'valley').map((d) => d.id).sort(() => Math.random() - 0.5);
-    go({ dev: { fxlab: id, from: dims[0], to: dims[1] || dims[0] } });
-  });
+  const lead = (id) => DIMENSIONS.find((d) => d.then === id);
+  fill($('lab-dims'), 'dims', DIMENSIONS, loadDimension,
+    (e) => (e.id === 'valley' ? 'always opens the match' : lead(e.id) ? `follows ${lead(e.id).id}` : ''),
+    (e) => go({ first: e.id, only: e.id }));
+  fill($('lab-fx'), 'fx', TRANSITIONS, loadTransition,
+    (e) => (e.first ? 'the first kill' : e.link ? 'links two worlds' : ''),
+    (e) => {
+      // Shown between the two worlds it was made for, or between two picked at random.
+      const made = DIMENSIONS.find((d) => d.via === e.id);
+      const dims = made ? [made.id, made.then] : listed(DIMENSIONS).filter((d) => d.id !== 'valley').map((d) => d.id).sort(() => Math.random() - 0.5);
+      go({ dev: { fxlab: e.id, from: dims[0], to: dims[1] || dims[0] } });
+    });
 };
+$('btn-lab').onclick = openLab;
+document.querySelectorAll('.rec').forEach((el) => {
+  if (params.get('join')) el.remove();
+  else el.addEventListener('click', openLab);
+});
 
 // Sandbox
 $('btn-sandbox').onclick = () => {

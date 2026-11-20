@@ -23,13 +23,13 @@
 // KILL      A white flash and a BONK; the victim is scorched, blinking, with stars and birds circling, the hat
 //           lands last — and an iris closes on them. SUDDEN DEATH: the house lights drop, spotlights find both
 //           snipers, the crates burst, corks fly flat and fast and anvils rain on the mesas.
-import { clamp, damp, ease, shade, Shake, mixHex } from '../../kit.js';
+import { clamp, damp, ease, shade, Shake } from '../../kit.js';
 import { C, boil, FONT } from './ink.js';
 import {
-  W, H, GY, FLOOR, PIV, PW, PH, SPAWN, SHOULDER, LIP, CAR_Y, CAR_W, TRAIN, ANVIL, WEED, CRATE,
-  buildWorld, refresh, plankY, anvilState, trainState, weedState, birdState, moveBody, traceCork, shotParams, ladderTop,
+  W, H, GY, FLOOR, PW, PH, SPAWN, SHOULDER, TRAIN, WEED, CRATE,
+  buildWorld, anvilState, trainState, weedState, birdState, moveBody, traceCork, shotParams,
 } from './world.js';
-import { bakeStage, ARCH, BOUNDS } from './art.js';
+import { bakeStage, ARCH } from './art.js';
 import { makeFx } from './fx.js';
 import { makeFilm, drawIris, drawSpots, bubble, drawReticle, drawArc, drawTag } from './post.js';
 import { makeSound, BPM, BPM_HOT } from './sound.js';
@@ -130,11 +130,10 @@ export default {
       }
     }
     const E = { T: 0, pulse: 0, sway: 0, hatLean: 0, hatTilt: 0, look: [0, 0] };
-    const scr = { x: 0, y: 0 };
     const arcBuf = new Float32Array(160);
     const sp = { v: 0, g: 0 };
     const human = { mx: 0, my: 0, jump: false, jumpBtn: false, a: 0, fire: false, alt: false, a1: false, a2: false };
-    let prevUp = false, music = false, lastBoil = -1, hudCharges = -9, as = { ph: 0, x: 0, y: 0, k: 0, ground: 0 }, ts = { u: 0, on: false, head: 0, tail: 0, warn: 0 }, ws = { on: false, x: 0, y: 0, rot: 0, gx: 0 }, bs = { u: 0, on: false, x: 0, y: 0, dir: 1, low: false };
+    let prevUp = false, music = false, hudCharges = -9, as = { ph: 0, x: 0, y: 0, k: 0, ground: 0 }, ts = { u: 0, on: false, head: 0, tail: 0, warn: 0 }, ws = { on: false, x: 0, y: 0, rot: 0, gx: 0 }, bs = { u: 0, on: false, x: 0, y: 0, dir: 1, low: false };
 
     // ---- the person at the controls -------------------------------------------------------------------------
     function humanCmd(p) {
@@ -184,7 +183,6 @@ export default {
       const kd = rd * 0.55;
       if (!v.ground) { moveBody(w, v, kd); } else v.vx *= Math.exp(-6 * kd);
       if (v.ground && !k.landed && t0 > 0.05) { k.landed = true; v.sq.v = -22; fx.dust(v.x, v.y, 6, 0, 12); sound.land(v.x, true); shake.add(0.3); }
-      v.sq.x = v.sq.x;
       // the hat: up, over, and — last of all — onto the head
       const h = k.hat;
       if (!h.land) {
@@ -239,19 +237,16 @@ export default {
         sim.stepHoles(wdt);
         sim.stepHats(wdt);
         fx.update(over ? rd * 0.7 : dt);
-        // dust from the train and a lazy trickle of notes from the ragtime
+        // steam, dust and torn paper around the train
         updateTrainFx(dt);
         updateKill(rd);
-        // the world's smaller gags
         const me = P[ctx.me];
-        if (ctx.phase === 'live' && !online && !ctx.autopilot) { /* nothing: the human has no automatic duties */ }
         if (online) ctx.net.sendState({ x: r1(me.x), y: r1(me.y), a: +me.a.toFixed(3), s: me.st, g: me.ground ? 1 : 0, c: Math.round(me.charge * 100), z: me.stun > 0 ? 1 : 0, h: me.hat ? 1 : 0, t: me.tele ? 1 : 0 });
         ctx.hud.cooldown('fire', me.reload);
         ctx.hud.cooldown('a1', me.a1cd / 6.5);
         ctx.hud.cooldown('a2', me.a2cd / 11);
         const n1 = me.a1cd > 0 ? null : (S.holes.some((q) => q.owner === ctx.me && !q.b) ? 1 : 2);
         if (n1 !== hudCharges) { hudCharges = n1; ctx.hud.charges('a1', n1); }
-        // sudden death makes the very first bell ring a little extra
         camera(dt, rd);
         shake.update(Math.min(rd, 0.05));
       },
@@ -262,7 +257,7 @@ export default {
 
       onPhase(phase) {
         if (phase === 'live') {
-          S.beat0 = S.T;
+          S.beat0 = S.T + 0.1; // the piano starts a hair after the call: dance to what you hear
           if (!music) { music = true; sound.music(false); }
         } else if (phase === 'over') startKill();
       },
@@ -300,6 +295,7 @@ export default {
       dispose() {
         sound.stop(0.3);
         fx.clear();
+        sky = null;
         S.corks.length = 0; S.decoys.length = 0; S.holes.length = 0; S.hats.length = 0;
         if (art) for (const L of [art.far, art.near, art.wall, art.terr]) { L.canvas.width = 1; L.canvas.height = 1; }
         art = null;
@@ -405,12 +401,12 @@ export default {
       g.scale(V.s, V.s);
       g.translate(-cam.x, -cam.y);
       g.lineJoin = 'round'; g.lineCap = 'round';
-      if (!(S.off && S.off.bg)) drawWorld(g);
-      if (!(S.off && S.off.decor)) drawDecor(g, T);
-      if (!(S.off && S.off.actors)) drawActors(g, T);
+      drawWorld(g);
+      drawDecor(g, T);
+      drawActors(g, T);
       g.restore();
       drawOverlay(g, T);
-      if (!(S.off && S.off.film)) film.draw(g, cw, ch, T, 1);
+      film.draw(g, cw, ch, T, 1);
       if (S.flashW > 0) { g.fillStyle = `rgba(255,252,240,${Math.min(1, S.flashW)})`; g.fillRect(0, 0, cw, ch); }
     }
 
@@ -605,10 +601,9 @@ export default {
       }
       // the iris closes on the victim
       const k = S.kill;
-      if (k && k.t > 0.85) {
-        const u = clamp((k.t - 0.85) / 1.5, 0, 1);
+      if (k && k.t > 1.1) {
+        const u = clamp((k.t - 1.1) / 1.3, 0, 1);
         const maxR = Math.hypot(cw, ch);
-        S.dbgIris = [tx(k.v.x), ty(k.v.y - 92), maxR * (1 - ease.inOutCubic(u)) + 34 * V.s * (1 - u) + 8, u];
         drawIris(g, cw, ch, tx(k.v.x), ty(k.v.y - 92), maxR * (1 - ease.inOutCubic(u)) + 34 * V.s * (1 - u) + 8);
       }
       // the opening: an iris-in from the local sniper

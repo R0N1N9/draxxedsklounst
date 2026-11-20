@@ -72,17 +72,20 @@ export function makeView(ctx, THREE, renderer, W) {
     const k = game.kill, t = k.t, w = k.w, h = w.hop, ux = k.ux, uz = k.uz, rx = -uz, rz = ux;
     kc.y = damp(kc.y, w.y, 4, dt);
     const dist = Math.hypot(k.x - w.x, k.z - w.z);
-    // A — over the winner's shoulder on a long lens: the fall, the splash, the bow
-    pA.set(w.x - ux * 14 + rx * 1.2, kc.y + 3.5, w.z - uz * 14 + rz * 1.2);
-    lA.set(k.x, k.y + 1.6 + Math.min(1.6, t), k.z);
-    const fA = clamp((2 * Math.atan(10 / (dist + 14)) * 180) / Math.PI, 9, 34);
-    // B — round behind the winner as they crouch and go
+    // A — from above the winner's shoulder, a crash zoom down the line of the shot: the
+    // fall, the splash, the bow. (High enough that no crest between hides it.)
+    const v = k.v.body, hi = 6 + dist * 0.06;
+    pA.set(w.x - ux * 14 + rx * 1.2, kc.y + hi, w.z - uz * 14 + rz * 1.2);
+    if (k.splashed) kc.look.lerp(tmp.set(k.x, k.y + 2.6, k.z), Math.min(1, dt * 4)); else kc.look.lerp(tmp.set(v.x, v.y + 0.4, v.z), Math.min(1, dt * 9));
+    lA.copy(kc.look);
+    const fA = clamp((2 * Math.atan(4.6 / (dist + 14)) * 180) / Math.PI, 3.2, 30);
+    // B — round to the winner's side as they crouch and go: the header in profile
     const bx = h.on ? h.x : w.x, by = h.on ? Math.max(h.y, kc.y - 0.5) : kc.y + 0.9, bz = h.on ? h.z : w.z;
-    pB.set(bx - ux * 7.5 + rx * 2.6, Math.max(by, kc.y) + 2.0, bz - uz * 7.5 + rz * 2.6);
-    lB.set(bx + ux * 1.6, by + 0.1, bz + uz * 1.6);
-    // C — down to the water where they went in, and through it
-    pC.set(k.ex - ux * 3.0 + rx * 0.5, k.ey + 0.5, k.ez - uz * 3.0 + rz * 0.5);
-    lC.set(k.ex + ux * 3, k.ey - 2.2, k.ez + uz * 3);
+    pB.set(bx - ux * 5.2 + rx * 5.6, Math.max(by, kc.y) + 1.5, bz - uz * 5.2 + rz * 5.6);
+    lB.set(bx + ux * 1.2, by + 0.1, bz + uz * 1.2);
+    // C — in behind them to the boil of foam where they went under, and through it
+    pC.set(k.ex - ux * 3.4 + rx * 0.6, k.ey + 0.55, k.ez - uz * 3.4 + rz * 0.6);
+    lC.set(k.ex + ux * 0.6, k.ey - 0.5, k.ez + uz * 0.6);
     const ab = smoothstep(KILL.squat - 0.35, KILL.jump + 0.15, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
     pA.lerp(pB, ab).lerp(pC, bc);
     lA.lerp(lB, ab).lerp(lC, bc);
@@ -111,7 +114,7 @@ export function makeView(ctx, THREE, renderer, W) {
     killCam() {
       trauma = Math.min(1, trauma + 0.4);
       if (!Q.soft) flashA = 0.4;
-      kc = { p0: camera.position.clone(), q0: camera.quaternion.clone(), f0: camera.fov, y: game.kill.w.y };
+      kc = { p0: camera.position.clone(), q0: camera.quaternion.clone(), f0: camera.fov, y: game.kill.w.y, look: new THREE.Vector3(game.kill.x, game.kill.y + 1, game.kill.z) };
       drawAt = -1e9; debt = 0;
     },
     // Where the picture's centre of interest is as the round ends: the spot the winner went in.
@@ -165,7 +168,7 @@ export function makeView(ctx, THREE, renderer, W) {
         camera.fov = play.fov;
       }
       if (trauma > 0) {
-        const k = trauma * trauma * (1 - me.brace * 0.5);
+        const k = trauma * trauma * (1 - me.brace * 0.5) * Math.min(1, camera.fov / 40); // (a long lens magnifies a shake)
         camera.rotation.x += noise2(wt * 31, 3.1) * k * 0.03;
         camera.rotation.y += noise2(5.7, wt * 29) * k * 0.03;
         camera.rotation.z += noise2(wt * 27, 9.9) * k * 0.05;
@@ -278,10 +281,11 @@ export function makeView(ctx, THREE, renderer, W) {
           // A software rasteriser pays for a draw over the next several frames, not in one:
           // add up everything it stalled since, do not draw again while it is still catching
           // up, and let no more than a sixth of the time go on drawing — the duel runs true.
-          if (iv > 40) debt += iv - 17;
+          if (iv > 40) { debt += iv - 17; if (api.log && iv > 400) api.log(`stall ${Math.round(iv)} f${frames}`); }
           if (frames < 14 || iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
         }
       }
+      if (api.log) api.log(`draw#${api.draws + 1} f${frames} debt${Math.round(debt)} iv${Math.round(iv)}`);
       drawAt = now;
       debt = 0;
       api.draws++;

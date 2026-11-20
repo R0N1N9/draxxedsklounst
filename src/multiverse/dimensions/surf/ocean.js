@@ -96,7 +96,7 @@ void main() {
   }
 
   // foam: where the surface folds, in streaks on the high water, and along the sand
-  float lace = d3.z * 0.7 + texture2D(tDetail, vP0 * 0.071 - t * vec2(0.013, 0.006)).z * 0.65;
+  float lace = d3.z * 0.6 + texture2D(tDetail, vP0 * 0.071 + rip * 0.05 - t * vec2(0.013, 0.006)).z * 0.75 * (0.5 + d1.w);
   float foam = smoothstep(0.72, 0.3, J) * (0.35 + lace) + smoothstep(1.0, 2.8, h) * smoothstep(0.95, 1.3, lace + d2.w * 0.7) * 0.5;
   float band = sin(depth * 2.6 + t * 1.25 + d2.w * 3.0 + vP0.x * 0.02);
   foam += (smoothstep(0.55, 1.0, band) * (0.35 + lace) * smoothstep(4.5, 0.6, depth) + smoothstep(0.55, 0.05, depth) * (0.6 + lace)) * step(-0.3, depth);
@@ -112,11 +112,13 @@ void main() {
 // Tileable ripple map: normal (rg), lace foam (b), blotches (a).
 function detailTexture(THREE, seed, Q) {
   const S = 256, rng = mulberry32(seed), data = new Uint8Array(S * S * 4);
+  // Ripples are raised by the wind, so their crests lie across it: wave vectors bunch round
+  // one direction, and what the sea mirrors comes out in streaks, not blobs.
   const waves = [];
   for (let i = 0; i < 22; i++) {
-    const kx = Math.round((rng() - 0.5) * 26), ky = Math.round((rng() - 0.5) * 26), k = Math.hypot(kx, ky);
+    const a = -Math.PI / 2 + (rng() + rng() + rng() - 1.5) * 0.9, k0 = 3 + rng() * 14, kx = Math.round(Math.cos(a) * k0), ky = Math.round(Math.sin(a) * k0), k = Math.hypot(kx, ky);
     if (k < 2) { i--; continue; }
-    waves.push({ kx, ky, a: 1 / Math.pow(k, 1.15), ph: rng() * TAU });
+    waves.push({ kx, ky, a: 1 / Math.pow(k, 1.1), ph: rng() * TAU });
   }
   const C = 9, cells = [];
   for (let i = 0; i < C * C; i++) cells.push([rng(), rng()]);
@@ -141,8 +143,8 @@ function detailTexture(THREE, seed, Q) {
     let b = 0;
     for (const q of blot) b += Math.cos(((q.kx * x + q.ky * y) / S) * TAU + q.ph);
     const o = (y * S + x) * 4;
-    data[o] = Math.max(0, Math.min(255, 127.5 + gx * 30));
-    data[o + 1] = Math.max(0, Math.min(255, 127.5 + gy * 30));
+    data[o] = Math.max(0, Math.min(255, 127.5 + gx * 34));
+    data[o + 1] = Math.max(0, Math.min(255, 127.5 + gy * 34));
     data[o + 2] = Math.round(seam * seam * 255);
     data[o + 3] = Math.max(0, Math.min(255, 127.5 + b * 40));
   }

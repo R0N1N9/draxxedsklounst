@@ -92,7 +92,7 @@ void main() {
     uw = mix(uw, col * vec3(0.35, 0.8, 0.9), 0.18 * exp(-max(d, 0.0) * 4.0));                            // a ghost of the world above
     float trail = exp(-pow((vUv.x - 0.5) * 3.2, 2.0));                                                   // thickest where the diver went
     uw = mix(uw, vec3(0.9, 1.0, 1.0), clamp(bubbles(p, uTime) * (0.3 + 0.7 * trail + exp(-max(d, 0.0) * 5.0) * 0.6), 0.0, 1.0) * 0.85);
-    float froth = smoothstep(0.45, 0.8, vn(p * 9.0 + vec2(0.0, uTime * 0.8)) * 0.6 + vn(p * 23.0 - vec2(uTime * 0.5, 0.0)) * 0.5) * exp(-max(d, 0.0) * 4.5) * uWater.z;
+    float froth = smoothstep(0.5, 0.82, vn(p * 6.0 + vec2(0.0, uTime * 0.8)) * 0.45 + vn(p * 15.0 - vec2(uTime * 0.5, 0.0)) * 0.35 + vn(p * 37.0 + uTime) * 0.3) * exp(-max(d, 0.0) * 5.0) * uWater.z;
     uw = mix(uw, vec3(0.95, 1.0, 0.98), froth);                                                          // churned white under the line
     col = mix(col, uw, under);
     col = mix(col, vec3(0.8, 0.95, 0.95), 0.4 * (1.0 - smoothstep(0.0, 0.16, -d)) * (1.0 - under) * uWater.z); // water sheeting off the glass

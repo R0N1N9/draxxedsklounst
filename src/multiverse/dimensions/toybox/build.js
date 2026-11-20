@@ -7,7 +7,7 @@ import { RUG_A, RUG_B, LOOP, SPOT_R, TIDY } from './world.js';
 import { TOY } from './tex.js';
 
 export const LAMP_HEAD = { x: -18.4, y: 5.7, z: -8.8 }, LAMP_BASE = { x: -23.6, z: -11.4 };
-const HEMI = 1.0;
+let HEMI = 1.0;
 const LIGHT_POS = { x: -8.5, y: 17.5, z: -11.5 }; // where the light really comes from: higher, for a rounder pool
 
 const PATCH_PARS = `
@@ -27,6 +27,7 @@ const PATCH_LIGHT = `
 }`;
 
 export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
+  if (!Q.pbr) HEMI = 1.5; // (no reflections in the software build: a little more sky instead)
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0.012, 0.01, 0.02);
   const rng = makeRng(0x7075);

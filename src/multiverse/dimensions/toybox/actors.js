@@ -45,6 +45,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
     return {
       m, mat,
       set(x0, y0, z0, x1, y1, z1, w, a) {
+        if (!(x0 + y0 + z0 + x1 + z1 + w === x0 + y0 + z0 + x1 + z1 + w)) { m.visible = false; return; } // never hand the GPU a NaN
         const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1, nx = (-dz / l) * w, nz = (dx / l) * w;
         p.setXYZ(0, x0 - nx, y0, z0 - nz); p.setXYZ(1, x0 + nx, y0, z0 + nz); p.setXYZ(2, x1 - nx, y1, z1 - nz); p.setXYZ(3, x1 + nx, y1, z1 + nz);
         p.needsUpdate = true;

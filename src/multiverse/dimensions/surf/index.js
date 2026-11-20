@@ -79,7 +79,7 @@ export default {
   angleFields: ['hd', 'yaw', 'pitch'],
 
   create(ctx) {
-    const { THREE, renderer } = ctx.three;
+    const { THREE, renderer } = ctx.three, tC0 = performance.now(), LOG = [];
     // Two builds of one picture: a software rasteriser draws the same sea at a lower
     // resolution, without multisampling or lens colour, under full-resolution grain.
     const Q = { soft: false, scale: 1 };
@@ -94,7 +94,7 @@ export default {
     const sky = makeSky(THREE, renderer, Q), haze = makeHaze(THREE);
     const tints = ctx.players.map((pl) => { const c = new THREE.Color(pl.color); return new THREE.Vector3(c.r, c.g, c.b); });
     const ocean = makeOcean(THREE, sea, sky, ctx.seed, tints, Q);
-    const fx = makeFx(THREE, sky, ocean.uniforms.tDetail.value, SUN_COLOR);
+    const fx = makeFx(THREE, sky, ocean.uniforms.tDetail.value, SUN_COLOR, Q);
     scene.add(sky.dome, ocean.mesh, fx.group);
     scene.add(new THREE.HemisphereLight(new THREE.Color(0.42, 0.5, 0.86), new THREE.Color(0.2, 0.3, 0.3), 1.7));
     const sun = new THREE.DirectionalLight(new THREE.Color(...SUN_COLOR), 5.5);
@@ -204,7 +204,7 @@ export default {
     const settle = () => { for (let i = 0; i < 200 && ctx.phase === 'over' && game.kill.on && game.kill.t < KILL.end - 0.02; i++) frame(0.05 * SLOW, T + 0.05 * SLOW, true); };
     view = makeView(ctx, THREE, renderer, { scene, sea, world, game, post, ocean, haze, Q, sfx, settle });
 
-    let T = -4.6, introRate = 1, introOn = false, suddenSeen = false, sprayAcc = [0, 0], wallAcc = 0, driftAcc = 0, wasTurn = 0;
+    let T = -4.6, introRate = 1, introOn = false, suddenSeen = false, sprayAcc = [0, 0], wallAcc = 0, driftAcc = 0, wasTurn = 0, boilAcc = 0;
     const bp = game.bullets.map(() => ({ on: false, x: 0, y: 0, z: 0 }));
     const riders = [{ x: 0, z: 0, v: 0, on: false }, { x: 0, z: 0, v: 0, on: false }];
 
@@ -266,12 +266,23 @@ export default {
         const d = game.los.dist, al = -Math.sin(foe.yaw) * (me.x - foe.x) / d - Math.cos(foe.yaw) * (me.z - foe.z) / d;
         if (al > 0.985) { const s = models[foe.i].st.scope, k = (al - 0.985) / 0.015; fx.star(s.x, s.y, s.z, d * 0.022 * (0.6 + k), 7 * k, 6.5 * k, 5 * k, 0.04); }
       }
+      // where the winner went in: the water keeps boiling
+      const kl = game.kill;
+      if (kl.on && kl.w.hop.wet) {
+        boilAcc += dt / SLOW * 30;
+        for (; boilAcc >= 1; boilAcc -= 1) {
+          const a = Math.random() * 6.28, r = Math.random() * 1.3;
+          fx.mist(kl.ex + Math.cos(a) * r, kl.ey + 0.15, kl.ez + Math.sin(a) * r, rnd(0.8), 0.8 + Math.random() * 1.6, rnd(0.8), 0.5 + Math.random() * 0.4, 0.5, 1.5, 0.6, 3, 1);
+          if (Math.random() < 0.3) fx.ring(kl.ex + Math.cos(a) * r, kl.ey, kl.ez + Math.sin(a) * r, 0.3, 2.2, 0.7, 0.7);
+          fx.drop(kl.ex + Math.cos(a) * r * 0.6, kl.ey + 0.1, kl.ez + Math.sin(a) * r * 0.6, rnd(1), 1.5 + Math.random() * 2.5, rnd(1), 0.5, 0.07);
+        }
+      }
       // sudden death: a beam over each sniper
       if (ctx.sudden) for (const p of P) if (p.alive) { const c = rgb[p.i]; fx.streak(p.x, p.y + 2.6, p.z, p.x, p.y + 30, p.z, c[0] * 3, c[1] * 3, c[2] * 3, 0.6, 0.16, 0.06); }
       if (Math.random() < dt * 0.22) sfx.gull(world.gulls.x, world.gulls.z);
       // the fire on the beach and the lamp of the lighthouse
       const fr = shore.fire, lh = shore.lighthouse;
-      fx.star(fr[0], fr[1] + 1.1, fr[2], 5 + Math.random() * 2.5, 7, 3, 0.8, 0.05);
+      fx.star(fr[0], fr[1] + 1.1, fr[2], 2.4 + Math.random() * 1.2, 7, 3, 0.8, 0.05);
       fx.star(lh.x, lh.y + 25.7, lh.z, 14 + 5 * Math.sin(view.wt * 1.1), 6, 4.2, 2, 0.05);
     }
 
@@ -345,7 +356,9 @@ export default {
         disposeTree(scene);
       },
     };
-    inst.dbg = { game, view, sea, world, fx, Q, SET }; // test scripts only
+    inst.dbg = { game, view, sea, world, fx, Q, SET, LOG }; // test scripts only
+    LOG.push(`create ${Math.round(performance.now() - tC0)}ms`);
+    view.log = (m) => { if (LOG.length < 80) LOG.push(`${Math.round(performance.now() - tC0)} ${m}`); };
     post.resize();
     return inst;
   },

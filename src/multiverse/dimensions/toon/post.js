@@ -1,7 +1,7 @@
 // Old film on top of everything (grain, scratches, dust, flicker, vignette, cue marks) and the world's
 // own interface: the reticle, the dotted arc, speech-bubble prompts, name tags, the iris and the spotlights.
 import { clamp, makeCanvas } from '../../kit.js';
-import { C, FONT, boil, hash1, blobPath, blob, jit } from './ink.js';
+import { C, FONT, boil, hash1, blobPath } from './ink.js';
 
 export function makeFilm() {
   const tiles = [];
@@ -199,4 +199,3 @@ export function drawTag(g, x, y, name, local, col, u, T) {
   g.restore();
 }
 
-export { blob, jit };

@@ -118,7 +118,8 @@ The first time one sniper shoots the other, the game is "hijacked": a cheerful d
 
 - Worlds so far: the valley, a neon top-down arena, a WW2 town square, a pixel-art canyon, an ASCII terminal and a manga street duel. Each one shows its controls on arrival.
 - Nothing differs from the classic game before the first kill, so it works as a surprise.
-- Open the page with `?lab` to get a **Lab** button: jump into any world against the AI, or preview any transition.
+- The owner's menu: tap the small red **REC** light in the corner of the briefing map (on narrow screens, the red dot beside `v1.0`). Tick which worlds and transitions the mode may use when you host or play solo, or press ▶ to play one world on its own against the AI or preview a transition. The light is not shown on an invite link.
+- Open the page with `?lab` to get a **Lab** button that opens the same menu and also lists worlds still being built.
 - The code lives in `src/multiverse/` (`contract.js` documents how worlds and transitions plug in; `tools/mv-test.mjs` plays them headlessly; `tools/multiverse-briefs/` holds the design briefs).
 
 </details>
