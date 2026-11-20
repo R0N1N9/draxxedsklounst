@@ -48,11 +48,11 @@ html = html
   .replace(/\s*<link rel="manifest"[^>]*>/, '')
   .replace(/<link rel="icon"[^>]*>/, `<link rel="icon" href="${icon}" type="image/svg+xml" />`)
   .replace(/\s*<link rel="apple-touch-icon"[^>]*>/, '')
-  .replace('<link rel="stylesheet" href="style.css" />', () => `<style>\n${css}\n</style>`)
+  .replace(/<link rel="stylesheet" href="style\.css(\?[^"]*)?" \/>/, () => `<style>\n${css}\n</style>`)
   .replace(/\s*<link rel="stylesheet" href="src\/(multiverse|cell)\/[^"]+" \/>/g, '')
   .replace(/\s*<script type="importmap">[\s\S]*?<\/script>/, '')
   .replace('<script src="vendor/peerjs.min.js"></script>', () => `<script>${esc(peer)}</script>`)
-  .replace('<script type="module" src="src/main.js"></script>', () => `<script>${esc(js)}</script>`);
+  .replace(/<script type="module" src="src\/main\.js(\?[^"]*)?"><\/script>/, () => `<script>${esc(js)}</script>`);
 mkdirSync(r('dist'), { recursive: true });
 writeFileSync(r('dist/draxxed-sklounst.html'), html);
 console.log(`dist/draxxed-sklounst.html  ${(html.length / 1024).toFixed(0)} KB`);
