@@ -179,8 +179,8 @@ export const EYEWEAR = { glasses: 'Glasses', goggles: 'Goggles', visor: 'Visor',
 export const DEFAULT_GEAR = { ghillie: { hat: 'boonie', eyes: 'glasses' }, wraith: { hat: 'helmet', eyes: 'goggles' } };
 export const LENS_COLORS = ['#e0283a', '#ff8a1f', '#f2d23c', '#3cf28a', '#38d6f2', '#8a5cff', '#f23ca8', '#1b1d22'];
 export const OUTFITS = {
-  ghillie: { name: 'Ghillie', desc: 'Jute ghillie and painted face. Boonie and glasses by default.' },
   wraith: { name: 'Wraith', desc: 'Balaclava and respirator. Helmet and goggles by default.' },
+  ghillie: { name: 'Ghillie', desc: 'Jute ghillie and painted face. Boonie and glasses by default.' },
 };
 const WRAITH_MAP = {
   [PAL.glove]: '#1d1e20',
@@ -199,7 +199,7 @@ export const THEMES = {
   ocp: { name: 'Multicam OCP', base: '#5c5644', pattern: 0, colors: ['#5c5644', '#454b3b', '#4f4335', '#6c6752', '#29281f'] },
   urban: { name: 'Urban digital', base: '#45484b', pattern: 1, colors: ['#4a4d50', '#303336', '#606366', '#777a7c', '#1f2124'] },
 };
-export const THEME_DEFAULT = { ghillie: 'ranger', wraith: 'gray' };
+export const THEME_DEFAULT = { ghillie: 'ranger', wraith: 'mcblack' };
 export function themeOf(id, outfit = 'ghillie') {
   return THEMES[id] ? id : THEME_DEFAULT[outfit === 'wraith' ? 'wraith' : 'ghillie'];
 }

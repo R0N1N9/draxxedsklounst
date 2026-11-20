@@ -26,13 +26,13 @@ export const SLOTS = [
   { key: 'stealth', label: 'Stealth', keyHint: 'passive' },
   { key: 'tactical', label: 'Tactical', keyHint: 'G' },
 ];
-export const DEFAULT_LOADOUT = { rifle: 'mk22', scout: 'hunter', stealth: 'suppressor', tactical: 'smoke' };
+export const DEFAULT_LOADOUT = { rifle: 'mk22', scout: 'hunter', stealth: 'poncho', tactical: 'smoke' };
 
 export function validLoadout(lo) {
   const out = { ...DEFAULT_LOADOUT };
   if (lo && RIFLES.includes(lo.rifle)) out.rifle = lo.rifle;
   out.bolt = lo && lo.bolt === 'straight' ? 'straight' : 'standard';
-  out.outfit = lo && lo.outfit === 'wraith' ? 'wraith' : 'ghillie';
+  out.outfit = lo && lo.outfit === 'ghillie' ? 'ghillie' : 'wraith';
   out.lens = lo && /^#[0-9a-f]{6}$/i.test(lo.lens || '') ? lo.lens.toLowerCase() : DEFAULT_LENS;
   out.theme = lo && THEMES[lo.theme] ? lo.theme : '';
   out.hat = lo && HATS[lo.hat] ? lo.hat : '';
