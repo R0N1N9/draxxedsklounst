@@ -7,20 +7,15 @@ const BASE = { gravity: BALLISTICS.gravity, drag: BALLISTICS.drag, windScale: BA
 
 // gravity / drag / wind / sway / hitbox are multipliers; speed multiplies muzzle velocity
 // (40 = effectively instant, i.e. hitscan).
+// Listed from the simplest to shoot to the most demanding: the menu shows them in this order,
+// lined up with the shooting distances (Halo over Close ... Simulation over Extreme).
 export const PRESETS = {
-  sim: {
-    name: 'Simulation',
-    short: 'SIM',
-    feel: 'Sniper Elite / ARMA',
-    desc: 'Heavier drag and strong wind. Every long shot needs a range and a wind call.',
-    gravity: 1, drag: 1.35, wind: 1.6, speed: 1, sway: 1.2, hitbox: 1, zooms: null, range: 'extreme',
-  },
-  bf: {
-    name: 'Battlefield',
-    short: 'BF',
-    feel: 'Battlefield',
-    desc: 'The default: real bullet drop and travel time, moderate wind.',
-    gravity: 1, drag: 1, wind: 1, speed: 1, sway: 1, hitbox: 1, zooms: null, range: 'long',
+  halo: {
+    name: 'Halo',
+    short: 'HALO',
+    feel: 'Halo',
+    desc: 'The default: instant hit, dead straight, no wind and no scope sway. 5× / 10× / 20× zoom. Pure reflex.',
+    gravity: 0, drag: 0, wind: 0, speed: 40, sway: 0, hitbox: 1.25, zooms: [5, 10, 20], range: 'close',
   },
   cod: {
     name: 'Call of Duty',
@@ -29,16 +24,23 @@ export const PRESETS = {
     desc: 'Fast bullets with light drop and no wind. Lead a little, hold over a little.',
     gravity: 0.35, drag: 0.5, wind: 0, speed: 1.6, sway: 1, hitbox: 1.15, zooms: null, range: 'medium',
   },
-  halo: {
-    name: 'Halo',
-    short: 'HALO',
-    feel: 'Halo',
-    desc: 'Instant hit, dead straight, no wind and no scope sway. 5× / 10× / 20× zoom. Pure reflex.',
-    gravity: 0, drag: 0, wind: 0, speed: 40, sway: 0, hitbox: 1.25, zooms: [5, 10, 20], range: 'close',
+  bf: {
+    name: 'Battlefield',
+    short: 'BF',
+    feel: 'Battlefield',
+    desc: 'Real bullet drop and travel time, moderate wind.',
+    gravity: 1, drag: 1, wind: 1, speed: 1, sway: 1, hitbox: 1, zooms: null, range: 'long',
+  },
+  sim: {
+    name: 'Simulation',
+    short: 'SIM',
+    feel: 'Sniper Elite / ARMA',
+    desc: 'Heavier drag and strong wind. Every long shot needs a range and a wind call.',
+    gravity: 1, drag: 1.35, wind: 1.6, speed: 1, sway: 1.2, hitbox: 1, zooms: null, range: 'extreme',
   },
 };
 
-export const DEFAULT_RULES = { preset: 'bf', ...PRESETS.bf, autoZero: true };
+export const DEFAULT_RULES = { preset: 'halo', ...PRESETS.halo, autoZero: true };
 
 // The live rules everything reads.
 export const RULES = { ...DEFAULT_RULES };
@@ -48,8 +50,8 @@ export function normalizeRules(r) {
   const base = p ? { preset: r.preset, ...p } : { ...DEFAULT_RULES, preset: 'custom' };
   const out = { ...base, autoZero: r && r.autoZero !== undefined ? !!r.autoZero : true };
   // Distance is independent of the physics: 'auto' follows the style, or pick one to mix and match.
-  // Long is the default; 'auto' (follow the style) is opt-in.
-  out.range = r && ['auto', 'close', 'medium', 'long', 'extreme'].includes(r.range) ? r.range : 'long';
+  // Close is the default; 'auto' (follow the style) is opt-in.
+  out.range = r && ['auto', 'close', 'medium', 'long', 'extreme'].includes(r.range) ? r.range : 'close';
   out.styleRange = (p && p.range) || 'long';
   if (r && r.preset === 'custom') {
     const num = (v, d, lo, hi) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);

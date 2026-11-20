@@ -65,7 +65,10 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       ? new THREE.MeshPhysicalMaterial({ color: col, roughness: 0.4, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.25, emissive: col.clone().multiplyScalar(0.05) })
       : Q.pbr ? new THREE.MeshStandardMaterial({ color: col, roughness: 0.36, metalness: 0, emissive: col.clone().multiplyScalar(0.07) })
         : new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(0.1) }));
-    const ghost = keep(new THREE.MeshBasicMaterial({ color: col.clone().lerp(new THREE.Color('#ffffff'), 0.25), transparent: true, opacity: 0.5, depthFunc: THREE.GreaterDepth, depthWrite: false }));
+    // A soldier behind a block still shows, as a flat silhouette. The stencil keeps that
+    // silhouette off the soldier's own body (its far arm is "behind" its chest too).
+    plastic.stencilWrite = true; plastic.stencilRef = 1; plastic.stencilFunc = THREE.AlwaysStencilFunc; plastic.stencilZPass = THREE.ReplaceStencilOp;
+    const ghost = keep(new THREE.MeshBasicMaterial({ color: col.clone().lerp(new THREE.Color('#ffffff'), 0.2), transparent: true, opacity: 0.55, depthFunc: THREE.GreaterDepth, depthWrite: false, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc }));
     const root = new THREE.Group(), pivot = new THREE.Group(), poses = [toys.stand, toys.kneel].map((geo) => {
       const m = new THREE.Mesh(geo, plastic), x = new THREE.Mesh(geo, ghost);
       m.castShadow = true; m.receiveShadow = true; m.position.y = x.position.y = -0.85; x.renderOrder = 4;

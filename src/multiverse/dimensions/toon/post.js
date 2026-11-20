@@ -109,12 +109,12 @@ function textW(g, s, px) {
 }
 
 /** A speech bubble: tail at (x, y), body above it. u = world units per screen pixel. */
-export function bubble(g, x, y, lines, u, T, col, alpha = 1, lo = -1e9, hi = 1e9) {
+export function bubble(g, x, y, lines, u, T, col, alpha = 1, lo = -1e9, hi = 1e9, top = -1e9) {
   const px = Math.round(13 * u * 100) / 100, pad = 8 * u, lh = px * 1.25;
   let wmax = 0;
   for (const l of lines) wmax = Math.max(wmax, textW(g, l, px));
   const bw = wmax + pad * 2, bh = lines.length * lh + pad * 1.6;
-  const bx = clamp(x - bw / 2, lo + 6 * u, Math.max(lo + 6 * u, hi - bw - 6 * u)), by = y - 16 * u - bh + Math.sin(T * 4) * 1.5 * u;
+  const bx = clamp(x - bw / 2, lo + 6 * u, Math.max(lo + 6 * u, hi - bw - 6 * u)), by = Math.max(top + 54 * u, y - 16 * u - bh) + Math.sin(T * 4) * 1.5 * u;
   g.save();
   g.globalAlpha = alpha;
   g.lineJoin = 'round';

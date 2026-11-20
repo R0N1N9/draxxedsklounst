@@ -455,7 +455,8 @@ export function makeSim(ctx, w, S, sound, fx) {
     p.x = r.x; p.y = r.y; p.a = p.aim = r.a;
     const ch0 = p.charge;
     p.st = r.s | 0; p.ground = !!r.g; p.charge = (r.c || 0) / 100;
-    if (ch0 < 0.99 && p.charge >= 0.99) sound.glint(p.x); p.stun = r.z ? 0.5 : 0; p.hat = !!r.h;
+    if (ch0 < 0.99 && p.charge >= 0.99) sound.glint(p.x);
+    p.hat = !!r.h;
     p.sink = r.t ? 1 : 0;
     p.h = p.st === 1 ? PHC : PH;
     p.remoteHidden = !!r.t;

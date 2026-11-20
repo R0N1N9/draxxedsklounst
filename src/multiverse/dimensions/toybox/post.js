@@ -70,7 +70,7 @@ export function makePost(THREE, renderer, q) {
   };
   const mDown = mat(DOWN), mBlur = mat(BLUR, { uDir: { value: new THREE.Vector2() } }), mBright = mat(BRIGHT), mFinal = mat(FINAL, fu);
   const rt = (o) => new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false, ...o });
-  const scene = rt({ depthBuffer: true }), ha = rt(), hb = rt(), qa = rt(), qb = rt(), ba = rt(), bb = rt(), ea = rt(), eb = rt();
+  const scene = rt({ depthBuffer: true, stencilBuffer: true }), ha = rt(), hb = rt(), qa = rt(), qb = rt(), ba = rt(), bb = rt(), ea = rt(), eb = rt();
   const size = new THREE.Vector2();
   let scale = q.scale;
 

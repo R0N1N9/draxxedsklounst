@@ -1,28 +1,29 @@
 // RUBBER HOSE RIDGE — a 1930s rubber-hose cartoon come to life, played as a side-on two-mesa sniper duel.
 //
 // FANTASY   Two egg-headed noodle-limbed gunslingers on facing mesas, a canyon of slapstick machinery between
-//           them, a ragtime piano that everything — cacti, sun, mesas, snipers, crates — dances to, and an old
-//           print's grain, gate weave and boiling ink lines over all of it. Black, white and warm grey; each
-//           sniper's identity colour is the only tint.
+//           them, a ragtime piano that everything — cacti, sun, clouds, far mesas, snipers, crates — dances to,
+//           and an old print's grain, gate weave, scratches and boiling ink lines over all of it. Black, white
+//           and warm grey; each sniper's identity colour is the only tint.
 // RULES     One bonk wins. The rifle is a cork pop-gun: the cork is a visible projectile that ARCS (it drops, so
 //           aim above a far target and lead a moving one) and bounces once off rock. TAKE AIM (alt) telescopes
-//           the barrel: the longer you hold, the flatter and faster the shot and the more of its path you can
-//           see — but you are rooted, the barrel glints for everyone to see, and the kick shoves you back.
+//           the barrel: the longer you hold, the flatter and faster the shot and the more of its path the dotted
+//           arc shows — but you are rooted, the barrel glints for everyone to see, and the kick shoves you back.
 //           Anvils, a train, tumbleweeds and a hat-stealing vulture only stun or shove; they never score.
-// ROUTES    Hold your mesa (rock to crouch behind, a perch up a ladder), run to the lip, or spring across the
-//           canyon to the seesaw island (a crate tower splits it; a cork knocks the top crate off), or climb down
-//           the cliff ladder, ride the handcar / cross the floor and climb the pillar.
+// ROUTES    Hold your mesa (a rock with a face to crouch behind, a perch up a ladder), work up to the lip, spring
+//           across the canyon onto the seesaw island (its crate tower splits it; a cork knocks a crate off), or
+//           climb down the cliff ladder, cross the floor (handcar, train!) and climb the pillar.
 // CONTROLS  move A/D or stick · up = jump (or climb, at a ladder) · down = duck (or climb down) · aim mouse /
-//           aim stick · fire = pop a cork · alt TAKE AIM · a1 PORTABLE HOLE (slap one, then its twin; walk into
-//           either to come out of the other — anyone can) · a2 DECOY (a waving cut-out of you).
-// BOT       Feels the other sniper out for the first seconds, then plays a plan (hold, rock, perch, lip, spring,
-//           descend), solves the arc with a lead that improves with skill, charges for long shots, ducks and
-//           jumps corks, drops decoys and holes, and can be fooled by a decoy.
+//           aim stick · fire = pop a cork · alt TAKE AIM · a1 HOLE (portable hole: slap one, then its twin; walk
+//           into either to come out of the other — anyone can) · a2 DECOY (a waving cut-out of you).
+// BOT       Feels the other sniper out for the first ~10 s, then plays a plan (hold, rock, perch, lip, spring,
+//           descend), solves the arc with a lead that improves with skill, charges for long shots, hops rocks,
+//           ducks and jumps corks it has seen, drops decoys and holes, and can be fooled by a decoy.
 // ONLINE    Each client simulates its own sniper and judges its own corks; the other is a puppet. Shots, decoys,
-//           holes, crates and stolen hats are events; every hazard is a pure function of ctx.time and the seed.
-// KILL      A white flash and a BONK; the victim is scorched, blinking, with stars and birds circling, the hat
-//           lands last — and an iris closes on them. SUDDEN DEATH: the house lights drop, spotlights find both
-//           snipers, the crates burst, corks fly flat and fast and anvils rain on the mesas.
+//           holes, knocked crates and stolen hats are events; every hazard is a pure function of ctx.time + seed.
+// KILL      A white flash and a BONK; the victim is flung, flattened, then left scorched and blinking with stars
+//           and birds circling; the hat lands last — and an iris closes on them.
+// SUDDEN    The house lights drop and a spotlight finds each sniper; the crates burst, the cover rocks get up and
+//           leave, corks fly flat and fast, the reload halves and anvils rain on the mesas.
 import { clamp, damp, ease, shade, Shake } from '../../kit.js';
 import { C, boil, FONT } from './ink.js';
 import {
@@ -71,7 +72,7 @@ export default {
     const S = {
       T: 0, tl: 0, P: null, corks: [], decoys: [], holes: [], hats: [], shots: [0, 0], shake, springHit: [0, 0],
       firstShot: false, usedAlt: false, tookAim: false, usedDecoy: false, sd: false, sdA: 0, introT: 0, kill: null, hit: null,
-      beat0: 0, sdT0: 0, flashW: 0, freeze: 0,
+      beat0: 0, beatN: 0, sdT0: 0, flashW: 0, freeze: 0,
     };
     const P = [0, 1].map((i) => {
       const col = ctx.players[i].color;
@@ -200,66 +201,22 @@ export default {
     }
 
     // ---- update ----------------------------------------------------------------------------------------------
+    let warned = false;
+    const guard = (fn) => {
+      try { fn(); } catch (e) { if (!warned) { warned = true; console.warn('[toon]', e); } }
+    };
     return {
-      update(dt) {
-        const over = ctx.phase === 'over';
-        const rd = over ? dt / OVER_SLOW : dt; // real-time clock for animation, even in the slow-motion kill moment
-        S.T += rd;
-        boil.f = Math.floor(S.T * 12);
-        layout();
-        if (ctx.phase === 'intro') S.introT += dt;
-        if (ctx.phase === 'live') S.tl = ctx.time;
-        if (S.freeze > 0) S.freeze -= rd;
-        const wdt = over ? (S.freeze > 0 ? 0 : rd * 0.5) : dt;
-        S.flashW = Math.max(0, S.flashW - rd * 3);
-        for (let i = 0; i < 2; i++) S.springHit[i] = Math.max(0, S.springHit[i] - rd * 5);
-        if (ctx.sudden && !S.sd) {
-          S.sd = true;
-          sound.sudden(); sound.music(true); S.beat0 = S.T; S.sdT0 = S.T; S.flashW = 0.5;
-          while (w.tower.n > 0) sim.crateOut(false);
-          for (const rk of w.rocks) { rk.h = 0; fx.dust(rk.x + rk.w / 2, GY, 6, rk.x < W / 2 ? -1 : 1, 14); fx.text('see ya!', rk.x + rk.w / 2, GY - 90, 24, '#f7f0de', 1.1); }
-          w.carOn = false;
-          for (const p of P) if (p.rt > 0.6) p.rt = 0.6;
-        }
-        if (S.sd) S.sdA = Math.min(0.62, S.sdA + rd * 0.5);
+      update(dt) { guard(() => step(dt)); },
 
-        // who does what
-        for (const p of P) {
-          if (p.remote) { sim.puppet(p, wdt); continue; }
-          if (!p.alive) continue;
-          const cmd = p.bot ? p.bot.think(dt) : humanCmd(p);
-          if (wdt > 0) sim.stepPlayer(p, cmd, wdt);
-        }
-        sim.events(wdt);
-        sim.stepWorld(wdt);
-        sim.stepCorks(wdt);
-        sim.stepDecoys(wdt);
-        sim.stepHoles(wdt);
-        sim.stepHats(wdt);
-        fx.update(over ? rd * 0.7 : dt);
-        // steam, dust and torn paper around the train
-        updateTrainFx(dt);
-        updateKill(rd);
-        const me = P[ctx.me];
-        if (online) ctx.net.sendState({ x: r1(me.x), y: r1(me.y), a: +me.a.toFixed(3), s: me.st, g: me.ground ? 1 : 0, c: Math.round(me.charge * 100), z: me.stun > 0 ? 1 : 0, h: me.hat ? 1 : 0, t: me.tele ? 1 : 0 });
-        ctx.hud.cooldown('fire', me.reload);
-        ctx.hud.cooldown('a1', me.a1cd / 6.5);
-        ctx.hud.cooldown('a2', me.a2cd / 11);
-        const n1 = me.a1cd > 0 ? null : (S.holes.some((q) => q.owner === ctx.me && !q.b) ? 1 : 2);
-        if (n1 !== hudCharges) { hudCharges = n1; ctx.hud.charges('a1', n1); }
-        camera(dt, rd);
-        shake.update(Math.min(rd, 0.05));
-      },
-
-      render() {
-        draw();
-      },
+      render() { guard(draw); },
 
       onPhase(phase) {
-        if (phase === 'live') {
-          S.beat0 = S.T + 0.1; // the piano starts a hair after the call: dance to what you hear
-          if (!music) { music = true; sound.music(false); }
-        } else if (phase === 'over') startKill();
+        guard(() => {
+          if (phase === 'live') {
+            S.beat0 = S.T + 0.1; // the piano starts a hair after the call: dance to what you hear
+            if (!music) { music = true; sound.music(false); }
+          } else if (phase === 'over') startKill();
+        });
       },
 
       onNet(msg) {
@@ -304,6 +261,63 @@ export default {
 
       resize() { layout(); if (art && needP() !== bakedP) bake(); },
     };
+
+    function step(dt) {
+      const over = ctx.phase === 'over';
+      const rd = over ? dt / OVER_SLOW : dt; // real-time clock for animation, even in the slow-motion kill moment
+      S.T += rd;
+      boil.f = Math.floor(S.T * 12);
+      layout();
+      if (ctx.phase === 'intro') S.introT += dt;
+      if (ctx.phase === 'live') S.tl = ctx.time;
+      if (S.freeze > 0) S.freeze -= rd;
+      const wdt = over ? (S.freeze > 0 ? 0 : rd * 0.5) : dt;
+      S.flashW = Math.max(0, S.flashW - rd * 3);
+      for (let i = 0; i < 2; i++) S.springHit[i] = Math.max(0, S.springHit[i] - rd * 5);
+      if (ctx.sudden && !S.sd) {
+        S.sd = true;
+        sound.sudden(); sound.music(true); S.beat0 = S.T; S.sdT0 = S.T; S.flashW = 0.5;
+        while (w.tower.n > 0) sim.crateOut(false);
+        for (const rk of w.rocks) { rk.h = 0; fx.dust(rk.x + rk.w / 2, GY, 6, rk.x < W / 2 ? -1 : 1, 14); fx.text('see ya!', rk.x + rk.w / 2, GY - 90, 24, '#f7f0de', 1.1); }
+        w.carOn = false;
+        for (const p of P) if (p.rt > 0.6) p.rt = 0.6;
+      }
+      if (S.sd) S.sdA = Math.min(0.62, S.sdA + rd * 0.5);
+
+      // the cacti hum along: a note drifts up now and then on the beat
+      const bt = Math.floor(Math.max(0, S.T - S.beat0) * (S.sd ? BPM_HOT : BPM) / 60);
+      if (bt !== S.beatN) {
+        S.beatN = bt;
+        if (ctx.phase === 'live' && Math.random() < 0.4) { const k = (Math.random() * 4) | 0; fx.note(k === 0 ? 46 : k === 1 ? W - 46 : k === 2 ? 572 : 1028, (k < 2 ? GY : FLOOR) - 120, k & 1 ? '#f7f0de' : '#d6ccb6'); }
+      }
+
+      // who does what
+      for (const p of P) {
+        if (p.remote) { sim.puppet(p, wdt); continue; }
+        if (!p.alive) continue;
+        const cmd = p.bot ? p.bot.think(dt) : humanCmd(p);
+        if (wdt > 0) sim.stepPlayer(p, cmd, wdt);
+      }
+      sim.events(wdt);
+      sim.stepWorld(wdt);
+      sim.stepCorks(wdt);
+      sim.stepDecoys(wdt);
+      sim.stepHoles(wdt);
+      sim.stepHats(wdt);
+      fx.update(over ? rd * 0.7 : dt);
+      // steam, dust and torn paper around the train
+      updateTrainFx(dt);
+      updateKill(rd);
+      const me = P[ctx.me];
+      if (online) ctx.net.sendState({ x: r1(me.x), y: r1(me.y), a: +me.a.toFixed(3), s: me.st, g: me.ground ? 1 : 0, c: Math.round(me.charge * 100), z: me.stun > 0 ? 1 : 0, h: me.hat ? 1 : 0, t: me.tele ? 1 : 0 });
+      ctx.hud.cooldown('fire', me.reload);
+      ctx.hud.cooldown('a1', me.a1cd / 6.5);
+      ctx.hud.cooldown('a2', me.a2cd / 11);
+      const n1 = me.a1cd > 0 ? null : (S.holes.some((q) => q.owner === ctx.me && !q.b) ? 1 : 2);
+      if (n1 !== hudCharges) { hudCharges = n1; ctx.hud.charges('a1', n1); }
+      camera(dt, rd);
+      shake.update(Math.min(rd, 0.05));
+    }
 
     // ---- camera: a flourish before the round, a push-in on the kill ----------------------------------------
     function camera(dt, rd) {
@@ -516,10 +530,11 @@ export default {
           g.beginPath(); g.rect(p.x - 90, p.y - 260, 180, 262); g.clip();
           g.translate(0, p.sink * 130);
         }
-        // a soft ink shadow on the ground
-        if (!p.lad && p.sink < 0.5) {
+        // a soft ink shadow on the ground, and a ring of tint under whoever is yours
+        if (!p.lad && p.sink < 0.5 && p.ground) {
           g.fillStyle = 'rgba(27,22,18,0.2)';
-          g.beginPath(); g.ellipse(p.x, p.y + 1, 26 * (1 - Math.min(1, (p.vy ? Math.abs(p.y - (p.ground ? p.y : p.y)) : 0))), 5, 0, 0, 6.283); g.fill();
+          g.beginPath(); g.ellipse(p.x, p.y + 1, 27, 5, 0, 0, 6.283); g.fill();
+          if (p.i === ctx.me) { g.strokeStyle = p.col; g.globalAlpha = 0.85; g.lineWidth = 3.4 * Math.max(1, V.u * 0.6); g.beginPath(); g.ellipse(p.x, p.y + 1, 31, 6.5, 0, 0, 6.283); g.stroke(); g.globalAlpha = 1; }
         }
         drawSniper(g, p, E, mood);
         if (p.dead && p.k > 0.55) {
@@ -557,7 +572,7 @@ export default {
         for (const p of P) drawTag(g, p.x, p.y - (p.st === 1 ? 92 : 134) - (p.hat ? 20 : 4), p.name, p.i === ctx.me, p.col, u, T);
         if (!ctx.autopilot && ctx.phase === 'live' && !me.lad && !me.tele) drawPreview(g, me, u);
         if (!ctx.autopilot && ctx.phase === 'live') drawPrompt(g, me, u);
-        if (me.a1msgT > 0) bubble(g, me.x, me.y - 150 - 46 * u, me.a1msg, u, T, me.col, Math.min(1, me.a1msgT * 3), cam.x - V.cw / 2 / V.s, cam.x + V.cw / 2 / V.s);
+        if (me.a1msgT > 0) bubble(g, me.x, me.y - 150 - 46 * u, me.a1msg, u, T, me.col, Math.min(1, me.a1msgT * 3), cam.x - V.cw / 2 / V.s, cam.x + V.cw / 2 / V.s, cam.y - V.ch / 2 / V.s);
       }
     }
 
@@ -577,7 +592,7 @@ export default {
       let lines = null;
       if (!S.firstShot && ctx.time < 22) lines = PROMPT1[dev] || PROMPT1.kbm;
       else if (!S.usedAlt && !S.tookAim && S.firstShot && ctx.time < 40 && S.shots[ctx.me] >= 1 && S.shots[ctx.me] < 4) lines = PROMPT2[dev] || PROMPT2.kbm;
-      if (lines && me.alive) bubble(g, me.x + me.face * 4, me.y - 150 - 46 * u, lines, u, S.T, me.col, 1, cam.x - V.cw / 2 / V.s, cam.x + V.cw / 2 / V.s);
+      if (lines && me.alive) bubble(g, me.x + me.face * 4, me.y - 150 - 46 * u, lines, u, S.T, me.col, 1, cam.x - V.cw / 2 / V.s, cam.x + V.cw / 2 / V.s, cam.y - V.ch / 2 / V.s);
     }
 
     function drawOverlay(g, T) {

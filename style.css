@@ -78,6 +78,15 @@ button:active { transform: translateY(1px); }
 }
 .field input:focus, .field select:focus { border-color: var(--amber-dim); }
 .field input[type='range'] { padding: 0; accent-color: var(--amber); }
+/* The mode picker is the headline choice of the menu: a filled amber box like the primary button. */
+#field-mode select {
+  -webkit-appearance: none; appearance: none; cursor: pointer; padding: 12px 40px 12px 16px; font-size: 16px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase;
+  color: #14110a; border-color: var(--amber); text-overflow: ellipsis;
+  background: var(--amber) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2314110a' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 14px center;
+}
+#field-mode select:hover { filter: brightness(1.08); }
+#field-mode select:focus { border-color: #fff3dc; }
+#field-mode select option { background: #14151f; color: #e8e6f0; text-transform: none; letter-spacing: 0; }
 #in-code { text-transform: uppercase; letter-spacing: 0.5em; text-align: center; font-family: var(--mono); font-size: 26px; }
 .check { display: flex; gap: 8px; align-items: center; color: var(--ink-dim); font-size: 15px; font-weight: 500; }
 details { border-top: 1px solid var(--line); padding-top: 8px; }
