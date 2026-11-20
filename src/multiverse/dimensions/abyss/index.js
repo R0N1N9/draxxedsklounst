@@ -78,13 +78,13 @@ export default {
     const Q = { soft: false, tier: 0, scale: 1, shadow: 1024, fish: 260, snow: 2600, msaa: true };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.36, shadow: 512, fish: 140, snow: 900, msaa: false });
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.36, shadow: 512, fish: 60, snow: 700, msaa: false });
     } catch { /* masked: assume a GPU */ }
     const tex = makeTextures(THREE, renderer);
     const U = makeShared(THREE, tex);
     const mats = makeMaterials(THREE, U, Q.soft);
     const scene = new THREE.Scene();
-    const reef = buildReef(THREE, W, mats, U, ctx.seed);
+    const reef = buildReef(THREE, W, mats, U, ctx.seed, Q.soft);
     scene.add(reef.group);
     const life = buildLife(THREE, mats, U, W, Q, heightAt);
     scene.add(life.group);

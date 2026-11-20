@@ -73,12 +73,13 @@ export default {
 
   create(ctx) {
     const { THREE, renderer } = ctx.three;
-    // A software rasteriser (no GPU, or a blocked one) gets the same page a little smaller,
-    // with single-tap shadows and a depth pre-pass, and redraws it only as often as it can.
-    const Q = { rich: true, scale: 1, bloom: true, fxaa: true, prepass: false };
+    // A software rasteriser (no GPU, or a blocked one) builds every shader state it meets into
+    // machine code on the spot, seconds apiece: it gets the same page at half size from as few
+    // of them as will draw it (no cast shadows, glow or smoothing), redrawn only as often as it can.
+    const Q = { rich: true, scale: 1, bloom: true, fxaa: true, prepass: false, lite: false, shadows: true };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.rich = false; Q.prepass = true; Q.scale = 0.8; }
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { rich: false, scale: 0.5, bloom: false, fxaa: false, lite: true, shadows: false });
     } catch { /* masked: assume a real GPU */ }
     const W = buildWorld(ctx.rng);
     const scene = new THREE.Scene();
@@ -94,7 +95,7 @@ export default {
 
     const sun = new THREE.DirectionalLight(0xffffff, 1);
     sun.position.copy(sunDir).multiplyScalar(170);
-    sun.castShadow = true;
+    sun.castShadow = Q.shadows;
     sun.shadow.mapSize.set(Q.rich ? 2048 : 1024, Q.rich ? 2048 : 1024);
     sun.shadow.bias = -0.0006;
     sun.shadow.normalBias = 0.05;
@@ -114,7 +115,7 @@ export default {
       sc.updateProjectionMatrix();
     }
     scene.add(sun, sun.target);
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = Q.shadows;
     renderer.shadowMap.type = THREE.PCFShadowMap; // plain packed depth: the materials do their own filtering
     renderer.shadowMap.autoUpdate = false; // the view asks for it
 

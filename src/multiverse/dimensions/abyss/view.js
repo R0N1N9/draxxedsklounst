@@ -97,8 +97,8 @@ export function makeView(ctx, THREE, renderer, S) {
   const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
   const pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, speed: 0, loaded: true, dead: -1, aim: 0, recoil: 0 };
   const vm = { load: 1, kick: 0, sway: { x: 0, y: 0 }, bob: 0, aim: 0, drop: 0 };
-  let tPrev = 0, drawAt = 0, cost = 0, measure = false, drawn = 0, fresh = false, drawnPhase = '';
-  let bob = 0, loadShown = 1, introLoad = 0, frames = 0, govT = 0, govN = 0, govGood = 0, lastNow = 0, shadowEvery = Q.soft ? 3 : 1;
+  let tPrev = 0, drawAt = 0, cost = 0, worst = 0, measure = false, drawn = 0, fresh = false, drawnPhase = '';
+  let bob = 0, loadShown = 1, introLoad = 0, frames = 0, govT = 0, govN = 0, govGood = 0, lastNow = 0, shadowEvery = Q.soft ? 6 : 1;
   const HUD = { reticle: { x: 0, y: 0 }, marks: [], ping: pingedAt, notes };
   const killCamPos = new THREE.Vector3(), killLook = new THREE.Vector3(), kM = new THREE.Matrix4(), kQ = new THREE.Quaternion();
   // loose kit for the kill: a mask and two fins that drift off
@@ -116,6 +116,7 @@ export function makeView(ctx, THREE, renderer, S) {
     camera, post,
     get zoom() { return zoom; },
     shot: null, // test scripts: pin the camera
+    always: false, // test scripts: never skip a draw
     note(text, dur = 2) { notes.text = text; notes.a = dur; },
     kick() { kickA = 1; },
     shove() { shoveA = 1; hurt = 1; api.note('THE KRAKEN SHOVED YOU', 1.6); },
@@ -295,15 +296,25 @@ export function makeView(ctx, THREE, renderer, S) {
       const now = performance.now(), iv = tPrev ? now - tPrev : 0;
       tPrev = now;
       if (measure) { cost = iv; measure = false; }
+      if (iv > worst) worst = iv; // a GPU running behind shows up as long frames between draws
       let draw = true;
-      if (Q.soft && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < Math.min(4000, cost * 5)) draw = false;
+      if (api.freeze || Q.soft && !api.always && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < Math.min(6000, Math.max(cost, worst) * 5)) draw = false;
       fresh = false;
       if (!draw) {
         HUD.w = ctx.width; HUD.h = ctx.height;
         drawOverlay(ctx, HUD, api, S, camera, project);
         return;
       }
-      drawAt = now; drawn++; measure = true; drawnPhase = phase;
+      drawAt = now; drawn++; measure = true; drawnPhase = phase; worst = 0;
+      // the software build waits for its shaders to finish compiling rather than stall
+      if (!warmed()) {
+        renderer.setRenderTarget(null);
+        renderer.setClearColor(0x062a33, 1);
+        renderer.clear();
+        HUD.w = ctx.width; HUD.h = ctx.height;
+        drawOverlay(ctx, HUD, api, S, camera, project);
+        return;
+      }
       // ---- the frame
       const pf = post.u;
       pf.uBreath.value = zoom * 0.75;
@@ -345,6 +356,31 @@ export function makeView(ctx, THREE, renderer, S) {
       loose.length = 0;
     },
   };
+
+  // Shader warm-up (software rasteriser only: there one compile can take seconds, and a
+  // first frame that waits on forty of them freezes the page). Polled from render, no timers.
+  const warm = { list: null, done: !Q.soft };
+  if (Q.soft) {
+    try {
+      const set = new Set();
+      for (const sc of [scene, hands, post.warmScene]) {
+        renderer.compile(sc, camera);
+        sc.traverse((o) => { if (o.material) set.add(o.material); });
+      }
+      warm.list = [...set];
+    } catch { warm.done = true; }
+  }
+  function warmed() {
+    if (warm.done) return true;
+    try {
+      for (const m of warm.list) {
+        const pr = renderer.properties.get(m).currentProgram;
+        if (pr && !pr.isReady()) return false;
+      }
+    } catch { /* fall through: just draw */ }
+    warm.done = true;
+    return true;
+  }
 
   function inkAtCam() {
     let k = 0;

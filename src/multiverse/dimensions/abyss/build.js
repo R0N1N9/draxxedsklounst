@@ -36,7 +36,7 @@ function merge(THREE, list) {
 }
 // A displaced blob: rock (faceted, rough) or coral (smooth, ridged).
 function blob(THREE, seed, kind) {
-  const g = kind === 'rock' ? new THREE.IcosahedronGeometry(1, 3) : new THREE.SphereGeometry(1, 28, 18);
+  const g = kind === 'rock' ? new THREE.IcosahedronGeometry(1, 2) : new THREE.SphereGeometry(1, 22, 14);
   const p = g.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
@@ -167,7 +167,7 @@ function kelpGeometry(THREE) {
 }
 
 // ---------------------------------------------------------------------------------------
-export function buildReef(THREE, W, mats, U, seed) {
+export function buildReef(THREE, W, mats, U, seed, lean) {
   const group = new THREE.Group();
   const rng = makeRng(hashSeed(seed, 'reef-look')); // looks only: both clients may differ
   const caster = (o) => { o.layers.enable(1); return o; };
@@ -184,7 +184,7 @@ export function buildReef(THREE, W, mats, U, seed) {
     out.push(b);
     return out;
   };
-  const xs = axis(-120, 150, 44, 0.85), zs = axis(-130, 130, 52, 0.95);
+  const xs = axis(-120, 150, 44, lean ? 1.6 : 0.85), zs = axis(-130, 130, 52, lean ? 1.8 : 0.95);
   const nx = xs.length, nz = zs.length;
   const pos = new Float32Array(nx * nz * 3), col = new Float32Array(nx * nz * 3), idx = [];
   const hs = new Float32Array(nx * nz);
@@ -248,7 +248,7 @@ export function buildReef(THREE, W, mats, U, seed) {
   const branchGeo = (() => {
     const parts = [], r2 = makeRng(77);
     const limb = (x, y, z, dx, dy, dz, len, rad, depth) => {
-      const g = new THREE.CylinderGeometry(rad * 0.7, rad, len, 6, 1);
+      const g = new THREE.CylinderGeometry(rad * 0.7, rad, len, 5, 1, true);
       g.translate(0, len / 2, 0);
       const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx, dy, dz).normalize());
       g.applyQuaternion(q);
@@ -261,7 +261,7 @@ export function buildReef(THREE, W, mats, U, seed) {
         limb(ex, ey, ez, dx + Math.cos(a) * 0.6, dy + 0.3, dz + Math.sin(a) * 0.6, len * 0.75, rad * 0.7, depth - 1);
       }
     };
-    for (let i = 0; i < 5; i++) { const a = (i / 5) * 6.28; limb(0, 0, 0, Math.cos(a) * 0.5, 1, Math.sin(a) * 0.5, 0.55, 0.08, 3); }
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * 6.28; limb(0, 0, 0, Math.cos(a) * 0.5, 1, Math.sin(a) * 0.5, 0.6, 0.085, 2); }
     return merge(THREE, parts);
   })();
   const branchHues = [[0.95, 0.5, 0.35], [0.8, 0.75, 0.9], [0.98, 0.82, 0.45], [0.55, 0.85, 0.8]];

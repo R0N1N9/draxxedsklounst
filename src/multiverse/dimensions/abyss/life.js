@@ -54,7 +54,7 @@ void main() {
 
 // A fish body along +z: a squashed spindle, a forked tail and a fin on top.
 function fishGeometry(THREE, deep) {
-  const g = new THREE.SphereGeometry(1, 12, 8);
+  const g = new THREE.SphereGeometry(1, 10, 6);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
     let x = p.getX(i), y = p.getY(i), z = p.getZ(i);

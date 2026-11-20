@@ -206,8 +206,12 @@ export function makePost(THREE, renderer, U, q) {
   }
   const clear = new THREE.Color();
 
+  // every pass material on a quad, so the renderer can compile them ahead of the first frame
+  const warmScene = new THREE.Scene();
+  for (const m of [mPre, mBlur, mDown, mFinal, mPresent, mShaft(tier)]) { const w = new THREE.Mesh(geo, m); w.frustumCulled = false; warmScene.add(w); }
   const api = {
     u: fu,
+    warmScene,
     get tier() { return tier; },
     setTier(t) { tier = t; },
     setShadow: setShadowSize,

@@ -64,7 +64,6 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   const M = {
     floor: std({ map: tex.boards, roughnessMap: tex.boardsRough, roughness: 0.62, envMapIntensity: 0.9 }),
     rug: std({ map: tex.rug, roughness: 0.96, envMapIntensity: 0.15 }, { clip: true }),
-    rim: std({ color: '#1c2238', roughness: 0.95, envMapIntensity: 0.1 }, { clip: true }),
     block: std({ map: tex.blocks, roughness: 0.5 }),
     paint: std({ vertexColors: true, roughness: 0.4 }),
     matte: std({ vertexColors: true, roughness: 0.85 }),
@@ -92,17 +91,19 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   }
   const rug = add(mesh(keep(new THREE.CircleGeometry(1, 96).rotateX(-Math.PI / 2).scale(RUG_A, 1, RUG_B)), M.rug, false));
   {
-    // Its edge: a thin dark wall down to the boards.
-    const n = 96, pos = [], nor = [], idx = [];
+    // Its edge: a thin wall down to the boards, in the braid of the outermost ring (and the rug's
+    // own material, so it costs no shader of its own).
+    const n = 96, pos = [], nor = [], uv = [], idx = [];
     for (let i = 0; i <= n; i++) {
       const a = (i / n) * TAU, c = Math.cos(a), s = Math.sin(a), nl = Math.hypot(c / RUG_A, s / RUG_B);
       pos.push(c * RUG_A, 0, s * RUG_B, c * (RUG_A + 0.05), -0.16, s * (RUG_B + 0.05));
       nor.push(c / RUG_A / nl, 0.2, s / RUG_B / nl, c / RUG_A / nl, 0.2, s / RUG_B / nl);
+      uv.push(0.5 + c * 0.497, 0.5 - s * 0.497, 0.5 + c * 0.493, 0.5 - s * 0.493); // (the rug's disc is laid with its v running to -z)
       if (i < n) idx.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
     }
     const g = keep(new THREE.BufferGeometry());
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setIndex(idx);
-    add(mesh(g, M.rim, false));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+    add(mesh(g, M.rug, false));
   }
   const rollGeo = keep(new THREE.CylinderGeometry(1, 1, 1, 22).rotateX(Math.PI / 2));
   const rolls = [-1, 1].map((s) => { const m = add(mesh(rollGeo, [M.roll, M.rollCap, M.rollCap])); m.visible = false; m.userData.s = s; return m; });
@@ -192,7 +193,7 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   const ld = new THREE.Vector3(0 - LAMP_HEAD.x, 0 - LAMP_HEAD.y, 0.5 - LAMP_HEAD.z).normalize();
   const lampGeo = toys.lamp(LAMP_BASE, LAMP_HEAD, ld);
   keep(lampGeo.body); keep(lampGeo.glow); keep(lampGeo.bulb);
-  add(mesh(lampGeo.body, std({ vertexColors: true, roughness: 0.32, side: THREE.DoubleSide }), false, false));
+  add(mesh(lampGeo.body, std({ vertexColors: true, roughness: 0.32 }), false, false)); // (the inside of the shade is the glow)
   add(mesh(lampGeo.glow, M.glow, false, false));
   add(mesh(lampGeo.bulb, M.bulb, false, false));
   // The glow round the bulb and the mouth of the shade: the one hot thing in a dark room, and
@@ -330,7 +331,7 @@ void main() {
     dust.frustumCulled = false; dust.renderOrder = 6;
   }
 
-  const ma = new THREE.Matrix4(), mb = new THREE.Matrix4(), headDirW = new THREE.Vector3(0.5, 0.42, 0.76).normalize();
+  const ma = new THREE.Matrix4(), mb = new THREE.Matrix4(), headDirW = new THREE.Vector3(0.5 * W.head.side, 0.42, 0.76).normalize();
   let bigK = 0;
 
   return {

@@ -76,7 +76,7 @@ export function buildWorld(rng, names) {
     both(MAKE[kind], x + jx, z + jz, rot);
   });
   // Inside the loop, in the lamp light: a tower in the middle (it spells V S), dominoes either side.
-  const tower = add(block(LOOP.x, LOOP.z, rand(rng, 0.5, 1.0), 2));
+  const tower = add(block(LOOP.x, LOOP.z, rand(rng, 0.5, 1.07), 2)); // (45° ± 16°: the same both ways round)
   tower.tall = true;
   const inner = rng();
   if (inner < 0.7) both(dominoes, -5.3, LOOP.z + rand(rng, -0.3, 0.3), Math.PI / 2 + rand(rng, -0.25, 0.25));
@@ -100,15 +100,17 @@ export function buildWorld(rng, names) {
   const tp = { x: 0, z: 0 };
 
   // Car headlights from the street, through the blind: the times they sweep the room.
-  const sweeps = [];
+  // (the street is on either side of the house, round by round: neither sniper's half of the rug
+  // is the one the lights favour, and neither is the side the lamp leans to first)
+  const sweeps = [], side = rng() < 0.5 ? 1 : -1, sway = rng() < 0.5 ? 0 : Math.PI;
   for (let t = rand(rng, 7, 10); t < 140; t += rand(rng, 11, 16)) sweeps.push({ t, dir: rng() < 0.5 ? 1 : -1 });
-  const SWEEP = 3.4, HA = -0.42, hca = Math.cos(HA), hsa = Math.sin(HA);
+  const SWEEP = 3.4, HA = -0.42 * side, hca = Math.cos(HA), hsa = Math.sin(HA);
 
   // Cover posts for the bot: points just off the corners and faces of everything that stands still.
   const posts = [];
   const W = {
     solids, rows, cars, statics, tower, sweeps, posts, names, trainDir: dir,
-    suddenAt: -1, lim: RUG_A - BODY_R - 0.2, spots: [{ on: 0, x: 0, z: 0 }, { on: 0, x: 0, z: 0 }], pool: { x: 0, z: 0.5 }, head: { p: 0, k: 0, ca: hca, sa: hsa },
+    suddenAt: -1, lim: RUG_A - BODY_R - 0.2, spots: [{ on: 0, x: 0, z: 0 }, { on: 0, x: 0, z: 0 }], pool: { x: 0, z: 0.5 }, head: { p: 0, k: 0, ca: hca, sa: hsa, side },
 
     // Everything that moves by the clock: the train, the lamp's sway, the headlights, the tidy-up.
     setTime(T) {
@@ -118,7 +120,7 @@ export function buildWorld(rng, names) {
         loopAt(th, tp);
         place(c, tp.x, tp.z, Math.atan2(LOOP.b * Math.cos(th) * dir, -LOOP.a * Math.sin(th) * dir));
       }
-      W.pool.x = Math.sin(T * 0.23) * 2.6;
+      W.pool.x = Math.sin(T * 0.23 + sway) * 2.6;
       W.pool.z = 0.5 + Math.sin(T * 0.37 + 1) * 1.1;
       W.head.k = 0;
       for (let i = 0; i < sweeps.length; i++) {

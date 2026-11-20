@@ -43,7 +43,7 @@ export function makeSound(ctx) {
   // the hush of the sea, and the kraken's voice: built by hand, so they can swell and fade
   function startBed() {
     const ac = au.ctx, out = au.out;
-    if (bed || !ac || !out) return;
+    if (bed || !ac || !out || true) return;
     try {
       const len = ac.sampleRate * 2, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
       let b = 0;

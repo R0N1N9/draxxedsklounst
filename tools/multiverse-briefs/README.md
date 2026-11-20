@@ -41,7 +41,7 @@ and five transitions.
 | toybox | world | built, stopped early; second-engineer pass in progress when work paused |
 | comic | world | built, stopped early, never fully tested; second-engineer pass in progress when work paused |
 | abyss | world (underwater; the owner's showpiece) | first build in progress when work paused |
-| paper | world (flat-drawn first person) | first build in progress when work paused |
+| paper | world (flat-drawn first person) | first build done (report in `reports/`); second-engineer pass not started |
 | plunge | linking transition, surf → abyss | brief only; build once both worlds are finished |
 | snow, orbit, heli, worm, arcade, noir, tapestry, petri | worlds | brief only |
 | radar, telescope, wormhole, bullet-hole, channel-surf and the rest | transitions | brief only |

@@ -64,7 +64,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
     const plastic = room.patch(Q.rich
       ? new THREE.MeshPhysicalMaterial({ color: col, roughness: 0.4, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.25, emissive: col.clone().multiplyScalar(0.05) })
       : Q.pbr ? new THREE.MeshStandardMaterial({ color: col, roughness: 0.36, metalness: 0, emissive: col.clone().multiplyScalar(0.07) })
-        : new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(0.1) }));
+        : new THREE.MeshLambertMaterial({ color: col, vertexColors: true, emissive: col.clone().multiplyScalar(0.1) })); // (white vertex colours: it shares the toys' shader)
     // A soldier behind a block still shows, as a flat silhouette. The stencil keeps that
     // silhouette off the soldier's own body (its far arm is "behind" its chest too).
     plastic.stencilWrite = true; plastic.stencilRef = 1; plastic.stencilFunc = THREE.AlwaysStencilFunc; plastic.stencilZPass = THREE.ReplaceStencilOp;
