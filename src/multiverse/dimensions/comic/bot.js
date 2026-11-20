@@ -11,7 +11,7 @@ import { clamp, lerp, angDiff, angDamp, gauss } from '../../kit.js';
 import { LEAP_MAX, LEAP_MIN, LEAP_UP } from './world.js';
 import { EYE } from './hero.js';
 
-export const LETHAL_AT = 10.2; // seconds of live play before a bot's rounds can kill
+const LETHAL_AT = 10.2; // seconds of live play before a bot's rounds can kill (each bot adds up to three of its own)
 
 export function makeBot(ctx, W, G) {
   const skill = clamp(ctx.botSkill, 0, 1);
@@ -23,9 +23,12 @@ export function makeBot(ctx, W, G) {
     return {
       goal: { x: p.x, z: p.z }, peek: null, hide: null, planT: 0.4 + Math.random() * 0.6, sees: false, seenT: 0, lostT: 0, settle: 0, need: 1,
       last: { x: s.x, y: roofs[s.roof].h, z: s.z }, ey: 0, ep: 0, offY: 0, offP: 0, ph: Math.random() * 9, ranging: 0, rangeAt: 3.4 + Math.random() * 3,
-      fireAt: 0, under: 0, pushAt: lerp(24, 15, Math.random()) - skill * 3, crossAt: 34 + Math.random() * 12, stuck: 0, px: p.x, pz: p.z, shots: 0, leapTo: { x: 0, z: 0, roof: 0 }, wantLeap: false, moved: 0,
+      fireAt: 0, under: 0, pushAt: lerp(27, 16, Math.random()) - skill * 3, crossAt: 36 + Math.random() * 12, lethalAt: LETHAL_AT + Math.random() * 3.2, lostMax: 5 + Math.random() * 6, sy: 0, sp: 0, stuck: 0, px: p.x, pz: p.z, shots: 0, leapTo: { x: 0, z: 0, roof: 0 }, wantLeap: false, moved: 0,
     };
   }
+
+  // No two trigger pulls are the same: each shot carries its own small error, drawn when the last one left.
+  const newPull = (b) => { const s = lerp(0.0078, 0.0023, skill); b.sy = gauss(Math.random) * s; b.sp = gauss(Math.random) * s * 0.6; };
 
   // A place on roof r to shoot from, and (if there is one) a place beside it to hide.
   function plan(p, b, e, r, T) {
@@ -76,7 +79,7 @@ export function makeBot(ctx, W, G) {
     // ---- what it knows ----
     const sees = e.alive && seesFrom(p.x, p.y, p.z, e, T);
     if (sees) {
-      if (!b.sees) { b.ey = gauss(Math.random) * lerp(0.03, 0.012, skill); b.ep = gauss(Math.random) * lerp(0.02, 0.008, skill); b.settle = 0; b.need = lerp(1.7, 0.6, skill) * (0.7 + Math.random() * 0.6); }
+      if (!b.sees) { b.ey = gauss(Math.random) * lerp(0.03, 0.012, skill); b.ep = gauss(Math.random) * lerp(0.02, 0.008, skill); b.settle = 0; b.need = lerp(2.0, 0.75, skill) * (0.7 + Math.random() * 0.6); newPull(b); }
       b.seenT += dt; b.lostT = 0;
       b.last.x = e.x; b.last.y = e.y; b.last.z = e.z;
     } else {
@@ -92,9 +95,9 @@ export function makeBot(ctx, W, G) {
     const showdown = ts >= G.SHOWDOWN;
     if (!showdown) {
       const wantPush = T > b.pushAt && p.leapCd <= 0 && ts < 0;
-      if ((wantPush || (b.lostT > 7 && p.leapCd <= 0 && T > LETHAL_AT)) && !close) {
+      if ((wantPush || (b.lostT > b.lostMax && p.leapCd <= 0 && T > 8)) && !close) {
         const s = advance(p, b, e, T > b.crossAt || roofs[p.roof].row === 0 && T > b.pushAt + 4);
-        b.pushAt = T + 7 + Math.random() * 8;
+        b.pushAt = T + 8 + Math.random() * 9; b.lostMax = 5 + Math.random() * 6;
         if (s) { cmd.a1 = true; b.leapTo.x = s.x; b.leapTo.z = s.z; b.leapTo.roof = s.roof; cmd.leapTo = b.leapTo; b.planT = 0; b.lostT = 0; }
       }
       if (b.planT <= 0 || !b.peek || b.peek.roof !== p.roof) plan(p, b, e, roofs[p.roof], T);
@@ -123,10 +126,10 @@ export function makeBot(ctx, W, G) {
     const ty = b.last.y + 1.12 + (0.5 * G.GRAV * tof * tof - G.ZERO * dist) * lerp(0.5, 1, skill);
     const ax = tx - p.x, az = tz - p.z, ad = Math.hypot(ax, az) || 1;
     // before the ten-second mark it shoots to scare: wide of you, on the side you are not running to
-    const ranging = T < LETHAL_AT;
+    const ranging = T < b.lethalAt;
     if (ranging && b.offY === 0) { const side = (e.mvx * az - e.mvz * ax > 0 ? 1 : -1) * (Math.random() < 0.8 ? 1 : -1); b.offY = side * (1.7 + Math.random() * 1.4); b.offP = 0.5 + Math.random() * 0.8; }
     const oy = ranging ? b.offY / ad : 0, op = ranging ? b.offP / ad : 0;
-    const wantYaw = Math.atan2(-ax, -az) + b.ey + oy, wantPitch = Math.atan2(ty - (p.y + EYE), ad) + b.ep + op;
+    const wantYaw = Math.atan2(-ax, -az) + b.ey + b.sy + oy, wantPitch = Math.atan2(ty - (p.y + EYE), ad) + b.ep + b.sp + op;
     const turn = 4 + 8 * skill;
     cmd.yaw = angDamp(p.yaw, wantYaw, sees ? turn : 3, dt);
     cmd.pitch = clamp(p.pitch + (wantPitch - p.pitch) * (1 - Math.exp(-turn * dt)), -1.2, 1.2);
@@ -150,7 +153,8 @@ export function makeBot(ctx, W, G) {
         b.shots++;
         b.fireAt = T + 0.3;
         b.settle *= 0.35;
-        b.need = lerp(1.5, 0.55, skill) * (0.7 + Math.random() * 0.6);
+        b.need = lerp(1.8, 0.65, skill) * (0.7 + Math.random() * 0.6);
+        newPull(b);
         b.ey += gauss(Math.random) * lerp(0.012, 0.004, skill); b.ep += gauss(Math.random) * lerp(0.008, 0.003, skill);
         if (!b.hide && !showdown) b.planT = Math.min(b.planT, 0.25 + Math.random() * 0.5); // nowhere to hide: at least do not stand where the flash was
       }

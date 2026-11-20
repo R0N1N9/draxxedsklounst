@@ -43,7 +43,7 @@ import { buildCity } from './build.js';
 import { buildFx } from './fx.js';
 import { makePost } from './post.js';
 import { makeHeroKit, EYE, HEAD } from './hero.js';
-import { makeBot, LETHAL_AT } from './bot.js';
+import { makeBot } from './bot.js';
 import { makeView } from './view.js';
 import { makeLetters } from './overlay.js';
 import { makeSfx } from './sound.js';
@@ -126,7 +126,8 @@ export default {
       if (!Q.rich) model.root.traverse((o) => { o.castShadow = false; });
       return {
         i, x: s.x, y: W.roofs[s.roof].h, z: s.z, vy: 0, roof: s.roof, yaw: s.yaw, pitch: -0.05, alive: true, ko: -1, kvx: 0, kvy: 0, kvz: 0, starT: 0,
-        scoped: false, scope: 0, ammo: MAG, bolt: 0, boltStep: 0, reload: 0, recoil: 0, speed: 0, mvx: 0, mvz: 0, stepT: 0, swayX: 0, swayY: 0, swayT: i * 4.1,
+        scoped: false, scope: 0, ammo: MAG, bolt: 0, boltStep: 0, reload: 0, recoil: 0, speed: 0, mvx: 0, mvz: 0, stepT: 0, swayX: 0, swayY: 0, swayT: Math.random() * 7, // (each client breathes for its own sniper only)
+       
         leap: mkLeap(), leapCd: 0, land: 0, duel: false, leaps: 0, smokes: SMOKES, smokeCd: 0, shotT: -9, pingT: -9, pingX: 0, pingY: 0, pingZ: 0, vis: 0, airN: 0,
         remote: ctx.opponent === 'remote' && i !== ctx.me, bot: null, model, c: rgb(ctx.players[i].color), color: ctx.players[i].color,
         cmd: { mx: 0, my: 0, yaw: s.yaw, pitch: -0.05, fire: false, alt: false, a1: false, a2: false, leapTo: null },
@@ -206,7 +207,7 @@ export default {
       const m = W.ray(E.x, E.y, E.z, dx, dy, dz, 1.1, T) < 1.1 ? 0 : 0.95; // never start a round on the far side of a wall
       const ox = E.x + dx * m, oy = E.y + dy * m - 0.05, oz = E.z + dz * m;
       // 1 from the hip · 2 mid-leap · 4 through smoke · 8 a bot's ranging shot (cannot kill)
-      const flags = (scoped ? 0 : 1) | (p.leap.on ? 2 : 0) | (W.smoked(E.x, E.y, E.z, foe.x, foe.y + 1, foe.z, T) ? 4 : 0) | (p.bot && T < LETHAL_AT ? 8 : 0);
+      const flags = (scoped ? 0 : 1) | (p.leap.on ? 2 : 0) | (W.smoked(E.x, E.y, E.z, foe.x, foe.y + 1, foe.z, T) ? 4 : 0) | (p.bot && T < p.bot.lethalAt ? 8 : 0);
       spawnBullet(p.i, ox, oy, oz, dx, dy, dz, true, flags);
       report(p, ox, oy, oz, dx, dy, dz);
       p.ammo--;

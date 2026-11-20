@@ -230,9 +230,9 @@ export function drawOverlay(g, S, L) {
   const sp = S.splash;
   if (sp.a > 0) {
     const word = L.sprites[sp.word], u = clamp(sp.t / 0.22, 0, 1), k = ease.outBack(u) * (1 + Math.max(0, sp.t - 0.22) * 0.05);
-    const tw = Math.min(w * 0.62, h * 1.1), sc = (tw / word.w) * k;
+    const tw = Math.min(w * 0.56, h * 0.95), sc = (tw / word.w) * k;
     g.globalAlpha = sp.a;
-    g.save(); g.translate(clamp(sp.x, w * 0.3, w * 0.7), clamp(sp.y - h * 0.2, h * 0.3, h * 0.5)); g.rotate(-0.1 + Math.sin(sp.t * 40) * 0.012 * Math.max(0, 1 - sp.t * 2));
+    g.save(); g.translate(clamp(sp.x, w * 0.3, w * 0.7), clamp(sp.y - h * 0.1, h * 0.42, h * 0.58)); g.rotate(-0.1 + Math.sin(sp.t * 40) * 0.012 * Math.max(0, 1 - sp.t * 2));
     g.drawImage(word.canvas, -word.w * sc / 2, -word.h * sc / 2, word.w * sc, word.h * sc);
     g.restore();
     if (sp.t > 0.5 && sp.caption) {
