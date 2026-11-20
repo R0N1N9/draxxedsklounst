@@ -104,13 +104,18 @@ const GradeShader = {
 };
 
 export class Game {
-  constructor({ mode, net, quality, paletteKey, name, settings, hostCode, difficulty }) {
+  constructor({ mode, net, quality, paletteKey, name, settings, hostCode, difficulty, mv }) {
     // 'ai' and 'sandbox' run as a host whose "peer" is the local AI.
     this.offline = mode === 'ai' || mode === 'sandbox' ? mode : null;
     if (this.offline) mode = 'host';
     this.mode = mode; // 'practice' | 'host' | 'guest'
     this.difficulty = difficulty || 'normal';
     this.net = net;
+    // Multiverse: this game is one dimension of a larger match. The director starts each
+    // round (mvBegin), is told when one is over (mv.roundOver) and suspends us in between.
+    this.mv = mv || null;
+    this.suspended = false;
+    this.frozen = false;
     this.paused = false;
     this.timeScale = 1;
     this.quality = quality;
@@ -166,7 +171,7 @@ export class Game {
     this._buildViewmodel();
 
     // Match state
-    this.phase = mode === 'practice' ? 'practice' : this.offline === 'sandbox' ? 'sandbox' : 'wait';
+    this.phase = mode === 'practice' ? 'practice' : this.offline === 'sandbox' ? 'sandbox' : this.mv ? 'hold' : 'wait';
     this.uavT = UAV_INTERVAL;
     this.phaseT = 0;
     this.round = 0;
@@ -317,7 +322,7 @@ export class Game {
         this.remoteAlive = true;
         n.sandboxSpawn(1);
         this.hud.message('SANDBOX', 'Press B (or TOOLS) for the tools panel', 3);
-      } else if (this.mode === 'host') {
+      } else if (this.mode === 'host' && !this.mv) {
         this.hud.message(this.offline ? 'AI OPPONENT READY' : 'OPPONENT CONNECTED', 'Match starting…', 2.5);
         setTimeout(() => this._hostStartRound(), 1500);
       }
@@ -326,6 +331,7 @@ export class Game {
       this.oppName = String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16);
     });
     n.on('close', () => {
+      if (this.mv) return; // the director reports a lost connection
       this.hud.card(`<h2>CONNECTION LOST</h2><p>${this.oppName} left the game.</p><button onclick="location.href=location.pathname">Back to menu</button>`);
       this.remote.setVisible(false);
       this.remoteAlive = false;
@@ -426,7 +432,7 @@ export class Game {
         }
       }
     }
-    if (this.mode !== 'host' || this.phase === 'wait' || this.phase === 'match' || this.phase === 'sandbox') return;
+    if (this.mode !== 'host' || this.phase === 'wait' || this.phase === 'match' || this.phase === 'sandbox' || this.phase === 'hold') return;
     this.phaseT -= dt;
     this.syncT -= dt;
     if (this.syncT <= 0) {
@@ -443,6 +449,10 @@ export class Game {
       const theirs = this.uplinkState.filter((u) => u.owner === 1).length;
       const winner = mine > theirs ? 0 : theirs > mine ? 1 : -1;
       this._hostEndRound(winner, 'time', { up: [mine, theirs] });
+    } else if (this.phase === 'end' && this.mv) {
+      // Multiverse: no next round here — the point throws the match into another dimension.
+      this.phase = 'hold';
+      this.mv.roundOver(this.result ? this.result.winner : -1, this.result || {});
     } else if (this.phase === 'end') {
       if (Math.max(...this.scores) >= ROUND.winsToMatch) {
         this.phase = 'match';
@@ -836,6 +846,7 @@ export class Game {
   // Per-frame
   // -------------------------------------------------------------------------
   _frame() {
+    if (this.suspended) return;
     let dt = Math.min(this.clock.getDelta(), 0.05);
     // Offline modes really pause; online matches keep running underneath the menu.
     if (this.paused && this.mode !== 'guest' && (this.offline || this.mode === 'practice')) {
@@ -850,7 +861,7 @@ export class Game {
     const a = this.input.actions;
     const P = this.player;
     const live = this.phase === 'live';
-    const canMove = this.phase !== 'end' && this.phase !== 'match';
+    const canMove = this.phase !== 'end' && this.phase !== 'match' && this.phase !== 'hold';
     const free = this.phase === 'practice' || this.phase === 'wait' || this.phase === 'sandbox';
     const canFire = live || free;
     if (live || free) this.roundTime += dt;
@@ -1135,6 +1146,82 @@ export class Game {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Multiverse hooks (see src/multiverse/dimensions/valley/index.js)
+  // -------------------------------------------------------------------------
+  // The transition out of the valley has started: hands off, chrome away.
+  mvFreeze() {
+    this.frozen = true;
+    this.input.enabled = false;
+    this.input.keys.clear();
+    this.input.mouseFire = this.input.mouseScope = false;
+    this.input.move.x = this.input.move.y = 0;
+    this.input.resetScope();
+    this.hud.show(false);
+    this.hud.card('');
+    this.pendingCard = null;
+    document.getElementById('touch').classList.remove('active');
+    if (this.loadoutPanel.open) {
+      this.loadoutPanel.open = false;
+      this.loadoutPanel.wrap.classList.remove('on');
+      this.toolsOpen = false;
+    }
+    if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
+  }
+
+  // Another dimension is on screen: stop everything, keep the world for later.
+  mvSuspend() {
+    this.mvFreeze();
+    this.suspended = true;
+    this.renderer.setAnimationLoop(null);
+    this.renderer.domElement.style.display = 'none';
+    if (this.replay.active) this.replay.stop();
+    if (this.tools.feed > 0) this.tools.endFeed();
+    this.tools.reset();
+    for (const k of ['mydrone', 'myhunter', 'enemydrone', 'enemyhunter']) this.audio.stopLoop(k);
+    this.bullets.forEach((b) => b.tracer && this.effects.killTracer(b.tracer));
+    this.bullets.length = 0;
+    this.pings.length = 0;
+    this.hud.clearMarkers();
+    this.remote.setVisible(false);
+    this.remoteAlive = false;
+    this.audio.setWind(0);
+    if (this.audio.windGain) this.audio.windGain.gain.setTargetAtTime(0, this.audio.ctx.currentTime, 0.15);
+    this.phase = 'hold';
+  }
+
+  // Back on screen (still frozen, under the transition) — mvBegin starts the round.
+  mvResume() {
+    this.suspended = false;
+    this.frozen = true;
+    this.phase = 'hold';
+    this.result = null;
+    this.renderer.domElement.style.display = '';
+    this._spawnFree();
+    this._resize();
+    this.clock.getDelta();
+    this.renderer.setAnimationLoop(() => this._frame());
+  }
+
+  mvBegin(scores, round) {
+    this.frozen = false;
+    this.scores = scores.slice();
+    this.round = round - 1;
+    this.hud.show(true);
+    document.getElementById('touch').classList.add('active');
+    this.input.enabled = true;
+    this.input.requestLock();
+    if (this.mode === 'host') this._hostStartRound();
+  }
+
+  // Draw the current view into a 2D context (a WebGL canvas can only be copied in the
+  // same task it was rendered in).
+  mvCapture(g, w, h) {
+    if (this.composer) this.composer.render(0);
+    else this.renderer.render(this.scene, this.camera);
+    g.drawImage(this.renderer.domElement, 0, 0, w, h);
+  }
+
   // HUD text helpers
   timerText() {
     if (this.phase === 'practice') return 'RANGE';
@@ -1156,6 +1243,6 @@ export class Game {
       return s ? `${s.hits} HITS · BEST ${s.best}M` : 'NO HITS';
     }
     if (this.phase === 'live' || this.phase === 'sandbox') return `UAV IN ${Math.max(0, Math.ceil(this.uavT))}S`;
-    return { wait: 'STANDBY', insert: 'INSERTION', live: 'WEAPONS HOT', end: 'ROUND OVER', match: 'MATCH OVER' }[this.phase] || '';
+    return { wait: 'STANDBY', hold: 'STANDBY', insert: 'INSERTION', live: 'WEAPONS HOT', end: 'ROUND OVER', match: 'MATCH OVER' }[this.phase] || '';
   }
 }
