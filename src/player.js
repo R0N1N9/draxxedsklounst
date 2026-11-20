@@ -84,8 +84,18 @@ export class LocalPlayer {
   }
 
   // Prone and still: the bipod is down and the scope doesn't move at all.
+  // Bipod: legs swing down over ~0.45 s once you're prone and still with the rifle.
+  // `bipodT` is the deploy progress (0 stowed, 1 planted); sway fades out with it.
   get bipod() {
-    return this.stance === 2 && !this.moving && this.def.slot === 'rifle';
+    return (this.bipodT || 0) >= 1;
+  }
+
+  _updateBipod(dt) {
+    const want = this.stance === 2 && !this.moving && this.def.slot === 'rifle' && this.switchT <= 0 && this.alive;
+    const before = this.bipodT || 0;
+    this.bipodT = clamp(before + (want ? dt / 0.45 : -dt / 0.3), 0, 1);
+    if (before < 1 && this.bipodT >= 1) this.bipodEvent = 'deploy';
+    else if (before >= 1 && this.bipodT < 1) this.bipodEvent = 'stow';
   }
 
   refill() {
@@ -159,7 +169,7 @@ export class LocalPlayer {
   // Sway offset in radians (yaw, pitch).
   sway(out = { x: 0, y: 0 }) {
     let amp = SWAY[this.stance] * 0.001 * this.def.sway * RULES.sway;
-    if (this.bipod) amp = 0;
+    amp *= 1 - (this.bipodT || 0);
     if (this.moving) amp *= 2.4;
     if (this.wounded) amp *= 1.6;
     if (this.holding) amp *= 0.12;
@@ -321,6 +331,7 @@ export class LocalPlayer {
 
     this.speed = Math.hypot(this.vel.x, this.vel.z);
     this.moving = this.speed > 0.4;
+    this._updateBipod(dt);
     const targetEye = EYES[this.stance];
     this.eye += (targetEye - this.eye) * Math.min(1, dt * 10);
     this.bobPhase = (this.bobPhase || 0) + dt * this.speed * 1.9;

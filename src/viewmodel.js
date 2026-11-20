@@ -97,15 +97,15 @@ function buildMk22() {
   bolt.add(m(new THREE.SphereGeometry(0.011, 10, 8), C.black, 0.048, 0, 0.03));
   bolt.position.set(0, 0.03, -0.02);
   g.add(bolt);
-  // Folded bipod under the handguard.
-  for (const s of [-1, 1]) g.add(cylZ(0.005, 0.005, 0.2, C.black, s * 0.016, -0.03, -0.55, 6));
-  g.add(box(0.04, 0.02, 0.03, C.black, 0, -0.025, -0.66));
+  // Folding bipod under the front of the handguard (animated).
+  const bipod = buildBipod(g, -0.03, -0.66, 0.2);
   scope(g, { y: 0.085, z0: -0.03, len: 0.3, tube: 0.017, obj: 0.029, eye: 0.022 });
   g.userData = {
     gripR: anchor(0, -0.075, 0.015),
     gripL: anchor(-0.005, -0.03, -0.42),
     muzzle: anchor(0, 0.01, -1.12),
     bolt,
+    bipod,
     boltKnob: anchor(0.048, 0.03, 0.01),
     mag: magG,
     magHome: magG.position.clone(),
@@ -152,7 +152,9 @@ function buildDmr() {
   g.add(box(0.03, 0.03, 0.08, C.tan, 0, 0.04, 0.17));
   g.add(box(0.04, 0.11, 0.025, C.black, 0, -0.01, 0.285));
   scope(g, { y: 0.09, z0: -0.04, len: 0.24, tube: 0.015, obj: 0.023, eye: 0.019 });
+  const bipod = buildBipod(g, -0.012, -0.56, 0.18);
   g.userData = {
+    bipod,
     gripR: anchor(0, -0.085, 0.02),
     gripL: anchor(-0.004, -0.008, -0.38),
     muzzle: anchor(0, 0.02, -0.9),
@@ -162,6 +164,36 @@ function buildDmr() {
   };
   for (const k of ['gripR', 'gripL', 'muzzle']) g.add(g.userData[k]);
   return g;
+}
+
+// Bipod: a clamp with two legs hinged at the front, folded back along the handguard.
+// Deploy progress k swings each leg down (and slightly forward) and splays them apart.
+function buildBipod(g, y, z, len) {
+  const mount = new THREE.Group();
+  mount.position.set(0, y, z);
+  mount.add(box(0.045, 0.02, 0.035, C.black, 0, 0, 0));
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const splay = new THREE.Group();
+    splay.position.x = s * 0.017;
+    const hinge = new THREE.Group();
+    const leg = new THREE.Group();
+    leg.add(cylZ(0.0055, 0.0055, len * 0.6, C.black, 0, 0, len * 0.3, 6));
+    leg.add(cylZ(0.0042, 0.0042, len * 0.45, C.blackHi, 0, 0, len * 0.78, 6)); // telescoping lower leg
+    leg.add(m(new THREE.SphereGeometry(0.009, 8, 6), C.black, 0, 0, len)); // rubber foot
+    hinge.add(leg);
+    splay.add(hinge);
+    mount.add(splay);
+    legs.push({ splay, hinge, s });
+  }
+  g.add(mount);
+  return { legs, set(k) {
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    for (const l of legs) {
+      l.hinge.rotation.x = e * 1.72; // folded back -> pointing down and a little forward
+      l.splay.rotation.z = l.s * e * 0.32;
+    }
+  } };
 }
 
 function buildPistol() {
@@ -359,6 +391,15 @@ export class ViewModel {
     const k = this.kick * this.kick;
     pos.z += k * (pistol ? 0.04 : 0.07);
     rot.x += k * (pistol ? 0.22 : 0.09);
+
+    // Bipod: legs swing down, then the rifle settles onto them with a small dip.
+    const bk = st.bipodT || 0;
+    if (U.bipod) U.bipod.set(bk);
+    if (bk > 0) {
+      pos.y -= 0.018 * bk + Math.sin(clamp((bk - 0.55) / 0.45, 0, 1) * Math.PI) * 0.012;
+      rot.x -= 0.02 * bk;
+      pos.y -= breathe * 0.0025 * bk; // planted: the breathing bob all but stops
+    }
 
     // Weapon switch: drop out, swap (handled by the player state), come back up.
     if (st.switchT > 0) {

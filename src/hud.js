@@ -189,12 +189,13 @@ export class Hud {
     };
     const stealth = L.stealth === 'jammer' ? `${TOOL_SHORT.jammer} ${T.jammer ? 'READY' : 'USED'}` : TOOL_SHORT[L.stealth];
     const sup = g.supply ? g.supply.status : 'READY';
-    const html = chip('T', L.scout) + chip('G', L.tactical) + `<span class="chip${sup === 'USED' ? ' empty' : ''}"><kbd>V</kbd>SUPPLY ${sup}</span>` + `<span class="chip passive">${stealth}</span>`;
+    const cooling = /S$/.test(sup);
+    const html = chip('T', L.scout) + chip('G', L.tactical) + `<span class="chip${cooling ? ' empty' : ''}"><kbd>V</kbd>SUPPLY ${sup}</span>` + `<span class="chip passive">${stealth}</span>`;
     const ps2 = document.getElementById('pill-supply');
     if (ps2) {
-      const t = `SUPPLY ${sup === 'READY' ? '' : sup === 'USED' ? '✓' : '…'}`.trim();
+      const t = sup === 'READY' ? 'SUPPLY' : cooling ? `SUPPLY ${sup.toLowerCase()}` : 'SUPPLY …';
       if (ps2.textContent !== t) ps2.textContent = t;
-      ps2.classList.toggle('empty', sup === 'USED');
+      ps2.classList.toggle('empty', cooling);
     }
     if (html !== this._toolsHtml) {
       this._toolsHtml = html;

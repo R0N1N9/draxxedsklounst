@@ -45,14 +45,14 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
   - **Halo**: instant hit, no drop, wind or sway, 5×/10× zoom.
   - **Custom**: sliders for drop, bullet speed (slow to instant), wind, drag, sway and hitbox size.
   - Option: the rangefinder (F) auto-sets your zero to the measured distance.
-- **Bipod**: go prone and hold still, and the bipod drops. The scope stops moving entirely and recoil is reduced.
-- **Supply drone** (V, once per round): a cargo hexacopter flies in from behind your ridge and drops a parachute crate where you aim (within 60 m) or at your feet. Walk onto it to refill both weapons. Both players see and hear it, and the AI uses it to find you.
+- **Bipod**: go prone and hold still, and the bipod legs swing down (Mk22 and DMR) and the rifle settles onto them. Scope sway fades to nothing and recoil is reduced. Move or stand and they fold back up.
+- **Supply drone** (V, then a 90 s cooldown): a cargo hexacopter flies in from behind your ridge and drops a parachute crate where you aim (within 60 m) or at your feet. Walk onto it to refill both weapons. Both players see and hear it, and the AI uses it to find you.
 - **No shooting or reloading while sprinting.** Walking and standing are fine, and starting a sprint cancels a reload.
 - **Weapons**: pick your rifle in the loadout. Everyone also carries an **M18 pistol** (17+1, one spare magazine) for close range. Every weapon starts with **one in the chamber**: a reload before you're empty keeps it, while a reload from empty is slower because you have to chamber a round.
   - **Mk22 MRAD** (default): bolt-action .300 PRC, 7+1. One-shot headshots, two body shots, slow bolt throw, 4–20× scope. Higher zoom glints more.
   - **M110A1 DMR**: semi-auto 7.62, 20+1, about 3 shots a second. Headshots still kill; three body shots. Its smaller 4–10× scope glints less.
 - **Loadout**: before the match (main menu → Loadout) and during each round's insertion (**L**), pick one tool per slot:
-  - **Scout (T):** Hunter drone, Spotting drone or Recon dart.
+  - **Scout (T):** Hunter drone (the default), Spotting drone or Recon dart.
     - **Hunter drone:** a fixed-wing loitering drone. It flies 250–450 m in the direction you aim, then circles and searches about 160 m around itself. When it sees the enemy it locks on, follows them, and marks them on your HUD every second. If it loses sight for 4 s, it goes back to searching. It lasts 40 s. It's audible and visible, the enemy is warned when it locks, and it can be shot down. Smoke and the thermal poncho break the lock.
     - Spotting drone: fly a thermal quadcopter for 25 s; loud and shootable. Recon dart ×2 (fired up to ~400 m; pings enemies moving within 45 m for 40 s; blinks, beeps and is shootable).
   - **Stealth (passive):** Thermal poncho (hidden from thermal; 20% slower, no sprint), Suppressor (no flash, quiet; 12% slower bullets), Anti-glint cover (no glint; narrower, darker scope) or UAV jammer (hides you from one UAV sweep).

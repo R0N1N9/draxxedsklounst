@@ -916,6 +916,12 @@ export class Game {
       this._histT = this.now;
       if (P.alive) pushHist(this.selfHist, { t: this.now, p: P.pos.clone(), yaw: P.yaw, pitch: P.pitch, st: P.stance, sc: P.scopeT > 0.5 ? 1 : 0, z: P.zoom, moving: P.moving });
     }
+    if (P.bipodEvent) {
+      // Clack of the legs locking out, then the thud of the rifle settling.
+      this.audio.click();
+      if (P.bipodEvent === 'deploy') this.audio.footstep(P.pos);
+      P.bipodEvent = null;
+    }
     this._updateUplinks(dt, live);
     this._updateBullets(dt);
     this.tools.update(dt);
@@ -1010,6 +1016,7 @@ export class Game {
       reloadDur: P.reloadDur,
       reloadEmpty: P.reloadEmpty,
       switchT: P.switchT,
+      bipodT: P.def.slot === 'rifle' ? P.bipodT || 0 : 0,
       empty: P.w.chamber === 0 && P.def.kind === 'semi',
     });
   }

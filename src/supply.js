@@ -12,6 +12,7 @@ const ALT = 85; // cruise height above the drop point
 const RELEASE = 26; // release height above ground
 const CHUTE = 5.5; // crate descent speed, m/s
 const LIFE = 60; // crate stays this long once landed
+export const SUPPLY_COOLDOWN = 90; // seconds between calls
 
 function mat(color) {
   return withHaze(new THREE.MeshLambertMaterial({ color, flatShading: true }), { key: 'supply' });
@@ -86,20 +87,25 @@ export class Supply {
   reset() {
     for (const d of this.drops) this._remove(d);
     this.drops.length = 0;
-    this.available = 1;
+    this.cooldown = 0;
   }
 
   get status() {
-    const mine = this.drops.find((d) => d.mine && !d.taken);
+    const mine = this.drops.find((d) => d.mine && !d.taken && !(d.landed && d.t - d.landedT > LIFE));
     if (mine) return mine.landed ? 'LANDED' : 'INBOUND';
-    return this.available > 0 ? 'READY' : 'USED';
+    return this.cooldown > 0 ? `${Math.ceil(this.cooldown)}S` : 'READY';
   }
 
   // Call a drop. Lands where you aim (within 60 m on walkable ground) or at your feet.
   call() {
     const g = this.g, P = g.player;
-    if (this.available <= 0) {
-      g.hud.message('', 'Supply drone already used this round', 1.4);
+    if (this.status === 'INBOUND') {
+      g.hud.message('', 'Supply drone already inbound', 1.4);
+      g.audio.click();
+      return;
+    }
+    if (this.cooldown > 0) {
+      g.hud.message('', `Next supply drone in ${Math.ceil(this.cooldown)} s`, 1.4);
       g.audio.click();
       return;
     }
@@ -113,7 +119,7 @@ export class Supply {
     // Fly in from behind the caller's own ridge.
     const side = P.pos.z < 0 ? -1 : 1;
     const from = new THREE.Vector3(clamp(p.x + (Math.random() - 0.5) * 200, -700, 700), p.y + ALT, side * 620);
-    this.available--;
+    this.cooldown = SUPPLY_COOLDOWN;
     const id = this.nextId++ * 2 + g.me;
     this._spawn({ id, p, from, mine: true });
     if (g.net && g.net.open) g.net.send({ t: 'supply', id, p: p.toArray(), from: from.toArray() });
@@ -154,6 +160,10 @@ export class Supply {
 
   update(dt) {
     const g = this.g, P = g.player;
+    if (this.cooldown > 0) {
+      this.cooldown = Math.max(0, this.cooldown - dt);
+      if (this.cooldown === 0) g.hud.message('', 'Supply drone ready (V)', 1.6);
+    }
     for (let i = this.drops.length - 1; i >= 0; i--) {
       const d = this.drops[i];
       d.t += dt;

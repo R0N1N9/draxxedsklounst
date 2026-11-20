@@ -26,7 +26,7 @@ export const SLOTS = [
   { key: 'stealth', label: 'Stealth', keyHint: 'passive' },
   { key: 'tactical', label: 'Tactical', keyHint: 'G' },
 ];
-export const DEFAULT_LOADOUT = { rifle: 'mk22', scout: 'dart', stealth: 'suppressor', tactical: 'smoke' };
+export const DEFAULT_LOADOUT = { rifle: 'mk22', scout: 'hunter', stealth: 'suppressor', tactical: 'smoke' };
 
 export function validLoadout(lo) {
   const out = { ...DEFAULT_LOADOUT };
