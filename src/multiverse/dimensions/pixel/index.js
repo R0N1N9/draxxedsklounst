@@ -1,0 +1,545 @@
+// CARTRIDGE CANYON — a side-on, 16-colour, 320x180 pixel-art sniper duel on a canyon with a rope bridge.
+//
+// FANTASY   A 1990s cartridge nobody finished: two chunky snipers on facing cliffs, a rope bridge,
+//           a striped dusk sun. The whole world is drawn into a tiny buffer and blown up with
+//           nearest-neighbour scaling inside an arcade bezel.
+// RULES     One hit wins. Bullets are visible pixels with real DROP (aim high) and, over the
+//           chasm, THERMALS that lift or sink them (the LIFT gauge, the drifting motes). Crates
+//           stop bullets and break after one. A balloon drifts across the gap as moving cover;
+//           a big bird crosses now and then (a flashing sign warns you: duck or lie flat).
+// CONTROLS  move A/D (stick) · down = crouch · up / jump = hop, hold to fly the JETPACK
+//           aim mouse / right stick · fire = rifle (one round, 1.25 s bolt)
+//           alt PRONE (held): lie flat, can't move, steadiest aim, and a dotted arc shows
+//                             where the round will really fall (thermals not included).
+//           a1 SMOKE   a lobbed canister; the cloud hides whoever stands in it from the other player.
+//           a2 DECOY   a cardboard cut-out of you slides off along the ground, aiming; a hit pops it.
+// BOT       Solves the same arc with lead and a thermal estimate that improves with skill, plays a
+//           plan (cover peek, nest, edge, bridge, chasm raid), ducks bullets and the bird, throws
+//           smoke while advancing and decoys while holding, and can be fooled by decoys.
+// KILL      Hit-stop, the victim flashes white and ink, then pops into pixel confetti; the buffer
+//           punches in 2x on them while a dithered K.O. banner slams across the screen.
+// SUDDEN    The crates burst, the balloon floats off, thermals die, bullets fly flat and fast to reload,
+//           both snipers get a beacon, and the chasm fills with rising lava.
+import { clamp, damp, lerp, ease, shade, segRect, pointInRect, gauss, Shake } from '../../kit.js';
+import { FW, FH, PAL, clearPatterns } from './palette.js';
+import { C, BODY, HW, buildWorld, stepBody, solidAt, bulletStep, firstHit, traceBullet } from './world.js';
+import { bakeBackdrop, bakeTerrain, scar } from './art.js';
+import { makeFx } from './fx.js';
+import { makeSound } from './sound.js';
+import { makeBot } from './bot.js';
+import { makeView } from './view.js';
+
+const SUB = 1 / 100, BSUB = 1 / 120, ROUND = 45;
+const r1 = (v) => Math.round(v * 10) / 10;
+const wobble = (ph) => 0.62 * Math.sin(ph) + 0.38 * Math.sin(ph * 2.31 + 1.3);
+
+export default {
+  id: 'pixel',
+  name: 'CARTRIDGE CANYON',
+  tagline: 'Sixteen colours. One bullet. Aim high.',
+  hint: 'Shots drop with distance: aim above the target.',
+  perspective: 'SIDE-ON PIXEL ART',
+  renderer: '2d',
+  aim: 'pointer',
+  palette: { bg: PAL.night, fg: PAL.cream, accent: PAL.coral },
+  controls: { move: 'RUN · DUCK', aim: 'AIM', fire: 'SHOOT', alt: 'PRONE', a1: 'SMOKE', a2: 'DECOY', jump: 'JETPACK' },
+  altToggle: true, // the aim thumb is busy: on touch PRONE latches
+  roundTime: ROUND,
+  angleFields: ['a'],
+
+  create(ctx) {
+    const world = buildWorld(ctx.rng);
+    const online = ctx.opponent === 'remote';
+    const terr = bakeTerrain(world, ctx.seed);
+    const art = { bg: bakeBackdrop(ctx.seed), terrain: terr.canvas };
+    const sound = makeSound(ctx);
+    const fx = makeFx(300);
+    const shake = new Shake(3, 0);
+
+    const P = [0, 1].map((i) => ({
+      i, col: ctx.players[i].color, colD: shade(ctx.players[i].color, -0.42),
+      x: world.spawns[i].x, y: world.GY, vx: 0, vy: 0, ground: true, wasGround: true, wall: false, bounce: false, face: i ? -1 : 1, st: 0, run: 0, airT: 0, fuel: 1, jet: false,
+      aim: i ? Math.PI + 0.03 : -0.03, a: i ? Math.PI + 0.03 : -0.03, sway: 0.012, swPh: Math.random() * 9,
+      reload: 0, recoil: 0, flash: 0, alive: true, smokeCd: 0, decoyCd: 0, casing: -1, dipY: 0,
+      remote: online && i !== ctx.me, bot: null,
+    }));
+    const S = {
+      t: 0, P, bullets: [], smokes: [], grenades: [], decoys: [], motes: [], fx, world,
+      padSquash: [0, 0], cam: { x: FW / 2, y: FH / 2, z: 1 }, kill: null, introT: -1, liveT: 0, readyT: 0, flashW: 0, sdOn: false,
+      arc: Object.assign(new Float32Array(260), { n: 0 }), arcHit: { x: -1, y: -1 }, arcFull: false,
+      hides: null,
+    };
+    // Smoke hides anything whose centre is inside a mature cloud.
+    S.hides = (x, y) => {
+      for (const c of S.smokes) {
+        const age = S.t - c.t0;
+        if (age < 0.25 || age > C.SMOKE_LIFE - 0.8) continue;
+        const r = C.SMOKE_R * (0.35 + 0.65 * Math.min(1, age / 0.5)) * 0.78;
+        if (Math.hypot(x - c.x, (y - c.y) * 1.15) < r) return true;
+      }
+      return false;
+    };
+    for (let i = 0; i < 34; i++) S.motes.push({ x: world.E + 6 + Math.random() * (FW - 2 * world.E - 12), y: 108 + Math.random() * 58, c: Math.random() < 0.5 ? PAL.cream : Math.random() < 0.5 ? PAL.peach : PAL.steel, long: Math.random() < 0.3 });
+    const view = makeView(ctx, world, S, art);
+    for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = makeBot(ctx, world, S, p);
+
+    const human = { mx: 0, crouch: false, a: 0, fire: false, alt: false, jump: false, jet: false, a1: false, a2: false };
+    const scr = { x: 0, y: 0 }, rect = { x: 0, y: 0, w: 0, h: 0 }, cmds = [null, null];
+    let prevUp = false, decoyN = 0, grenN = 0, music = '', frame = 0, birdWarned = false, birdOn = false, lavaSnd = false;
+    const gs = () => (ctx.sudden ? 0.45 : 1);
+    const reloadT = () => (ctx.sudden ? C.SD_RELOAD : C.RELOAD);
+    const shoulder = (p, out) => { out.x = p.x + p.face * (p.st === 2 ? 3 : 1); out.y = p.y - BODY[p.st].sh; return out; };
+    const sh = { x: 0, y: 0 };
+
+    // ---- commands ----
+    function humanCmd(p) {
+      const inp = ctx.input;
+      view.layout();
+      shoulder(p, sh);
+      view.toCss(sh.x, sh.y, scr);
+      const up = inp.moveY < -0.55;
+      human.mx = inp.moveX;
+      human.crouch = inp.moveY > 0.55;
+      human.a = inp.aimAngle(scr.x, scr.y, p.aim);
+      human.fire = inp.firePressed;
+      human.alt = inp.alt;
+      human.jump = inp.jumpPressed || (up && !prevUp);
+      human.jet = inp.jump || up;
+      human.a1 = inp.a1Pressed;
+      human.a2 = inp.a2Pressed;
+      prevUp = up;
+      return human;
+    }
+
+    // ---- a locally simulated sniper ----
+    function step(p, cmd, dt) {
+      const live = ctx.phase === 'live' && p.alive;
+      p.aim = cmd.a;
+      if (Math.abs(Math.cos(p.aim)) > 0.1) p.face = Math.cos(p.aim) >= 0 ? 1 : -1;
+      const prevSt = p.st, prone = live && cmd.alt && p.ground;
+      p.st = prone ? 2 : live && cmd.crouch && p.ground ? 1 : 0;
+      if (p.st === 2 && prevSt !== 2) { if (p.i === ctx.me) sound.prone(p.x); fx.emit(p.x - p.face * 5, p.y - 1, -p.face * 12, -18, 0.3, PAL.cream, 1, 40, 0, 2); }
+      const spd = Math.abs(p.vx);
+      const wantSway = p.st === 2 ? 0.0022 : p.st === 1 ? 0.0075 : !p.ground ? 0.03 : spd > 10 ? 0.021 : 0.012;
+      p.sway = damp(p.sway, wantSway, p.sway > wantSway ? 4 : 9, dt);
+      p.swPh += dt * (p.st === 2 ? 1.5 : 3.1);
+      p.a = p.aim + p.sway * wobble(p.swPh);
+      p.recoil = Math.max(0, p.recoil - dt * 5);
+      p.flash = Math.max(0, p.flash - dt);
+      if (p.casing > 0 && (p.casing -= dt) <= 0) eject(p);
+      p.dipY = 0;
+      const before = p.reload;
+      if (live) p.reload = Math.max(0, p.reload - dt);
+      if (before > 0 && p.reload === 0 && p.i === ctx.me && live) { sound.bolt(); S.readyT = 0.25; }
+      if (live) { p.smokeCd = Math.max(0, p.smokeCd - dt); p.decoyCd = Math.max(0, p.decoyCd - dt); }
+
+      // run, jump, jet
+      let mx = clamp(cmd.mx, -1, 1);
+      if (!live || p.st === 2) mx = 0;
+      const top = p.st === 1 ? C.CROUCH_RUN : C.RUN;
+      const acc = p.ground ? C.ACC_G : C.ACC_A;
+      const tv = mx * top;
+      p.vx += clamp(tv - p.vx, -acc * dt, acc * dt);
+      if (live && cmd.jump && p.ground && p.st !== 2) { p.vy = -C.JUMP_V; p.ground = false; p.airT = 0; if (p.i === ctx.me) sound.jump(p.x); }
+      p.jet = live && cmd.jet && !p.ground && p.airT > C.JET_DELAY && p.fuel > 0.02 && p.st !== 2;
+      if (p.ground) p.fuel = Math.min(1, p.fuel + C.JET_REGEN * dt);
+      else p.airT += dt;
+      if (p.jet) p.fuel = Math.max(0, p.fuel - C.JET_BURN * dt);
+      const n = Math.max(1, Math.ceil(dt / SUB)), h = dt / n, hh = BODY[p.st].h;
+      let bounce = false;
+      const landV = p.vy;
+      for (let k = 0; k < n; k++) {
+        p.vy += C.GRAV * h;
+        if (p.jet) p.vy = Math.max(p.vy - C.JET_ACC * h, -C.JET_CAP);
+        if (p.vy > 340) p.vy = 340;
+        stepBody(world, p, h, HW, hh);
+        if (p.bounce) bounce = true;
+      }
+      p.x = clamp(p.x, 4, FW - 4);
+      if (p.ground && !p.wasGround && landV > 110 && p.i === ctx.me) { sound.land(p.x); fx.sparks(p.x, p.y, -Math.PI / 2, 2.4, 4, 50, [PAL.cream, PAL.peach]); }
+      p.wasGround = p.ground;
+      if (bounce) { sound.spring(p.x); S.padSquash[p.x < FW / 2 ? 0 : 1] = 1; fx.sparks(p.x, p.y, -Math.PI / 2, 1.6, 6, 70, [PAL.coral, PAL.cream]); }
+      if (p.ground && p.st === 0 && Math.abs(p.vx) > 14 && p.i === ctx.me) sound.step(p.x, dt);
+      if (p.jet) { if (p.i === ctx.me) sound.jet(p.x, dt); if (Math.random() < dt * 40) fx.emit(p.x - p.face * 5, p.y - 2, (Math.random() - 0.5) * 20, 50 + Math.random() * 40, 0.3, Math.random() < 0.5 ? PAL.coral : PAL.peach, 1, 0, 0, 1); }
+      if (Math.abs(p.vx) > 6 && p.ground) p.run += Math.abs(p.vx) * dt * 0.2;
+      if (!live) return;
+      if (cmd.fire && p.reload <= 0) fire(p);
+      if (cmd.a1 && p.smokeCd <= 0) throwSmoke(p);
+      if (cmd.a2 && p.decoyCd <= 0) plantDecoy(p);
+    }
+
+    // The remote sniper: copy the interpolated state, work the rest out from how it moves.
+    function puppet(p, dt) {
+      const r = ctx.net.remote;
+      p.recoil = Math.max(0, p.recoil - dt * 5);
+      p.flash = Math.max(0, p.flash - dt);
+      p.reload = Math.max(0, p.reload - dt);
+      if (p.casing > 0 && (p.casing -= dt) <= 0) eject(p);
+      if (!r || !p.alive || !Number.isFinite(r.x) || !Number.isFinite(r.y) || !Number.isFinite(r.a)) return;
+      if (dt > 0) { p.vx += ((r.x - p.x) / dt - p.vx) * Math.min(1, dt * 12); p.vy += ((r.y - p.y) / dt - p.vy) * Math.min(1, dt * 12); }
+      p.x = r.x; p.y = r.y;
+      p.a = p.aim = r.a;
+      p.st = ctx.phase === 'live' ? r.s | 0 : 0;
+      p.jet = !!r.j && ctx.phase === 'live';
+      p.ground = !!r.g;
+      p.face = Math.cos(p.a) >= 0 ? 1 : -1;
+      if (Math.abs(p.vx) > 6 && p.ground) p.run += Math.abs(p.vx) * dt * 0.2;
+      if (p.jet && Math.random() < dt * 40) fx.emit(p.x - p.face * 5, p.y - 2, (Math.random() - 0.5) * 20, 50 + Math.random() * 40, 0.3, PAL.coral, 1, 0, 0, 1);
+    }
+
+    function eject(p) {
+      p.casing = -1;
+      shoulder(p, sh);
+      fx.emit(sh.x, sh.y, -p.face * (20 + Math.random() * 20), -60 - Math.random() * 30, 0.9, PAL.amber, 1, 340, 0.4);
+    }
+
+    // ---- the rifle ----
+    function fire(p) {
+      shoulder(p, sh);
+      launch(p.i, sh.x, sh.y, p.a, true);
+      p.reload = reloadT();
+      p.sway = Math.min(0.05, p.sway + 0.008);
+      if (online && p.i === ctx.me) ctx.net.send({ k: 'shot', x: r1(sh.x), y: r1(sh.y), a: +p.a.toFixed(4) });
+    }
+    function launch(owner, x, y, a, judge) {
+      const b = { owner, x, y, vx: Math.cos(a) * C.BULLET_V, vy: Math.sin(a) * C.BULLET_V, judge, live: true, age: 0, ox: x, oy: y, tx: new Float32Array(8), ty: new Float32Array(8), ti: 0, tn: 0, whiz: false };
+      S.bullets.push(b);
+      const p = P[owner];
+      p.recoil = 1; p.flash = 0.09; p.casing = 0.5;
+      if (p.remote) p.reload = reloadT();
+      const mx = x + Math.cos(a) * 11, my = y + Math.sin(a) * 11;
+      fx.sparks(mx, my, a, 0.7, 5, 160, [PAL.cream, PAL.peach, PAL.coral]);
+      fx.emit(mx, my, Math.cos(a) * 20, Math.sin(a) * 20 - 8, 0.5, PAL.steel, 2, -20, 0, 1.5); // a puff of smoke
+      shake.add(owner === ctx.me ? 0.4 : 0.16);
+      sound.shot(x, owner === ctx.me);
+    }
+    function bodyRect(q) {
+      const bd = BODY[q.st];
+      rect.x = q.x - bd.w / 2; rect.y = q.y - bd.h; rect.w = bd.w; rect.h = bd.h;
+      return rect;
+    }
+    const nearest = (ax, ay, bx, by, r) => { const q = pointInRect(ax, ay, r) ? 0 : (segRect(ax, ay, bx, by, r) || { t: -1 }).t; return q; };
+    function howLabel(b, foe, hy, hx) {
+      const bd = BODY[foe.st], m = Math.round(Math.hypot(foe.x - b.ox, foe.y - b.oy) * C.METRE);
+      const head = foe.st === 2 ? Math.abs(hx - (foe.x + foe.face * 6)) < 4 : hy < foe.y - bd.h + 5;
+      if (head) return 'HEADSHOT';
+      if (!foe.ground) return 'AIR SHOT';
+      if (m < 70) return 'POINT BLANK';
+      return m >= 330 ? `SNIPED ${m} M` : `${m} M`;
+    }
+    function stepBullets(dt) {
+      const n = Math.max(1, Math.ceil(dt / BSUB)), h = dt / n, flip = (frame++ & 1) === 1, nb = S.bullets.length;
+      const live = ctx.phase === 'live', ls = ctx.sudden ? 0 : 1;
+      for (let j = 0; j < nb; j++) {
+        const b = S.bullets[flip ? nb - 1 - j : j];
+        if (!b.live) continue;
+        b.age += dt;
+        for (let k = 0; k < n && b.live; k++) {
+          const ax = b.x, ay = b.y;
+          bulletStep(world, b, h, gs(), ls);
+          let tBest = 2, kind = 0, idx = -1;
+          const hit = firstHit(world, ax, ay, b.x, b.y);
+          if (hit) { tBest = hit.t; kind = hit.kind; idx = hit.idx; }
+          const foe = P[1 - b.owner];
+          if (b.judge && live && foe.alive) {
+            const t = nearest(ax, ay, b.x, b.y, bodyRect(foe));
+            if (t >= 0 && t < tBest) { tBest = t; kind = 10; }
+          }
+          if (b.judge) for (const d of S.decoys) {
+            if (!d.alive || d.owner === b.owner) continue;
+            const dr = { x: d.x - 3, y: d.y - 16, w: 6, h: 16 };
+            const t = nearest(ax, ay, b.x, b.y, dr);
+            if (t >= 0 && t < tBest) { tBest = t; kind = 11; idx = d.id; }
+          }
+          if (kind) {
+            const hx = ax + (b.x - ax) * tBest, hy = ay + (b.y - ay) * tBest;
+            b.x = hx; b.y = hy; b.live = false;
+            if (kind === 10) ctx.kill(foe.i, { how: howLabel(b, foe, hy, hx) });
+            else if (kind === 11) { popDecoy(S.decoys.find((d) => d.id === idx), true); }
+            else if (kind === 2) {
+              const c = world.crates[idx];
+              if (b.judge && c && c.alive) { breakCrate(c); if (online) ctx.net.send({ k: 'crate', id: c.id }); }
+              else { sound.impact(hx); fx.sparks(hx, hy, Math.atan2(-b.vy, -b.vx), 1.4, 5, 120, [PAL.wood, PAL.peach]); }
+            } else if (kind === 3) { sound.bonk(hx); fx.sparks(hx, hy, Math.atan2(-b.vy, -b.vx), 1.6, 6, 110, [PAL.cream, PAL.rose, PAL.coral]); world.balloon.hit = 1; }
+            else {
+              sound.impact(hx);
+              fx.sparks(hx, hy, Math.atan2(-b.vy, -b.vx), 1.5, 7, 150, [PAL.cream, PAL.peach, PAL.coral]);
+              fx.emit(hx, hy, 0, -6, 0.5, PAL.steel, 2, -10, 0, 2);
+              scar(terr.g, hx, hy);
+            }
+            break;
+          }
+          if (b.x < -10 || b.x > FW + 10 || b.y > FH + 10 || b.y < -90) b.live = false;
+        }
+        // trail
+        b.tx[b.ti] = b.x; b.ty[b.ti] = b.y; b.ti = (b.ti + 1) % 8; b.tn = Math.min(8, b.tn + 1);
+        if (b.age > 3) b.live = false;
+        // a near miss rattles the local sniper
+        const me = P[ctx.me];
+        if (b.live && !b.whiz && b.owner !== ctx.me && me.alive && Math.hypot(b.x - me.x, b.y - me.y + 8) < 16) { b.whiz = true; sound.whizz(); shake.add(0.3); }
+      }
+      for (let i = S.bullets.length - 1; i >= 0; i--) if (!S.bullets[i].live && S.bullets[i].age > 0.25) S.bullets.splice(i, 1);
+    }
+    function breakCrate(c) {
+      c.alive = false;
+      world.rebuild();
+      sound.crate(c.x);
+      fx.confetti(c.x + 5, c.y + 5, 12, 90, [PAL.wood, PAL.coral, PAL.night, PAL.peach]);
+    }
+
+    // ---- SMOKE: a lobbed canister that blooms where it lands ----
+    function throwSmoke(p) {
+      p.smokeCd = C.SMOKE_CD;
+      shoulder(p, sh);
+      const id = p.i * 1000 + ++grenN, a = p.aim;
+      spawnGrenade(id, sh.x, sh.y, Math.cos(a) * 185 + p.vx * 0.4, Math.sin(a) * 185, p.i);
+      if (online && p.i === ctx.me) ctx.net.send({ k: 'smoke', id, x: r1(sh.x), y: r1(sh.y), vx: r1(Math.cos(a) * 185 + p.vx * 0.4), vy: r1(Math.sin(a) * 185) });
+    }
+    function spawnGrenade(id, x, y, vx, vy, owner) {
+      S.grenades.push({ id, x, y, vx, vy, age: 0, still: 0, owner });
+      sound.throwSmoke(x);
+    }
+    function stepGrenades(dt) {
+      for (let i = S.grenades.length - 1; i >= 0; i--) {
+        const g = S.grenades[i];
+        g.age += dt;
+        const n = Math.ceil(dt / (1 / 120)), h = dt / n;
+        for (let k = 0; k < n; k++) {
+          g.vy += 480 * h;
+          const nx = g.x + g.vx * h, ny = g.y + g.vy * h;
+          if (solidAt(world, nx, g.y)) g.vx *= -0.35; else g.x = nx;
+          if (solidAt(world, g.x, ny) || (world.bridgeY(g.x) >= 0 && g.vy > 0 && ny >= world.bridgeY(g.x) && g.y < world.bridgeY(g.x) + 2)) { if (Math.abs(g.vy) > 60) g.still = 0; g.vy *= -0.3; g.vx *= 0.8; g.still += h * 4; } else g.y = ny;
+          if (g.still > 0.4 || g.age > 1.8 || g.y > FH - 3) { bloom(g); S.grenades.splice(i, 1); break; }
+        }
+      }
+    }
+    function bloom(g) {
+      S.smokes.push({ x: g.x, y: g.y - 6, t0: S.t, seed: g.id * 1.7, owner: g.owner });
+      if (S.smokes.length > 4) S.smokes.shift();
+      sound.smoke(g.x);
+      shake.add(0.12);
+      fx.ring(g.x, g.y - 2, 2, 20, 0.4, PAL.cream);
+    }
+
+    // ---- DECOY: spawned on both clients from one event, then a pure function of the clock ----
+    function plantDecoy(p) {
+      p.decoyCd = C.DECOY_CD;
+      const id = p.i * 1000 + ++decoyN, dir = p.face;
+      spawnDecoy(p.i, id, p.x, p.y, dir, ctx.time, true);
+      if (online && p.i === ctx.me) ctx.net.send({ k: 'decoy', id, x: r1(p.x), y: r1(p.y), dir, t: +ctx.time.toFixed(2) });
+    }
+    function spawnDecoy(owner, id, x, y, dir, t0) {
+      let reach = 0;
+      for (; reach < 70; reach += 2) {
+        const x2 = x + dir * (reach + 4);
+        if (solidAt(world, x2, y - 4) || world.floorY(x2, y - 2) > y + 3) break;
+      }
+      let mine = 0;
+      for (const d of S.decoys) if (d.owner === owner && d.alive) { mine++; if (mine >= 2) { popDecoy(d, false); break; } }
+      S.decoys.push({ id, owner, x0: x, y0: y, x, y, dir, face: dir, t0, reach, alive: true, moving: true, run: 0, aim: dir > 0 ? 0 : Math.PI });
+      sound.decoy(x);
+      fx.ring(x, y - 8, 2, 12, 0.3, P[owner].col);
+    }
+    function popDecoy(d, hit) {
+      if (!d || !d.alive) return;
+      d.alive = false;
+      fx.confetti(d.x, d.y - 8, 26, 100, [P[d.owner].col, P[d.owner].colD, PAL.cream, PAL.wood]);
+      fx.ring(d.x, d.y - 8, 2, 14, 0.3, PAL.cream);
+      sound.pop(d.x);
+      if (hit && online) ctx.net.send({ k: 'pop', id: d.id });
+    }
+    function stepDecoys(dt) {
+      for (let i = S.decoys.length - 1; i >= 0; i--) {
+        const d = S.decoys[i];
+        if (!d.alive) { S.decoys.splice(i, 1); continue; }
+        const age = Math.max(0, ctx.time - d.t0);
+        if (ctx.phase === 'live' && age > C.DECOY_LIFE) { popDecoy(d, false); continue; }
+        const run = Math.min(d.reach, C.DECOY_V * age);
+        d.moving = run < d.reach - 0.5 && ctx.phase === 'live';
+        d.x = d.x0 + d.dir * run;
+        const fy = world.floorY(d.x, d.y0 - 3);
+        d.y = fy < 1e5 ? fy : d.y0;
+        if (d.moving) d.run += C.DECOY_V * dt * 0.2;
+        const foe = P[1 - d.owner];
+        const want = Math.atan2(foe.y - 10 - (d.y - 12), foe.x - d.x);
+        d.aim = Math.abs(Math.cos(want)) > 0.1 ? want + Math.sin(S.t * 1.7 + d.id) * 0.012 : d.aim;
+        d.face = Math.cos(d.aim) >= 0 ? 1 : -1;
+      }
+    }
+
+    // ---- hazards that can end a round: the bird and the lava ----
+    function hazards() {
+      if (ctx.phase !== 'live') return;
+      const bd = world.bird;
+      for (const p of P) {
+        if (p.remote || !p.alive) continue;
+        if (bd.on) {
+          const bx = bd.x - 11, by = bd.y - 7;
+          const r = bodyRect(p);
+          if (r.x < bx + 22 && r.x + r.w > bx && r.y < by + 13 && r.y + r.h > by) { ctx.kill(p.i, { how: 'BIRD STRIKE' }); return; }
+        }
+        if (p.y > world.lavaY + 1) { ctx.kill(p.i, { how: 'FLOOR IS LAVA' }); return; }
+      }
+    }
+
+    // ---- camera: a flourish before the round, a punch-in on the kill ----
+    function camera(dt) {
+      const c = S.cam, me = P[ctx.me], foe = P[1 - ctx.me];
+      let tx = FW / 2, ty = FH / 2 - 4, tz = 1, rate = 6;
+      if (ctx.phase === 'intro' && S.introT >= 0) {
+        const u = S.introT;
+        if (u < 0.9) { tz = 2; tx = me.x; ty = me.y - 14; rate = 20; }
+        else if (u < 2.3) { const k = ease.inOutCubic((u - 0.9) / 1.4); tz = 2; tx = lerp(me.x, foe.x, k); ty = lerp(me.y, foe.y, k) - 14; rate = 20; }
+        else { tz = 1; tx = FW / 2; ty = FH / 2; rate = 5; }
+      } else if (S.kill) {
+        const k = S.kill;
+        if (k.t > 0.06) { tz = 2; tx = k.x; ty = k.y - 12; rate = 9; }
+      }
+      c.x = damp(c.x, tx, rate, dt); c.y = damp(c.y, ty, rate, dt); c.z = damp(c.z, tz, rate * 0.8, dt);
+      if (Math.abs(c.z - tz) < 0.02) c.z = tz;
+    }
+
+    function atmos(dt) {
+      for (const m of S.motes) {
+        const prof = world.lift(m.x) / 60;
+        const sd = ctx.sudden;
+        m.y -= (sd ? 16 : prof * 20) * dt;
+        m.x += Math.sin(S.t * 0.8 + m.y * 0.1) * 3 * dt;
+        if (m.y < 104 || m.y > 168) { m.y = sd ? 168 : prof > 0 ? 166 : 106; m.x = world.E + 6 + Math.random() * (FW - 2 * world.E - 12); }
+      }
+      for (let i = 0; i < 2; i++) S.padSquash[i] = Math.max(0, S.padSquash[i] - dt * 6);
+      S.readyT = Math.max(0, S.readyT - dt);
+      S.flashW = Math.max(0, S.flashW - dt * 3);
+      if (world.balloon.hit) world.balloon.hit = Math.max(0, world.balloon.hit - dt * 4);
+      for (const c of world.crates) if (c.hit) c.hit = 0;
+    }
+
+    function setMusic(kind) {
+      if (music === kind) return;
+      music = kind;
+      sound.music(kind);
+    }
+
+    function updateArc() {
+      const me = P[ctx.me];
+      S.arcFull = me.st === 2;
+      S.arcHit.x = -1;
+      if (!me.alive || ctx.phase !== 'live') return;
+      shoulder(me, sh);
+      const r = traceBullet(world, sh.x, sh.y, me.a, 1.25, gs(), 0, S.arc);
+      if (r.hit) { S.arcHit.x = r.x; S.arcHit.y = r.y; }
+    }
+
+    return {
+      update(dt) {
+        S.t += dt;
+        const live = ctx.phase === 'live';
+        if (ctx.phase === 'intro') { if (S.introT < 0) S.introT = 0; S.introT += dt; }
+        if (live) S.liveT += dt;
+        const sd = ctx.sudden ? Math.max(0, ctx.time - ROUND) : -1;
+        world.sync(ctx.time, sd);
+        if (ctx.sudden && !S.sdOn) {
+          S.sdOn = true;
+          sound.sudden();
+          setMusic('hot');
+          for (const c of world.crates) if (c.alive) breakCrate(c);
+          S.flashW = 0.35;
+        }
+        if (sd > 0.5 && !lavaSnd) { lavaSnd = true; sound.lava(); }
+        const bd = world.bird;
+        if (bd.warn > 0 && !bd.on && !birdWarned) { birdWarned = true; sound.birdWarn(); }
+        if (bd.warn === 0 && !bd.on) birdWarned = false;
+        if (bd.on && !birdOn) { birdOn = true; sound.bird(bd.x); }
+        if (!bd.on) birdOn = false;
+
+        for (const p of P) if (!p.remote) cmds[p.i] = p.bot ? p.bot.think(dt) : humanCmd(p);
+        for (const p of P) { if (p.remote) puppet(p, dt); else step(p, cmds[p.i], dt); }
+        // someone standing on the bridge presses it down: the snipers draw at the dipped height
+        stepGrenades(dt);
+        stepDecoys(dt);
+        stepBullets(dt);
+        hazards();
+        fx.update(dt, world);
+        atmos(dt);
+        if (S.kill) {
+          const k = S.kill;
+          const t0 = k.t;
+          k.t += dt;
+          if (t0 < 0.34 && k.t >= 0.34) {
+            fx.confetti(k.x, k.y - 8, 70, 150, [k.vcol, k.vcolD, PAL.cream, PAL.peach, PAL.coral, PAL.cream]);
+            fx.ring(k.x, k.y - 8, 3, 30, 0.5, PAL.cream);
+            fx.ring(k.x, k.y - 8, 1, 18, 0.35, k.vcol);
+            shake.add(0.8);
+            sound.kill(k.x);
+          }
+        }
+        camera(dt);
+        updateArc();
+        const me = P[ctx.me];
+        if (online) ctx.net.sendState({ x: r1(me.x), y: r1(me.y), a: +me.a.toFixed(4), s: me.st, j: me.jet ? 1 : 0, g: me.ground ? 1 : 0 });
+        ctx.hud.cooldown('fire', me.reload / reloadT());
+        ctx.hud.cooldown('a1', me.smokeCd / C.SMOKE_CD);
+        ctx.hud.cooldown('a2', me.decoyCd / C.DECOY_CD);
+        ctx.hud.cooldown('jump', me.fuel < 0.995 ? 1 - me.fuel : 0);
+        const sk = shake.update(dt);
+        view.L.shx = Math.round(sk.x); view.L.shy = Math.round(sk.y);
+      },
+
+      render() {
+        view.render();
+      },
+
+      onPhase(phase) {
+        if (phase === 'live') setMusic('calm');
+        else if (phase === 'over') {
+          sound.stop(1.2);
+          const res = ctx.result;
+          if (!res || res.victim < 0 || res.winner < 0) return;
+          const v = P[res.victim], w = P[res.winner];
+          const how = res.how || '';
+          S.kill = { victim: v.i, winner: w.i, x: v.x, y: v.y, t: 0, col: w.col, vcol: v.col, vcolD: v.colD, label: how === 'BIRD STRIKE' ? 'SQUAWK!' : how === 'FLOOR IS LAVA' ? 'TOAST!' : 'K.O.!' };
+          S.flashW = 0.5;
+          shake.add(0.6);
+          sound.impact(v.x);
+          fx.sparks(v.x, v.y - 8, Math.PI * (w.x < v.x ? 0 : 1), 2.4, 16, 200, [PAL.cream, PAL.peach, PAL.coral]);
+          for (const d of S.decoys) if (d.alive) popDecoy(d, false);
+        }
+      },
+
+      onNet(msg) {
+        if (!msg) return;
+        const them = 1 - ctx.me;
+        if (msg.k === 'shot') {
+          if ([msg.x, msg.y, msg.a].every(Number.isFinite)) launch(them, msg.x, msg.y, msg.a, false);
+        } else if (msg.k === 'smoke') {
+          if ([msg.x, msg.y, msg.vx, msg.vy].every(Number.isFinite) && S.grenades.length < 6) spawnGrenade(msg.id, msg.x, msg.y, msg.vx, msg.vy, them);
+        } else if (msg.k === 'decoy') {
+          if ([msg.x, msg.y, msg.dir, msg.t].every(Number.isFinite) && S.decoys.length < 6) spawnDecoy(them, msg.id, msg.x, msg.y, msg.dir > 0 ? 1 : -1, msg.t);
+        } else if (msg.k === 'pop') {
+          for (const d of S.decoys) if (d.id === msg.id) popDecoy(d, false);
+        } else if (msg.k === 'crate') {
+          const c = world.crates[msg.id];
+          if (c && c.alive) breakCrate(c);
+        }
+      },
+
+      focus() {
+        view.layout();
+        const o = S.kill ? S.kill : P[1 - ctx.me];
+        return { x: view.toCssX(o.x), y: view.toCssY(o.y - 8) };
+      },
+
+      resize() { clearPatterns(); },
+      debug: () => S,
+
+      dispose() {
+        sound.stop(0.3);
+        S.bullets.length = 0; S.smokes.length = 0; S.decoys.length = 0; S.grenades.length = 0;
+        fx.clear();
+        view.dispose();
+        clearPatterns();
+      },
+    };
+  },
+};
+export { gauss };

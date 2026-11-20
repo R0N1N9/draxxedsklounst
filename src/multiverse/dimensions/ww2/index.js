@@ -645,6 +645,7 @@ export default {
       },
     };
     inst.view = view; // test scripts only: view.shot = { x, y, z, tx, ty, tz, fov } pins the camera, view.force = n draws n frames now
+    inst.dbg = { P, G, map, events, fx, post, bullets, decoys }; // TEMP-HARDEN
     post.resize();
     return inst;
   },

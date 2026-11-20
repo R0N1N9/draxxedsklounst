@@ -8,11 +8,11 @@ export const C = {
   RUN: 62, CROUCH_RUN: 26, ACC_G: 900, ACC_A: 420, GRAV: 640, JUMP_V: 226,
   JET_ACC: 1500, JET_CAP: 108, JET_BURN: 0.5, JET_REGEN: 1.0, JET_DELAY: 0.1, SPRING_V: 345,
   BULLET_V: 540, BULLET_G: 135, RELOAD: 1.25, SD_RELOAD: 0.8, METRE: 1.5, // px -> metres
-  CRATE: 12, PF: 168, SAG: 4, BIRD_Y: 83, BIRD_DUR: 6.6, LAVA_V: 3.6, BALLOON_R: 14,
+  CRATE: 11, PF: 168, SAG: 4, BIRD_Y: 83, BIRD_DUR: 6.6, LAVA_V: 3.6, BALLOON_R: 14,
   SMOKE_CD: 13, SMOKE_LIFE: 8, SMOKE_R: 24, DECOY_CD: 15, DECOY_LIFE: 9, DECOY_V: 32,
 };
 // Body sizes by stance: 0 stand, 1 crouch, 2 prone. Hit boxes (w, h) and where the rifle sits (shoulder).
-export const BODY = [{ w: 6, h: 15, sh: 13 }, { w: 6, h: 10, sh: 7 }, { w: 14, h: 5, sh: 3 }];
+export const BODY = [{ w: 6, h: 16, sh: 12 }, { w: 6, h: 11, sh: 7 }, { w: 14, h: 5, sh: 3 }];
 export const HW = 3; // half width used for movement collision in every stance
 
 export function buildWorld(rng) {
@@ -75,6 +75,7 @@ export function buildWorld(rng) {
   /** Advance everything that lives on the clock. t = ctx.time, sd = seconds since sudden death began (<0 before). */
   world.sync = (t, sd) => {
     world.sdT = sd;
+    world.birdTime = t;
     const ph = world.phase;
     world.U = sd >= 0 ? 0 : 60 * Math.sin(t * 0.5 + ph[0]) + 32 * Math.sin(t * 1.27 + ph[1]);
     const b = world.balloon;
@@ -205,6 +206,7 @@ export function traceBullet(w, x, y, ang, maxT, gs, ls, path) {
     }
     if (b.x < -20 || b.x > w.W + 20 || b.y > w.H + 20) { _seg.t = t; break; }
   }
+  if (!_seg.hit) { _seg.x = b.x; _seg.y = b.y; }
   if (path) path.n = np;
   return _seg;
 }
