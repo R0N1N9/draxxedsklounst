@@ -6,6 +6,9 @@ import { clamp, lerp, damp, noise2, ease } from '../../kit.js';
 import { RUG_A, RUG_B } from './world.js';
 import { drawOverlay } from './overlay.js';
 
+// How long the last round took to draw a frame, on this machine. A new round starts at that
+// pace instead of drawing its first frames regardless (which, on a slow machine, costs seconds).
+let lastCost = 0;
 const HEAD = 2.7; // room above the rug's far edge for whoever stands there
 const FOOT = 1.1; // half a soldier's width, base and rifle
 
@@ -18,6 +21,7 @@ export function makeView(ctx, THREE, renderer, o) {
   const fitted = { s: 20, phi: 0.7, cx: 1, cy: 1 };
   let wt = 0, introT = -1, kc = null, trauma = 0, kick = 0, punch = 0, flashA = 0;
   let fresh = false, frames = 0, tPrev = 0, worst = 0, worstPrev = 0, skipLeft = 0, held = null;
+  if (lastCost >= 130) worst = worstPrev = lastCost;
   const api = { camera, L, force: 0, wt: 0, pxPerUnit: 20 };
 
   // How big and how steep: fill the width with the rug, then tilt until it fills the height too.
@@ -90,6 +94,7 @@ export function makeView(ctx, THREE, renderer, o) {
     shake(k) { trauma = Math.min(1, trauma + k); },
     kick(k) { kick = Math.min(1.2, kick + k); },
     beginIntro() { introT = 0; api.poke(); },
+    // Draw on the next frame (a phase has changed); then back to whatever pace the machine allows.
     poke() { skipLeft = 0; },
     killCam(v) { kc = { v, t: 0, side: v.x < 0 ? 1 : -1, x: v.x, z: v.z }; trauma = Math.min(1, trauma + 0.6); punch = 1; flashA = 0.3; api.poke(); },
     focus() { const v = kc ? kc.v : P[1 - ctx.me], q = toScreen(v.x, 0.8, v.z, { x: 0, y: 0 }); return { x: clamp(q.x, 0, ctx.width), y: clamp(q.y, 0, ctx.height) }; },
@@ -152,7 +157,7 @@ export function makeView(ctx, THREE, renderer, o) {
       let draw = true;
       if (api.force > 0) api.force--;
       else if (!hadUpdate) { /* the core photographing the world for a transition: always a real frame */ }
-      else if (++frames > 3 && skipLeft > 0) { skipLeft--; draw = false; }
+      else if ((++frames > 3 || lastCost > 0) && skipLeft > 0) { skipLeft--; draw = false; }
       if (api.log) api.log.push(Math.round(now) * (draw ? 1 : -1));
       S.w = ctx.width; S.h = ctx.height;
       // Words stay stuck to the picture they were written for: between real draws, the labels of the last one.
@@ -162,6 +167,7 @@ export function makeView(ctx, THREE, renderer, o) {
       worstPrev = worst;
       worst = 0;
       skipLeft = cost < 70 ? 0 : cost < 130 ? 1 : Math.min(120, Math.round(cost / 9));
+      lastCost = cost;
       api.cost = cost; api.drawn = (api.drawn || 0) + 1;
       held = skipLeft > 0 ? JSON.parse(JSON.stringify(S)) : null;
       post.render(room.scene, camera);

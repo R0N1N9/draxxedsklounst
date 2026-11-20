@@ -34,7 +34,7 @@ function hull(pts) { // convex hull (monotone chain) of [x, z] points
 export function buildWorld(ctx, THREE, mats) {
   const rng = ctx.rng;
   const root = new THREE.Group();
-  const F = new FillBuf(), L = new LineBuf(), GS = new FillBuf(), GM = new FillBuf(), GB = new FillBuf();
+  const F = new FillBuf(), L = new LineBuf(), GS = new FillBuf(), GM = new FillBuf(), GB = new FillBuf(), GO = new FillBuf();
   const boxes = [], rects = [], panels = [];
   const texs = [];
   const tex = (draw, w, h, mip = true) => {
@@ -122,7 +122,7 @@ export function buildWorld(ctx, THREE, mats) {
   addHalf(true);
 
   // ---- ground: outer tarmac, paved yard, the two concourse aprons, lane paint ----
-  GB.ground([[-400, -400], [400, -400], [400, 400], [-400, 400]], 0, YARD_OUT);
+  GO.ground([[-400, -400], [400, -400], [400, 400], [-400, 400]], 0, YARD_OUT); // the outer tarmac: drawn last, so whatever stands in front of it is never shaded twice
   GB.ground([[-GANTRY_X - 3, -BUILD_Z - 2], [GANTRY_X + 3, -BUILD_Z - 2], [GANTRY_X + 3, BUILD_Z + 2], [-GANTRY_X - 3, BUILD_Z + 2]], 0, GROUND);
   for (const s of [1, -1]) {
     GS.ground([[-32, s * 33.5], [32, s * 33.5], [32, s * BUILD_Z], [-32, s * BUILD_Z]], 0, '#dcd8cb');
@@ -354,7 +354,7 @@ export function buildWorld(ctx, THREE, mats) {
     mesh.renderOrder = order;
     return mesh;
   };
-  root.add(layer(GB, -0.03, -3), layer(GS, -0.02, -2), layer(GM, -0.01, -1), F.mesh(THREE, fillMat));
+  root.add(layer(GB, -0.03, -3), layer(GS, -0.02, -2), layer(GM, -0.01, -1), F.mesh(THREE, fillMat), layer(GO, -0.05, 90));
   const lines = L.set(THREE, mats.ink);
   root.add(lines.mesh);
 

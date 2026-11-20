@@ -186,28 +186,46 @@ export function makeOverlay(ctx) {
   }
 
   // ---- compass strip + wind ----
+  // The strip is painted once, as a whole 360-degree tape in an off-screen canvas (plus the frame, the pointer and the
+  // wind tag's box); every frame is then one drawImage of the window the heading looks through.
+  let tape = null, tapeW = 0, tapeD = 0, tapeFont = false;
+  function buildTape(w, h, d) {
+    const half = 62, ppd = w / (half * 2);
+    tape = document.createElement('canvas');
+    tape.width = Math.ceil((360 + 2 * half) * ppd * d); tape.height = Math.ceil(h * d);
+    const q = tape.getContext('2d');
+    q.scale(d, d);
+    q.fillStyle = '#f7f1e3'; q.fillRect(0, 0, tape.width / d, h);
+    q.strokeStyle = INK; q.fillStyle = INK; q.lineWidth = 2;
+    q.beginPath();
+    for (let deg = -half; deg <= 360 + half; deg += 5) {
+      const x = (deg + half) * ppd, dd = ((deg % 360) + 360) % 360;
+      q.moveTo(x, h); q.lineTo(x, h - (dd % 45 === 0 ? 9 : dd % 15 === 0 ? 7 : 4));
+    }
+    q.stroke();
+    q.textAlign = 'center'; q.textBaseline = 'middle';
+    for (let deg = -60; deg <= 360 + 60; deg += 15) {
+      const x = (deg + half) * ppd, dd = ((deg % 360) + 360) % 360;
+      if (COMPASS_NAMES[dd]) { q.font = FONT(13, 800); q.fillStyle = INK; q.fillText(COMPASS_NAMES[dd], x, 10); }
+      else if (dd % 30 === 0) { q.font = FONT(10, 700); q.fillStyle = '#6b6577'; q.fillText(String(dd), x, 10); }
+    }
+    tapeW = w; tapeD = d;
+  }
   function compass(cx, top) {
     const w = Math.min(430, ctx.width * 0.5), h = 25, x0 = cx - w / 2;
     const half = 62; // degrees either side
     const ppd = w / (half * 2);
-    sticker(x0, top, w, h, '#f7f1e3', 4, 3);
+    const d = Math.min(2, ctx.dpr || 1);
+    if (!tapeFont && document.fonts && document.fonts.check && document.fonts.check('800 13px Rajdhani')) { tapeFont = true; tape = null; } // repaint once the web font has arrived
+    if (!tape || Math.abs(tapeW - w) > 0.5 || tapeD !== d) buildTape(w, h, d);
+    // hard offset shadow and outline of the strip, then the tape window inside
+    g.fillStyle = INK; rrect(g, x0 + 3, top + 3, w, h, 4); g.fill();
     g.save();
     rrect(g, x0, top, w, h, 4); g.clip();
     const hd = ((-S.heading * 180) / Math.PI + 720) % 360;
-    g.strokeStyle = INK; g.fillStyle = INK; g.lineWidth = 2;
-    const names = COMPASS_NAMES;
-    g.beginPath(); // every tick in one path; only the labels are separate draws
-    for (let d = Math.floor((hd - half) / 5) * 5; d <= hd + half; d += 5) {
-      const x = cx + (d - hd) * ppd, dd = ((d % 360) + 360) % 360;
-      g.moveTo(x, top + h); g.lineTo(x, top + h - (dd % 45 === 0 ? 9 : dd % 15 === 0 ? 7 : 4));
-    }
-    g.stroke();
-    for (let d = Math.floor((hd - half) / 15) * 15; d <= hd + half; d += 15) {
-      const x = cx + (d - hd) * ppd, dd = ((d % 360) + 360) % 360;
-      if (names[dd]) label(names[dd], x, top + 9, 13, INK, 'center', 800);
-      else if (dd % 30 === 0) label(String(dd), x, top + 9, 10, '#6b6577', 'center', 700);
-    }
+    g.drawImage(tape, hd * ppd * d, 0, w * d, h * d, x0, top, w, h);
     g.restore();
+    rrect(g, x0, top, w, h, 4); g.lineWidth = 2.5; g.strokeStyle = INK; g.lineJoin = 'round'; g.stroke();
     // enemy marker on the strip: where the other sniper last was seen or heard
     if (S.enemyKnown > 0.02) {
       const dd = angDiff((hd * Math.PI) / 180, S.enemyHeading) * (180 / Math.PI);
@@ -292,7 +310,7 @@ export function makeOverlay(ctx) {
 
   // ---- prompts that teach as you play ----
   function prompt(cx, y, span, text = S.prompt, keyText = S.promptKey, sub = false) {
-    if (!text || !S.live || !S.alive) return;
+    if (!text || !S.live || !S.alive || S.scope > 0.3) return; // out of the way of the lens
     const small = ctx.height < 480, px = (small ? 13 : 17) - (sub ? 2 : 0), h = (small ? 26 : 32) - (sub ? 4 : 0);
     const pulse = 0.5 + 0.5 * Math.sin(S.t * 5);
     g.font = FONT(px);

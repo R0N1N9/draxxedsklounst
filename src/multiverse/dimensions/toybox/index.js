@@ -71,7 +71,7 @@ export default {
     const Q = { rich: true, pbr: true, scale: 1, shadow: 2048 };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.rich = false; Q.pbr = false; Q.scale = 0.75; Q.shadow = 1024; }
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.rich = false; Q.pbr = false; Q.scale = 0.66; Q.shadow = 1024; }
     } catch { /* masked: assume a real GPU */ }
     if (globalThis.__toyboxQ) Object.assign(Q, globalThis.__toyboxQ); // test scripts: force a build
     const names = ctx.players.map((p) => p.name);
