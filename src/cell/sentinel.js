@@ -1,18 +1,27 @@
-// Sniper Cell: Infiltration — SENTINEL, the facility's security: guards, patrol drones and
-// cameras, the alarm and reinforcements. The host runs the simulation (update); the guest
-// only applies snapshots (applySnap) and draws the same models.
+// Sniper Cell — SENTINEL, the facility's security: its troops, patrol drones and cameras,
+// the alarm and reinforcements. The host runs the simulation (update); the guest only
+// applies snapshots (applySnap) and draws the same models.
 //
-// Rules carried over from Cold Archive, rescaled from its top-down pixels to metres:
-//   guard vision ~30 m in a ±0.62 rad cone (anything inside 2.5 m), awareness fills at
-//   2.4 × rate × visibility per second and drains at 0.4/s; full = alert after a 0.3–0.6 s
-//   reaction; an alert guard radios the alarm (+0.5) 1.5 s later unless he's dropped first;
-//   lost sight → search the last known position for ~8 s. Cloak ×0.28 visibility, darkness
-//   ×0.4, standing still ×0.8; low visibility shrinks the sight range to 55 %.
-//   Alarm 0..1 (QUIET / ALERT / ALARM / LOCKDOWN), decays only after 4 s without a raise.
-// New for this mode: guards respawn OUTSIDE the building (barracks door and the south gate)
-// and patrol drones relaunch from the barracks pad.
+// Sensing and alarm rules come from Cold Archive, rescaled from its top-down pixels to
+// metres: awareness fills at 2.4 × rate × visibility per second and drains at 0.4/s; full
+// = alert after a 0.3–0.6 s reaction; an alert unit radios the alarm (+0.5) 1.5 s later
+// unless it's dropped first; lost sight → search the last known position. Alarm 0..1
+// (QUIET / ALERT / ALARM / LOCKDOWN), decaying only after 4 s without a raise.
+//
+// NightWatch troops are SENTINEL's augmented security, and they fight like a night-time
+// alien patrol in an old shooter:
+//   SCAV        small, unshielded, cowardly: alone and shot at, it shrieks and runs.
+//   JUGGERNAUT  big and shielded (energy shell that recharges); shoots heavy plasma, and
+//               when its shell breaks, a pack-mate dies or you get close, it goes berserk
+//               and charges with an energy blade.
+//   BULWARK     sharp-eyed, behind a hard-light wall with a sight-port: snipe through the
+//               port, catch it when it lowers the wall to fire, or flank it. On the towers
+//               it carries a beam rifle with a laser sight you can see coming.
+//   OVERSEER    a juggernaut officer who carries the vault badge.
+// Headshots kill anything, whatever the weapon. Infiltration keeps its plain security guards.
+// Reinforcements always come from OUTSIDE the building: the barracks door and the south gate.
 import * as THREE from 'three';
-import { lam, glowMat, FENCE, SPOTS } from './facility.js';
+import { lam, glowMat, SPOTS } from './facility.js';
 import { clamp, mulberry32 } from '../util.js';
 
 export const DIFFS = {
@@ -21,10 +30,19 @@ export const DIFFS = {
   ghost: { name: 'Ghost', guardDmg: 1.35, guardAcc: 0.7, rate: 1.15, alarmDecay: 0.9, count: 1.0, drops: 2, hp: 85, camo: 0.8 },
 };
 
-const STATES = ['patrol', 'post', 'sus', 'alert', 'search', 'dead'];
-const GUARD_HP = 125;
+export const TYPES = {
+  guard: { name: 'GUARD', hp: 125, shield: 0, sight: 30, rate: 1, speed: [1.45, 1.9, 2.4, 3.6], scale: 1, color: '#4aa8ff' },
+  scav: { name: 'SCAV', hp: 60, shield: 0, sight: 24, rate: 0.8, speed: [1.6, 2.1, 2.8, 4.0], scale: 0.8, flee: true, color: '#ffb030' },
+  jugg: { name: 'JUGGERNAUT', hp: 260, shield: 120, sight: 30, rate: 1, speed: [1.35, 1.8, 2.3, 2.9], scale: 1.22, berserk: true, color: '#ff3a6a' },
+  bulwark: { name: 'BULWARK', hp: 90, shield: 0, sight: 40, rate: 1.3, speed: [1.6, 2.0, 2.8, 3.3], scale: 0.95, wall: true, color: '#30e0ff' },
+  overseer: { name: 'OVERSEER', hp: 300, shield: 160, sight: 32, rate: 1.1, speed: [1.35, 1.8, 2.3, 2.9], scale: 1.28, berserk: true, color: '#c070ff' },
+};
+const TYPE_KEYS = Object.keys(TYPES);
+const STATES = ['patrol', 'post', 'sus', 'alert', 'search', 'dead', 'flee', 'berserk'];
 const DRONE_HP = 40;
 const EYE = 1.62;
+// The bulwark's hard-light wall, in its local frame (feet at origin, facing -Z, before scale).
+export const WALL = { z: -0.55, w: 0.95, y0: 0.3, y1: 1.85, port: { x0: 0.04, x1: 0.32, y0: 1.38, y1: 1.76 } };
 
 // ---------------------------------------------------------------------------
 // Models
@@ -47,28 +65,53 @@ function iconTexture(ch, color) {
 }
 const ICONS = {};
 function icon(kind) {
-  if (!ICONS[kind]) ICONS[kind] = new THREE.SpriteMaterial({ map: iconTexture(kind === 'sus' ? '?' : '!', kind === 'sus' ? '#ffd040' : '#ff3048'), depthTest: false, transparent: true });
+  const spec = { sus: ['?', '#ffd040'], alert: ['!', '#ff3048'], flee: ['!!', '#ffb030'], berserk: ['☠', '#ff2a6d'] }[kind];
+  if (!ICONS[kind]) ICONS[kind] = new THREE.SpriteMaterial({ map: iconTexture(spec[0], spec[1]), depthTest: false, transparent: true });
   return ICONS[kind];
 }
 
 const BEAM = new THREE.ConeGeometry(2.6, 12, 16, 1, true).translate(0, -6, 0).rotateX(Math.PI / 2); // apex at the light, opening down -Z
-function beamMat() {
+function beamMat(color = '#fff2c8') {
+  // Soft volumetric look: fades along the beam, toward its silhouette, and right in front of the camera.
   return new THREE.ShaderMaterial({
-    uniforms: { uC: { value: new THREE.Color('#fff2c8') }, uA: { value: 1 } },
-    // Soft volumetric look: fades along the beam, toward its silhouette, and right in front of the camera.
+    uniforms: { uC: { value: new THREE.Color(color) }, uA: { value: 1 } },
     vertexShader: 'varying float vD; varying float vC; varying vec3 vN; varying vec3 vV; void main(){ vD = clamp(length(position) / 12.0, 0.0, 1.0); vec4 mv = modelViewMatrix * vec4(position, 1.0); vC = length(mv.xyz); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
     fragmentShader: 'uniform vec3 uC; uniform float uA; varying float vD; varying float vC; varying vec3 vN; varying vec3 vV; void main(){ float f = pow(abs(dot(normalize(vN), normalize(vV))), 2.0); gl_FragColor = vec4(uC * (1.0 - vD) * (1.0 - vD) * 0.06 * f * uA * smoothstep(2.0, 9.0, vC), 1.0); }',
     transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
   });
 }
+// Energy shell around juggernauts: a fresnel shimmer that flares when hit.
+function shellMat(color) {
+  return new THREE.ShaderMaterial({
+    uniforms: { uC: { value: new THREE.Color(color) }, uA: { value: 0.4 }, uT: { value: 0 } },
+    vertexShader: 'varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position,1.0); vV = normalize(-mv.xyz); vP = position; gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform vec3 uC; uniform float uA, uT; varying vec3 vN; varying vec3 vV; varying vec3 vP; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.2); float hex = 0.6 + 0.4 * sin(vP.y * 40.0 + uT * 3.0) * sin(vP.x * 40.0 - uT * 2.0); gl_FragColor = vec4(uC * f * hex * uA * 1.6, 1.0); }',
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+}
+function wallMat() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uT: { value: 0 }, uA: { value: 1 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `uniform float uT, uA; varying vec2 vUv;
+      void main(){
+        vec2 p = vUv;
+        // The sight-port: a notch near the top on the weapon side.
+        float port = step(${(0.5 + WALL.port.x0 / WALL.w).toFixed(3)}, p.x) * step(p.x, ${(0.5 + WALL.port.x1 / WALL.w).toFixed(3)}) * step(${((WALL.port.y0 - WALL.y0) / (WALL.y1 - WALL.y0)).toFixed(3)}, p.y) * step(p.y, ${((WALL.port.y1 - WALL.y0) / (WALL.y1 - WALL.y0)).toFixed(3)});
+        if (port > 0.5) discard;
+        float edge = 1.0 - smoothstep(0.0, 0.06, min(min(p.x, 1.0 - p.x), min(p.y, 1.0 - p.y)));
+        float hx = abs(fract(p.x * 9.0 + 0.5 * floor(p.y * 12.0)) - 0.5) + abs(fract(p.y * 12.0) - 0.5);
+        float grid = smoothstep(0.42, 0.5, hx);
+        float scan = 0.5 + 0.5 * sin(p.y * 60.0 - uT * 6.0);
+        vec3 c = vec3(0.2, 0.85, 1.0) * (0.12 + edge * 0.9 + grid * 0.25 + scan * 0.05);
+        gl_FragColor = vec4(c * uA, 1.0);
+      }`,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  });
+}
 
-export function buildGuard(chief = false) {
-  const root = new THREE.Group();
-  root.rotation.order = 'YXZ';
-  const body = new THREE.Group();
-  root.add(body);
-  const C = { suit: chief ? '#2a2633' : '#30343a', armor: chief ? '#3a3448' : '#42474e', skin: '#2a2420', boot: '#151618', gun: '#1b1c1f' };
-  const mk = (geo, col, x, y, z, parent = body, opts) => { const m = new THREE.Mesh(geo, lam(col, opts)); m.position.set(x, y, z); parent.add(m); return m; };
+function rig(body, C, mk) {
+  // Shared helper: hip pivots with two-part legs.
   const legs = [];
   for (const s of [-1, 1]) {
     const hip = new THREE.Group();
@@ -79,44 +122,117 @@ export function buildGuard(chief = false) {
     mk(new THREE.BoxGeometry(0.16, 0.1, 0.28), C.boot, 0, -0.88, -0.04, hip);
     legs.push(hip);
   }
-  mk(new THREE.BoxGeometry(0.42, 0.56, 0.26), C.suit, 0, 1.2, 0);
-  mk(new THREE.BoxGeometry(0.46, 0.44, 0.32), C.armor, 0, 1.24, -0.01);
-  mk(new THREE.BoxGeometry(0.4, 0.12, 0.08), '#33373d', 0, 1.18, -0.18);
-  mk(new THREE.BoxGeometry(0.2, 0.22, 0.22), C.skin, 0, 1.6, 0);
-  mk(new THREE.SphereGeometry(0.15, 10, 7, 0, Math.PI * 2, 0, Math.PI / 1.8), chief ? '#4b3f63' : '#3b4046', 0, 1.66, 0.01);
-  // Visor glow: red for the troops, violet for the Site Chief.
-  mk(new THREE.BoxGeometry(0.2, 0.05, 0.03), chief ? '#c070ff' : '#ff4050', 0, 1.62, -0.115, body, { emissive: chief ? '#c070ff' : '#ff4050', emissiveIntensity: 1.6 });
-  // Arms + rifle at low ready.
+  return legs;
+}
+
+export function buildUnit(type = 'guard', chief = false) {
+  const T = TYPES[type] || TYPES.guard;
+  const root = new THREE.Group();
+  root.rotation.order = 'YXZ';
+  const body = new THREE.Group();
+  root.add(body);
+  const mk = (geo, col, x, y, z, parent = body, opts) => { const m = new THREE.Mesh(geo, lam(col, opts)); m.position.set(x, y, z); parent.add(m); return m; };
+  const glow = (geo, col, x, y, z, parent = body, k = 1.8) => mk(geo, col, x, y, z, parent, { emissive: col, emissiveIntensity: k });
   const gun = new THREE.Group();
-  gun.position.set(0.05, 1.18, -0.28);
   body.add(gun);
-  mk(new THREE.BoxGeometry(0.06, 0.09, 0.7), C.gun, 0, 0, -0.1, gun);
-  mk(new THREE.BoxGeometry(0.05, 0.14, 0.06), C.gun, 0, -0.1, 0.05, gun);
-  for (const s of [-1, 1]) {
-    const a = mk(new THREE.BoxGeometry(0.11, 0.11, 0.42), C.suit, s * 0.22, 1.28, -0.16);
-    a.rotation.y = -s * 0.35;
+  let legs, shell = null, wall = null, blade = null;
+  const neon = T.color;
+  if (type === 'guard') {
+    const C = { suit: chief ? '#2a2633' : '#30343a', armor: chief ? '#3a3448' : '#42474e', skin: '#2a2420', boot: '#151618' };
+    legs = rig(body, C, mk);
+    mk(new THREE.BoxGeometry(0.42, 0.56, 0.26), C.suit, 0, 1.2, 0);
+    mk(new THREE.BoxGeometry(0.46, 0.44, 0.32), C.armor, 0, 1.24, -0.01);
+    mk(new THREE.BoxGeometry(0.2, 0.22, 0.22), C.skin, 0, 1.6, 0);
+    mk(new THREE.SphereGeometry(0.15, 10, 7, 0, Math.PI * 2, 0, Math.PI / 1.8), chief ? '#4b3f63' : '#3b4046', 0, 1.66, 0.01);
+    glow(new THREE.BoxGeometry(0.2, 0.05, 0.03), chief ? '#c070ff' : '#ff4050', 0, 1.62, -0.115);
+    gun.position.set(0.05, 1.18, -0.28);
+    mk(new THREE.BoxGeometry(0.06, 0.09, 0.7), '#1b1c1f', 0, 0, -0.1, gun);
+    for (const s of [-1, 1]) mk(new THREE.BoxGeometry(0.11, 0.11, 0.42), C.suit, s * 0.22, 1.28, -0.16).rotation.y = -s * 0.35;
+  } else if (type === 'scav') {
+    // Hunched little conscript: coolant pack on its back, slit visor, twitchy.
+    const C = { suit: '#2b2a2f', boot: '#121214' };
+    legs = rig(body, C, mk);
+    for (const L of legs) L.position.y = 0.92;
+    const torso = mk(new THREE.BoxGeometry(0.5, 0.5, 0.42), '#3a3530', 0, 1.18, 0.02);
+    torso.rotation.x = 0.35;
+    mk(new THREE.BoxGeometry(0.56, 0.2, 0.36), '#4a3f30', 0, 1.36, -0.04);
+    // Coolant pack with a glowing canister.
+    mk(new THREE.BoxGeometry(0.46, 0.62, 0.3), '#3c3a36', 0, 1.42, 0.3);
+    glow(new THREE.CylinderGeometry(0.09, 0.09, 0.5, 10), neon, 0, 1.46, 0.47, body, 1.6);
+    glow(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), neon, 0.18, 1.55, 0.2, body, 1.2).rotation.x = 1.0;
+    // Head: rebreather mask with a wide slit visor.
+    mk(new THREE.BoxGeometry(0.3, 0.26, 0.3), '#2a2826', 0, 1.5, -0.12);
+    glow(new THREE.BoxGeometry(0.26, 0.05, 0.02), '#ffe040', 0, 1.53, -0.28);
+    mk(new THREE.CylinderGeometry(0.06, 0.08, 0.12, 8).rotateX(Math.PI / 2), '#1a1918', 0, 1.42, -0.3);
+    gun.position.set(0.18, 1.12, -0.32);
+    mk(new THREE.BoxGeometry(0.08, 0.1, 0.26), '#24262a', 0, 0, -0.05, gun);
+    glow(new THREE.SphereGeometry(0.045, 8, 6), '#60ff70', 0, 0.02, -0.2, gun, 2);
+    for (const s of [-1, 1]) mk(new THREE.BoxGeometry(0.09, 0.09, 0.36), C.suit, s * 0.22, 1.22, -0.16).rotation.y = -s * 0.3;
+  } else if (type === 'jugg' || type === 'overseer') {
+    // Hulking enforcer: plated, neon seams, heavy cannon on the left, energy blade on the right.
+    const boss = type === 'overseer';
+    const C = { suit: boss ? '#2a2236' : '#2c2628', boot: '#121214' };
+    legs = rig(body, C, mk);
+    mk(new THREE.BoxGeometry(0.62, 0.66, 0.42), boss ? '#3a3050' : '#3e3434', 0, 1.22, 0);
+    mk(new THREE.BoxGeometry(0.7, 0.36, 0.48), boss ? '#4a3e66' : '#4e4040', 0, 1.36, -0.02);
+    for (const s of [-1, 1]) {
+      mk(new THREE.BoxGeometry(0.3, 0.2, 0.42), boss ? '#4a3e66' : '#4e4040', s * 0.46, 1.52, 0).rotation.z = s * 0.25;
+      glow(new THREE.BoxGeometry(0.02, 0.5, 0.02), neon, s * 0.32, 1.2, -0.22);
+    }
+    mk(new THREE.BoxGeometry(0.3, 0.3, 0.32), '#2a2426', 0, 1.7, -0.02);
+    glow(new THREE.BoxGeometry(0.24, 0.04, 0.02), neon, 0, 1.72, -0.19);
+    if (boss) glow(new THREE.BoxGeometry(0.06, 0.2, 0.06), neon, 0, 1.92, 0.02);
+    gun.position.set(-0.32, 1.2, -0.3);
+    mk(new THREE.BoxGeometry(0.16, 0.18, 0.66), '#26232a', 0, 0, -0.1, gun);
+    glow(new THREE.BoxGeometry(0.17, 0.04, 0.4), '#b050ff', 0, 0.1, -0.15, gun);
+    mk(new THREE.BoxGeometry(0.14, 0.14, 0.4), C.suit, 0.32, 1.25, -0.18);
+    blade = glow(new THREE.BoxGeometry(0.03, 0.08, 0.95), '#ff3aa0', 0.36, 1.1, -0.72, body, 3);
+    blade.visible = false;
+    shell = new THREE.Mesh(new THREE.SphereGeometry(0.62, 18, 12).scale(0.95, 1.55, 0.8), shellMat(neon));
+    shell.position.y = 1.05;
+    root.add(shell);
+  } else if (type === 'bulwark') {
+    // Lean, long-necked lookout behind a hard-light wall with a sight-port.
+    const C = { suit: '#22282c', boot: '#101214' };
+    legs = rig(body, C, mk);
+    mk(new THREE.BoxGeometry(0.36, 0.5, 0.26), '#2c3438', 0, 1.18, 0.04);
+    mk(new THREE.BoxGeometry(0.1, 0.24, 0.1), '#22282c', 0, 1.5, -0.04).rotation.x = -0.4;
+    mk(new THREE.BoxGeometry(0.2, 0.18, 0.34), '#2c3438', 0, 1.62, -0.12);
+    glow(new THREE.BoxGeometry(0.03, 0.06, 0.36), neon, 0, 1.74, -0.1, body, 2);
+    glow(new THREE.BoxGeometry(0.16, 0.03, 0.02), neon, 0, 1.62, -0.3);
+    gun.position.set(0.22, 1.2, -0.3);
+    mk(new THREE.BoxGeometry(0.06, 0.08, 0.6), '#1b1e22', 0, 0, -0.15, gun);
+    glow(new THREE.BoxGeometry(0.02, 0.02, 0.5), '#30e0ff', 0, 0.05, -0.15, gun, 1.4);
+    wall = new THREE.Group();
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(WALL.w, WALL.y1 - WALL.y0), wallMat());
+    plane.position.set(0, (WALL.y0 + WALL.y1) / 2, WALL.z);
+    wall.add(plane);
+    wall.userData.plane = plane;
+    body.add(wall);
   }
-  // Weapon light + beam.
-  mk(new THREE.CylinderGeometry(0.03, 0.03, 0.08, 8).rotateX(Math.PI / 2), '#fff6d0', 0.04, 0.03, -0.46, gun, { emissive: '#fff6d0', emissiveIntensity: 2 });
-  const beam = new THREE.Mesh(BEAM, beamMat());
+  // Weapon light (troops only).
+  const beam = new THREE.Mesh(BEAM, beamMat(type === 'guard' ? '#fff2c8' : '#cfe8ff'));
   beam.position.set(0.04, 0.03, -0.5);
   beam.rotation.x = -0.12;
   gun.add(beam);
-  if (chief) mk(new THREE.BoxGeometry(0.1, 0.13, 0.02), '#d0a0ff', -0.12, 1.32, -0.18, body, { emissive: '#b080ff', emissiveIntensity: 1.2 });
+  beam.visible = type === 'guard' || type === 'bulwark';
   const tag = new THREE.Sprite(icon('sus'));
   tag.scale.set(0.5, 0.5, 1);
   tag.position.set(0, 2.15, 0);
   tag.visible = false;
   root.add(tag);
-  root.userData = { body, legs, gun, beam, tag, phase: Math.random() * 6 };
+  body.scale.setScalar(T.scale);
+  root.userData = { body, legs, gun, beam, tag, shell, wall, blade, phase: Math.random() * 6, scale: T.scale };
   return root;
 }
+export const buildGuard = (chief) => buildUnit('guard', chief);
 
 export function buildDrone() {
   const g = new THREE.Group();
-  const dark = '#24272c';
+  const dark = '#1d1f26';
   const mk = (geo, col, x, y, z, opts) => { const m = new THREE.Mesh(geo, lam(col, opts)); m.position.set(x, y, z); g.add(m); return m; };
   mk(new THREE.BoxGeometry(0.7, 0.22, 0.9), dark, 0, 0, 0);
+  mk(new THREE.BoxGeometry(0.72, 0.03, 0.92), '#ff2a8a', 0, 0.12, 0, { emissive: '#ff2a8a', emissiveIntensity: 1.4 });
   mk(new THREE.SphereGeometry(0.16, 10, 8), '#111', 0, -0.16, -0.32);
   const rotors = [];
   for (const [x, z] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) {
@@ -125,8 +241,7 @@ export function buildDrone() {
     rotors.push(r);
     mk(new THREE.BoxGeometry(0.06, 0.06, 0.06), '#ff2030', x, -0.04, z, { emissive: '#ff2030', emissiveIntensity: 2 });
   }
-  const beam = new THREE.Mesh(new THREE.ConeGeometry(5, 11, 18, 1, true).translate(0, -5.5, 0), beamMat());
-  beam.material.uniforms.uC.value.set('#ffe4f0');
+  const beam = new THREE.Mesh(new THREE.ConeGeometry(5, 11, 18, 1, true).translate(0, -5.5, 0), beamMat('#ffe4f0'));
   beam.rotation.x = 0.35;
   g.add(beam);
   g.userData = { rotors, beam };
@@ -154,11 +269,12 @@ export function buildCamera() {
 // Simulation
 // ---------------------------------------------------------------------------
 export class Sentinel {
-  constructor(game, { diff = 'operative', seed = 1, sim = true } = {}) {
+  constructor(game, { diff = 'operative', seed = 1, sim = true, mission = 'nightwatch' } = {}) {
     this.game = game;
     this.fac = game.fac;
     this.scene = game.scene;
     this.D = DIFFS[diff] || DIFFS.operative;
+    this.mission = mission;
     this.sim = sim;
     this.rng = mulberry32(seed);
     this.guards = [];
@@ -172,19 +288,19 @@ export class Sentinel {
     this.nextId = 1;
     this.respawnT = 40;
     this.events = [];
-    this.lkp = null; // last known position of an agent, shown while they hunt
+    this.lkp = null;
     this.lkpT = 0;
-    this.jams = []; // { x, z, r, t }
+    this.jams = [];
     this.spoofT = 0;
     this.scanT = 0;
-    this.stats = { kills: 0, takedowns: 0, drones: 0, spotted: 0, loudShots: 0 };
-    this._populate();
+    this.stats = { kills: 0, takedowns: 0, drones: 0, spotted: 0, loudShots: 0, heads: 0 };
+    if (mission === 'nightwatch') this._populateNW(); else this._populate();
+    this._cameras();
   }
 
   // ---- placement -------------------------------------------------------------
-  _populate() {
-    const R = this.rng, keep = (p) => R() < this.D.count || p;
-    const routes = {
+  static routes() {
+    return {
       yardS: [[-60, 46], [-20, 52], [22, 50], [60, 44], [22, 50], [-20, 52]],
       yardN: [[-66, -52], [-20, -52], [40, -52], [66, -52], [40, -52], [-20, -52]],
       yardW: [[-68, 32], [-70, -24], [-44, -36], [-44, 10]],
@@ -196,16 +312,19 @@ export class Sentinel {
       security: [[11, -10], [19, -6], [15, -15]],
       lobby: [[-5, -5], [5, -5], [0, -12]],
     };
+  }
+
+  _populate() {
+    const R = this.rng, keep = (p) => R() < this.D.count || p;
+    const routes = Sentinel.routes();
     const P = (pts) => pts.map(([x, z]) => ({ x, z }));
     for (const k of ['yardS', 'yardN', 'yardW', 'yardE']) this.spawnGuard({ route: P(routes[k]), start: routes[k][0] });
     if (keep()) this.spawnGuard({ route: P(routes.yardS).reverse(), start: [22, 50] });
     this.spawnGuard({ route: P(routes.chief), start: routes.chief[0], chief: true });
-    // Tower posts, the gate and the barracks door.
     for (const t of this.fac.towers) if (keep(t.z < 0)) this.spawnGuard({ post: { x: t.x, z: t.z, y: t.y, face: t.face, sweep: 1.2 }, tower: true });
     this.spawnGuard({ post: { x: -3, z: 56, face: Math.PI, sweep: 0.7 } });
     if (keep()) this.spawnGuard({ post: { x: 4, z: 57, face: Math.PI + 0.4, sweep: 0.5 } });
     if (keep()) this.spawnGuard({ post: { x: 42, z: 24, face: -Math.PI / 2, sweep: 0.6 } });
-    // Inside.
     this.spawnGuard({ route: P(routes.lobby), start: [-5, -5] });
     if (keep()) this.spawnGuard({ route: P(routes.staging), start: [-30, -9] });
     this.spawnGuard({ route: P(routes.security), start: [11, -10] });
@@ -216,8 +335,56 @@ export class Sentinel {
     this.spawnGuard({ post: { x: 6, z: -28, face: Math.PI / 2 + 0.3, sweep: 0.7 } });
     this.spawnGuard({ post: { x: 26, z: -26, face: -0.2, sweep: 0.9 } });
     if (keep()) this.spawnGuard({ post: { x: 34, z: -33, face: -Math.PI / 2, sweep: 0.8 } });
+    this._drones();
     this.garrison = this.guards.length;
-    // Patrol drones over the yard.
+  }
+
+  // NightWatch: packs of scavs led by juggernauts in the yard, bulwark snipers on the towers,
+  // and a mixed garrison inside.
+  _populateNW() {
+    const R = this.rng, keep = (p) => R() < this.D.count || p;
+    const routes = Sentinel.routes();
+    const P = (pts) => pts.map(([x, z]) => ({ x, z }));
+    const pack = (routeKey, n, rev = false) => {
+      const pts = P(routes[routeKey]);
+      if (rev) pts.reverse();
+      const L = this.spawnGuard({ type: 'jugg', route: pts, start: [pts[0].x, pts[0].z] });
+      const offs = [[-1.6, 1.8], [1.6, 1.8], [0, 3.2]];
+      for (let i = 0; i < n; i++) if (i === 0 || keep()) this.spawnGuard({ type: 'scav', x: L.x + offs[i][0], z: L.z + offs[i][1], leader: L.id, off: offs[i] });
+    };
+    pack('yardS', 3);
+    pack('yardN', 2);
+    // Lone scavs and a bulwark on the flanks.
+    this.spawnGuard({ type: 'scav', route: P(routes.yardW), start: routes.yardW[0] });
+    if (keep()) this.spawnGuard({ type: 'scav', route: P(routes.yardW).reverse(), start: routes.yardW[2] });
+    this.spawnGuard({ type: 'bulwark', route: P(routes.yardE), start: routes.yardE[0] });
+    this.spawnGuard({ type: 'overseer', route: P(routes.chief), start: routes.chief[0], chief: true });
+    // Bulwark snipers on the north towers (beam rifles), scav lookouts on the south ones.
+    for (const t of this.fac.towers) {
+      if (t.z < 0) this.spawnGuard({ type: 'bulwark', post: { x: t.x, z: t.z, y: t.y, face: t.face, sweep: 1.1 }, tower: true });
+      else if (keep()) this.spawnGuard({ type: 'scav', post: { x: t.x, z: t.z, y: t.y, face: t.face, sweep: 1.3 }, tower: true });
+    }
+    // The gate: a bulwark and a scav.
+    this.spawnGuard({ type: 'bulwark', post: { x: -3, z: 56, face: Math.PI, sweep: 0.6 } });
+    if (keep()) this.spawnGuard({ type: 'scav', post: { x: 4, z: 57, face: Math.PI + 0.4, sweep: 0.8 } });
+    this.spawnGuard({ type: 'scav', post: { x: 42, z: 24, face: -Math.PI / 2, sweep: 0.8 } });
+    // Inside.
+    this.spawnGuard({ type: 'scav', route: P(routes.lobby), start: [-5, -5] });
+    this.spawnGuard({ type: 'scav', route: P(routes.staging), start: [-30, -9] });
+    if (keep()) this.spawnGuard({ type: 'scav', route: P(routes.staging).reverse(), start: [-22, -14] });
+    this.spawnGuard({ type: 'bulwark', route: P(routes.security), start: [11, -10] });
+    this.spawnGuard({ type: 'scav', post: { x: 27, z: -12, face: Math.PI / 2, sweep: 1 } });
+    this.spawnGuard({ type: 'bulwark', route: P(routes.corridor), start: [-33, -20] });
+    this.spawnGuard({ type: 'jugg', route: P(routes.datahall), start: [-30, -24] });
+    if (keep()) this.spawnGuard({ type: 'scav', post: { x: -15, z: -38.5, face: 0, sweep: 1 } });
+    this.spawnGuard({ type: 'bulwark', post: { x: 6, z: -28, face: Math.PI / 2 + 0.3, sweep: 0.7 } });
+    this.spawnGuard({ type: 'jugg', post: { x: 26, z: -26, face: -0.2, sweep: 0.8 } });
+    if (keep()) this.spawnGuard({ type: 'bulwark', post: { x: 34, z: -33, face: -Math.PI / 2, sweep: 0.8 } });
+    this._drones();
+    this.garrison = this.guards.length;
+  }
+
+  _drones() {
     const loops = [
       [[-60, -40], [60, -40], [60, 40], [-60, 40]],
       [[0, 45], [70, 0], [0, -48], [-70, 0]],
@@ -226,7 +393,9 @@ export class Sentinel {
     const nd = this.D.count >= 0.9 ? 3 : 2;
     for (let i = 0; i < nd; i++) this.spawnDrone(loops[i].map(([x, z]) => ({ x, z })), i);
     this.droneCap = nd;
-    // Cameras: exterior corners, gate, lobby, corridor, data hall, core, vault.
+  }
+
+  _cameras() {
     const cams = [
       [-36.5, 4.5, 0.6, Math.PI * 0.75, 1, 32], [36.5, 4.5, 0.6, -Math.PI * 0.75, 1, 32], [-36.5, 4.5, -40.6, Math.PI * 0.25, 1, 32], [36.5, 4.5, -40.6, -Math.PI * 0.25, 1, 32],
       [8, 3.8, 56.5, Math.PI + 0.3, 1, 30],
@@ -236,18 +405,19 @@ export class Sentinel {
     for (const [x, y, z, yaw, tier, range] of cams) this.spawnCam({ x, y, z, yaw, tier, range });
   }
 
-  spawnGuard({ route = null, post = null, start = null, chief = false, tower = false, x, z, hunt = null }) {
+  spawnGuard({ type = 'guard', route = null, post = null, start = null, chief = false, tower = false, x, z, hunt = null, leader = null, off = null }) {
+    const T = TYPES[type] || TYPES.guard;
     const g = {
-      id: this.nextId++, kind: 'g', chief, tower,
+      id: this.nextId++, kind: 'g', type, chief, tower, leader, off,
       x: x ?? (start ? start[0] : post ? post.x : 0), z: z ?? (start ? start[1] : post ? post.z : 0), y: post && post.y ? post.y : 0,
-      yaw: post ? post.face : 0, look: 0, state: post ? 'post' : 'patrol', hp: GUARD_HP,
+      yaw: post ? post.face : 0, look: 0, state: post ? 'post' : 'patrol', hp: T.hp, maxHp: T.hp, shield: T.shield, maxShield: T.shield, shieldT: 0, hitFx: 0,
       route, ri: 0, wait: 0, post, path: null, pathT: 0, aw: 0, target: null, lkp: null,
-      reactT: 0, fireT: 0, radioT: 0, searchT: 0, jamT: 0, seenT: 0, tagT: 0, scanT: 0, revealT: 0, body: false, found: false, fallT: 0, moving: false,
-      badge: chief, vx: 0, vz: 0, quadAw: 0,
+      reactT: 0, fireT: 0, radioT: 0, searchT: 0, jamT: 0, empT: 0, seenT: 0, tagT: 0, scanT: 0, body: false, found: false, fallT: 0, moving: false,
+      badge: chief, quadAw: 0, fleeT: 0, meleeT: 0, burst: 0, lower: 0, aimT: 0, aiming: null, enraged: false,
     };
     if (!post) g.y = this.fac.groundAt(g.x, g.z, 10, 0.6);
     if (hunt) { g.state = 'search'; g.lkp = { ...hunt }; g.searchT = 18; }
-    g.obj = buildGuard(chief);
+    g.obj = buildUnit(type, chief);
     this.scene.add(g.obj);
     this.guards.push(g);
     return g;
@@ -255,7 +425,7 @@ export class Sentinel {
 
   spawnDrone(route, i) {
     const pad = SPOTS.dronePad;
-    const d = { id: this.nextId++, kind: 'd', route, ri: i % route.length, x: pad.x, y: pad.y, z: pad.z, alt: 10 + (i % 2) * 2, yaw: 0, hp: DRONE_HP, state: 'patrol', aw: 0, zapT: 0, empT: 0, huntT: 0, lkp: null, tagT: 0, scanT: 0, revealT: 0, fallV: 0 };
+    const d = { id: this.nextId++, kind: 'd', route, ri: i % route.length, x: pad.x, y: pad.y, z: pad.z, alt: 10 + (i % 2) * 2, yaw: 0, hp: DRONE_HP, state: 'patrol', aw: 0, zapT: 0, empT: 0, huntT: 0, lkp: null, tagT: 0, scanT: 0, fallV: 0 };
     d.obj = buildDrone();
     this.scene.add(d.obj);
     this.drones.push(d);
@@ -299,24 +469,74 @@ export class Sentinel {
   noise(pos, radius, loud = false) {
     if (!this.sim) return;
     for (const g of this.guards) {
-      if (g.state === 'dead') continue;
+      if (g.state === 'dead' || g.state === 'flee') continue;
       const ep = { x: g.x, y: g.y + EYE, z: g.z };
       const d = Math.hypot(g.x - pos.x, g.z - pos.z);
       const r = this.fac.los(ep, { x: pos.x, y: (pos.y || 0) + 1, z: pos.z }) ? radius : radius * 0.45;
       if (d > r) continue;
-      if (g.state === 'alert') { if (!g.target) g.lkp = { x: pos.x, z: pos.z }; continue; }
+      if (g.state === 'alert' || g.state === 'berserk') { if (!g.target) g.lkp = { x: pos.x, z: pos.z }; continue; }
       if (loud && d < r * 0.7) this._alert(g, null, { x: pos.x, z: pos.z });
       else this._investigate(g, pos, 5 + this.rng() * 3);
     }
   }
 
+  // A round snapped past: scavs with nobody brave around them break and run.
+  nearMiss(pos, from) {
+    if (!this.sim) return;
+    for (const g of this.guards) {
+      if (g.state === 'dead') continue;
+      const d = Math.hypot(g.x - pos.x, g.z - pos.z);
+      if (d > 4.5) continue;
+      if (TYPES[g.type].flee) this._scare(g, from || pos);
+      else if (g.state !== 'alert' && g.state !== 'berserk') this._investigate(g, from || pos, 7);
+    }
+  }
+
+  _brave(g) {
+    // Courage in numbers: a juggernaut / bulwark nearby, or two other scavs.
+    let scavs = 0;
+    for (const o of this.guards) {
+      if (o === g || o.state === 'dead' || o.state === 'flee') continue;
+      const d = Math.hypot(o.x - g.x, o.z - g.z);
+      if (d < 18 && o.type !== 'scav') return true;
+      if (d < 10 && o.type === 'scav') scavs++;
+    }
+    return scavs >= 2;
+  }
+
+  _scare(g, from, force = false) {
+    if (!TYPES[g.type].flee || g.state === 'dead' || g.state === 'flee') return;
+    if (!force && this._brave(g)) { if (g.state !== 'alert') this._alert(g, null, { x: from.x, z: from.z }); return; }
+    g.state = 'flee';
+    g.fleeT = 6 + this.rng() * 3;
+    g.fleeFrom = { x: from.x, z: from.z };
+    g.path = null;
+    g.leader = null;
+    this.emit({ t: 'bark', k: 'flee', id: g.id });
+    // The shriek carries: others nearby come to look.
+    this.noise({ x: g.x, y: g.y, z: g.z }, 20, false);
+  }
+
   // ---- damage --------------------------------------------------------------------
-  // Returns true if it killed. `how`: 'rifle' | 'pistol' | 'takedown' | 'ai'.
-  damage(id, dmg, how, from) {
+  // `part` is the hit location; a headshot kills anything outright, with any weapon.
+  // Returns { killed, absorbed, popped }.
+  damage(id, dmg, how, from, part) {
     const e = this.byId(id);
-    if (!e || e.hp <= 0) return false;
-    e.hp -= dmg;
+    const out = { killed: false, absorbed: 0, popped: false };
+    if (!e || e.hp <= 0) return out;
     if (e.kind === 'g') {
+      const head = part === 'head' || how === 'takedown' || how === 'ai' || how === 'exec';
+      if (!head && e.shield > 0) {
+        const s = Math.min(e.shield, dmg);
+        e.shield -= s;
+        dmg -= s;
+        out.absorbed = s;
+        e.hitFx = 1;
+        if (e.shield <= 0) { out.popped = true; this.emit({ t: 'fx', k: 'pop', id }); }
+        else this.emit({ t: 'fx', k: 'shield', id });
+      }
+      if (e.maxShield) e.shieldT = 4;
+      e.hp -= head ? e.hp : dmg;
       if (e.hp <= 0) {
         e.state = 'dead';
         e.hp = 0;
@@ -324,15 +544,26 @@ export class Sentinel {
         e.body = true;
         e.diedAt = this.t;
         e.target = null;
+        e.aiming = null;
         if (how === 'takedown') this.stats.takedowns++; else this.stats.kills++;
+        if (part === 'head') this.stats.heads++;
         this.emit({ t: 'kill', id, how, chief: e.chief });
-        return true;
+        // The squad reacts: scavs panic, juggernauts lose their temper.
+        for (const o of this.guards) {
+          if (o === e || o.state === 'dead') continue;
+          const d = Math.hypot(o.x - e.x, o.z - e.z);
+          if (d > 14) continue;
+          if (o.type === 'scav') this._scare(o, from || e, o.leader === e.id); // lose the leader, lose your nerve
+          else if (TYPES[o.type].berserk && (e.type === 'jugg' || e.type === 'overseer' || o.id === e.leader || e.leader === o.id)) o.enraged = true;
+        }
+        return { ...out, killed: true };
       }
-      // Wounded and alive: he knows something is wrong; a pistol at close range gives you away.
-      if (from) this._alert(e, null, { x: from.x, z: from.z });
-      return false;
+      if (e.type === 'scav') this._scare(e, from || e);
+      else if (from) this._alert(e, null, { x: from.x, z: from.z });
+      return out;
     }
     if (e.kind === 'd') {
+      e.hp -= dmg;
       if (e.hp <= 0) {
         e.state = 'dead';
         e.hp = 0;
@@ -340,32 +571,48 @@ export class Sentinel {
         e.respawnT = this.alarm >= 1 ? 25 : 60;
         this.stats.drones++;
         this.emit({ t: 'kill', id, how, drone: true });
-        return true;
+        return { ...out, killed: true };
       }
       e.state = 'hunt';
       e.huntT = 8;
       if (from) e.lkp = { x: from.x, z: from.z };
     }
-    return false;
+    return out;
+  }
+
+  // EMP: drones fall, cameras blink out, shells collapse and bulwark walls flicker off.
+  emp(x, z, r) {
+    for (const d of this.drones) if (Math.hypot(d.x - x, d.z - z) < r + 6) d.empT = 7;
+    for (const c of this.cams) if (Math.hypot(c.x - x, c.z - z) < r) c.empT = 7;
+    for (const g of this.guards) {
+      if (g.state === 'dead' || Math.hypot(g.x - x, g.z - z) > r) continue;
+      g.empT = 6;
+      if (g.shield > 0) { g.shield = 0; g.shieldT = 6; this.emit({ t: 'fx', k: 'pop', id: g.id }); }
+      if (g.state !== 'alert' && g.state !== 'berserk') this._investigate(g, { x, z }, 6);
+    }
   }
 
   _alert(g, target, lkp) {
-    if (g.state === 'dead') return;
+    if (g.state === 'dead' || g.state === 'flee') return;
     const was = g.state;
-    g.state = 'alert';
+    if (g.state !== 'berserk') g.state = 'alert';
     g.aw = 1;
     if (target) g.target = target;
     if (lkp) g.lkp = { ...lkp };
     g.searchT = 8 + this.rng() * 8;
     g.path = null;
-    if (was !== 'alert') {
+    if (was !== 'alert' && was !== 'berserk') {
       g.reactT = 0.3 + this.rng() * 0.3;
-      if (g.jamT <= 0) g.radioT = 1.5;
+      // Juggernauts roar and bulwarks screech (heard nearby); everybody but a scav radios it in.
+      if (g.type === 'jugg' || g.type === 'overseer') { this.emit({ t: 'bark', k: 'jugg', id: g.id }); this.noise({ x: g.x, y: g.y, z: g.z }, 30, true); }
+      else if (g.type === 'bulwark') this.emit({ t: 'bark', k: 'bulwark', id: g.id });
+      else if (g.type === 'scav') { this.emit({ t: 'bark', k: 'scav', id: g.id }); this.noise({ x: g.x, y: g.y, z: g.z }, 22, true); }
+      if (g.jamT <= 0 && g.type !== 'scav') g.radioT = 1.5;
     }
   }
 
   _investigate(g, pos, dur) {
-    if (g.state === 'alert' || g.state === 'dead') return;
+    if (g.state === 'alert' || g.state === 'berserk' || g.state === 'dead' || g.state === 'flee') return;
     g.state = 'sus';
     g.lkp = { x: pos.x, z: pos.z };
     g.searchT = dur;
@@ -373,33 +620,33 @@ export class Sentinel {
   }
 
   // ---- sensing -------------------------------------------------------------------
-  // How visible an agent is: stance, motion, light, cloak.
   _vis(a, fromDist, flash) {
     let v = a.stance === 2 ? 0.45 : a.stance === 1 ? 0.7 : 1;
     if (!a.moving) v *= 0.8;
     if (a.sprinting) v *= 1.2;
     const light = flash ? 1 : this.fac.lightAt(a.pos.x, a.pos.y + 1, a.pos.z);
     v *= light < 0.35 ? 0.4 + light : 1;
-    if (a.cloak) v *= a.cloakFlicker ? 0.6 : 0.28 * 0.5; // active camo (Cold Archive: ×0.28) — this one is tuned for a sniper
+    if (a.cloak) v *= a.cloakFlicker ? 0.6 : 0.14;
     return v;
   }
 
   _canSee(g, a, rangeMul = 1) {
-    const ep = { x: g.x, y: g.y + EYE, z: g.z };
+    const T = TYPES[g.type];
+    const ep = { x: g.x, y: g.y + EYE * T.scale, z: g.z };
     const tp = { x: a.pos.x, y: a.pos.y + (a.stance === 2 ? 0.35 : a.stance === 1 ? 0.95 : 1.4), z: a.pos.z };
     const dx = tp.x - ep.x, dz = tp.z - ep.z, d = Math.hypot(dx, dz);
-    const alert = g.state === 'alert';
-    const base = (g.tower ? 58 : 30) * (alert ? 1.5 : 1) * rangeMul;
+    const alert = g.state === 'alert' || g.state === 'berserk';
+    const base = (g.tower ? (g.type === 'bulwark' ? 70 : 58) : T.sight) * (alert ? 1.5 : 1) * rangeMul;
     const ang = Math.abs(angDiff(Math.atan2(-dx, -dz), g.yaw + g.look));
     const cone = alert ? 1.05 : 0.62;
-    const flash = !g.tower && d < 13 && ang < 0.32 && !alert;
-    let vis = this._vis(a, d, flash || (g.tower && d < 40));
+    const flash = g.obj.userData.beam.visible && !g.tower && d < 13 && ang < 0.32 && !alert;
+    const vis = this._vis(a, d, flash || (g.tower && d < 40));
     const range = base * (vis < 0.5 ? 0.55 : 1);
     if (d > range) return 0;
     if (d > 2.5 && ang > cone) return 0;
     if (a.cloak && !a.cloakFlicker && d > 4 && this.rng() < 0.6) return 0;
     if (!this.fac.los(ep, tp)) return 0;
-    return vis * (1 - (d / range) * 0.5);
+    return vis * (1 - (d / range) * 0.5) * T.rate;
   }
 
   // ---- update (host) -------------------------------------------------------------
@@ -407,7 +654,6 @@ export class Sentinel {
     this.t += dt;
     this.agents = agents;
     if (!this.sim) return;
-    // Alarm decay (never during lockdown).
     if (!this.lockdown && this.t - this.lastRaise > 4) this.alarm = Math.max(0, this.alarm - 0.06 * this.D.alarmDecay * dt * (this.alarm >= 1 ? 0.35 : 1));
     if (this.lockdown) this.alarm = 1;
     this.lkpT = Math.max(0, this.lkpT - dt);
@@ -422,7 +668,6 @@ export class Sentinel {
     for (const d of this.drones) this._drone(d, dt, senseNow);
     for (const c of this.cams) this._cam(c, dt, senseNow);
     this._reinforce(dt);
-    // Bodies that lie long enough fade away so the yard doesn't fill up.
     this.guards = this.guards.filter((g) => {
       if (g.state === 'dead' && g.found && this.t - g.diedAt > 90) { this.scene.remove(g.obj); return false; }
       return true;
@@ -444,7 +689,14 @@ export class Sentinel {
           const yard = [[-60, 46], [-20, 52], [22, 50], [60, 44], [72, 6], [44, -36], [-44, -36], [-44, 10], [0, 28], [30, 20], [-30, 18]];
           const pick = () => { const p = yard[Math.floor(this.rng() * yard.length)]; return { x: p[0], z: p[1] }; };
           const hunt = this.alarm >= 0.6 && this.lkp ? this.lkp : null;
-          this.spawnGuard({ route: [pick(), pick(), pick()], x: s.x + (this.rng() - 0.5) * 2, z: s.z, hunt });
+          const route = [pick(), pick(), pick()];
+          if (this.mission === 'nightwatch') {
+            // A fresh pack: a juggernaut with scavs at heel (or a bulwark and a scav).
+            const lead = this.spawnGuard({ type: this.rng() < 0.6 ? 'jugg' : 'bulwark', route, x: s.x, z: s.z, hunt });
+            const offs = [[-1.6, 1.8], [1.6, 1.8]];
+            const n = this.lockdown || this.alarm >= 1 ? 2 : 1;
+            for (let i = 0; i < n && alive + 1 + i < cap; i++) this.spawnGuard({ type: 'scav', x: s.x + offs[i][0], z: s.z + offs[i][1], leader: lead.id, off: offs[i], hunt });
+          } else this.spawnGuard({ route, x: s.x + (this.rng() - 0.5) * 2, z: s.z, hunt });
           this.emit({ t: 'toast', m: this.lockdown || this.alarm >= 1 ? 'SENTINEL: reinforcements deployed.' : 'Fresh patrol out of the ' + (s === SPOTS.gate ? 'south gate.' : 'barracks.'), c: 'dim' });
         }
       }
@@ -463,11 +715,13 @@ export class Sentinel {
   }
 
   _guardSpeed(g) {
-    return g.state === 'alert' ? 3.6 : g.state === 'search' ? 2.4 : g.state === 'sus' ? 1.9 : 1.45;
+    const s = TYPES[g.type].speed;
+    if (g.state === 'berserk') return 6.8;
+    if (g.state === 'flee') return s[3] * 1.3;
+    return g.state === 'alert' ? s[3] : g.state === 'search' ? s[2] : g.state === 'sus' ? s[1] : s[0];
   }
 
   _moveTo(g, tx, tz, dt, speed) {
-    // Repath when the goal moves or every couple of seconds.
     g.pathT -= dt;
     if (!g.path || g.pathT <= 0 || !g.goal || Math.hypot(g.goal.x - tx, g.goal.z - tz) > 3) {
       g.path = this.fac.path(g.x, g.z, tx, tz);
@@ -480,11 +734,12 @@ export class Sentinel {
     const dx = wp.x - g.x, dz = wp.z - g.z, d = Math.hypot(dx, dz);
     if (d < 0.6 && g.path.length <= 1) { g.moving = false; return true; }
     const want = Math.atan2(-dx, -dz);
-    g.yaw += angDiff(want, g.yaw) * Math.min(1, dt * 6);
+    // Bulwarks keep their wall toward the threat while they move.
+    if (!(g.type === 'bulwark' && g.state === 'alert' && g.faceTo)) g.yaw += angDiff(want, g.yaw) * Math.min(1, dt * 6);
     const step = Math.min(d, speed * dt);
     const p = { x: g.x + (dx / d) * step, y: g.y, z: g.z + (dz / d) * step };
     this._openDoorsNear(g);
-    this.fac.resolveHorizontal(p, 0.32, 1.7, 0.5);
+    this.fac.resolveHorizontal(p, 0.32 * TYPES[g.type].scale, 1.7, 0.5);
     if (Math.hypot(p.x - g.x, p.z - g.z) < step * 0.2) g.stuck = (g.stuck || 0) + dt; else g.stuck = 0;
     if (g.stuck > 1.5) { g.path = null; g.stuck = 0; }
     g.x = p.x;
@@ -494,7 +749,6 @@ export class Sentinel {
     return false;
   }
 
-  // Guards badge through their own doors (unless SENTINEL has sealed them).
   _openDoorsNear(g) {
     for (const d of Object.values(this.fac.doors)) {
       if (d.sealed) continue;
@@ -502,35 +756,69 @@ export class Sentinel {
     }
   }
 
+  // One shot (or bolt) at an agent. kinds: bullet (guards), plasma (scav/bulwark), heavy (jugg), beam (tower bulwark).
+  _shoot(g, tgt, kind) {
+    const d = Math.hypot(tgt.pos.x - g.x, tgt.pos.z - g.z);
+    let p = this.D.guardAcc * clamp(1.15 - d / 70, 0.15, 1);
+    if (kind === 'beam') p = 0.55 + this.D.guardAcc * 0.4;
+    if (tgt.stance === 2) p *= 0.6; else if (tgt.stance === 1) p *= 0.8;
+    if (tgt.moving) p *= kind === 'beam' ? 0.7 : 0.8;
+    if (tgt.cloak) p *= 0.35;
+    const base = { bullet: [9, 6], plasma: [7, 4], heavy: [11, 5], beam: [42, 10] }[kind];
+    const dmg = Math.round((base[0] + this.rng() * base[1]) * this.D.guardDmg);
+    const sc = TYPES[g.type].scale;
+    this.emit({ t: 'eshot', id: g.id, a: [g.x, g.y + 1.35 * sc, g.z], b: [tgt.pos.x, tgt.pos.y + 1.1, tgt.pos.z], role: tgt.role, hit: this.rng() < p, dmg, k: kind });
+    this.noise({ x: g.x, y: g.y, z: g.z }, kind === 'beam' ? 60 : 45, true);
+  }
+
   _guard(g, dt, sense) {
     if (g.state === 'dead') return;
+    const T = TYPES[g.type];
     g.jamT = Math.max(0, g.jamT - dt);
+    g.empT = Math.max(0, g.empT - dt);
     g.tagT = Math.max(0, g.tagT - dt);
     g.scanT = Math.max(0, g.scanT - dt);
+    g.lower = Math.max(0, g.lower - dt);
+    g.hitFx = Math.max(0, g.hitFx - dt * 3);
+    g.meleeT = Math.max(0, g.meleeT - dt);
+    // Shell recharge.
+    if (g.maxShield) {
+      if (g.shieldT > 0) g.shieldT -= dt;
+      else if (g.empT <= 0) g.shield = Math.min(g.maxShield, g.shield + 60 * dt);
+    }
     for (const j of this.jams) if (Math.hypot(j.x - g.x, j.z - g.z) < j.r) { if (g.jamT <= 0) g.radioT = 0; g.jamT = Math.max(g.jamT, 0.5); }
     g.moving = false;
     const agents = (this.agents || []).filter((a) => a.alive && !a.downed);
     // Vision.
-    if (sense) {
+    if (sense && g.state !== 'flee') {
       let best = null, bv = 0;
       for (const a of agents) {
         const v = this._canSee(g, a);
         if (v > bv) { bv = v; best = a; }
       }
+      const fighting = g.state === 'alert' || g.state === 'berserk';
       if (best) {
         g.seenT = 0.6;
-        g.aw = Math.min(1.2, g.aw + 2.4 * this.D.rate * bv * 0.1 * (g.state === 'alert' ? 3 : 1));
+        g.aw = Math.min(1.2, g.aw + 2.4 * this.D.rate * bv * 0.1 * (fighting ? 3 : 1));
         g.lastSeen = { x: best.pos.x, z: best.pos.z };
-        if (g.state === 'alert') { g.target = best.role; g.lkp = { x: best.pos.x, z: best.pos.z }; this.lkp = { ...g.lkp }; this.lkpT = 6; }
-        else if (g.aw >= 1) { this.stats.spotted++; this._alert(g, best.role, { x: best.pos.x, z: best.pos.z }); this.lkp = { ...g.lkp }; this.lkpT = 6; this.emit({ t: 'spotted', id: g.id, role: best.role }); }
-        else if (g.aw >= 0.35 && g.state !== 'sus' && g.state !== 'search') this._investigate(g, best.pos, 6);
+        if (fighting) { g.target = best.role; g.lkp = { x: best.pos.x, z: best.pos.z }; this.lkp = { ...g.lkp }; this.lkpT = 6; }
+        else if (g.aw >= 1) {
+          this.stats.spotted++;
+          this.lkp = { x: best.pos.x, z: best.pos.z };
+          this.lkpT = 6;
+          this.emit({ t: 'spotted', id: g.id, role: best.role });
+          // A lone scav that spots you panics instead of fighting.
+          if (g.type === 'scav' && !this._brave(g)) this._scare(g, best.pos);
+          else this._alert(g, best.role, { x: best.pos.x, z: best.pos.z });
+        } else if (g.aw >= 0.35 && g.state !== 'sus' && g.state !== 'search') this._investigate(g, best.pos, 6);
         else if (g.state === 'sus') g.lkp = { x: best.pos.x, z: best.pos.z };
       } else {
         g.seenT = Math.max(0, g.seenT - 0.1);
-        if (g.state !== 'alert') g.aw = Math.max(0, g.aw - 0.4 * 0.1);
+        if (!fighting) g.aw = Math.max(0, g.aw - 0.4 * 0.1);
+        if (g.aiming) { g.aiming = null; g.aimT = 0; }
       }
       // Bodies.
-      if (g.state !== 'alert') for (const b of this.guards) {
+      if (!fighting) for (const b of this.guards) {
         if (b.state !== 'dead' || b.found || b === g) continue;
         const d = Math.hypot(b.x - g.x, b.z - g.z);
         if (d > 18) continue;
@@ -539,12 +827,11 @@ export class Sentinel {
         const lit = this.fac.lightAt(b.x, 0.5, b.z) > 0.35 || d < 9;
         if (!lit || !this.fac.los({ x: g.x, y: g.y + EYE, z: g.z }, { x: b.x, y: b.y + 0.3, z: b.z })) continue;
         b.found = true;
-        this._alert(g, null, { x: b.x, z: b.z });
-        g.searchT = 14;
-        this.emit({ t: 'toast', m: b.chief ? 'They found the Site Chief’s body.' : 'A guard found a body.', c: 'amber' });
+        if (g.type === 'scav') this._scare(g, b);
+        else { this._alert(g, null, { x: b.x, z: b.z }); g.searchT = 14; }
+        this.emit({ t: 'toast', m: b.chief ? 'They found the Overseer’s body.' : 'A body has been found.', c: 'amber' });
         break;
       }
-      // Overwatch's quadcopter: guards shoot support drones they spot.
       const q = this.quad;
       if (q && q.alive) {
         const d = Math.hypot(q.x - g.x, q.y - g.y - EYE, q.z - g.z);
@@ -553,20 +840,42 @@ export class Sentinel {
         else g.quadAw = Math.max(0, g.quadAw - 0.03);
       }
     }
-    // Radio call: the alarm only goes up if he gets the call off.
+    // Radio call: the alarm only goes up if it gets the call off.
     if (g.radioT > 0) {
       g.radioT -= dt;
       if (g.radioT <= 0 && g.jamT <= 0) {
-        this.raise(0.5, 'SENTINEL: a guard has radioed a contact.');
-        // Nearby guards converge.
-        for (const o of this.guards) if (o !== g && o.state !== 'dead' && o.state !== 'alert' && Math.hypot(o.x - g.x, o.z - g.z) < 34) { o.convergeT = 0.4 + this.rng() * 0.7; o.convergeAt = { ...(g.lkp || { x: g.x, z: g.z }) }; }
+        this.raise(0.5, 'SENTINEL: a contact has been radioed in.');
+        for (const o of this.guards) if (o !== g && o.state !== 'dead' && o.state !== 'alert' && o.state !== 'berserk' && o.state !== 'flee' && Math.hypot(o.x - g.x, o.z - g.z) < 34) { o.convergeT = 0.4 + this.rng() * 0.7; o.convergeAt = { ...(g.lkp || { x: g.x, z: g.z }) }; }
       }
     }
     if (g.convergeT > 0) { g.convergeT -= dt; if (g.convergeT <= 0) this._alert(g, null, g.convergeAt); }
     g.reactT = Math.max(0, g.reactT - dt);
 
+    // Berserk trigger: shell broken and hurt, a pack-mate dead, or you're right there.
+    if (T.berserk && g.state === 'alert') {
+      const tgt = g.target && agents.find((a) => a.role === g.target);
+      const close = tgt && Math.hypot(tgt.pos.x - g.x, tgt.pos.z - g.z) < 11 && g.seenT > 0;
+      if (g.enraged || close || (g.shield <= 0 && g.hp < g.maxHp * 0.7)) {
+        g.state = 'berserk';
+        g.berserkT = 6;
+        g.path = null;
+        this.emit({ t: 'bark', k: 'jugg', id: g.id });
+        this.noise({ x: g.x, y: g.y, z: g.z }, 40, true);
+      }
+    }
+
     // Behaviour.
-    if (g.state === 'patrol' && g.route) {
+    if (g.state === 'patrol' && g.leader) {
+      // Pack member: keep formation on the leader; if it dies, break.
+      const L = this.guards.find((o) => o.id === g.leader);
+      if (!L || L.state === 'dead') { g.leader = null; this._scare(g, L || g, true); }
+      else if (L.state === 'patrol' || L.state === 'post') {
+        const cs = Math.cos(L.yaw), sn = Math.sin(L.yaw), o = g.off || [0, 2];
+        const tx = L.x + o[0] * cs + o[1] * sn, tz = L.z - o[0] * sn + o[1] * cs;
+        if (Math.hypot(tx - g.x, tz - g.z) > 0.8) this._moveTo(g, tx, tz, dt, this._guardSpeed(L) * 1.25);
+        else { g.yaw += angDiff(L.yaw, g.yaw) * Math.min(1, dt * 3); g.look = Math.sin(this.t * 0.9 + g.id) * 0.7; }
+      } else if (L.lkp) this._alert(g, L.target, L.lkp);
+    } else if (g.state === 'patrol' && g.route) {
       if (g.wait > 0) {
         g.wait -= dt;
         g.look = Math.sin((g.wait) * 2.2) * 0.9;
@@ -579,68 +888,112 @@ export class Sentinel {
           g.path = null;
         }
       }
+    } else if (g.state === 'patrol') {
+      g.look = Math.sin(this.t * 0.4 + g.id) * 0.9;
     } else if (g.state === 'post') {
       const p = g.post;
       if (Math.hypot(p.x - g.x, p.z - g.z) > 1) this._moveTo(g, p.x, p.z, dt, 1.6);
       else { g.yaw += angDiff(p.face, g.yaw) * Math.min(1, dt * 2); g.look = Math.sin(this.t * 0.35 + g.id) * p.sweep; }
+    } else if (g.state === 'flee') {
+      // Run away from the threat, shrieking; tell the first brave ally it meets.
+      g.fleeT -= dt;
+      const f = g.fleeFrom || g;
+      let ax = g.x - f.x, az = g.z - f.z;
+      const L = Math.hypot(ax, az) || 1;
+      ax /= L; az /= L;
+      if (!g.fleeGoal || g.fleeT % 2 < dt) g.fleeGoal = { x: clamp(g.x + ax * 14 + (this.rng() - 0.5) * 6, -150, 150), z: clamp(g.z + az * 14 + (this.rng() - 0.5) * 6, -130, 90) };
+      this._moveTo(g, g.fleeGoal.x, g.fleeGoal.z, dt, this._guardSpeed(g));
+      for (const o of this.guards) {
+        if (o === g || o.state === 'dead' || o.state === 'flee' || o.state === 'alert' || o.state === 'berserk') continue;
+        if (Math.hypot(o.x - g.x, o.z - g.z) < 8) { this._alert(o, null, { x: f.x, z: f.z }); break; }
+      }
+      if (g.fleeT <= 0) { g.state = 'search'; g.lkp = { x: g.x, z: g.z }; g.searchT = 5; g.aw = 0.5; }
     } else if (g.state === 'sus' || g.state === 'search') {
       g.searchT -= dt;
       if (g.lkp && this._moveTo(g, g.lkp.x, g.lkp.z, dt, this._guardSpeed(g))) {
         g.look = Math.sin(this.t * 1.6 + g.id) * 1.2;
         if (g.state === 'search' && g.searchT > 2) {
-          // Sweep around the last known position.
           if (!g.sweepAt || Math.hypot(g.sweepAt.x - g.x, g.sweepAt.z - g.z) < 1) g.sweepAt = { x: g.lkp.x + (this.rng() - 0.5) * 12, z: g.lkp.z + (this.rng() - 0.5) * 12 };
           g.lkp = g.sweepAt;
         }
       }
       if (g.searchT <= 0) { g.state = g.post ? 'post' : 'patrol'; g.aw = 0; g.look = 0; g.path = null; }
+    } else if (g.state === 'berserk') {
+      // Charge with the blade. No shooting; melee lunge in reach.
+      const tgt = (g.target && agents.find((a) => a.role === g.target)) || agents.slice().sort((a, b) => Math.hypot(a.pos.x - g.x, a.pos.z - g.z) - Math.hypot(b.pos.x - g.x, b.pos.z - g.z))[0];
+      g.look = 0;
+      if (tgt) {
+        const d = Math.hypot(tgt.pos.x - g.x, tgt.pos.z - g.z);
+        const seen = g.seenT > 0 || d < 6;
+        if (seen) { g.lkp = { x: tgt.pos.x, z: tgt.pos.z }; g.berserkT = 6; g.target = tgt.role; }
+        else g.berserkT -= dt;
+        if (d > 2.0) this._moveTo(g, g.lkp ? g.lkp.x : tgt.pos.x, g.lkp ? g.lkp.z : tgt.pos.z, dt, this._guardSpeed(g));
+        else g.yaw += angDiff(Math.atan2(-(tgt.pos.x - g.x), -(tgt.pos.z - g.z)), g.yaw) * Math.min(1, dt * 10);
+        if (d < 2.5 && g.meleeT <= 0 && Math.abs(tgt.pos.y - g.y) < 1.5 && g.jamT <= 0) {
+          g.meleeT = 1.3;
+          this.emit({ t: 'emelee', id: g.id, role: tgt.role, dmg: Math.round(70 * this.D.guardDmg), a: [g.x, g.y + 1.2, g.z] });
+        }
+        if (g.berserkT <= 0) { g.state = 'search'; g.searchT = 10; g.enraged = false; }
+      } else { g.state = 'search'; g.searchT = 8; g.enraged = false; }
     } else if (g.state === 'alert') {
       const tgt = g.target && agents.find((a) => a.role === g.target);
       const sees = tgt && g.seenT > 0 && this._canSee(g, tgt, 1.2) > 0;
       if (sees) {
         const dx = tgt.pos.x - g.x, dz = tgt.pos.z - g.z;
-        g.yaw += angDiff(Math.atan2(-dx, -dz), g.yaw) * Math.min(1, dt * 8);
+        g.faceTo = true;
+        g.yaw += angDiff(Math.atan2(-dx, -dz), g.yaw) * Math.min(1, dt * (g.type === 'bulwark' ? 10 : 8));
         g.look = 0;
         g.fireT -= dt;
         const d = Math.hypot(dx, dz);
-        if (d > 20 && !g.post) this._moveTo(g, tgt.pos.x, tgt.pos.z, dt, 1.4);
-        if (g.fireT <= 0 && g.reactT <= 0 && g.jamT <= 0 && d < 75) {
-          g.fireT = 0.42 + this.rng() * 0.3;
-          let p = this.D.guardAcc * clamp(1.15 - d / 70, 0.15, 1);
-          if (tgt.stance === 2) p *= 0.6; else if (tgt.stance === 1) p *= 0.8;
-          if (tgt.moving) p *= 0.8;
-          if (tgt.cloak) p *= 0.35;
-          const hit = this.rng() < p;
-          const dmg = Math.round((9 + this.rng() * 6) * this.D.guardDmg);
-          this.emit({ t: 'eshot', id: g.id, a: [g.x, g.y + 1.35, g.z], b: [tgt.pos.x, tgt.pos.y + 1.1, tgt.pos.z], role: tgt.role, hit, dmg });
-          this.noise({ x: g.x, y: g.y, z: g.z }, 45, true);
+        const kind = g.type === 'guard' ? 'bullet' : g.type === 'scav' ? 'plasma' : g.type === 'bulwark' ? (g.tower ? 'beam' : 'plasma') : 'heavy';
+        // Close the distance (bulwarks hold theirs, side-stepping behind the wall).
+        if (!g.post && !g.tower) {
+          if (g.type === 'bulwark') { const sx = Math.cos(this.t * 0.7 + g.id) * 6; this._moveTo(g, g.x + dz / d * sx * 0.2, g.z - dx / d * sx * 0.2, dt, 1.4); }
+          else if (d > (g.type === 'scav' ? 14 : 20)) this._moveTo(g, tgt.pos.x, tgt.pos.z, dt, this._guardSpeed(g) * 0.5);
+        }
+        const ready = g.reactT <= 0 && g.jamT <= 0 && g.empT <= 0;
+        if (kind === 'beam') {
+          // Tower sniper: a laser you can see for 1.6 s, then the beam.
+          if (ready && d < 260) {
+            if (!g.aiming) { g.aiming = tgt.role; g.aimT = 0; this.emit({ t: 'laser', id: g.id }); }
+            g.aimT += dt;
+            g.lower = 0.3;
+            if (g.aimT >= 1.6) { this._shoot(g, tgt, 'beam'); g.aiming = null; g.aimT = -2.4; }
+          }
+        } else if (kind === 'heavy') {
+          if (g.fireT <= 0 && ready && d < 70) {
+            g.burst = (g.burst || 0) + 1;
+            this._shoot(g, tgt, 'heavy');
+            if (g.burst >= 3) { g.burst = 0; g.fireT = 1.5 + this.rng() * 0.5; } else g.fireT = 0.16;
+          }
+        } else if (g.fireT <= 0 && ready && d < 75) {
+          g.fireT = kind === 'plasma' ? 0.55 + this.rng() * 0.35 : 0.42 + this.rng() * 0.3;
+          if (g.type === 'bulwark') g.lower = 0.55; // the wall swings aside to fire
+          this._shoot(g, tgt, kind);
         }
       } else if (g.tower) {
-        // Tower posts hold the platform and scan toward the last known position.
+        g.faceTo = false;
         if (g.lkp) g.yaw += angDiff(Math.atan2(-(g.lkp.x - g.x), -(g.lkp.z - g.z)), g.yaw) * Math.min(1, dt * 3);
         g.look = Math.sin(this.t * 1.3 + g.id) * 0.5;
         g.searchT -= dt;
+        g.aiming = null;
         if (g.searchT <= 0) { g.state = 'post'; g.aw = 0; }
       } else if (this.quad && this.quad.alive && g.quadAw >= 1 && g.jamT <= 0) {
-        // No agent in sight but the quad is: shoot it.
         const q = this.quad;
         g.yaw += angDiff(Math.atan2(-(q.x - g.x), -(q.z - g.z)), g.yaw) * Math.min(1, dt * 8);
         g.fireT -= dt;
         if (g.fireT <= 0) {
           g.fireT = 0.5 + this.rng() * 0.3;
-          const hit = this.rng() < 0.55;
-          this.emit({ t: 'eshot', id: g.id, a: [g.x, g.y + 1.35, g.z], b: [q.x, q.y, q.z], role: 'quad', hit, dmg: 8 });
+          this.emit({ t: 'eshot', id: g.id, a: [g.x, g.y + 1.35, g.z], b: [q.x, q.y, q.z], role: 'quad', hit: this.rng() < 0.55, dmg: 8, k: g.type === 'guard' ? 'bullet' : 'plasma' });
         }
       } else {
+        g.faceTo = false;
         g.searchT -= dt;
-        if (g.lkp && this._moveTo(g, g.lkp.x, g.lkp.z, dt, this._guardSpeed(g))) {
-          g.state = 'search';
-          g.searchT = 8 + this.rng() * 6;
-        }
+        if (g.lkp && this._moveTo(g, g.lkp.x, g.lkp.z, dt, this._guardSpeed(g))) { g.state = 'search'; g.searchT = 8 + this.rng() * 6; }
         if (g.searchT <= 0) { g.state = 'search'; g.searchT = 8; }
       }
     }
-    if (g.quadAw >= 1 && g.state !== 'alert' && g.state !== 'dead' && this.quad && this.quad.alive) {
+    if (g.quadAw >= 1 && g.state !== 'alert' && g.state !== 'berserk' && g.state !== 'dead' && g.state !== 'flee' && this.quad && this.quad.alive) {
       this._alert(g, null, { x: this.quad.x, z: this.quad.z });
       this.raise(0.05);
     }
@@ -656,7 +1009,6 @@ export class Sentinel {
     if (d.empT > 0) { d.empT -= dt; d.y = Math.max(this.fac.heightAt(d.x, d.z) + 2, d.y - 2 * dt); return; }
     const agents = (this.agents || []).filter((a) => a.alive && !a.downed);
     if (this.alarm >= 1 && d.state === 'patrol' && this.lkp) { d.state = 'hunt'; d.lkp = { ...this.lkp }; d.huntT = 12; }
-    // Fly.
     let tx, tz;
     if (d.state === 'hunt' && d.lkp) { tx = d.lkp.x; tz = d.lkp.z; d.huntT -= dt; if (d.huntT <= 0 && d.aw < 1) d.state = 'patrol'; }
     else { const wp = d.route[d.ri % d.route.length]; tx = wp.x; tz = wp.z; if (Math.hypot(tx - d.x, tz - d.z) < 3) d.ri++; }
@@ -669,7 +1021,6 @@ export class Sentinel {
     } else d.yaw += dt * 0.8;
     const floor = Math.max(this.fac.heightAt(d.x, d.z), this.fac.insideBuilding(d.x, d.z) ? 8 : 0);
     d.y += (floor + d.alt - d.y) * Math.min(1, dt * 1.5);
-    // Spinning 360° sensor.
     if (sense) {
       let best = null, bv = 0;
       const range = d.state === 'hunt' ? 30 : 22;
@@ -689,16 +1040,15 @@ export class Sentinel {
           d.state = 'hunt';
           d.locked = true;
           d.huntT = 10;
-          this.raise(0.02 * 10 * 0.1);
+          this.raise(0.02);
           this.lkp = { ...d.lkp };
           this.lkpT = 6;
-          for (const g of this.guards) if (g.state !== 'dead' && g.state !== 'alert' && Math.hypot(g.x - d.x, g.z - d.z) < 45) this._alert(g, null, d.lkp);
+          for (const g of this.guards) if (g.state !== 'dead' && g.state !== 'alert' && g.state !== 'berserk' && Math.hypot(g.x - d.x, g.z - d.z) < 45) this._alert(g, null, d.lkp);
           d.zapT -= 0.1;
           const dd = Math.hypot(best.pos.x - d.x, best.pos.z - d.z);
           if (d.zapT <= 0 && dd < 20) {
             d.zapT = 0.7 + this.rng() * 0.35;
-            const hit = this.rng() < (best.cloak ? 0.45 : 0.8);
-            this.emit({ t: 'eshot', id: d.id, a: [d.x, d.y - 0.2, d.z], b: [best.pos.x, best.pos.y + 1, best.pos.z], role: best.role, hit, dmg: Math.round((4 + this.rng() * 5) * this.D.guardDmg), zap: true });
+            this.emit({ t: 'eshot', id: d.id, a: [d.x, d.y - 0.2, d.z], b: [best.pos.x, best.pos.y + 1, best.pos.z], role: best.role, hit: this.rng() < (best.cloak ? 0.45 : 0.8), dmg: Math.round((4 + this.rng() * 5) * this.D.guardDmg), k: 'zap' });
           }
         }
       } else {
@@ -734,20 +1084,18 @@ export class Sentinel {
         this.raise(0.03);
         this.lkp = { x: seen.pos.x, z: seen.pos.z };
         this.lkpT = 6;
-        for (const g of this.guards) if (g.state !== 'dead' && g.state !== 'alert' && Math.hypot(g.x - c.x, g.z - c.z) < 34) { g.convergeT = 0.4; g.convergeAt = { ...this.lkp }; }
+        for (const g of this.guards) if (g.state !== 'dead' && g.state !== 'alert' && g.state !== 'berserk' && Math.hypot(g.x - c.x, g.z - c.z) < 34) { g.convergeT = 0.4; g.convergeAt = { ...this.lkp }; }
       }
     } else { c.aw = Math.max(0, c.aw - 0.05); c.confirmed = false; }
   }
 
   // ---- intel ---------------------------------------------------------------------
-  // Contacts Overwatch can see right now (console + through-wall HUD dots).
   revealed(e, access, extra) {
     if (e.state === 'dead' && e.kind === 'g') return true;
     if (e.tagT > 0 || this.scanT > 0) return true;
     const zone = this.fac.zoneAt(e.x, e.z);
     const tier = zone === 'out' ? 0 : zone === 'yard' ? 1 : zone === 'floor' ? 2 : 3;
     if (access >= tier) return true;
-    // Hacked cameras relay what they see.
     for (const c of this.cams) {
       if (!c.hacked) continue;
       const dx = e.x - c.x, dz = e.z - c.z, d = Math.hypot(dx, dz);
@@ -761,7 +1109,9 @@ export class Sentinel {
   snap() {
     const r1 = (v) => Math.round(v * 10) / 10, r2 = (v) => Math.round(v * 100) / 100;
     return {
-      g: this.guards.map((g) => [g.id, r1(g.x), r1(g.y), r1(g.z), r2(g.yaw + g.look), STATES.indexOf(g.state), r2(clamp(g.aw, 0, 1)), (g.chief ? 1 : 0) | (g.badge ? 2 : 0) | (g.found ? 4 : 0) | (g.moving ? 8 : 0) | (g.tower ? 16 : 0), Math.ceil(g.tagT), Math.ceil(g.scanT), g.rev ? 1 : 0]),
+      g: this.guards.map((g) => [g.id, r1(g.x), r1(g.y), r1(g.z), r2(g.yaw + g.look), STATES.indexOf(g.state), r2(clamp(g.aw, 0, 1)),
+        (g.chief ? 1 : 0) | (g.badge ? 2 : 0) | (g.found ? 4 : 0) | (g.moving ? 8 : 0) | (g.tower ? 16 : 0) | (g.lower > 0 ? 32 : 0) | (g.empT > 0 ? 64 : 0),
+        Math.ceil(g.tagT), Math.ceil(g.scanT), g.rev ? 1 : 0, TYPE_KEYS.indexOf(g.type), g.maxShield ? Math.round((g.shield / g.maxShield) * 100) : 0, g.aiming ? (g.aiming === 'shooter' ? 1 : 2) : 0]),
       d: this.drones.map((d) => [d.id, r1(d.x), r1(d.y), r1(d.z), r2(d.yaw), d.state === 'dead' ? 2 : d.state === 'hunt' ? 1 : 0, r2(clamp(d.aw, 0, 1)), d.empT > 0 ? 1 : 0, Math.ceil(d.tagT), d.rev ? 1 : 0]),
       c: this.cams.map((c) => [c.id, r2(c.yaw), (c.hacked ? 1 : 0) | (c.loopT > 0 ? 2 : 0) | (c.empT > 0 ? 4 : 0), r2(clamp(c.aw, 0, 1))]),
       al: r2(this.alarm), pk: r2(this.alarmPeak), ld: this.lockdown ? 1 : 0, lkp: this.lkpT > 0 && this.lkp ? [r1(this.lkp.x), r1(this.lkp.z)] : null, sp: Math.ceil(this.spoofT), sc: Math.ceil(this.scanT),
@@ -772,19 +1122,25 @@ export class Sentinel {
   applySnap(s) {
     const seenG = new Set();
     for (const a of s.g) {
-      const [id, x, y, z, yaw, st, aw, fl, tag, scan, rev] = a;
+      const [id, x, y, z, yaw, st, aw, fl, tag, scan, rev, ti, sh, aim] = a;
       seenG.add(id);
       let g = this.guards.find((q) => q.id === id);
+      const type = TYPE_KEYS[ti] || 'guard';
       if (!g) {
-        g = { id, kind: 'g', x, y, z, yaw, look: 0, state: STATES[st], hp: 1, chief: !!(fl & 1), obj: buildGuard(!!(fl & 1)), fallT: 0 };
+        g = { id, kind: 'g', type, x, y, z, yaw, look: 0, state: STATES[st], hp: 1, chief: !!(fl & 1), obj: buildUnit(type, !!(fl & 1)), fallT: 0, maxShield: TYPES[type].shield, shield: 0, hitFx: 0 };
         this.scene.add(g.obj);
         this.guards.push(g);
       }
       g.tx = x; g.ty = y; g.tz = z; g.tyaw = yaw;
       const ns = STATES[st];
       if (ns === 'dead' && g.state !== 'dead') g.fallT = 0;
+      if (g.maxShield && sh < (g.shieldPct ?? 100) - 1) g.hitFx = 1;
+      g.shieldPct = sh;
+      g.shield = (sh / 100) * g.maxShield;
       g.state = ns; g.aw = aw; g.chief = !!(fl & 1); g.badge = !!(fl & 2); g.found = !!(fl & 4); g.moving = !!(fl & 8); g.tower = !!(fl & 16);
+      g.lower = fl & 32 ? 0.5 : 0; g.empT = fl & 64 ? 1 : 0;
       g.tagT = tag; g.scanT = scan; g.rev = !!rev; g.hp = ns === 'dead' ? 0 : 1;
+      g.aiming = aim === 1 ? 'shooter' : aim === 2 ? 'spotter' : null;
     }
     this.guards = this.guards.filter((g) => { if (seenG.has(g.id)) return true; this.scene.remove(g.obj); return false; });
     for (const a of s.d) {
@@ -812,11 +1168,25 @@ export class Sentinel {
         g.x += (g.tx - g.x) * k; g.y += (g.ty - g.y) * k; g.z += (g.tz - g.z) * k;
         g.yaw += angDiff(g.tyaw, g.yaw) * k;
         g.look = 0;
+        g.hitFx = Math.max(0, (g.hitFx || 0) - dt * 3);
       }
       const o = g.obj, U = o.userData;
       o.position.set(g.x, g.y, g.z);
       o.rotation.y = g.yaw + (g.look || 0);
       const dead = g.state === 'dead';
+      if (U.shell) {
+        const f = g.maxShield ? g.shield / g.maxShield : 0;
+        U.shell.visible = !dead && f > 0.02;
+        U.shell.material.uniforms.uA.value = 0.18 + f * 0.25 + (g.hitFx || 0) * 1.2;
+        U.shell.material.uniforms.uT.value = this.t;
+      }
+      if (U.wall) {
+        const down = g.lower > 0 || g.empT > 0;
+        U.wall.visible = !dead && !(g.empT > 0 && Math.random() < 0.7);
+        U.wall.rotation.y += ((down ? 1.2 : 0) - U.wall.rotation.y) * Math.min(1, dt * 10);
+        U.wall.userData.plane.material.uniforms.uT.value = this.t;
+      }
+      if (U.blade) U.blade.visible = g.state === 'berserk';
       if (dead) {
         g.fallT = Math.min(1, (g.fallT || 0) + dt * 2.2);
         U.body.rotation.x = -Math.PI / 2 * easeOut(g.fallT);
@@ -826,19 +1196,21 @@ export class Sentinel {
         for (const L of U.legs) L.rotation.x = 0;
         continue;
       }
-      U.body.rotation.x = 0;
+      U.body.rotation.x = g.state === 'berserk' ? 0.25 : g.state === 'flee' ? -0.15 : 0;
       U.body.position.y = 0;
-      U.beam.visible = !g.tower;
-      if (g.moving) U.phase += dt * (g.state === 'alert' ? 11 : 7);
-      const sw = g.moving ? Math.sin(U.phase) * 0.55 : 0;
+      if (g.type === 'guard' || g.type === 'bulwark') U.beam.visible = !g.tower;
+      if (g.moving) U.phase += dt * (g.state === 'berserk' ? 15 : g.state === 'flee' ? 14 : g.state === 'alert' ? 11 : 7);
+      const sw = g.moving ? Math.sin(U.phase) * (g.state === 'berserk' || g.state === 'flee' ? 0.9 : 0.55) : 0;
       U.legs[0].rotation.x = sw;
       U.legs[1].rotation.x = -sw;
-      U.gun.rotation.x = g.state === 'alert' ? 0 : -0.35;
-      const showTag = g.state === 'alert' || g.state === 'sus' || g.state === 'search' || (g.aw > 0.15);
+      U.gun.rotation.x = g.state === 'alert' ? 0 : g.state === 'flee' ? -1.1 : -0.35;
+      const red = g.state === 'alert' || g.state === 'search';
+      const kind = g.state === 'berserk' ? 'berserk' : g.state === 'flee' ? 'flee' : red ? 'alert' : 'sus';
+      const showTag = g.state === 'alert' || g.state === 'sus' || g.state === 'search' || g.state === 'flee' || g.state === 'berserk' || g.aw > 0.15;
       U.tag.visible = showTag && Math.hypot(camPos.x - g.x, camPos.z - g.z) < 120;
+      U.tag.position.y = 2.15 * U.scale + 0.1;
       if (showTag) {
-        const red = g.state === 'alert' || g.state === 'search';
-        U.tag.material = icon(red ? 'alert' : 'sus');
+        U.tag.material = icon(kind);
         const s = 0.35 + 0.25 * clamp(g.aw, 0, 1);
         U.tag.scale.set(s, s, 1);
       }
@@ -850,8 +1222,7 @@ export class Sentinel {
       const o = d.obj;
       o.position.set(d.x, d.y, d.z);
       o.rotation.y = d.yaw;
-      const dead = d.state === 'dead';
-      if (dead) { o.rotation.z = 1.2; o.userData.beam.visible = false; if (this.sim && d.respawnT !== undefined && d.respawnT < 50) o.visible = d.y > 0.2 || d.respawnT > 30; continue; }
+      if (d.state === 'dead') { o.rotation.z = 1.2; o.userData.beam.visible = false; continue; }
       o.visible = true;
       o.rotation.z = Math.sin(this.t * 2 + d.id) * 0.04;
       for (const r of o.userData.rotors) r.rotation.y += dt * 40;
@@ -888,15 +1259,35 @@ function easeOut(t) {
   return 1 - (1 - t) * (1 - t);
 }
 
-// Hit capsules for a standing guard (feet at x,y,z). Dead guards lie flat.
+// Hit capsules (feet at x,y,z), scaled to the unit's size. Dead units lie flat.
 export function guardCapsules(g) {
+  const s = (TYPES[g.type] || TYPES.guard).scale;
   const cs = Math.cos(g.yaw), sn = Math.sin(g.yaw);
-  const P = (lx, ly, lz) => new THREE.Vector3(g.x + lx * cs + lz * sn, g.y + ly, g.z - lx * sn + lz * cs);
-  if (g.state === 'dead') return [{ part: 'torso', a: P(0, 0.25, 0.2), b: P(0, 0.25, 1.6), r: 0.3 }];
+  const P = (lx, ly, lz) => new THREE.Vector3(g.x + lx * s * cs + lz * s * sn, g.y + ly * s, g.z - lx * s * sn + lz * s * cs);
+  if (g.state === 'dead') return [{ part: 'torso', a: P(0, 0.25, 0.2), b: P(0, 0.25, 1.6), r: 0.3 * s }];
+  const head = g.type === 'scav' ? [P(0, 1.5, -0.12), P(0, 1.55, -0.12)] : g.type === 'bulwark' ? [P(0, 1.62, -0.1), P(0, 1.66, -0.16)] : [P(0, 1.6, 0), P(0, 1.68, 0)];
   return [
-    { part: 'head', a: P(0, 1.6, 0), b: P(0, 1.68, 0), r: 0.17 },
-    { part: 'torso', a: P(0, 0.95, 0), b: P(0, 1.42, 0), r: 0.3 },
-    { part: 'legs', a: P(0, 0.08, 0), b: P(0, 0.9, 0), r: 0.21 },
+    { part: 'head', a: head[0], b: head[1], r: 0.17 * s },
+    { part: 'torso', a: P(0, 0.95, 0), b: P(0, 1.42, 0), r: (g.type === 'jugg' || g.type === 'overseer' ? 0.34 : 0.3) * s },
+    { part: 'legs', a: P(0, 0.08, 0), b: P(0, 0.9, 0), r: 0.21 * s },
   ];
 }
-void FENCE;
+
+// Where the segment a→b meets a bulwark's raised wall (outside its sight-port), as a fraction
+// along the segment, or null when the shot gets past (port, flank, lowered wall, EMP).
+export function wallBlock(g, a, b) {
+  if (g.type !== 'bulwark' || g.state === 'dead' || g.lower > 0 || g.empT > 0) return null;
+  const s = TYPES.bulwark.scale;
+  const yaw = g.yaw + (g.look || 0);
+  const cs = Math.cos(yaw), sn = Math.sin(yaw);
+  const loc = (p) => { const dx = p.x - g.x, dz = p.z - g.z; return { x: (dx * cs - dz * sn) / s, y: (p.y - g.y) / s, z: (dx * sn + dz * cs) / s }; };
+  const la = loc(a), lb = loc(b);
+  if (la.z >= WALL.z || lb.z <= la.z) return null; // shooter must be in front, shooting toward it
+  const t = (WALL.z - la.z) / (lb.z - la.z);
+  if (t < 0 || t > 1) return null;
+  const x = la.x + (lb.x - la.x) * t, y = la.y + (lb.y - la.y) * t;
+  if (Math.abs(x) > WALL.w / 2 || y < WALL.y0 || y > WALL.y1) return null;
+  const P = WALL.port;
+  if (x > P.x0 && x < P.x1 && y > P.y0 && y < P.y1) return null;
+  return t;
+}

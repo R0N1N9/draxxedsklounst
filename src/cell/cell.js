@@ -32,6 +32,17 @@ import { Facility, SPOTS, FENCE, BUILDING, terrainHeight, lam, glowMat } from '.
 import { Sentinel, DIFFS, guardCapsules, buildDrone, angDiff } from './sentinel.js';
 import { Ops, AiSpotter, PAYLOAD, HACK } from './ops.js';
 import { Tablet } from './tablet.js';
+import { Sfx } from './sfx.js';
+import { Wheel } from './wheel.js';
+import { installKit, KIT } from './kit.js';
+import { wallBlock } from './sentinel.js';
+import { Cinema } from './cinema.js';
+import { Chat } from './chat.js';
+
+export const MISSIONS = {
+  nightwatch: { name: 'NIGHTWATCH', title: 'SNIPER CELL: NIGHTWATCH', line: 'Kestrel Ridge \u00B7 0217 hrs \u00B7 SENTINEL\u2019s augmented garrison is on the night shift.' },
+  infiltration: { name: 'INFILTRATION', title: 'SNIPER CELL: INFILTRATION', line: 'Kestrel Ridge \u00B7 0140 hrs \u00B7 a skeleton crew of security guards.' },
+};
 
 export const ROLES = {
   shooter: { name: 'SHOOTER', call: 'Ra', color: '#f2b35b', desc: 'Suppressed KR-50 bolt-action, active camo, P-9 sidearm. The cell’s firepower.' },
@@ -57,7 +68,7 @@ export const OBJECTIVES = [
   { k: 'vault', title: 'BREACH THE COLD VAULT', hint: 'Badge-holder at the vault door; Overwatch holds CRACK on the tablet.' },
   { k: 'upload', title: 'UPLOAD THE MALWARE', hint: 'Hold the vault console while it uploads. Overwatch fights SENTINEL’s trace.' },
   { k: 'drive', title: 'PULL THE DRIVE', hint: 'Pull the archive drive (hold E). The whole facility locks down.' },
-  { k: 'exfil', title: 'EXFILTRATE', hint: 'Carry the drive out the loading dock to the LZ east of the fence.' },
+  { k: 'exfil', title: 'EXFILTRATE', hint: 'Get the drive out the loading dock to the van east of the fence. Spotter drives, shooter rides shotgun.' },
 ];
 
 const BLEED = 16;
@@ -245,10 +256,15 @@ function buildSky(scene) {
 
 // ---------------------------------------------------------------------------
 export class CellGame {
-  constructor({ mode, net, role, diff = 'operative', seed = 7, quality = 'medium', settings, audio, name, partnerName }) {
-    this.mode = mode; // 'solo' | 'host' | 'guest'
+  constructor({ mode, net, role, diff = 'operative', seed = 7, quality = 'medium', settings, audio, name, partnerName, mission = 'nightwatch' }) {
+    // 'solo' (AI partner) | 'operative' (one operator, both roles) | 'host' | 'guest'
+    this.mode = mode;
     this.isHost = mode !== 'guest';
-    this.solo = mode === 'solo';
+    this.solo = mode === 'solo' || mode === 'operative';
+    this.operative = mode === 'operative';
+    this.aiPartner = mode === 'solo';
+    this.mission = MISSIONS[mission] ? mission : 'nightwatch';
+    if (this.operative) role = 'shooter';
     this.net = net || null;
     this.role = role;
     this.partnerRole = role === 'shooter' ? 'spotter' : 'shooter';
@@ -263,6 +279,7 @@ export class CellGame {
     this.paused = false;
     this.ended = null;
 
+    if (this.mission === 'nightwatch') Object.assign(OBJECTIVES[2], { title: 'LIFT THE OVERSEER\u2019S BADGE', hint: 'Drop the Overseer (violet, shielded juggernaut) and take its badge. Headshots ignore shells.' });
     // Halo-style ballistics for this mode: instant, straight, no sway.
     applyRules({ preset: 'halo' });
     RULES.zooms = null;
@@ -276,7 +293,8 @@ export class CellGame {
     this._lights();
     buildSky(this.scene);
     this.fac = new Facility(this.scene, quality);
-    this.sentinel = new Sentinel(this, { diff, seed, sim: this.isHost });
+    this.sentinel = new Sentinel(this, { diff, seed, sim: this.isHost, mission: this.mission });
+    this.sfx = new Sfx(audio);
     this.effects = new Effects(this.scene);
     this.input = new Input(this.renderer.domElement, document.getElementById('touch'));
     this.input.sensitivity = this.settings.sensitivity || 1;
@@ -300,10 +318,12 @@ export class CellGame {
     this._setupPlayer();
     this._setupPartner();
     this.ops = this.role === 'spotter' ? new Ops(this) : this.solo ? new Ops(this) : null;
-    this.aiSpot = this.solo && this.role === 'shooter' ? new AiSpotter(this, this.ops) : null;
-    this.aiShoot = this.solo && this.role === 'spotter' ? { perch: 0, cool: 3, aim: null, aimT: 0, moveT: 0, sayT: 0 } : null;
+    this.aiSpot = this.aiPartner && this.role === 'shooter' ? new AiSpotter(this, this.ops) : null;
+    this.aiShoot = this.aiPartner && this.role === 'spotter' ? { perch: 0, cool: 3, aim: null, aimT: 0, moveT: 0, sayT: 0, holdT: 0, coverT: 0 } : null;
     this.quad = null;
     this.quadCd = 0;
+    this._kitInit();
+    this.wheel = new Wheel();
     this._buildHud();
     this.tablet = new Tablet(this);
     if (this.net) this._setupNet();
@@ -311,8 +331,15 @@ export class CellGame {
     this._resize();
     addEventListener('resize', () => this._resize());
     this.clock = new THREE.Clock();
-    this.comms(this.role === 'shooter' ? 'Ra in position. Kestrel Ridge below — lights in the yard, towers manned.' : 'Rōnin on the wire. CYBER OPS console synced (TAB).', ROLES[this.role].color, this.name);
-    this.comms(this.solo ? (this.role === 'shooter' ? 'Rōnin (AI) runs the console for you. TAB for the map and requests.' : 'Ra (AI) holds the cliff. Tag targets (F, or tap them on the tablet) and Ra takes the shot.') : `${this.partnerName} is the ${ROLES[this.partnerRole].name.toLowerCase()}.`, 'dim');
+    this.comms(this.operative ? 'Lone operative: rifle, camo and the CYBER OPS tablet are all yours (TAB).' : this.role === 'shooter' ? 'Ra in position. Kestrel Ridge below \u2014 lights in the yard, towers manned.' : 'R\u014dnin on the wire. CYBER OPS console synced (TAB).', ROLES[this.role].color, this.name);
+    this.comms(this.operative ? 'Hold V for the ping wheel; payloads run straight from your tablet.' : this.aiPartner ? (this.role === 'shooter' ? 'R\u014dnin (AI) runs the console. Hold V for pings and requests.' : 'Ra (AI) holds the cliff. Tag targets (F) or ping TAKE SHOT and Ra fires.') : `${this.partnerName} is the ${ROLES[this.partnerRole].name.toLowerCase()}. Hold V for pings and requests.`, 'dim');
+    if (this.mission === 'nightwatch') this.comms('Scavs spook when they\u2019re alone. Juggernauts\u2019 shells break \u2014 then they charge. Bulwarks: shoot the port in the wall.', 'dim');
+    this.sfx.ambience();
+    this.chat = new Chat(this);
+    this.cine = new Cinema(this);
+    // Opening cut-scene (skippable); ?nocine skips it for testing.
+    if (!new URLSearchParams(location.search).has('nocine')) this.cine.startIntro();
+    else this.hud.intro(MISSIONS[this.mission], this.operative ? 'LONE OPERATIVE' : `${ROLES[this.role].name} \u00B7 ${this.name}${this.aiPartner ? ' \u00B7 AI ' + this.partnerName : this.solo ? '' : ' \u00B7 with ' + this.partnerName}`);
     this.renderer.setAnimationLoop(() => this._frame());
   }
 
@@ -432,7 +459,7 @@ export class CellGame {
     av.setLook(this._look(r));
     this.scene.add(av.root);
     this.cloakMat = cloakMaterial();
-    const ai = this.solo;
+    const ai = this.aiPartner;
     const p = r === 'shooter' ? SPOTS.perches[0] : { x: SPOTS.insert[1].x + 3, z: SPOTS.insert[1].z - 3 };
     this.partner = {
       role: r, name: this.partnerName, ai, avatar: av, pos: new THREE.Vector3(p.x, terrainHeight(p.x, p.z), p.z), tpos: null,
@@ -466,12 +493,16 @@ export class CellGame {
     n.on('cw', (m) => { if (!this.isHost) this._applyWorld(m); });
     n.on('shot', (m) => this._onRemoteShot(m));
     n.on('eshot', (m) => { if (!this.isHost) this._onEshot(m); });
-    n.on('hit', (m) => { if (this.isHost) this._applyHit(m.id, m.dmg, m.how, m.from, this.partnerRole, m.head, m.dist); });
+    n.on('hit', (m) => { if (this.isHost) this._applyHit(m.id, m.dmg, m.how, m.from, this.partnerRole, !!m.head, m.dist); });
     n.on('ab', (m) => { if (this.isHost) this._execPayload(m.k, m.target, this.partnerRole); });
     n.on('toast', (m) => { if (!this.isHost) this.comms(m.m, m.c, m.who); });
     n.on('ev', (m) => this._onEvent(m));
     n.on('end', (m) => { if (!this.isHost) this._end(m.win, m.info); });
     n.on('pin', (m) => this._addPin(m, false));
+    n.on('cm', (m) => this._onCall(m));
+    n.on('rq', (m) => this._onRequest(m));
+    n.on('rr', (m) => this._onAnswer(m));
+    n.on('ack', () => this.comms('Roger.', ROLES[this.partnerRole].color, this.partnerName));
     n.on('cname', (m) => { const nm = String(m.name || '').replace(/[<>&"]/g, '').slice(0, 16); if (nm) { this.partner.name = this.partnerName = nm; } });
     n.send({ t: 'cname', name: this.name });
     n.on('close', () => { this.comms(`${this.partnerName} lost the link.`, 'red'); this.partner.alive = false; this.partner.seen = false; });
@@ -550,6 +581,10 @@ export class CellGame {
       case 'quadhit': if (this.quad && this.quad.active) this._quadDamage(m.dmg); break;
       case 'noise': if (this.isHost) this.sentinel.noise({ x: m.x, y: m.y, z: m.z }, m.r, !!m.loud); break;
       case 'fx': this._fx(m); break;
+      case 'sfx': this._sentinelFx(m.ev); break;
+      case 'emelee': this._onMelee(m.ev); break;
+      case 'nearmiss': if (this.isHost) this.sentinel.nearMiss(m.at, m.from); break;
+      case 'block': if (this.isHost) { const g = this.sentinel.byId(m.id); if (g) { this.sentinel._alert(g, null, m.from); this.sentinel.emit({ t: 'fx', k: 'shield', id: m.id }); } } break;
     }
   }
 
@@ -576,7 +611,7 @@ export class CellGame {
     return null;
   }
   canQuad() {
-    return this.role === 'spotter' && !this.downed && !this.kia && this.quadCd <= 0 && !(this.quad && this.quad.active);
+    return (this.role === 'spotter' || this.operative) && !this.downed && !this.kia && this.quadCd <= 0 && !(this.quad && this.quad.active);
   }
   // Extra intel sources for the console: the recon quad, and enemies close to an agent.
   get extraReveal() {
@@ -627,9 +662,8 @@ export class CellGame {
       case 'scan': S.scanT = 4; for (const g of S.guards) if (g.state !== 'dead') g.scanT = 4; for (const d of S.drones) d.scanT = 4; this._toast('Pulse scan — every contact on the network for 4 s.', 'cyan'); break;
       case 'jam': S.jams.push({ x: target.x, z: target.z, r: PAYLOAD.jam.r, t: 5 }); this._toast('Earpieces jammed for 5 s.', 'cyan'); break;
       case 'emp':
-        for (const d of S.drones) if (Math.hypot(d.x - target.x, d.z - target.z) < PAYLOAD.emp.r + 6) d.empT = 7;
-        for (const c of S.cams) if (Math.hypot(c.x - target.x, c.z - target.z) < PAYLOAD.emp.r) c.empT = 7;
-        this._toast('EMP — drones and cameras in the area dark for 7 s.', 'cyan');
+        S.emp(target.x, target.z, PAYLOAD.emp.r);
+        this._toast('EMP \u2014 drones, cameras and shields in the area dark for 7 s.', 'cyan');
         this._broadcastFx({ k: 'emp', x: target.x, z: target.z });
         break;
       case 'supply':
@@ -745,13 +779,29 @@ export class CellGame {
     return { x: p.x, z: p.z };
   }
 
+  get missionTitle() {
+    return MISSIONS[this.mission].title;
+  }
+  get missionLine() {
+    return MISSIONS[this.mission].line;
+  }
+  _nameFor(role) {
+    return role === this.role ? this.name : this.partnerName;
+  }
+  _afterIntro() {
+    this.comms('Weapons free on your call. Stay in the dark.', 'dim');
+    this.input.requestLock();
+  }
+
   // ---- frame -----------------------------------------------------------------------
   _frame() {
     let dt = Math.min(this.clock.getDelta(), 1 / 20);
     this.t += dt;
     hazeUniforms.uTime.value = this.t;
+    if (this.cine.active) return this._cineFrame(dt);
     const a = this.input.actions;
     if (this.net) this.net.tick(dt);
+    this.chat.update();
     if (!this.ended) {
       this._updateLocal(dt, a);
       if (this.isHost) this._hostTick(dt);
@@ -766,6 +816,31 @@ export class CellGame {
     this._render(dt);
     this.hud.update(dt);
     this.tablet.update(dt);
+  }
+
+  // While a cut-scene runs: the world keeps ticking (host), the camera is the director's.
+  _cineFrame(dt) {
+    const C = this.cine;
+    C.update(dt);
+    this.input.endFrame();
+    if (this.net) this.net.tick(dt);
+    if (C.active === 'intro') {
+      if (this.isHost) this._hostTick(dt);
+      this._netTick(dt);
+      this._updatePartner(dt);
+      this.sentinel.draw(dt, C.cam.position);
+      this.fac.update(dt);
+      this._visuals(dt);
+      this.effects.update(dt, C.cam);
+      this.camera.position.copy(C.cam.position);
+      this.camera.quaternion.copy(C.cam.quaternion);
+      this.camera.fov = C.cam.fov;
+      this.camera.updateProjectionMatrix();
+      this.viewmodel.visible = false;
+    }
+    this.audio.setListener(C.active === 'outro' ? C.cam : this.camera);
+    if (!C.render(this.renderer)) this._render(dt);
+    if (this.ended) this.hud.update(dt);
   }
 
   _netTick(dt) {
@@ -787,12 +862,12 @@ export class CellGame {
     if (I.pressed('KeyN') || I.pressed('cell-nv')) { this.nv = !this.nv; this.audio.click(); }
     if ((I.pressed('KeyB') || I.pressed('cell-sup')) && !tab) { this.pistolSup = !this.pistolSup; this.hud.flash(this.pistolSup ? 'SUPPRESSOR ON' : 'SUPPRESSOR OFF'); this.audio.click(); }
     if (this.role === 'shooter' && (I.pressed('KeyG') || I.pressed('cell-ability')) && !this.downed) this._toggleCloak();
-    if (this.role === 'spotter' && (I.pressed('KeyQ') || I.pressed('cell-ability')) && !tab) { if (quad) this._endQuad(); else { const why = this.ops.use('quad'); if (why) this.hud.flash(why, 'red'); } }
-    if (this.role === 'shooter' && I.pressed('KeyV') && !tab) this.request('supply');
+    if ((this.role === 'spotter' || this.operative) && (I.pressed('KeyQ') || I.pressed(this.operative ? 'cell-quad' : 'cell-ability')) && !tab) { if (quad) this._endQuad(); else { const why = this.ops.use('quad'); if (why) this.hud.flash(why, 'red'); } }
     if (I.pressed('KeyF') || I.pressed('cell-tag')) this._tagAtCrosshair();
     this._eHeld = (I.held('KeyE') || I.held('T:cell-use')) && !tab;
     if (this.ops) this.ops.update(dt);
     if (this.aiSpot) this.aiSpot.update(dt);
+    this._kitUpdate(dt);
     this.quadCd = Math.max(0, this.quadCd - dt);
 
     // Cloak battery (Cold Archive: drain 14/s, regen 7 × camo/s).
@@ -815,6 +890,8 @@ export class CellGame {
 
     const live = !this.downed && !this.kia;
     const act = { ...a };
+    this._kitKeys(dt, I, tab, quad, live, act);
+    const seat = this._seat();
     if (!live || tab || quad) {
       act.fire = false; act.fireHeld = false; act.scope = false; act.reload = act.reload && live && !quad;
       act.lookX = tab || !live ? 0 : act.lookX; act.lookY = tab || !live ? 0 : act.lookY;
@@ -823,13 +900,16 @@ export class CellGame {
       act.slot1 = act.slot2 = act.swap = false;
     }
     if (quad) { act.mx = 0; act.my = 0; act.sprint = false; act.lookX = 0; act.lookY = 0; }
+    if (seat) { act.mx = act.my = 0; act.sprint = act.jump = act.crouch = act.prone = false; act.fire = act.fireHeld = false; act.scope = false; }
     if (this.role === 'spotter') { act.slot1 = act.slot2 = act.swap = false; if (!P.scoped) act.zoomIn = act.zoomOut = false; }
     act.zeroUp = act.zeroDown = false;
     act.breath = false;
     P.noSprint = !!this.obj.drive && this.obj.drive === this.role;
     P.speedMul = tab ? 0.55 : 1;
     if (this.downed) { P.stance = 2; }
-    P.update(dt, act, this.fac, { canMove: live && !quad });
+    P.update(dt, act, this.fac, { canMove: live && !quad && !seat });
+    if (seat) { const w = this._seatWorld(seat); P.pos.set(w.x, w.y - P.eye + 0.62, w.z); P.vel.set(0, 0, 0); P.stance = 0; this._wasSeated = seat; }
+    else if (this._wasSeated) { const d = this._doorWorld(this._wasSeated); P.pos.set(d.x, this.fac.groundAt(d.x, d.z, 5, 0.5), d.z); this._wasSeated = null; }
     if (this.downed) { P.vel.x *= 0.2; P.vel.z *= 0.2; }
     if (P.def.kind === 'bolt' && P.boltEvent) { P.boltEvent = false; this.audio.bolt(0.05); }
     if (quad) this._updateQuad(dt, a);
@@ -869,7 +949,7 @@ export class CellGame {
     this.camera.updateProjectionMatrix();
     // First-person weapon.
     const scopedRifle = P.def.scope && P.scopeT > 0.6;
-    this.viewmodel.visible = live && !scopedRifle && !quad && !tab;
+    this.viewmodel.visible = live && !scopedRifle && !quad && !tab && !seat;
     this.pistolCan.visible = this.pistolSup;
     this.viewmodel.update(dt, {
       def: P.def, scopeT: P.scopeT, speed: P.speed, sprint: P.sprinting, bobPhase: P.bobPhase, cycleT: P.cycleT,
@@ -926,7 +1006,25 @@ export class CellGame {
     // Noise: a suppressed shot carries ~10 m, an unsuppressed pistol 70 m and it's loud.
     this._noise(P.pos, rifle ? 10 : sup ? 8 : 70, !sup);
     if (!sup) this.sentinel.stats.loudShots = (this.sentinel.stats.loudShots || 0) + 1, this._loud = true;
-    if (res && res.enemy) {
+    // Rounds snapping past make scavs bolt.
+    for (const g of this.sentinel.guards) {
+      if (g.state === 'dead' || (res && res.enemy === g)) continue;
+      const c = { x: g.x, y: g.y + 1.2, z: g.z };
+      const r = segSegClosest(o, hitP, c, c);
+      if (r.d2 < 2.5 * 2.5) {
+        if (this.isHost) this.sentinel.nearMiss({ x: g.x, z: g.z }, { x: P.pos.x, z: P.pos.z });
+        else this._broadcast({ k: 'nearmiss', at: { x: g.x, z: g.z }, from: { x: P.pos.x, z: P.pos.z } });
+      }
+    }
+    if (res && res.blocked) {
+      // A bulwark's wall ate it: sparks, and now it knows.
+      const g = res.blocked;
+      this.effects.puff(hitP, 'metal', 0.8, 0.3);
+      this.sfx.shieldHit(hitP);
+      this.hud.flash('BLOCKED \u2014 HIT THE PORT', 'red', 0.9);
+      if (this.isHost) { this.sentinel._alert(g, null, { x: P.pos.x, z: P.pos.z }); }
+      else this._broadcast({ k: 'block', id: g.id, from: { x: P.pos.x, z: P.pos.z } });
+    } else if (res && res.enemy) {
       const e = res.enemy;
       const dmg = def.damage[res.part] || def.damage.torso;
       const dist = o.distanceTo(hitP);
@@ -935,6 +1033,7 @@ export class CellGame {
       this.stats.hits++;
       if (res.part === 'head') this.stats.heads++;
       this.effects.puff(hitP, e.kind === 'd' ? 'metal' : 'dust', 0.9, 0.7);
+      if (e.maxShield && e.shield > 0 && res.part !== 'head') { this.sfx.shieldHit(hitP); this.hud.flash('SHELL', 'cyan', 0.5); }
       if (this.isHost) this._applyHit(e.id, dmg, rifle ? 'rifle' : 'pistol', { x: P.pos.x, z: P.pos.z }, this.role, res.part === 'head', dist);
       else this.send({ t: 'hit', id: e.id, dmg, how: rifle ? 'rifle' : 'pistol', from: { x: P.pos.x, z: P.pos.z }, head: res.part === 'head', dist });
     } else if (res) {
@@ -964,6 +1063,12 @@ export class CellGame {
         }
       }
     }
+    // Bulwark walls stand in front of the bodies behind them.
+    for (const g of S.guards) {
+      if (g.type !== 'bulwark' || g.state === 'dead') continue;
+      const t = wallBlock(g, o, end);
+      if (t !== null && t < bestT) { bestT = t; best = { t, point: o.clone().lerp(end, t), blocked: g }; }
+    }
     for (const d of S.drones) {
       if (d.state === 'dead') continue;
       const r = segSegClosest(o, end, { x: d.x - 0.5, y: d.y, z: d.z }, { x: d.x + 0.5, y: d.y, z: d.z });
@@ -976,10 +1081,10 @@ export class CellGame {
     const S = this.sentinel;
     const e = S.byId(id);
     if (!e) return;
-    const killed = S.damage(id, dmg, how, from);
+    const killed = S.damage(id, dmg, how, from, head ? 'head' : 'torso').killed;
     if (killed && e.kind === 'g') {
       this._killFeed(e, how, by, head, dist);
-      if (e.chief) this._toast('Site Chief is down. Take his badge.', 'amber');
+      if (e.chief) this._toast(this.mission === 'nightwatch' ? 'The Overseer is down. Take its badge.' : 'Site Chief is down. Take his badge.', 'amber');
     } else if (killed && e.kind === 'd') this._toast(`${by === this.role ? this.name : this.partnerName} shot down a patrol drone.`, 'dim');
   }
 
@@ -993,7 +1098,8 @@ export class CellGame {
 
   _onKillEvent(m) {
     if (m.by === this.role && m.dist) this.stats.longest = Math.max(this.stats.longest, m.dist);
-    this.hud.feed(`${m.name} ▸ ${m.what}${m.dist > 30 ? ' · ' + m.dist + ' m' : ''}${m.chief ? ' · SITE CHIEF' : ''}`, m.by === this.role ? ROLES[this.role].color : ROLES[this.partnerRole].color);
+    if (m.by === this.role && m.what === 'TAKEDOWN' && this.role === 'shooter' && this.kit.execs < KIT.exec.max) { this.kit.execs++; this.hud.flash('EXECUTE CHARGED (T)', 'cyan'); }
+    this.hud.feed(`${m.name} ▸ ${m.what}${m.dist > 30 ? ' · ' + m.dist + ' m' : ''}${m.chief ? (this.mission === 'nightwatch' ? ' · OVERSEER' : ' · SITE CHIEF') : ''}`, m.by === this.role ? ROLES[this.role].color : ROLES[this.partnerRole].color);
   }
 
   _onRemoteShot(m) {
@@ -1032,6 +1138,10 @@ export class CellGame {
 
   // Enemy fire reaching a client.
   _onEshot(m) {
+    return this._spawnBolt(m);
+  }
+
+  _onEshotOld(m) {
     const a = new THREE.Vector3(...m.a), b = new THREE.Vector3(...m.b);
     const miss = m.hit ? b : b.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2.5, (Math.random() - 0.3) * 1.5, (Math.random() - 0.5) * 2.5));
     this._tracer(a, miss, m.zap ? '#ff4060' : '#ffb060', m.zap ? 0.12 : 0.07);
@@ -1190,6 +1300,8 @@ export class CellGame {
 
   _sentinelEvent(ev) {
     if (ev.t === 'eshot') { this._onEshot(ev); this.send({ t: 'eshot', ...ev }); }
+    else if (ev.t === 'bark' || ev.t === 'fx' || ev.t === 'laser') { this._sentinelFx(ev); this._broadcast({ k: 'sfx', ev }); }
+    else if (ev.t === 'emelee') { this._onMelee(ev); this._broadcast({ k: 'emelee', ev }); }
     else if (ev.t === 'toast') this._toast(ev.m, ev.c);
     else if (ev.t === 'spotted') { /* surfaced through the guard's state */ }
   }
@@ -1256,6 +1368,9 @@ export class CellGame {
     const perch = SPOTS.perches[A.perch];
     A.cool -= dt;
     A.sayT -= dt;
+    A.holdT = Math.max(0, (A.holdT || 0) - dt);
+    A.coverT = Math.max(0, (A.coverT || 0) - dt);
+    if (Q.seated) return; // aboard the van
     if (A.moveT > 0) {
       A.moveT -= dt;
       Q.avatarHidden = true;
@@ -1269,7 +1384,8 @@ export class CellGame {
     const cands = [];
     for (const g of S.guards) {
       if (g.state === 'dead') continue;
-      const threat = g.state === 'alert' && g.target === this.role && Math.hypot(g.x - me.x, g.z - me.z) < 45;
+      const near = Math.hypot(g.x - me.x, g.z - me.z);
+      const threat = (g.state === 'alert' || g.state === 'berserk') && g.target === this.role && near < 45 || (A.coverT > 0 && near < 40);
       if (g.tagT > 0 || threat) cands.push({ e: g, p: { x: g.x, y: g.y + 1.25, z: g.z }, pri: threat ? 2 : 1 });
     }
     for (const d of S.drones) if (d.state !== 'dead' && (d.tagT > 0 || d.aw > 0.6)) cands.push({ e: d, p: { x: d.x, y: d.y, z: d.z }, pri: d.aw > 0.6 ? 3 : 1 });
@@ -1279,6 +1395,7 @@ export class CellGame {
       if (Math.hypot(c.p.x - eye.x, c.p.z - eye.z) > 340) continue;
       if (this.fac.los(eye, c.p)) { pick = c; break; }
     }
+    if (A.holdT > 0 && !(pick && pick.pri >= 2)) { A.aim = null; return; }
     if (!pick) {
       A.aim = null;
       if (cands.length && A.sayT <= 0) { A.sayT = 9; this._toast('Ra: no line of sight on that one from here. Move me or bring him into the open.', 'amber', this.partnerName); }
@@ -1296,7 +1413,7 @@ export class CellGame {
     this.audio.shotDistant(a, this.camera.position.distanceTo(a) / 343, true);
     if (Math.random() < 0.93) {
       const dist = a.distanceTo(b);
-      const killed = S.damage(pick.e.id, 999, 'ai', null);
+      const killed = S.damage(pick.e.id, 999, 'ai', null, 'head').killed;
       if (killed && pick.e.kind === 'g') this._killFeed(pick.e, 'rifle', 'ai', Math.random() < 0.6, dist);
       if (killed && pick.e.kind === 'g' && pick.e.chief) this._toast('Site Chief is down. Take his badge.', 'amber');
       this._toast(pick.e.kind === 'd' ? 'Ra: drone down.' : 'Ra: target down.', 'amber', this.partnerName);
@@ -1336,14 +1453,8 @@ export class CellGame {
     // A carrier who goes down drops the drive where they fell.
     for (const a of agents) if (ob.drive === a.role && (a.downed || !a.alive)) { ob.drive = 'ground'; ob.driveAt = { x: a.pos.x, z: a.pos.z }; this._toast('The drive is on the ground!', 'red'); }
     if (S.alarm >= 1 && !S.lockdown) this._loudAlarm = true;
-    // Exfil.
-    if (ob.drive && ob.drive !== 'ground' && ob.drive !== 'server') {
-      const c = agents.find((a) => a.role === ob.drive);
-      if (c && Math.hypot(c.pos.x - SPOTS.lz.x, c.pos.z - SPOTS.lz.z) < SPOTS.lz.r) {
-        ob.exfil = true;
-        this._win();
-      }
-    }
+    // Exfil: everyone into the van with the drive.
+    this._vanTick(dt);
     // Fail: nobody left standing and nobody can be saved.
     const allOut = agents.length && agents.every((a) => !a.alive);
     if (allOut) this._lose();
@@ -1374,6 +1485,7 @@ export class CellGame {
     let best = null;
     const opt = (key, label, dur, fn, auto = false) => { if (!best) best = { key, label, dur, fn, auto }; };
     if (!a.alive || a.downed) { this.prompts[role] = a.downed ? { label: 'DOWNED — waiting for a revive', p: 0 } : null; return; }
+    this._vanInteract(a, held, dt, opt);
     // Revive your partner.
     const other = this.agents().find((b) => b.role !== role);
     if (other && other.downed && other.alive && Math.hypot(other.pos.x - p.x, other.pos.z - p.z) < 2.2) opt('revive', `Hold E — revive ${other.role === this.role ? this.name : this.partnerName}`, 3, () => { if (other.role === this.role) this._revived(55); else this._broadcast({ k: 'revive', role: other.role, hp: 55 }); });
@@ -1385,7 +1497,7 @@ export class CellGame {
       const behind = Math.abs(angDiff(Math.atan2(-(p.x - g.x), -(p.z - g.z)), g.yaw + g.look)) > 1.9;
       if (behind || g.state === 'patrol' && d < 1.2) {
         opt('takedown', 'E — silent takedown', 0, () => {
-          S.damage(g.id, 999, 'takedown');
+          S.damage(g.id, 999, 'takedown', null, 'head');
           this._killFeed(g, 'takedown', role, false, 0);
           if (role === this.role) { this.audio.hitConfirm(true); this.hud.flash('TAKEDOWN'); } else this._broadcast({ k: 'takedown', role });
           if (g.chief) this._toast('Site Chief is down. Take his badge.', 'amber');
@@ -1396,7 +1508,7 @@ export class CellGame {
     // Loot the badge.
     if (!ob.badge) {
       const chief = S.guards.find((g) => g.chief && g.state === 'dead' && g.badge);
-      if (chief && Math.hypot(chief.x - p.x, chief.z - p.z) < 2.4) opt('badge', 'Hold E — take the Site Chief’s badge', 1, () => { ob.badge = role; chief.badge = false; this._toast(`${role === this.role ? this.name : this.partnerName} has the badge. Get to the vault door.`, 'cyan'); });
+      if (chief && Math.hypot(chief.x - p.x, chief.z - p.z) < 2.4) opt('badge', 'Hold E — take the badge', 1, () => { ob.badge = role; chief.badge = false; this._toast(`${role === this.role ? this.name : this.partnerName} has the badge. Get to the vault door.`, 'cyan'); });
     }
     // Plant the relay.
     const rl = SPOTS.relay;
@@ -1407,8 +1519,12 @@ export class CellGame {
     // Badge in at the vault (solo shooter: Rōnin cracks automatically).
     const vd = this.fac.doors.vault;
     if (!ob.vault && Math.hypot(vd.x - p.x, vd.z - p.z) < 4.5) {
-      if (ob.badge === role) this.prompts[role] = { label: ob.crack > 0 ? `Cracking the vault… ${Math.round(ob.crack * 100)} %` : 'Badge accepted — Overwatch: hold CRACK on the tablet', p: ob.crack };
-      else if (!ob.badge) opt('vaultx', 'Vault locked — needs the Site Chief’s badge', 0, null);
+      if (ob.badge === role && this.operative) {
+        // One operator: badge in and crack it yourself (spends your bandwidth).
+        this.ops.cracking = !!held;
+        this.prompts[role] = { label: `Hold E — crack the vault ${Math.round(ob.crack * 100)} % (bandwidth ${Math.round(this.ops.bw)})`, p: ob.crack };
+      } else if (ob.badge === role) this.prompts[role] = { label: ob.crack > 0 ? `Cracking the vault… ${Math.round(ob.crack * 100)} %` : 'Badge accepted — Overwatch: hold CRACK on the tablet', p: ob.crack };
+      else if (!ob.badge) opt('vaultx', `Vault locked — needs the ${this.mission === 'nightwatch' ? 'Overseer' : 'Site Chief'}’s badge`, 0, null);
     }
     // Pull the drive.
     const sv = SPOTS.server;
@@ -1447,15 +1563,13 @@ export class CellGame {
     for (const id of ['front', 'side', 'dock']) { const d = this.fac.doors[id]; d.sealed = true; d.hackOpen = 0; }
     for (const g of S.guards) if (g.state !== 'dead') S._alert(g, null, { x: SPOTS.server.x, z: SPOTS.server.z + 8 }), g.searchT = 20;
     this._toast('SENTINEL: lockdown. The building is sealed.', 'red');
-    this._toast('Exfil bird inbound to the LZ. Get the dock open.', 'cyan');
+    this._toast('The van is hot on the east track. Get the dock open \u2014 spotter drives, shooter rides shotgun.', 'cyan');
     this._lockdownFx();
     this._broadcast({ k: 'lockdown' });
   }
 
   _lockdownFx() {
     this.hud.flash('LOCKDOWN', 'red');
-    this.heli.visible = true;
-    this.heliT = 0;
   }
 
   // ---- end ------------------------------------------------------------------------------
@@ -1491,7 +1605,10 @@ export class CellGame {
     if (this.tablet.visible) this.tablet.close();
     if (this.quad && this.quad.active) this._endQuad();
     document.exitPointerLock && document.exitPointerLock();
-    this.hud.debrief(win, info, this.stats);
+    if (this.cine.active === 'intro') this.cine.skip();
+    // A win rolls the drive out into the sunrise first; the debrief lands over it.
+    if (win) this.cine.startOutro(() => this.hud.debrief(win, info, this.stats));
+    else this.hud.debrief(win, info, this.stats);
   }
 
   // ---- visuals ------------------------------------------------------------------------
@@ -1527,6 +1644,8 @@ export class CellGame {
   }
 
   _visuals(dt) {
+    this._vanVisual(dt);
+    this._lasersTick();
     this.cloakMat.uniforms.uTime.value = this.t;
     this.cloakMat.uniforms.uFlick.value = Math.max(this.cloak.flick, this.partner.cloakFlicker ? 1 : 0) * 0.6;
     // Trails fade (and the vapor trail swells a little as it hangs).
@@ -1650,6 +1769,10 @@ class CellHud {
       <div class="c-flash"></div>
       <div class="c-keys"></div>
       <div class="c-dmg"></div>
+      <div class="c-vis"><span>EXPOSURE</span><i><em></em></i><b></b></div>
+      <div class="c-kit"></div>
+      <div class="c-req"><span class="c-req-t"></span><button class="c-req-y">\u2713 <small>Y</small></button><button class="c-req-n">\u2715 <small>U</small></button></div>
+      <div class="c-intro"><div class="c-intro-k">KESTREL RIDGE // DC-3</div><h1></h1><p class="c-intro-l"></p><p class="c-intro-r"></p></div>
       <div class="c-pause"><div class="c-card"><h2>PAUSED</h2><p class="c-pnote"></p><button class="primary c-resume">Resume</button><button class="ghost c-exit">Abort mission</button></div></div>
       <div class="c-debrief"></div>`;
     document.body.appendChild(root);
@@ -1660,20 +1783,27 @@ class CellHud {
       partner: $('.c-partner'), feed: $('.c-feed'), comms: $('.c-comms'), hp: $('.c-hp em'), camo: $('.c-camo em'), camoBox: $('.c-camo'), chips: $('.c-chips'),
       amN: $('.c-am-n'), amR: $('.c-am-r'), amW: $('.c-am-w'), amS: $('.c-am-s'), prompt: $('.c-prompt'), promptT: $('.c-prompt span'), promptB: $('.c-prompt em'),
       flash: $('.c-flash'), keys: $('.c-keys'), dmg: $('.c-dmg'), pause: $('.c-pause'), debrief: $('.c-debrief'),
+      vis: $('.c-vis em'), visL: $('.c-vis b'), visBox: $('.c-vis'), kit: $('.c-kit'), req: $('.c-req'), reqT: $('.c-req-t'), intro: $('.c-intro'),
     };
+    $('.c-req-y').addEventListener('pointerdown', (e) => { e.preventDefault(); game._answerTop(true); });
+    $('.c-req-n').addEventListener('pointerdown', (e) => { e.preventDefault(); game._answerTop(false); });
     game.overlay = this.el.overlay;
     this.ctx = this.el.overlay.getContext('2d');
     this.el.camoBox.style.display = game.role === 'shooter' ? '' : 'none';
-    this.el.keys.innerHTML = game.role === 'shooter'
-      ? '<b>G</b> camo <b>F</b> tag <b>E</b> use <b>1/2</b> rifle/pistol <b>B</b> suppressor <b>N</b> NV <b>V</b> request supply <b>TAB</b> map'
-      : '<b>TAB</b> CYBER OPS <b>Q</b> quad <b>F</b> tag <b>E</b> use <b>B</b> suppressor <b>N</b> NV';
+    const K = (k, l) => `<b>${k}</b> ${l}`;
+    const shooterKeys = [K('G', 'camo'), K('H', 'deadeye'), K('X', 'lure'), K('T', 'execute'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('1/2', 'rifle/pistol'), K('B', 'suppressor'), K('N', 'NV'), K('TAB', game.operative ? 'CYBER OPS' : 'map')];
+    const spotterKeys = [K('TAB', 'CYBER OPS'), K('Q', 'quad'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('Y/U', 'approve/deny'), K('B', 'suppressor'), K('N', 'NV')];
+    shooterKeys.push(K('\u21B5', 'chat'));
+    spotterKeys.push(K('\u21B5', 'chat'));
+    if (game.net) { shooterKeys.push(K('M', 'mic'), K('K', 'talk')); spotterKeys.push(K('M', 'mic'), K('K', 'talk')); }
+    this.el.keys.innerHTML = (game.operative ? [...shooterKeys, K('Q', 'quad')] : game.role === 'shooter' ? shooterKeys : spotterKeys).join('');
     this.objective(0, OBJECTIVES[0], false);
     this.hits = [];
     // Pause: losing pointer lock (Esc) opens it, except while the tablet has the mouse.
     document.addEventListener('pointerlockchange', () => {
       if (game.input.touch && !game.input.mouseMode) return;
       const locked = document.pointerLockElement === game.renderer.domElement;
-      this.setPause(!locked && !game.tablet.visible && !game.ended && !game.tablet.justClosed);
+      this.setPause(!locked && !game.tablet.visible && !game.ended && !game.tablet.justClosed && !(game.chat && game.chat.isOpen) && !(game.cine && game.cine.active) && !(this._chatClosed && performance.now() - this._chatClosed < 500));
     });
     $('.c-resume').onclick = () => { this.setPause(false); game.input.requestLock(); };
     $('.c-exit').onclick = () => game.exit();
@@ -1688,13 +1818,35 @@ class CellHud {
     if (!t) return;
     const bar = document.createElement('div');
     bar.className = 'cell-tbar';
-    const pills = g.role === 'shooter'
-      ? [['cell-ability', 'CAMO'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-tab', 'MAP']]
-      : [['cell-tab', 'TABLET'], ['cell-ability', 'QUAD'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV']];
+    const common = [['cell-ping', 'PING \u25CE'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
+    const pills = g.operative
+      ? [['cell-tab', 'TABLET'], ['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-quad', 'QUAD'], ...common]
+      : g.role === 'shooter'
+        ? [['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-tab', 'MAP'], ...common]
+        : [['cell-tab', 'TABLET'], ['cell-ability', 'QUAD'], ['cell-yes', 'SEND \u2713'], ['cell-no', 'DENY \u2715'], ...common];
     bar.innerHTML = pills.map(([a, l]) => `<div class="pill" data-act="${a}">${l}</div>`).join('') + '<div class="pill" id="cell-tpause">❚❚</div>';
     t.appendChild(bar);
     bar.querySelector('#cell-tpause').addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this.setPause(true); }, { passive: false });
+    // PING: hold and drag your thumb to pick from the wheel.
+    const ping = bar.querySelector('[data-act="cell-ping"]');
+    let pid = null, x0 = 0, y0 = 0;
+    ping.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; pid = t.identifier; x0 = t.clientX; y0 = t.clientY; });
+    addEventListener('touchmove', (e) => {
+      if (pid === null || !g.wheel.open) return;
+      for (const t of e.changedTouches) if (t.identifier === pid) { g.wheel.dx = (t.clientX - x0) * 1.6; g.wheel.dy = (t.clientY - y0) * 1.6; g.wheel._pick(); }
+    }, { passive: true });
+    addEventListener('touchend', (e) => { for (const t of e.changedTouches) if (t.identifier === pid) pid = null; });
     this.tbar = bar;
+  }
+
+  intro(M, who) {
+    const el = this.el.intro;
+    el.querySelector('h1').textContent = M.title;
+    el.querySelector('.c-intro-l').textContent = M.line;
+    el.querySelector('.c-intro-r').textContent = who;
+    el.classList.add('on');
+    setTimeout(() => el.classList.add('out'), 4200);
+    setTimeout(() => el.classList.remove('on', 'out'), 6000);
   }
 
   setPause(on) {
@@ -1752,7 +1904,7 @@ class CellHud {
     const el = this.el.debrief;
     const mm = Math.floor(info.time / 60), ss = String(info.time % 60).padStart(2, '0');
     const RATING = { GHOST: 'Never seen. Nobody hurt.', SILENT: 'Takedowns only. No alarm.', LETHAL: 'Clean but bloody. No full alarm.', LOUD: 'They knew you were there.', BURNED: 'The cell was lost.' };
-    el.innerHTML = `<div class="c-card"><div class="kick">SNIPER CELL: INFILTRATION // DEBRIEF</div>
+    el.innerHTML = `<div class="c-card"><div class="kick">${g.missionTitle} // DEBRIEF</div>
       <h2>${win ? 'INTEL SECURED' : 'MISSION FAILED'}</h2><div class="c-rate c-rate-${info.rating.toLowerCase()}">${info.rating}</div><p>${RATING[info.rating]}</p>
       <table><tr><td>Time</td><td>${mm}:${ss}</td></tr><tr><td>Kills / takedowns</td><td>${info.kills} / ${info.takedowns}</td></tr><tr><td>Drones down</td><td>${info.drones}</td></tr><tr><td>Times spotted</td><td>${info.spotted}</td></tr><tr><td>Peak alarm</td><td>${info.alarm} %</td></tr>
       <tr><td>Your shots / hits / heads</td><td>${st.shots} / ${st.hits} / ${st.heads}</td></tr><tr><td>Longest kill</td><td>${st.longest} m</td></tr></table>
@@ -1802,6 +1954,23 @@ class CellHud {
     this.el.prompt.classList.toggle('on', !!pr && !g.tablet.visible);
     if (pr) { this.el.promptT.textContent = pr.label; this.el.promptB.style.width = `${Math.round((pr.p || 0) * 100)}%`; this.el.prompt.classList.toggle('bar', pr.p > 0); }
     this.root.classList.toggle('tablet', g.tablet.visible);
+    // Exposure meter (how visible you are right now) + the most-aware enemy.
+    const v = g.vVis;
+    this.el.vis.style.width = `${Math.round(v * 100)}%`;
+    const vlab = v < 0.2 ? 'HIDDEN' : v < 0.45 ? 'LOW' : v < 0.75 ? 'VISIBLE' : 'EXPOSED';
+    if (vlab !== this._vl) { this._vl = vlab; this.el.visL.textContent = vlab; this.el.visBox.dataset.l = vlab.toLowerCase(); }
+    // Ability chips.
+    if (g.role === 'shooter') {
+      const K = g.kit;
+      const kh = `<i class="${K.deadeye > 0 ? 'on' : K.deadeyeCd > 0 ? 'cd' : ''}">H DEADEYE ${K.deadeye > 0 ? Math.ceil(K.deadeye) + 's' : K.deadeyeCd > 0 ? Math.ceil(K.deadeyeCd) + 's' : 'READY'}</i><i class="${K.lures ? '' : 'cd'}">X LURE \u00D7${K.lures}</i><i class="${K.execs ? 'on' : 'cd'}">T EXECUTE \u00D7${K.execs}</i>`;
+      if (kh !== this._kh) { this._kh = kh; this.el.kit.innerHTML = kh; }
+    }
+    // Incoming request / call card.
+    const rq = g.requests.find((r) => r.st === 'pending');
+    const card = rq ? `${g.partnerName} requests ${({ supply: 'SUPPLY DROP', scan: 'PULSE SCAN', emp: 'EMP', decoy: 'DECOY', lights: 'CUT LIGHTS', drone: 'DRONE OVERWATCH' })[rq.k]} \u00B7 ${Math.round(Math.hypot(rq.x - P.pos.x, rq.z - P.pos.z))} m` : g.lastCm ? `${g.partnerName}: ${g.lastCm.label}` : '';
+    this.el.req.classList.toggle('on', !!card && !g.ended);
+    this.el.req.classList.toggle('ack', !rq);
+    if (card !== this._rq) { this._rq = card; this.el.reqT.textContent = card; }
     this._draw(dt);
   }
 
@@ -1891,6 +2060,7 @@ class CellHud {
       c.arc(W / 2, H / 2, rr, a0 - 0.22 * clamp(e.aw, 0.2, 1), a0 + 0.22 * clamp(e.aw, 0.2, 1));
       c.stroke();
     }
+    g._kitDraw(c, W, H, proj);
     // Hit markers.
     for (const h of this.hits) h.t += dt;
     this.hits = this.hits.filter((h) => h.t < 0.3);
@@ -1916,10 +2086,15 @@ class CellHud {
     switch (ob.step) {
       case 0: return { x: -80, y: 2, z: 11, label: 'FENCE GAP' };
       case 1: return { x: SPOTS.relay.x, y: 1.5, z: SPOTS.relay.z, label: 'RELAY' };
-      case 2: { const c = g.sentinel.guards.find((q) => q.chief); return c ? { x: c.x, y: c.y + 2.4, z: c.z, label: c.state === 'dead' ? 'BADGE' : 'CHIEF', hide: c.state !== 'dead' && !(c.tagT > 0 || c.rev) } : null; }
+      case 2: { const c = g.sentinel.guards.find((q) => q.chief); return c ? { x: c.x, y: c.y + 2.6, z: c.z, label: c.state === 'dead' ? 'BADGE' : g.mission === 'nightwatch' ? 'OVERSEER' : 'CHIEF', hide: c.state !== 'dead' && !(c.tagT > 0 || c.rev) } : null; }
       case 3: return { x: g.fac.doors.vault.x, y: 2.2, z: g.fac.doors.vault.z + 0.6, label: 'VAULT' };
       case 4: case 5: return { x: SPOTS.server.x, y: 1.6, z: SPOTS.server.z + 1, label: ob.step === 4 ? 'CONSOLE' : 'DRIVE' };
-      case 6: return ob.drive === 'ground' && ob.driveAt ? { x: ob.driveAt.x, y: 1, z: ob.driveAt.z, label: 'DRIVE' } : { x: SPOTS.lz.x, y: terrainHeight(SPOTS.lz.x, SPOTS.lz.z) + 2, z: SPOTS.lz.z, label: 'LZ' };
+      case 6: {
+        if (ob.drive === 'ground' && ob.driveAt) return { x: ob.driveAt.x, y: 1, z: ob.driveAt.z, label: 'DRIVE' };
+        if (g._seat()) return null;
+        const d = g._doorWorld(g._seatFor(g.role));
+        return { x: d.x, y: g.vanState.y + 1.6, z: d.z, label: g._seatFor(g.role) === 'driver' ? 'VAN \u00B7 DRIVER' : 'VAN \u00B7 PASSENGER' };
+      }
     }
     return null;
   }
@@ -1980,3 +2155,5 @@ function esc(s) {
   return String(s).replace(/[<>&"]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
 }
 void PLAYER;
+
+installKit(CellGame);

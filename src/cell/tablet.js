@@ -12,7 +12,8 @@ import { PAYLOADS, PAYLOAD } from './ops.js';
 import { OBJECTIVES } from './cell.js';
 
 const TIER_COL = ['rgba(0,255,224,0.05)', 'rgba(0,255,224,0.07)', 'rgba(64,140,255,0.08)', 'rgba(170,90,255,0.11)'];
-const REQUESTS = [['scan', 'SCAN'], ['supply', 'SUPPLY'], ['door', 'DOOR'], ['lights', 'LIGHTS'], ['decoy', 'DECOY'], ['jam', 'JAM'], ['emp', 'EMP'], ['spoof', 'SPOOF CAMS']];
+const REQUESTS = [['supply', 'SUPPLY DROP'], ['scan', 'PULSE SCAN'], ['emp', 'EMP'], ['decoy', 'DECOY'], ['lights', 'CUT LIGHTS'], ['drone', 'DRONE'], ['move', 'MOVE HERE'], ['look', 'LOOK HERE']];
+const REQ_NAME = { supply: 'SUPPLY DROP', scan: 'PULSE SCAN', emp: 'EMP', decoy: 'DECOY', lights: 'CUT LIGHTS', drone: 'DRONE OVERWATCH' };
 
 export class Tablet {
   constructor(game) {
@@ -26,7 +27,8 @@ export class Tablet {
     this.dirty = true;
     const el = (this.el = document.createElement('div'));
     el.id = 'cell-tablet';
-    const spot = game.role === 'spotter';
+    const spot = game.role === 'spotter' || game.operative;
+    this.spot = spot;
     el.innerHTML = `
       <div class="ct-bezel">
         <div class="ct-top"><b>CYBER OPS // CS-7</b><span class="ct-link"></span><span class="ct-clock"></span><button class="ct-x" title="Close (TAB)">✕</button></div>
@@ -34,6 +36,7 @@ export class Tablet {
           <div class="ct-mapwrap"><canvas class="ct-map"></canvas><div class="ct-mapbtns"><button data-z="1">＋</button><button data-z="-1">－</button><button data-z="0">◎</button></div><div class="ct-hint"></div></div>
           <div class="ct-side">
             <div class="ct-sec ct-obj"></div>
+            <div class="ct-sec ct-reqs"></div>
             <div class="ct-sec ct-bw"></div>
             <div class="ct-sec ct-pay"></div>
             <div class="ct-sec ct-hold"></div>
@@ -46,7 +49,7 @@ export class Tablet {
     const $ = (s) => el.querySelector(s);
     this.canvas = $('.ct-map');
     this.ctx = this.canvas.getContext('2d');
-    this.parts = { obj: $('.ct-obj'), bw: $('.ct-bw'), pay: $('.ct-pay'), hold: $('.ct-hold'), feed: $('.ct-feed'), feedLbl: $('.ct-feedlbl'), log: $('.ct-log'), clock: $('.ct-clock'), link: $('.ct-link'), hint: $('.ct-hint') };
+    this.parts = { reqs: $('.ct-reqs'), obj: $('.ct-obj'), bw: $('.ct-bw'), pay: $('.ct-pay'), hold: $('.ct-hold'), feed: $('.ct-feed'), feedLbl: $('.ct-feedlbl'), log: $('.ct-log'), clock: $('.ct-clock'), link: $('.ct-link'), hint: $('.ct-hint') };
     $('.ct-x').onclick = () => this.close();
     el.querySelectorAll('[data-z]').forEach((b) => (b.onclick = () => {
       const z = +b.dataset.z;
@@ -67,22 +70,40 @@ export class Tablet {
       hold('.ct-crack', 'cracking');
       hold('.ct-fight', 'fighting');
     } else {
-      this.parts.pay.innerHTML = `<div class="ct-h">REQUEST FROM ${esc(game.partnerName)}</div>` + REQUESTS.map(([k, l]) => `<button data-r="${k}"><b>${l}</b></button>`).join('');
-      this.parts.pay.addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (b) this.g.request(b.dataset.r); });
+      this.parts.pay.innerHTML = `<div class="ct-h">REQUEST FROM ${esc(game.partnerName)} \u2014 pick, then tap the map</div>` + REQUESTS.map(([k, l]) => `<button data-r="${k}"><b>${l}</b></button>`).join('');
+      this.parts.pay.addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (!b) return; this.reqSel = this.reqSel === b.dataset.r ? null : b.dataset.r; this.dirty = true; });
       this.parts.hold.style.display = 'none';
     }
+    // Incoming requests (spotter): SEND / DENY.
+    this.parts.reqs.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-q]');
+      if (!b) return;
+      const r = this.g.requests.find((q) => q.id === +b.dataset.q);
+      this.g._answer(r, b.dataset.ok === '1');
+    });
     // Map input.
     const cv = this.canvas;
     let drag = null;
     cv.addEventListener('contextmenu', (e) => e.preventDefault());
+    const openWheel = (cx, cy) => {
+      const r = cv.getBoundingClientRect();
+      this.wheelAt = this._toWorld(cx - r.left, cy - r.top);
+      const h = this._hit(cx - r.left, cy - r.top);
+      this.wheelEnemy = h && (h.kind === 'guard' || h.kind === 'drone') ? h.e.id : null;
+      this.g.wheel.show(cx, cy, this.g._wheelSub(), this.g._wheelLabels());
+      if (drag) drag.wheel = true;
+    };
     cv.addEventListener('pointerdown', (e) => {
       cv.setPointerCapture(e.pointerId);
       drag = { x: e.clientX, y: e.clientY, vx: this.view.x, vz: this.view.z, moved: false, btn: e.button, t: performance.now() };
+      if (e.button === 2) openWheel(e.clientX, e.clientY);
+      else { clearTimeout(this._lp); const d0 = drag; this._lp = setTimeout(() => { if (drag === d0 && !d0.moved) openWheel(d0.x, d0.y); }, 520); }
     });
     cv.addEventListener('pointermove', (e) => {
       const r = cv.getBoundingClientRect();
       this.mouse = { x: e.clientX - r.left, y: e.clientY - r.top };
       if (!drag) return;
+      if (drag.wheel) { this.g.wheel.point(e.clientX, e.clientY); return; }
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (Math.hypot(dx, dy) > 6) drag.moved = true;
       if (drag.moved) { this.view.x = drag.vx - dx / this.view.s; this.view.z = drag.vz - dy / this.view.s; }
@@ -91,11 +112,12 @@ export class Tablet {
       if (!drag) return;
       const d = drag;
       drag = null;
+      clearTimeout(this._lp);
+      if (d.wheel) { const k = this.g.wheel.close(); this.g._wheelPick(k, this.wheelAt, this.wheelEnemy); return; }
       if (d.moved) return;
       const r = cv.getBoundingClientRect();
       const p = this._toWorld(e.clientX - r.left, e.clientY - r.top);
-      const long = performance.now() - d.t > 550;
-      if (d.btn === 2 || long) this._ping(p); else this._click(p, e.clientX - r.left, e.clientY - r.top);
+      this._click(p, e.clientX - r.left, e.clientY - r.top);
     });
     cv.addEventListener('wheel', (e) => { e.preventDefault(); this.view.s = Math.min(14, Math.max(1.2, this.view.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); }, { passive: false });
     addEventListener('keydown', (e) => {
@@ -195,7 +217,16 @@ export class Tablet {
   }
 
   _click(p, px, py) {
-    const g = this.g, spot = g.role === 'spotter';
+    const g = this.g, spot = this.spot;
+    if (!spot && this.reqSel) {
+      const k = this.reqSel;
+      this.reqSel = null;
+      this.dirty = true;
+      const h = this._hit(px, py);
+      g._wheelPick(k, p, h && (h.kind === 'guard' || h.kind === 'drone') ? h.e.id : null);
+      this._say(`${(REQ_NAME[k] || k.toUpperCase())} \u2192 SENT`, true);
+      return;
+    }
     if (spot && this.selected) {
       const k = this.selected;
       const why = g.ops.use(k, p);
@@ -272,7 +303,11 @@ export class Tablet {
   }
 
   _side() {
-    const g = this.g, ob = g.obj, S = g.sentinel, spot = g.role === 'spotter', P = this.parts;
+    const g = this.g, ob = g.obj, S = g.sentinel, spot = this.spot, P = this.parts;
+    const pend = g.requests.filter((r) => r.st === 'pending');
+    P.reqs.style.display = pend.length ? '' : 'none';
+    P.reqs.innerHTML = pend.length ? '<div class="ct-h">INCOMING REQUESTS</div>' + pend.map((r) => `<div class="ct-req"><b>${esc(REQ_NAME[r.k] || r.k)}</b><span>${Math.ceil(r.t)}s</span><button data-q="${r.id}" data-ok="1">SEND</button><button data-q="${r.id}" data-ok="0">DENY</button></div>`).join('') : '';
+    if (!spot) for (const b of P.pay.querySelectorAll('[data-r]')) b.classList.toggle('sel', this.reqSel === b.dataset.r);
     const o = OBJECTIVES[ob.step];
     const sec = S.alarmLabel;
     const mm = Math.floor(g.t / 60), ss = String(Math.floor(g.t % 60)).padStart(2, '0');
@@ -300,7 +335,7 @@ export class Tablet {
       const ph = P.hold.querySelector('.ct-perch');
       ph.innerHTML = g.aiShoot ? `<div class="ct-h">RA — PERCH</div><p>Click a perch on the map to move Ra. Now: <b>${SPOTS.perches[g.aiShoot.perch].name}</b>${g.aiShoot.moveT > 0 ? ' (relocating)' : ''}</p>` : '';
     } else {
-      P.bw.innerHTML = `<div class="ct-h">OVERWATCH</div><p>${g.solo ? 'Rōnin answers requests and runs payloads on his own.' : 'Requests drop a pin on ' + esc(g.partnerName) + '’s console.'} Click a contact to tag it. Right-click / long-press to ping.</p>`;
+      P.bw.innerHTML = `<div class="ct-h">OVERWATCH</div><p>${g.aiSpot ? 'R\u014dnin answers requests and runs payloads on his own.' : 'Requests land on ' + esc(g.partnerName) + '\u2019s console to SEND or DENY.'} Tap a contact to tag it. Right-click / long-press the map for the ping wheel.</p>`;
     }
     P.log.innerHTML = '<div class="ct-h">COMMS</div>' + g.commsLog.slice(-7).map((l) => `<div class="c-${l.c && l.c[0] === '#' ? 'x' : l.c}">${l.who ? '<b>' + esc(l.who) + '</b> ' : ''}${esc(l.m)}</div>`).join('');
   }

@@ -23,7 +23,7 @@ export const SPOTS = {
   ],
   relay: { x: 33.2, z: -6, y: 1.1 },
   server: { x: 30, z: -35.6, y: 1.1 },
-  lz: { x: 132, z: -14, r: 7 },
+  lz: { x: 110, z: -16, r: 7 }, // the extraction van, on the east track
   barracks: { x: 43.5, z: 22 },
   gate: { x: 0, z: 72 },
   dronePad: { x: 58, z: 22, y: 8.2 },
@@ -64,6 +64,9 @@ export function terrainHeight(x, z) {
   h += bump(x, z, 128, -72, 16, 12) + bump(x, z, -136, -28, 15, 10);
   h += smoothstep(120, 175, Math.abs(x)) * 34 * (0.7 + 0.6 * fbm(z * 0.02, x * 0.01, 2));
   h += smoothstep(-95, -150, z) * 38 * (0.7 + 0.6 * fbm(x * 0.02, 5.5, 2));
+  // The east track out to the van is graded flat.
+  const fx = Math.max(0, 84 - x, x - 150), fz = Math.max(0, Math.abs(z + 16) - 7);
+  h *= smoothstep(0, 12, Math.hypot(fx, fz));
   return h;
 }
 

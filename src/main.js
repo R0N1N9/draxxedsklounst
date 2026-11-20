@@ -597,16 +597,20 @@ $('btn-join').onclick = async () => {
 
 // ---- Sniper Cell: Infiltration (co-op stealth) ----
 const CELL_CALL = { shooter: 'Ra', spotter: 'R\u014dnin' };
-const cellSet = { role: store.get('cellRole', 'shooter'), diff: store.get('cellDiff', 'operative'), names: store.get('cellNames', {}) };
+const cellSet = { role: store.get('cellRole', 'shooter'), diff: store.get('cellDiff', 'operative'), names: store.get('cellNames', {}), mission: store.get('cellMission', 'nightwatch') };
+const MISSION_DESC = { nightwatch: 'NightWatch: SENTINEL\u2019s augmented night garrison \u2014 cowardly scavs, shielded juggernauts with energy blades, bulwarks behind hard-light walls, beam-rifle snipers on the towers.', infiltration: 'Infiltration: the original op against a crew of human security guards.' };
 const cellName = (role) => ((cellSet.names[role] || '').trim() || CELL_CALL[role]).replace(/[<>&"]/g, '').slice(0, 16);
 function syncCell() {
   document.querySelectorAll('#panel-cell .cell-role').forEach((b) => b.classList.toggle('on', b.dataset.role === cellSet.role));
   document.querySelectorAll('#cell-diff button').forEach((b) => b.classList.toggle('on', b.dataset.d === cellSet.diff));
+  document.querySelectorAll('#cell-mission button').forEach((b) => b.classList.toggle('on', b.dataset.m === cellSet.mission));
+  $('cell-mission-desc').textContent = MISSION_DESC[cellSet.mission];
   $('in-cell-name').value = cellSet.names[cellSet.role] || '';
   $('in-cell-name').placeholder = CELL_CALL[cellSet.role];
 }
 document.querySelectorAll('#panel-cell .cell-role').forEach((b) => (b.onclick = () => { cellSet.role = b.dataset.role; store.set('cellRole', cellSet.role); syncCell(); }));
 document.querySelectorAll('#cell-diff button').forEach((b) => (b.onclick = () => { cellSet.diff = b.dataset.d; store.set('cellDiff', cellSet.diff); syncCell(); }));
+document.querySelectorAll('#cell-mission button').forEach((b) => (b.onclick = () => { cellSet.mission = b.dataset.m; store.set('cellMission', cellSet.mission); syncCell(); }));
 $('in-cell-name').oninput = (e) => { cellSet.names[cellSet.role] = e.target.value; store.set('cellNames', cellSet.names); };
 $('btn-cell').onclick = () => { $('panel-cell').classList.remove('hosting'); syncCell(); showPanel('panel-cell'); };
 syncCell();
@@ -618,10 +622,10 @@ async function startCell(mode, opts = {}) {
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
   const quality = settings.quality === 'auto' ? detectQuality() : settings.quality;
   const { CellGame } = await import('./cell/cell.js');
-  const c = opts.cell || { role: cellSet.role, diff: cellSet.diff, seed: (Math.random() * 1e6) | 0 };
+  const c = opts.cell || { role: cellSet.role, diff: cellSet.diff, mission: cellSet.mission, seed: (Math.random() * 1e6) | 0 };
   // The guest plays whichever role the host didn't take.
-  const role = mode === 'guest' ? (c.role === 'shooter' ? 'spotter' : 'shooter') : c.role;
-  game = new CellGame({ mode, net: opts.net || null, role, diff: c.diff, seed: c.seed, quality, settings: { ...settings }, audio, name: cellName(role), partnerName: opts.partnerName || CELL_CALL[role === 'shooter' ? 'spotter' : 'shooter'] });
+  const role = mode === 'operative' ? 'shooter' : mode === 'guest' ? (c.role === 'shooter' ? 'spotter' : 'shooter') : c.role;
+  game = new CellGame({ mode, net: opts.net || null, role, diff: c.diff, seed: c.seed, mission: c.mission || 'nightwatch', quality, settings: { ...settings }, audio, name: cellName(role), partnerName: opts.partnerName || CELL_CALL[role === 'shooter' ? 'spotter' : 'shooter'] });
   if (opts.hello) game.hello = opts.hello;
   window.__game = game;
   document.body.classList.toggle('touch', game.input.touch);
@@ -631,6 +635,7 @@ async function startCell(mode, opts = {}) {
   game.input.requestLock();
 }
 $('btn-cell-solo').onclick = () => { audio.unlock(); primeGyro(); goFullscreen(); startCell('solo'); };
+$('btn-cell-lone').onclick = () => { audio.unlock(); primeGyro(); goFullscreen(); startCell('operative'); };
 $('btn-cell-join').onclick = () => { showPanel('panel-join'); $('in-code').focus(); };
 $('btn-cell-cancel').onclick = () => { if (net) { net.close(); net = null; } $('panel-cell').classList.remove('hosting'); };
 $('btn-cell-host').onclick = async () => {
@@ -651,7 +656,7 @@ $('btn-cell-host').onclick = async () => {
   }
   const other = cellSet.role === 'shooter' ? 'spotter' : 'shooter';
   $('cell-status').textContent = `Waiting for your ${other}\u2026 You are the ${cellSet.role}.`;
-  const cell = { role: cellSet.role, diff: cellSet.diff, seed: (Math.random() * 1e6) | 0 };
+  const cell = { role: cellSet.role, diff: cellSet.diff, mission: cellSet.mission, seed: (Math.random() * 1e6) | 0 };
   const hello = { t: 'hello', name: cellName(cellSet.role), cell };
   net.on('hello', () => net.send(hello));
   net.on('open', () => {
@@ -669,7 +674,7 @@ $('btn-cell-share').onclick = async () => {
   (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? text : link) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied to clipboard!'), () => prompt('Copy this link:', link));
 };
 $('btn-cell-copy').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? hostCode : inviteLink()) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied!'), () => prompt('Copy:', FILE_MODE ? hostCode : inviteLink()));
-if (params.get('cell') === 'solo') { audio.unlock(); startCell('solo', { cell: { role: params.get('role') === 'spotter' ? 'spotter' : 'shooter', diff: params.get('diff') || 'operative', seed: 7 } }); }
+if (params.get('cell')) { audio.unlock(); startCell(params.get('cell') === 'lone' ? 'operative' : 'solo', { cell: { role: params.get('role') === 'spotter' ? 'spotter' : 'shooter', diff: params.get('diff') || 'operative', mission: params.get('mission') || 'nightwatch', seed: 7 } }); }
 
 if (params.get('join')) {
   showPanel('panel-join');
