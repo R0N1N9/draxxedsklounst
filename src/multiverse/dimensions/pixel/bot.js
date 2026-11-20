@@ -2,11 +2,11 @@
 // ballistic arc the preview shows, and plays a plan: dig in behind crates, take the nest,
 // hold the edge, cross the bridge, or raid through the chasm. Skill scales its reaction,
 // its aim error, how well it reads the thermals, and how it dodges.
-import { clamp, angDiff, angDamp, gauss } from '../../kit.js';
+import { angDiff, angDamp, gauss } from '../../kit.js';
 import { C, BODY, solidAt, traceBullet } from './world.js';
 
 const PLANS = ['cover', 'edge', 'nest', 'bridge', 'raid'];
-const WEIGHTS = [[0.3, 0.2, 0.1, 0.3, 0.1], [0.25, 0.15, 0.2, 0.2, 0.2], [0.2, 0.15, 0.25, 0.15, 0.25]];
+const WEIGHTS = [[0.3, 0.2, 0.15, 0.25, 0.1], [0.25, 0.2, 0.25, 0.15, 0.15], [0.2, 0.2, 0.25, 0.15, 0.2]];
 
 export function makeBot(ctx, world, S, p) {
   const skill = ctx.botSkill, W = world.W, E = world.E;
@@ -15,9 +15,9 @@ export function makeBot(ctx, world, S, p) {
   const b = {
     plan: '', planT: 0, step: 0, aim: p.aim, err: 0, seenT: 0, react: 0.9 - 0.65 * skill, stuckT: 0, lastX: p.x,
     peek: 0, peekDur: 1.5, hold: 0, duckT: 0, dodgeAt: 0, dodgeBullet: null, decoyLock: null, lockUntil: 0, fvx: 0, fvy: 0, fx: -1, fy: -1,
-    smokeRoll: 0, think0: 0, goalX: p.x, goalY: p.y, tw: Math.random(),
+    smokeRoll: 0, settle: 5.5 + Math.random() * 4.5 + (1 - skill) * 3, goalX: p.x, goalY: p.y,
   };
-  const sigma = 0.034 - 0.027 * skill;
+  const sigma = 0.058 - 0.036 * skill;
   const rate = 3.5 + 10 * skill;
   const gs = () => (ctx.sudden ? 0.45 : 1);
 
@@ -42,18 +42,25 @@ export function makeBot(ctx, world, S, p) {
   }
 
   // The goal point of the current plan step.
+  const G = [0, 0];
+  const at = (x, y) => { G[0] = x; G[1] = y; return G; };
   function goal() {
     const nest = world.nests[p.i];
     switch (b.plan) {
-      case 'cover': { const c = nearCrate(); return c ? [c.x + c.w / 2 - fwd * 9, world.GY] : [ex(30), world.GY]; }
-      case 'edge': return [ex(E - 5), world.GY];
-      case 'nest': return [nest.x + nest.w / 2, nest.y];
-      case 'bridge': return [W / 2 - fwd * 11, world.bridgeY(W / 2 - fwd * 11)];
-      default: // raid
-        if (b.step === 0) return [ex(E - 6), world.GY];
-        if (b.step === 1) return [ex(E + 32), world.PF];
-        if (b.step === 2) return [ex(W - E - 32), world.PF];
-        return [p.i ? E - 6 : W - E + 6, world.GY];
+      case 'cover': { const c = nearCrate(); return c ? at(c.x + c.w / 2 - fwd * 9, world.GY) : at(ex(30), world.GY); }
+      case 'edge': return at(ex(E - 5), world.GY);
+      case 'nest': return at(nest.x + nest.w / 2, nest.y);
+      case 'bridge': {
+        let c = null;
+        for (const q of world.crates) if (q.alive && q.x > E && q.x < W - E && (q.x + q.w / 2 < W / 2) === (p.i === 0)) c = q;
+        const x = c ? (p.i ? c.x + c.w + 5 : c.x - 5) : W / 2 - fwd * 22;
+        return at(x, world.bridgeSurf(x));
+      }
+      default: // raid: onto the bridge, down the gap, across the chasm floor, up the far face
+        if (b.step === 0) { const x = p.i ? world.hole.x1 + 8 : world.hole.x0 - 8; return at(x, world.bridgeSurf(x)); }
+        if (b.step === 1) return at(W / 2, world.PF);
+        if (b.step === 2) return at(ex(W - E - 34), world.PF);
+        return at(p.i ? E - 6 : W - E + 6, world.GY);
     }
   }
 
@@ -90,7 +97,7 @@ export function makeBot(ctx, world, S, p) {
         x += vx * h; y += vy * h; t += h;
       }
       lift.k = t;
-      ang += ((ty - y) / dist) * 0.95;
+      ang += fwd * ((ty - y) / dist) * 0.95; // up is a smaller angle facing right, a larger one facing left
     }
     return ang;
   }
@@ -124,14 +131,15 @@ export function makeBot(ctx, world, S, p) {
     const sh = BODY[p.st];
     const sx = p.x + fwd, sy = p.y - sh.sh;
     if (sees) b.seenT += dt; else b.seenT = 0;
+    b.settle -= dt;
 
     // --- movement by plan ---
-    let [gx, gy] = goal();
+    let gg = goal(), gx = gg[0], gy = gg[1];
     if (b.plan === 'raid') {
       const d = Math.hypot(gx - p.x, gy - p.y);
       if (d < 9 && b.step < 3) b.step++;
       else if (b.step === 3 && d < 8) b.planT = Math.min(b.planT, 2);
-      [gx, gy] = goal();
+      gg = goal(); gx = gg[0]; gy = gg[1];
     }
     const adx = drive(gx, gy);
     const arrived = adx < 4 && Math.abs(gy - p.y) < 8;
@@ -141,7 +149,7 @@ export function makeBot(ctx, world, S, p) {
 
     // --- stance: peek from cover, prone for the long shot, duck from the bird and from bullets ---
     const eta = world.birdEta(p.x);
-    const birdWise = skill > 0.25 || Math.random() < 0.003;
+    const birdWise = skill > 0.25 || Math.random() < 0.005; // a recruit sometimes notices the sign in time
     if (eta < 1.7 && eta > -0.8 && birdWise && p.ground) b.duckT = Math.max(b.duckT, 0.3);
     let danger = false;
     for (const bl of S.bullets) {
@@ -155,22 +163,18 @@ export function makeBot(ctx, world, S, p) {
       const T = Math.abs(p.x - bl.x) / Math.abs(bl.vx || 1), yAt = bl.y + bl.vy * T + 0.5 * C.BULLET_G * T * T;
       if (Math.abs(yAt - (p.y - 8)) < 14 && Math.random() < 0.02 + skill * 0.9) danger = true;
     }
+    if ((danger || (sees && dist < 100)) && b.settle > 0.35) b.settle = 0.35; // shot at, or somebody is in my face: stop dithering
     if (danger && S.t >= b.dodgeAt && p.ground && p.st < 2 && !arrived) b.duckT = Math.max(b.duckT, 0.5);
     if (b.duckT > 0) { b.duckT -= dt; cmd.crouch = true; if (b.duckT > 0.2 && p.ground) cmd.mx *= 0.2; }
 
-    let want = 0;
     const holding = arrived && (b.plan === 'edge' || b.plan === 'nest' || b.plan === 'cover' || b.plan === 'bridge');
     if (holding) {
-      if (b.plan === 'cover') {
+      if (b.plan === 'cover' || b.plan === 'bridge') {
+        // peek: stand to look and shoot, crouch behind the crate in between
         b.peek -= dt;
-        if (b.peek <= 0) { b.hold = b.hold ? 0 : 1; b.peek = b.hold ? 0.9 + Math.random() * 0.7 : (1.4 - skill * 0.8) + Math.random() * 1.6; }
-        want = b.hold ? 0 : 1; // stand to peek, crouch to hide
-        if (!b.hold && sees && skill > 0.35 && dist > 110 && b.peek < 0.5) want = 1;
-      } else if (b.plan === 'bridge') want = 1;
-      else want = dist > 90 && skill > 0.3 ? 2 : 1;
-      if (b.plan === 'cover' && want === 1) cmd.crouch = true;
-      if (want === 2 && p.ground && b.duckT <= 0) cmd.alt = true;
-      if (b.plan === 'edge' || b.plan === 'nest') { if (want === 1) cmd.crouch = Math.random() < 0.5 && skill < 0.5; }
+        if (b.peek <= 0) { b.hold = b.hold ? 0 : 1; b.peek = b.hold ? 0.9 + Math.random() * 0.7 : 1.3 - skill * 0.7 + Math.random() * 1.4; }
+        cmd.crouch = !!b.hold;
+      } else if (dist > 90 && skill > 0.3 && p.ground && b.duckT <= 0) cmd.alt = true; // settle in for the long shot
     } else if (sees && p.ground && dist > 120 && skill > 0.5 && Math.abs(cmd.mx) < 0.01 && b.duckT <= 0) cmd.alt = true;
     if (cmd.alt) cmd.mx = 0;
 
@@ -189,7 +193,9 @@ export function makeBot(ctx, world, S, p) {
     b.aim = angDamp(b.aim, ang, cmd.alt ? rate * 0.8 : rate, dt);
     cmd.a = b.aim;
     const aligned = Math.abs(angDiff(b.aim, ang)) < 0.012 + 0.012 * (1 - skill);
-    if (sees && p.reload <= 0 && aligned && b.seenT > b.react) {
+    // patience: at long range only a lying-down shooter (or a hasty recruit) takes the shot
+    const patient = dist < 150 || p.st === 2 || skill < 0.4 && Math.random() < dt * 1.5 || ctx.sudden;
+    if (sees && p.reload <= 0 && aligned && b.seenT > b.react && b.settle <= 0 && patient) {
       // a clear arc, or cover worth breaking
       const hit = traceBullet(world, sx, sy, b.aim, Math.min(1.4, dist / C.BULLET_V + 0.25), gs(), ctx.sudden ? 0 : skill * 0.6, null);
       const beyond = hit.hit === 0 || (hit.x - tx) * fwd > -4;
@@ -197,8 +203,8 @@ export function makeBot(ctx, world, S, p) {
       const stationaryOK = skill < 0.5 || Math.abs(p.vx) < 30 || p.st > 0 || dist < 120;
       if ((beyond || crateBreak) && stationaryOK) {
         cmd.fire = true;
-        b.err = gauss(Math.random) * sigma * (cmd.alt ? 0.45 : 1) * (1 + Math.min(1, Math.abs(p.vx) / 60) * 0.6);
-        if (b.plan === 'cover') { b.hold = 1; b.peek = 0.6 + Math.random() * 0.6; }
+        b.err = gauss(Math.random) * sigma * (cmd.alt ? 0.5 : p.st === 1 ? 0.8 : 1.4) * (1 + Math.min(1, Math.abs(p.vx) / 60) * 0.6);
+        if (b.plan === 'cover' || b.plan === 'bridge') { b.hold = 1; b.peek = 0.6 + Math.random() * 0.6; }
       }
     } else if (p.reload <= 0 && !sees) b.err = gauss(Math.random) * sigma;
 
@@ -214,6 +220,5 @@ export function makeBot(ctx, world, S, p) {
     if (skill < 0.4 && arrived && Math.random() < dt * 0.6) cmd.jump = true;
     return cmd;
   }
-  return { think, cmd };
+  return { think, cmd, b };
 }
-export { clamp };

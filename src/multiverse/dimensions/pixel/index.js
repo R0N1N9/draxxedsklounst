@@ -1,29 +1,33 @@
 // CARTRIDGE CANYON — a side-on, 16-colour, 320x180 pixel-art sniper duel on a canyon with a rope bridge.
 //
-// FANTASY   A 1990s cartridge nobody finished: two chunky snipers on facing cliffs, a rope bridge,
-//           a striped dusk sun. The whole world is drawn into a tiny buffer and blown up with
-//           nearest-neighbour scaling inside an arcade bezel.
-// RULES     One hit wins. Bullets are visible pixels with real DROP (aim high) and, over the
-//           chasm, THERMALS that lift or sink them (the LIFT gauge, the drifting motes). Crates
-//           stop bullets and break after one. A balloon drifts across the gap as moving cover;
-//           a big bird crosses now and then (a flashing sign warns you: duck or lie flat).
-// CONTROLS  move A/D (stick) · down = crouch · up / jump = hop, hold to fly the JETPACK
-//           aim mouse / right stick · fire = rifle (one round, 1.25 s bolt)
-//           alt PRONE (held): lie flat, can't move, steadiest aim, and a dotted arc shows
-//                             where the round will really fall (thermals not included).
+// FANTASY   A 1990s cartridge nobody finished: two chunky snipers on facing cliffs, a rope bridge
+//           with a missing-plank gap, a striped dusk sun. The world is drawn into a tiny buffer and
+//           blown up with nearest-neighbour scaling inside an arcade bezel (scanlines, rounded tube).
+// RULES     One hit wins. Bullets are visible pixels with real DROP (aim high) and, over the chasm,
+//           THERMALS that lift or sink them (the LIFT gauge, the drifting motes). Crates stop bullets
+//           and break after one. A balloon drifts across the gap as moving cover; a big bird crosses
+//           now and then (a flashing sign warns you: crouch or lie down and it passes over).
+// ROUTES    The cliff-top (cover, nests above), the bridge (open or crated), the chasm (drop through the
+//           gap, ride the spring pads back up), the air (jetpack). Each is a real way to close the range.
+// CONTROLS  move A/D (stick) · down = crouch · up / space = hop, hold to fly the JETPACK · down + jump = drop
+//           through planks · aim mouse / aim stick · fire = rifle (one round, 1.25 s bolt)
+//           alt PRONE (held, a toggle on touch): lie flat, can't move, steadiest aim, and a dotted arc shows
+//                where the round will really fall (thermals not included).
 //           a1 SMOKE   a lobbed canister; the cloud hides whoever stands in it from the other player.
 //           a2 DECOY   a cardboard cut-out of you slides off along the ground, aiming; a hit pops it.
-// BOT       Solves the same arc with lead and a thermal estimate that improves with skill, plays a
-//           plan (cover peek, nest, edge, bridge, chasm raid), ducks bullets and the bird, throws
-//           smoke while advancing and decoys while holding, and can be fooled by decoys.
-// KILL      Hit-stop, the victim flashes white and ink, then pops into pixel confetti; the buffer
-//           punches in 2x on them while a dithered K.O. banner slams across the screen.
-// SUDDEN    The crates burst, the balloon floats off, thermals die, bullets fly flat and fast to reload,
-//           both snipers get a beacon, and the chasm fills with rising lava.
-import { clamp, damp, lerp, ease, shade, segRect, pointInRect, gauss, Shake } from '../../kit.js';
+// BOT       Solves the same arc with lead and a thermal estimate that improves with skill, plays a plan
+//           (cover peek, nest, edge, bridge, chasm raid), hesitates before it opens fire, ducks bullets and
+//           the bird, throws smoke while advancing and decoys while holding, and can be fooled by decoys.
+// ONLINE    Each client simulates its own sniper and judges its own shots; the other is a puppet. The view
+//           is mirrored for the second sniper so that you always stand on the left of your own screen.
+// KILL      Hit-stop, the victim flashes white and ink, then pops into pixel confetti and a starburst; the
+//           buffer punches in 2x on them while a dithered K.O. banner slams across the screen.
+// SUDDEN    The crates burst, the balloon floats off, thermals die, bullets fly flat and the bolt cycles
+//           faster, both snipers get a beacon, and the chasm fills with rising lava.
+import { clamp, damp, lerp, ease, shade, segRect, pointInRect, Shake } from '../../kit.js';
 import { FW, FH, PAL, clearPatterns } from './palette.js';
 import { C, BODY, HW, buildWorld, stepBody, solidAt, bulletStep, firstHit, traceBullet } from './world.js';
-import { bakeBackdrop, bakeTerrain, scar } from './art.js';
+import { bakeBackdrop, bakeTerrain, bakeMist, scar } from './art.js';
 import { makeFx } from './fx.js';
 import { makeSound } from './sound.js';
 import { makeBot } from './bot.js';
@@ -51,7 +55,7 @@ export default {
     const world = buildWorld(ctx.rng);
     const online = ctx.opponent === 'remote';
     const terr = bakeTerrain(world, ctx.seed);
-    const art = { bg: bakeBackdrop(ctx.seed), terrain: terr.canvas };
+    const art = { bg: bakeBackdrop(ctx.seed), terrain: terr.canvas, mist: bakeMist(ctx.seed) };
     const sound = makeSound(ctx);
     const fx = makeFx(300);
     const shake = new Shake(3, 0);
@@ -67,7 +71,7 @@ export default {
       t: 0, P, bullets: [], smokes: [], grenades: [], decoys: [], motes: [], fx, world,
       padSquash: [0, 0], cam: { x: FW / 2, y: FH / 2, z: 1 }, kill: null, introT: -1, liveT: 0, readyT: 0, flashW: 0, sdOn: false,
       arc: Object.assign(new Float32Array(260), { n: 0 }), arcHit: { x: -1, y: -1 }, arcFull: false,
-      hides: null,
+      hides: null, shots: [0, 0],
     };
     // Smoke hides anything whose centre is inside a mature cloud.
     S.hides = (x, y) => {
@@ -81,6 +85,7 @@ export default {
     };
     for (let i = 0; i < 34; i++) S.motes.push({ x: world.E + 6 + Math.random() * (FW - 2 * world.E - 12), y: 108 + Math.random() * 58, c: Math.random() < 0.5 ? PAL.cream : Math.random() < 0.5 ? PAL.peach : PAL.steel, long: Math.random() < 0.3 });
     const view = makeView(ctx, world, S, art);
+    ctx.canvas.style.cursor = 'none'; // the pixel reticle is the cursor (restored in dispose)
     for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = makeBot(ctx, world, S, p);
 
     const human = { mx: 0, crouch: false, a: 0, fire: false, alt: false, jump: false, jet: false, a1: false, a2: false };
@@ -92,15 +97,24 @@ export default {
     const sh = { x: 0, y: 0 };
 
     // ---- commands ----
+    // Standing on planks or a nest: pressing down + jump lets you through.
+    function onOneWay(p) {
+      if (world.bridgeY(p.x) >= 0 && Math.abs(p.y - world.bridgeY(p.x)) < 2) return true;
+      for (const n of world.nests) if (p.x > n.x && p.x < n.x + n.w && Math.abs(p.y - n.y) < 2) return true;
+      return false;
+    }
+
     function humanCmd(p) {
       const inp = ctx.input;
       view.layout();
       shoulder(p, sh);
       view.toCss(sh.x, sh.y, scr);
       const up = inp.moveY < -0.55;
-      human.mx = inp.moveX;
+      const flip = ctx.me === 1; // the view is mirrored for the second sniper
+      human.mx = flip ? -inp.moveX : inp.moveX;
       human.crouch = inp.moveY > 0.55;
-      human.a = inp.aimAngle(scr.x, scr.y, p.aim);
+      const sa = inp.aimAngle(scr.x, scr.y, flip ? Math.PI - p.aim : p.aim);
+      human.a = flip ? Math.PI - sa : sa;
       human.fire = inp.firePressed;
       human.alt = inp.alt;
       human.jump = inp.jumpPressed || (up && !prevUp);
@@ -117,7 +131,7 @@ export default {
       p.aim = cmd.a;
       if (Math.abs(Math.cos(p.aim)) > 0.1) p.face = Math.cos(p.aim) >= 0 ? 1 : -1;
       const prevSt = p.st, prone = live && cmd.alt && p.ground;
-      p.st = prone ? 2 : live && cmd.crouch && p.ground ? 1 : 0;
+      p.st = prone ? 2 : live && cmd.crouch && p.ground ? 1 : ctx.phase === 'over' ? p.st : 0; // after a kill everyone holds their pose
       if (p.st === 2 && prevSt !== 2) { if (p.i === ctx.me) sound.prone(p.x); fx.emit(p.x - p.face * 5, p.y - 1, -p.face * 12, -18, 0.3, PAL.cream, 1, 40, 0, 2); }
       const spd = Math.abs(p.vx);
       const wantSway = p.st === 2 ? 0.0022 : p.st === 1 ? 0.0075 : !p.ground ? 0.03 : spd > 10 ? 0.021 : 0.012;
@@ -140,7 +154,8 @@ export default {
       const acc = p.ground ? C.ACC_G : C.ACC_A;
       const tv = mx * top;
       p.vx += clamp(tv - p.vx, -acc * dt, acc * dt);
-      if (live && cmd.jump && p.ground && p.st !== 2) { p.vy = -C.JUMP_V; p.ground = false; p.airT = 0; if (p.i === ctx.me) sound.jump(p.x); }
+      if (live && cmd.jump && cmd.crouch && p.ground && onOneWay(p)) { p.drop = 0.22; p.vy = 30; p.ground = false; p.airT = 0; if (p.i === ctx.me) sound.land(p.x); }
+      else if (live && cmd.jump && p.ground && p.st !== 2) { p.vy = -C.JUMP_V; p.ground = false; p.airT = 0; if (p.i === ctx.me) sound.jump(p.x); }
       p.jet = live && cmd.jet && !p.ground && p.airT > C.JET_DELAY && p.fuel > 0.02 && p.st !== 2;
       if (p.ground) p.fuel = Math.min(1, p.fuel + C.JET_REGEN * dt);
       else p.airT += dt;
@@ -161,7 +176,7 @@ export default {
       if (bounce) { sound.spring(p.x); S.padSquash[p.x < FW / 2 ? 0 : 1] = 1; fx.sparks(p.x, p.y, -Math.PI / 2, 1.6, 6, 70, [PAL.coral, PAL.cream]); }
       if (p.ground && p.st === 0 && Math.abs(p.vx) > 14 && p.i === ctx.me) sound.step(p.x, dt);
       if (p.jet) { if (p.i === ctx.me) sound.jet(p.x, dt); if (Math.random() < dt * 40) fx.emit(p.x - p.face * 5, p.y - 2, (Math.random() - 0.5) * 20, 50 + Math.random() * 40, 0.3, Math.random() < 0.5 ? PAL.coral : PAL.peach, 1, 0, 0, 1); }
-      if (Math.abs(p.vx) > 6 && p.ground) p.run += Math.abs(p.vx) * dt * 0.2;
+      if (Math.abs(p.vx) > 6 && p.ground) { p.run += Math.abs(p.vx) * dt * 0.2; dust(p, dt); }
       if (!live) return;
       if (cmd.fire && p.reload <= 0) fire(p);
       if (cmd.a1 && p.smokeCd <= 0) throwSmoke(p);
@@ -183,8 +198,13 @@ export default {
       p.jet = !!r.j && ctx.phase === 'live';
       p.ground = !!r.g;
       p.face = Math.cos(p.a) >= 0 ? 1 : -1;
-      if (Math.abs(p.vx) > 6 && p.ground) p.run += Math.abs(p.vx) * dt * 0.2;
+      if (Math.abs(p.vx) > 6 && p.ground) { p.run += Math.abs(p.vx) * dt * 0.2; dust(p, dt); }
       if (p.jet && Math.random() < dt * 40) fx.emit(p.x - p.face * 5, p.y - 2, (Math.random() - 0.5) * 20, 50 + Math.random() * 40, 0.3, PAL.coral, 1, 0, 0, 1);
+    }
+
+    // little puffs kicked up by running boots
+    function dust(p, dt) {
+      if (p.st === 0 && Math.abs(p.vx) > 20 && Math.random() < dt * 9) fx.emit(p.x - Math.sign(p.vx) * 3, p.y - 1, -p.vx * 0.2, -8 - Math.random() * 8, 0.28, Math.random() < 0.5 ? PAL.cream : PAL.peach, 1, 20, 0, 3);
     }
 
     function eject(p) {
@@ -204,6 +224,7 @@ export default {
     function launch(owner, x, y, a, judge) {
       const b = { owner, x, y, vx: Math.cos(a) * C.BULLET_V, vy: Math.sin(a) * C.BULLET_V, judge, live: true, age: 0, ox: x, oy: y, tx: new Float32Array(8), ty: new Float32Array(8), ti: 0, tn: 0, whiz: false };
       S.bullets.push(b);
+      S.shots[owner]++;
       const p = P[owner];
       p.recoil = 1; p.flash = 0.09; p.casing = 0.5;
       if (p.remote) p.reload = reloadT();
@@ -218,10 +239,15 @@ export default {
       rect.x = q.x - bd.w / 2; rect.y = q.y - bd.h; rect.w = bd.w; rect.h = bd.h;
       return rect;
     }
-    const nearest = (ax, ay, bx, by, r) => { const q = pointInRect(ax, ay, r) ? 0 : (segRect(ax, ay, bx, by, r) || { t: -1 }).t; return q; };
+    const nearest = (ax, ay, bx, by, r) => {
+      if (pointInRect(ax, ay, r)) return 0;
+      const q = segRect(ax, ay, bx, by, r);
+      return q ? q.t : -1;
+    };
+    const dRect = { x: 0, y: 0, w: 6, h: 16 };
     function howLabel(b, foe, hy, hx) {
       const bd = BODY[foe.st], m = Math.round(Math.hypot(foe.x - b.ox, foe.y - b.oy) * C.METRE);
-      const head = foe.st === 2 ? Math.abs(hx - (foe.x + foe.face * 6)) < 4 : hy < foe.y - bd.h + 5;
+      const head = foe.st === 2 ? Math.abs(hx - (foe.x + foe.face * 6)) < 4 : hy < foe.y - bd.h + 4;
       if (head) return 'HEADSHOT';
       if (!foe.ground) return 'AIR SHOT';
       if (m < 70) return 'POINT BLANK';
@@ -247,8 +273,8 @@ export default {
           }
           if (b.judge) for (const d of S.decoys) {
             if (!d.alive || d.owner === b.owner) continue;
-            const dr = { x: d.x - 3, y: d.y - 16, w: 6, h: 16 };
-            const t = nearest(ax, ay, b.x, b.y, dr);
+            dRect.x = d.x - 3; dRect.y = d.y - 18; dRect.h = 18;
+            const t = nearest(ax, ay, b.x, b.y, dRect);
             if (t >= 0 && t < tBest) { tBest = t; kind = 11; idx = d.id; }
           }
           if (kind) {
@@ -374,7 +400,7 @@ export default {
       for (const p of P) {
         if (p.remote || !p.alive) continue;
         if (bd.on) {
-          const bx = bd.x - 11, by = bd.y - 7;
+          const bx = bd.x - 11, by = bd.y - 7; // 22 wide, 13 high
           const r = bodyRect(p);
           if (r.x < bx + 22 && r.x + r.w > bx && r.y < by + 13 && r.y + r.h > by) { ctx.kill(p.i, { how: 'BIRD STRIKE' }); return; }
         }
@@ -467,8 +493,8 @@ export default {
           k.t += dt;
           if (t0 < 0.34 && k.t >= 0.34) {
             fx.confetti(k.x, k.y - 8, 70, 150, [k.vcol, k.vcolD, PAL.cream, PAL.peach, PAL.coral, PAL.cream]);
-            fx.ring(k.x, k.y - 8, 3, 30, 0.5, PAL.cream);
-            fx.ring(k.x, k.y - 8, 1, 18, 0.35, k.vcol);
+            fx.ring(k.x, k.y - 10, 3, 22, 0.5, PAL.cream);
+            fx.ring(k.x, k.y - 10, 1, 14, 0.35, k.vcol);
             shake.add(0.8);
             sound.kill(k.x);
           }
@@ -508,19 +534,21 @@ export default {
 
       onNet(msg) {
         if (!msg) return;
-        const them = 1 - ctx.me;
-        if (msg.k === 'shot') {
-          if ([msg.x, msg.y, msg.a].every(Number.isFinite)) launch(them, msg.x, msg.y, msg.a, false);
-        } else if (msg.k === 'smoke') {
-          if ([msg.x, msg.y, msg.vx, msg.vy].every(Number.isFinite) && S.grenades.length < 6) spawnGrenade(msg.id, msg.x, msg.y, msg.vx, msg.vy, them);
-        } else if (msg.k === 'decoy') {
-          if ([msg.x, msg.y, msg.dir, msg.t].every(Number.isFinite) && S.decoys.length < 6) spawnDecoy(them, msg.id, msg.x, msg.y, msg.dir > 0 ? 1 : -1, msg.t);
-        } else if (msg.k === 'pop') {
-          for (const d of S.decoys) if (d.id === msg.id) popDecoy(d, false);
-        } else if (msg.k === 'crate') {
-          const c = world.crates[msg.id];
-          if (c && c.alive) breakCrate(c);
-        }
+        try {
+          const them = 1 - ctx.me;
+          if (msg.k === 'shot') {
+            if ([msg.x, msg.y, msg.a].every(Number.isFinite)) launch(them, msg.x, msg.y, msg.a, false);
+          } else if (msg.k === 'smoke') {
+            if ([msg.x, msg.y, msg.vx, msg.vy].every(Number.isFinite) && S.grenades.length < 6) spawnGrenade(msg.id, msg.x, msg.y, msg.vx, msg.vy, them);
+          } else if (msg.k === 'decoy') {
+            if ([msg.x, msg.y, msg.dir, msg.t].every(Number.isFinite) && S.decoys.length < 6) spawnDecoy(them, msg.id, msg.x, msg.y, msg.dir > 0 ? 1 : -1, msg.t);
+          } else if (msg.k === 'pop') {
+            for (const d of S.decoys) if (d.id === msg.id) popDecoy(d, false);
+          } else if (msg.k === 'crate') {
+            const c = world.crates[msg.id];
+            if (c && c.alive) breakCrate(c);
+          }
+        } catch { /* a malformed event from the peer is ignored */ }
       },
 
       focus() {
@@ -529,7 +557,6 @@ export default {
         return { x: view.toCssX(o.x), y: view.toCssY(o.y - 8) };
       },
 
-      resize() { clearPatterns(); },
       debug: () => S,
 
       dispose() {
@@ -537,9 +564,9 @@ export default {
         S.bullets.length = 0; S.smokes.length = 0; S.decoys.length = 0; S.grenades.length = 0;
         fx.clear();
         view.dispose();
+        ctx.canvas.style.cursor = '';
         clearPatterns();
       },
     };
   },
 };
-export { gauss };

@@ -8,11 +8,11 @@ export const C = {
   RUN: 62, CROUCH_RUN: 26, ACC_G: 900, ACC_A: 420, GRAV: 640, JUMP_V: 226,
   JET_ACC: 1500, JET_CAP: 108, JET_BURN: 0.5, JET_REGEN: 1.0, JET_DELAY: 0.1, SPRING_V: 345,
   BULLET_V: 540, BULLET_G: 135, RELOAD: 1.25, SD_RELOAD: 0.8, METRE: 1.5, // px -> metres
-  CRATE: 11, PF: 168, SAG: 4, BIRD_Y: 83, BIRD_DUR: 6.6, LAVA_V: 3.6, BALLOON_R: 14,
+  CRATE: 13, PF: 168, SAG: 4, BIRD_Y: 24, BIRD_DUR: 6.6, LAVA_V: 3.6, BALLOON_R: 14,
   SMOKE_CD: 13, SMOKE_LIFE: 8, SMOKE_R: 24, DECOY_CD: 15, DECOY_LIFE: 9, DECOY_V: 32,
 };
 // Body sizes by stance: 0 stand, 1 crouch, 2 prone. Hit boxes (w, h) and where the rifle sits (shoulder).
-export const BODY = [{ w: 6, h: 16, sh: 12 }, { w: 6, h: 11, sh: 7 }, { w: 14, h: 5, sh: 3 }];
+export const BODY = [{ w: 6, h: 22, sh: 14 }, { w: 6, h: 13, sh: 8 }, { w: 14, h: 5, sh: 3 }];
 export const HW = 3; // half width used for movement collision in every stance
 
 export function buildWorld(rng) {
@@ -23,10 +23,12 @@ export function buildWorld(rng) {
   const bodies = [];
   for (const r of [{ x: 0, y: GY, w: E, h: H - GY }, { x: E, y: GY + 28, w: 12, h: H - GY - 28 }, { x: E + 12, y: GY + 52, w: 10, h: H - GY - 52 }]) bodies.push(r, mirror(r));
   bodies.push({ x: E + 22, y: PF, w: W - 2 * (E + 22), h: H - PF });
-  const walls = [{ x: -40, y: -200, w: 40, h: 400 }, { x: W, y: -200, w: 40, h: 400 }, { x: -40, y: -60, w: W + 80, h: 70 }];
+  const walls = [{ x: -40, y: -200, w: 40, h: 400 }, { x: W, y: -200, w: 40, h: 400 }];
 
   const span = W - 2 * E;
-  const bridgeY = (x) => (x > E && x < W - E ? GY + C.SAG * Math.sin((Math.PI * (x - E)) / span) : -1);
+  const hole = { x0: W / 2 - 9, x1: W / 2 + 9 }; // missing planks: the way down into the chasm
+  const bridgeY = (x) => (x > E && x < W - E && !(x > hole.x0 && x < hole.x1) ? GY + C.SAG * Math.sin((Math.PI * (x - E)) / span) : -1);
+  const bridgeSurf = (x) => GY + C.SAG * Math.sin((Math.PI * (x - E)) / span);
 
   // Crates: stacked groups on each plateau (mirrored), and one on the bridge.
   const crates = [];
@@ -43,10 +45,13 @@ export function buildWorld(rng) {
   for (const [cx, k] of left) group(cx, k);
   const nL = crates.length;
   for (let i = 0; i < nL; i++) { const c = crates[i]; addCrate(W - c.x - c.w, c.y); }
-  const mid = bridgeY(W / 2 - 6);
-  const midKind = pick(rng, ['single', 'single', 'pair']);
-  addCrate(W / 2 - 6, mid - C.CRATE + 1);
-  if (midKind === 'pair') addCrate(W / 2 - 6, mid - C.CRATE * 2 + 1);
+  const midKind = pick(rng, ['single', 'single', 'pair']), mx = W / 2 - 9 - randInt(rng, 14, 20) - C.CRATE, mid = bridgeSurf(mx + C.CRATE / 2);
+  if (rng() < 0.6) { // some bridges come with cover either side of the gap, some are wide open
+    addCrate(mx, mid - C.CRATE + 1);
+    if (midKind === 'pair') addCrate(mx, mid - C.CRATE * 2 + 1);
+    addCrate(W - mx - C.CRATE, mid - C.CRATE + 1);
+    if (midKind === 'pair') addCrate(W - mx - C.CRATE, mid - C.CRATE * 2 + 1);
+  }
 
   const nx = randInt(rng, 34, 44);
   const nests = [{ x: nx, y: GY - 34, w: 26 }, { x: W - nx - 26, y: GY - 34, w: 26 }];
@@ -54,7 +59,7 @@ export function buildWorld(rng) {
   const pads = [{ x: W / 2 - pd, y: PF }, { x: W / 2 + pd, y: PF }];
 
   const world = {
-    W, H, GY, E, PF, bodies, walls, crates, nests, pads, span, bridgeY,
+    W, H, GY, E, PF, bodies, walls, crates, nests, pads, span, bridgeY, bridgeSurf, hole,
     spawns: [{ x: 22, y: GY }, { x: W - 22, y: GY }],
     solids: [],
     phase: [rand(rng, 0, 6.28), rand(rng, 0, 6.28), rand(rng, 0, 6.28)],
@@ -94,7 +99,7 @@ export function buildWorld(rng) {
         bd.dir = e.dir;
         const u = dt / C.BIRD_DUR, ex = -28 + (W + 56) * u;
         bd.x = e.dir > 0 ? ex : W - ex;
-        bd.y = C.BIRD_Y + 3 * Math.sin(dt * 2.2);
+        bd.y = GY - C.BIRD_Y + 3 * Math.sin(dt * 2.2); // flies at head height: crouch or lie down and it passes over
         bd.flap = dt * 7;
       }
     }
@@ -126,7 +131,7 @@ export function buildWorld(rng) {
   return world;
 }
 
-const overlap = (b, hw, hh, r) => b.x - hw < r.x + r.w && b.x + hw > r.x && b.y - hh < r.y + r.h && b.y - 1e-3 > r.y;
+const overlap = (b, hw, hh, r, eps = 1e-3) => b.x - hw < r.x + r.w && b.x + hw > r.x && b.y - hh < r.y + r.h && b.y - eps > r.y;
 
 /**
  * Move a standing body one small step: gravity-less (the caller sets vy), solids, one-way
@@ -140,10 +145,9 @@ export function stepBody(w, b, h, hw, hh) {
   const sol = w.solids;
   for (let i = 0; i < sol.length; i++) {
     const r = sol[i];
-    if (!overlap(b, hw, hh, r)) continue;
-    if (b.vx > 0) b.x = r.x - hw;
-    else if (b.vx < 0) b.x = r.x + r.w + hw;
-    else b.x += b.x < r.x + r.w / 2 ? -0.5 : 0.5;
+    if (!overlap(b, hw, hh, r, 0.7)) continue; // grazing the ground is not a wall
+    const pl = b.x + hw - r.x, pr = r.x + r.w - (b.x - hw); // the shallower way out, sideways
+    b.x = pl < pr ? r.x - hw : r.x + r.w + hw;
     b.vx = 0;
     b.wall = true;
   }
@@ -151,15 +155,20 @@ export function stepBody(w, b, h, hw, hh) {
   for (let i = 0; i < sol.length; i++) {
     const r = sol[i];
     if (!overlap(b, hw, hh, r)) continue;
-    if (b.vy >= 0) { b.y = r.y; b.ground = true; } else b.y = r.y + r.h + hh;
+    // the shallower way out: onto its top, or a head against its underside
+    if (b.y - r.y <= r.y + r.h - (b.y - hh)) { b.y = r.y; b.ground = true; } else b.y = r.y + r.h + hh;
     b.vy = 0;
   }
+  if (b.y - hh < 12) { b.y = 12 + hh; if (b.vy < 0) b.vy = 0; } // the top of the screen is a ceiling
   if (b.vy >= 0) {
     const bw = w.bridgeY(b.x);
-    if (bw >= 0 && prevY <= bw + 2.5 && b.y >= bw - 0.01) { b.y = bw; b.vy = 0; b.ground = true; }
-    for (let i = 0; i < w.nests.length; i++) {
-      const n = w.nests[i];
-      if (b.x > n.x && b.x < n.x + n.w && prevY <= n.y + 0.5 && b.y >= n.y) { b.y = n.y; b.vy = 0; b.ground = true; }
+    if (b.drop > 0) b.drop -= h;
+    else {
+      if (bw >= 0 && prevY <= bw + 2.5 && b.y >= bw - 0.01) { b.y = bw; b.vy = 0; b.ground = true; }
+      for (let i = 0; i < w.nests.length; i++) {
+        const n = w.nests[i];
+        if (b.x > n.x && b.x < n.x + n.w && prevY <= n.y + 0.5 && b.y >= n.y) { b.y = n.y; b.vy = 0; b.ground = true; }
+      }
     }
     for (let i = 0; i < w.pads.length; i++) {
       const p = w.pads[i];
@@ -191,14 +200,15 @@ const _seg = { x: 0, y: 0, hit: 0, t: 0, nx: 0, ny: 0, idx: -1 };
  * receives the points (a flat array reused by the caller) for the aim preview.
  */
 export function traceBullet(w, x, y, ang, maxT, gs, ls, path) {
-  const b = { x, y, vx: Math.cos(ang) * C.BULLET_V, vy: Math.sin(ang) * C.BULLET_V };
+  const b = _tb;
+  b.x = x; b.y = y; b.vx = Math.cos(ang) * C.BULLET_V; b.vy = Math.sin(ang) * C.BULLET_V;
   const h = 1 / 80;
   let np = 0;
   _seg.hit = 0;
   for (let t = 0; t < maxT; t += h) {
     const ax = b.x, ay = b.y;
     bulletStep(w, b, h, gs, ls);
-    if (path && np < path.length - 1 && ((t / h) | 0) % 2 === 0) { path[np++] = b.x; path[np++] = b.y; }
+    if (path && np < path.length - 1) { path[np++] = b.x; path[np++] = b.y; }
     const hit = firstHit(w, ax, ay, b.x, b.y);
     if (hit) {
       _seg.hit = hit.kind; _seg.x = hit.x; _seg.y = hit.y; _seg.idx = hit.idx; _seg.t = t;
@@ -211,7 +221,7 @@ export function traceBullet(w, x, y, ang, maxT, gs, ls, path) {
   return _seg;
 }
 
-const _hit = { kind: 0, x: 0, y: 0, idx: -1, t: 1 };
+const _hit = { kind: 0, x: 0, y: 0, idx: -1, t: 1 }, _bk = { x: 0, y: 0, w: 8, h: 9 }, _tb = { x: 0, y: 0, vx: 0, vy: 0 };
 /** Nearest cover (solids, crates, balloon) crossed by the segment A->B, or null. */
 export function firstHit(w, ax, ay, bx, by) {
   let best = null, bt = 2;
@@ -224,8 +234,8 @@ export function firstHit(w, ax, ay, bx, by) {
   if (bl.on) {
     const t = segCircle(ax, ay, bx, by, bl.x, bl.y, bl.r);
     if (t >= 0 && t < bt) { bt = t; best = bl; _hit.kind = 3; _hit.idx = -1; }
-    const bk = { x: bl.x - 4, y: bl.y + bl.r - 2, w: 8, h: 9 };
-    const hk = segRect(ax, ay, bx, by, bk);
+    _bk.x = bl.x - 4; _bk.y = bl.y + bl.r - 2;
+    const hk = segRect(ax, ay, bx, by, _bk);
     if (hk && hk.t < bt) { bt = hk.t; best = bl; _hit.kind = 3; _hit.idx = -1; }
   }
   if (!best) return null;

@@ -2,21 +2,33 @@
 // HUD), then blitted with nearest-neighbour scaling inside themed letterbox bars, with
 // optional scanlines, a vignette and softly rounded corners. Camera zooms are crops of the
 // buffer, so every pixel stays a chunky square.
-import { clamp, makeCanvas, ease, lerp } from '../../kit.js';
+import { clamp, makeCanvas, ease } from '../../kit.js';
 import { PAL, FW, FH, bayer, dither, drawText, textWidth } from './palette.js';
 import { line, ring } from './px.js';
 import { drawSniper, drawMarker, muzzle } from './sprites.js';
 import { drawCrate, drawSpring, drawBird, drawBalloon, drawFlag, drawLamp, drawSmoke, drawGrenade } from './art.js';
 import { drawFlash } from './fx.js';
-import { C, BODY } from './world.js';
+import { C } from './world.js';
 
 export function makeView(ctx, world, S, art) {
   const fb = makeCanvas(FW, FH), ov = makeCanvas(FW, FH);
   const fg = fb.g, og = ov.g;
+  fg.imageSmoothingEnabled = false;
+  og.imageSmoothingEnabled = false;
   const L = { s: 1, ox: 0, oy: 0, k: 1, cx: 0, cy: 0, cw: FW, ch: FH, shx: 0, shy: 0 };
   const o = { x: 0, y: 0, face: 1, st: 0, run: 0, moving: false, air: false, vy: 0, aim: 0, recoil: 0, col: '', colD: '', t: 0, jet: false, tint: '', decoy: false };
   const mz = { x: 0, y: 0, sx: 0, sy: 0 };
-  let vig = null, barKey = '', barPat = null;
+  // A dithered vignette (pixels, not a gradient): baked once, stamped into the overlay.
+  const vig = makeCanvas(FW, FH);
+  for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) {
+    const dx = (x - FW / 2) / (FW / 2), dy = (y - FH / 2) / (FH / 2), d = Math.sqrt(dx * dx * 0.8 + dy * dy * 1.1);
+    const lvl = clamp((d - 0.78) * 26, 0, 9);
+    if (bayer(x, y) < lvl) { vig.g.fillStyle = PAL.ink; vig.g.fillRect(x, y, 1, 1); }
+  }
+  let barKey = '', barPat = null;
+  // The local sniper always stands on the left of the screen (the touch stick is there, the buttons are on the right).
+  const flip = ctx.me === 1;
+  const fxOf = (x) => (flip ? FW - x : x);
 
   function layout() {
     const w = ctx.width, h = ctx.height, dpr = ctx.dpr || 1;
@@ -29,11 +41,11 @@ export function makeView(ctx, world, S, art) {
     // camera crop
     const c = S.cam, z = Math.max(1, c.z);
     L.cw = FW / z; L.ch = FH / z;
-    L.cx = clamp(c.x - L.cw / 2, 0, FW - L.cw);
+    L.cx = clamp(fxOf(c.x) - L.cw / 2, 0, FW - L.cw);
     L.cy = clamp(c.y - L.ch / 2, 0, FH - L.ch);
     L.k = s * z;
   }
-  const toCssX = (x) => L.ox + (x - L.cx + L.shx) * L.k;
+  const toCssX = (x) => L.ox + (fxOf(x) - L.cx + L.shx) * L.k;
   const toCssY = (y) => L.oy + (y - L.cy + L.shy) * L.k;
 
   const dipAt = (x) => {
@@ -50,24 +62,27 @@ export function makeView(ctx, world, S, art) {
     }
     for (let x = a; x <= b; x += 1) { g.fillStyle = x % 6 < 3 ? PAL.wood : PAL.peach; g.fillRect(x, Math.round(ropeY(x)), 1, 1); }
     for (let x = a + 8; x < b; x += 16) {
-      const yy = Math.round(ropeY(x)), py = Math.round(world.bridgeY(x) + dipAt(x));
+      const yy = Math.round(ropeY(x)), py = Math.round(world.bridgeSurf(x) + dipAt(x));
       g.fillStyle = PAL.ink; g.fillRect(x - 1, yy, 3, py - yy);
       g.fillStyle = PAL.wood; g.fillRect(x, yy + 1, 1, py - yy - 1);
     }
     // planks
     for (let x = a; x < b; x += 4) {
-      const y = Math.round(world.bridgeY(x + 2) + dipAt(x + 2) + Math.sin(t * 2 + x * 0.08) * 0.45);
+      if (x + 2 > world.hole.x0 - 1 && x + 2 < world.hole.x1 + 1) continue;
+      const y = Math.round(world.bridgeSurf(x + 2) + dipAt(x + 2) + Math.sin(t * 2 + x * 0.08) * 0.45);
       g.fillStyle = PAL.ink; g.fillRect(x, y, 4, 4);
       g.fillStyle = (x >> 2) % 2 ? PAL.wood : PAL.amberD; g.fillRect(x, y, 3, 2);
       g.fillStyle = PAL.coral; g.fillRect(x, y, 3, 1);
       g.fillStyle = PAL.night; g.fillRect(x, y + 2, 3, 1);
     }
     // front rope under the planks
-    for (let x = a; x <= b; x += 1) { g.fillStyle = PAL.ink; g.fillRect(x, Math.round(world.bridgeY(x) + dipAt(x)) + 4, 1, 1); }
+    for (let x = a; x <= b; x += 1) { if (world.bridgeY(x) < 0) continue; g.fillStyle = PAL.ink; g.fillRect(x, Math.round(world.bridgeY(x) + dipAt(x)) + 4, 1, 1); }
+    // the gap: two planks still hang from the rope on either side
+    for (const hx of [world.hole.x0 - 2, world.hole.x1 + 1]) { const y = Math.round(world.bridgeSurf(hx)); g.fillStyle = PAL.ink; g.fillRect(hx - 1, y, 3, 8); g.fillStyle = PAL.wood; g.fillRect(hx, y + 1, 1, 6); g.fillStyle = PAL.night; g.fillRect(hx - 1, y + 7, 3, 1); }
   }
 
   function playerOpts(p, tint) {
-    o.x = p.x; o.y = p.y + (p.ground ? dipAt(p.x) * 0 : 0); o.face = p.face; o.st = p.st; o.run = p.run; o.moving = Math.abs(p.vx) > 6 && p.ground; o.air = !p.ground; o.vy = p.vy;
+    o.x = p.x; o.y = p.y + (p.ground && world.bridgeY(p.x) >= 0 ? Math.round(dipAt(p.x)) : 0); o.face = p.face; o.st = p.st; o.run = p.run; o.moving = Math.abs(p.vx) > 6 && p.ground; o.air = !p.ground; o.vy = p.vy;
     o.aim = p.a; o.recoil = p.recoil; o.col = p.col; o.colD = p.colD; o.t = S.t + p.i * 0.37; o.jet = p.jet; o.tint = tint || ''; o.decoy = false;
     return o;
   }
@@ -81,7 +96,6 @@ export function makeView(ctx, world, S, art) {
     const own = p.i === ctx.me, ghost = own && S.hides(p.x, p.y - 8);
     if (ghost) g.globalAlpha = 0.5;
     playerOpts(p, tint);
-    if (p.dipY) o.y += p.dipY;
     drawSniper(g, o);
     g.globalAlpha = 1;
     if (p.flash > 0) { muzzle(o, mz); drawFlash(g, mz.x, mz.y, p.a, p.flash / 0.09); }
@@ -139,7 +153,9 @@ export function makeView(ctx, world, S, art) {
   }
 
   function drawWorld() {
-    const g = fg, t = S.t;
+    const g = fg, t = S.t, E = world.E;
+    g.save();
+    if (flip) { g.translate(FW, 0); g.scale(-1, 1); }
     const sd = ctx.sudden;
     g.drawImage(art.bg.canvas, 0, 0);
     // stars blink
@@ -152,20 +168,25 @@ export function makeView(ctx, world, S, art) {
       g.drawImage(c, Math.round(x), y);
       ci++;
     }
-    // mist in the chasm
-    const E = world.E;
-    for (let i = 0; i < 4; i++) {
-      g.save();
-      g.beginPath(); g.rect(E + 6, 120, FW - 2 * E - 12, 60); g.clip();
-      g.fillStyle = dither(g, i % 2 ? PAL.orchid : PAL.rose, 3 + i);
-      g.translate(Math.round(t * (2 + i)) % 4 - 4, 0);
-      g.fillRect(0, 136 + i * 9, FW + 8, 4);
-      g.restore();
+    // fog banks drifting through the chasm
+    g.save();
+    g.beginPath(); g.rect(E + 3, 112, FW - 2 * E - 6, FH - 112); g.clip();
+    for (const m of art.mist) {
+      const off = Math.round(t * m.sp) % FW;
+      g.drawImage(m.canvas, -off, m.y); g.drawImage(m.canvas, FW - off, m.y);
     }
+    g.restore();
     // thermals: motes riding the lift
     for (const m of S.motes) {
       g.fillStyle = m.c;
       g.fillRect(Math.round(m.x), Math.round(m.y), 1, m.long ? 2 : 1);
+    }
+    // a few far-off birds ride the thermals
+    for (let i = 0; i < 4; i++) {
+      const bx = ((i * 83 + t * (5 + i * 1.5)) % (FW + 40)) - 20, by = 40 + i * 9 + Math.round(Math.sin(t * 0.9 + i * 2) * 3), fl = Math.sin(t * 5 + i * 1.7) > 0;
+      g.fillStyle = PAL.ink;
+      g.fillRect(Math.round(bx), by, 1, 1); g.fillRect(Math.round(bx) - 1, by + (fl ? -1 : 1), 1, 1); g.fillRect(Math.round(bx) + 1, by + (fl ? -1 : 1), 1, 1);
+      g.fillRect(Math.round(bx) - 2, by + (fl ? -2 : 2), 1, 1); g.fillRect(Math.round(bx) + 2, by + (fl ? -2 : 2), 1, 1);
     }
     if (world.balloon.on) drawBalloon(g, world.balloon, t);
     g.drawImage(art.terrain, 0, 0);
@@ -195,23 +216,31 @@ export function makeView(ctx, world, S, art) {
     if (world.bird.on) drawBird(g, world.bird.x, world.bird.y, world.bird.dir, world.bird.flap);
     drawBullets(g);
     S.fx.draw(g);
+    const kk = S.kill;
+    if (kk && kk.t > 0.34 && kk.t < 0.85) { // the pop: a starburst of pixel rays
+      const u = (kk.t - 0.34) / 0.51, r0 = 3 + u * 12, r1 = 9 + u * 30;
+      for (let i = 0; i < 10; i++) {
+        const a = i * 0.6283 + 0.3, c = Math.cos(a), s = Math.sin(a);
+        line(g, kk.x + c * r0, kk.y - 10 + s * r0, kk.x + c * r1, kk.y - 10 + s * r1, i % 2 ? PAL.cream : PAL.peach, 1);
+      }
+    }
     // local aim arc and fuel
     const me = S.P[ctx.me];
     if (me.alive && ctx.phase === 'live') {
-      const p = S.arc, n = p.n, lim = S.arcFull ? n : Math.min(n, 3 * 2);
-      for (let i = 2; i < lim; i += 2) {
-        if ((i >> 1) % 2) continue;
-        g.fillStyle = i < 8 ? PAL.cream : (i >> 1) % 4 === 0 ? PAL.peach : PAL.coral;
+      const p = S.arc, n = p.n, lim = S.arcFull ? n : Math.min(n, 16);
+      for (let i = 4; i < lim; i += 2) { // a dot every ~7 px along the true flight path
+        const k = i / lim;
+        g.fillStyle = k < 0.25 ? PAL.cream : k < 0.6 ? PAL.peach : PAL.coral;
         g.fillRect(Math.round(p[i]), Math.round(p[i + 1]), 1, 1);
       }
       if (S.arcFull && S.arcHit.x >= 0) { const x = Math.round(S.arcHit.x), y = Math.round(S.arcHit.y); g.fillStyle = PAL.coral; g.fillRect(x - 2, y - 2, 1, 1); g.fillRect(x + 2, y - 2, 1, 1); g.fillRect(x - 1, y - 1, 3, 3); g.fillRect(x - 2, y + 2, 1, 1); g.fillRect(x + 2, y + 2, 1, 1); g.fillStyle = PAL.cream; g.fillRect(x, y, 1, 1); }
       if (me.fuel < 0.995) {
-        const bx = Math.round(me.x) - 11, by = Math.round(me.y) - 16, hh = Math.round(14 * me.fuel);
+        const bx = Math.round(me.x) - 12, by = Math.round(me.y) - 20, hh = Math.round(14 * me.fuel);
         g.fillStyle = PAL.ink; g.fillRect(bx - 1, by - 1, 4, 16);
         g.fillStyle = PAL.night; g.fillRect(bx, by, 2, 14);
         g.fillStyle = me.fuel < 0.25 ? PAL.coral : PAL.leaf; g.fillRect(bx, by + 14 - hh, 2, hh);
       }
-      if (ctx.phase === 'live' && S.liveT < 6) drawMarker(g, playerOpts(me, ''), t);
+      drawMarker(g, playerOpts(me, ''), t);
     } else if (ctx.phase === 'intro' && S.introT >= 0 && me.alive) drawMarker(g, playerOpts(me, ''), t);
     if (sd && ctx.phase === 'live') {
       const foe = S.P[1 - ctx.me];
@@ -220,24 +249,26 @@ export function makeView(ctx, world, S, art) {
     // bird warning: a flashing sign on the edge it will enter from
     const bd = world.bird;
     if (bd.warn > 0 && !bd.on && ((t * 6) | 0) % 2 === 0) {
-      const x = bd.dir > 0 ? 6 : FW - 14, y = C.BIRD_Y - 22;
+      const x = bd.dir > 0 ? 6 : FW - 14, y = world.GY - C.BIRD_Y - 22;
       g.fillStyle = PAL.ink; g.fillRect(x - 1, y - 1, 11, 13);
       g.fillStyle = PAL.coral; g.fillRect(x, y, 9, 11);
       g.fillStyle = PAL.cream; g.fillRect(x + 4, y + 2, 1, 5); g.fillRect(x + 4, y + 8, 1, 1);
     }
     if (sd) { g.fillStyle = dither(g, PAL.coral, 1 + Math.round(Math.sin(t * 5) * 0.5 + 0.5)); g.fillRect(0, 0, FW, 3); g.fillRect(0, FH - 3, FW, 3); }
+    g.restore();
   }
 
   function drawOverlay() {
     const g = og;
     g.clearRect(0, 0, FW, FH);
+    g.drawImage(vig.canvas, 0, 0);
     const k = S.kill;
     // thermal gauge
-    const u = clamp(world.U / 92, -1, 1), x0 = 112, y0 = 170;
-    g.fillStyle = PAL.ink; g.fillRect(x0, y0, 96, 9);
-    g.fillStyle = PAL.night; g.fillRect(x0 + 1, y0 + 1, 94, 7);
+    const u = clamp(world.U / 92, -1, 1), x0 = 80, y0 = 170;
+    g.fillStyle = PAL.ink; g.fillRect(x0, y0, 84, 9);
+    g.fillStyle = PAL.night; g.fillRect(x0 + 1, y0 + 1, 82, 7);
     drawText(g, 'LIFT', x0 + 4, y0 + 1, PAL.peach);
-    const bx = x0 + 52, bw = 40;
+    const bx = x0 + 40, bw = 40;
     g.fillStyle = PAL.ink; g.fillRect(bx, y0 + 2, bw, 5);
     g.fillStyle = PAL.plum; g.fillRect(bx + 1, y0 + 3, bw - 2, 3);
     const half = (bw - 2) / 2, len = Math.round(Math.abs(u) * half);
@@ -245,12 +276,12 @@ export function makeView(ctx, world, S, art) {
     if (u >= 0) g.fillRect(bx + 1 + half, y0 + 3, len, 3); else g.fillRect(bx + 1 + half - len, y0 + 3, len, 3);
     g.fillStyle = PAL.cream; g.fillRect(bx + 1 + half, y0 + 2, 1, 5);
     g.fillStyle = u >= 0 ? PAL.leaf : PAL.coral;
-    drawText(g, u >= 0 ? '^' : 'v', x0 + 36, y0 + 1, g.fillStyle);
+    drawText(g, u >= 0 ? '^' : 'v', x0 + 28, y0 + 1, g.fillStyle);
     // first-seconds tips
     if (ctx.phase === 'live' && S.liveT > 0.6 && S.liveT < 9.5) {
-      const touch = ctx.input.device === 'touch';
-      const msg = S.liveT < 4.6 ? 'SHOTS DROP: AIM HIGH' : touch ? 'TAP PRONE FOR A STEADY ARC' : 'HOLD RMB: PRONE + ARC';
-      const w = textWidth(msg) + 8, x = Math.round((FW - w) / 2), y = 156;
+      const dev = ctx.input.device;
+      const msg = S.liveT < 4.6 ? 'SHOTS DROP: AIM HIGH' : dev === 'touch' ? 'TAP PRONE FOR A STEADY ARC' : dev === 'gamepad' ? 'HOLD LT: PRONE + ARC' : 'HOLD RMB: PRONE + ARC';
+      const w = textWidth(msg) + 8, x = Math.round((FW - w) / 2), y = 154;
       g.fillStyle = PAL.ink; g.fillRect(x, y, w, 11);
       g.fillStyle = PAL.night; g.fillRect(x + 1, y + 1, w - 2, 9);
       drawText(g, msg, FW / 2, y + 2, PAL.cream, 1, 'c');
@@ -260,7 +291,7 @@ export function makeView(ctx, world, S, art) {
     if (me.alive && ctx.phase === 'live') {
       let rx, ry;
       if (ctx.input.device === 'kbm') { rx = (ctx.input.pointerX - L.ox) / L.s; ry = (ctx.input.pointerY - L.oy) / L.s; }
-      else { muzzle(playerOpts(me, ''), mz); rx = mz.sx + Math.cos(me.aim) * 56; ry = mz.sy + Math.sin(me.aim) * 56; }
+      else { muzzle(playerOpts(me, ''), mz); rx = fxOf(mz.sx + Math.cos(me.aim) * 56); ry = mz.sy + Math.sin(me.aim) * 56; }
       rx = Math.round(clamp(rx, 2, FW - 3)); ry = Math.round(clamp(ry, 2, FH - 3));
       const gap = me.st === 2 ? 2 : 4 + Math.round(me.sway * 220);
       const col = me.reload > 0 ? PAL.steel : PAL.cream;
@@ -296,11 +327,10 @@ export function makeView(ctx, world, S, art) {
   }
 
   function bars(g, w, h) {
-    g.fillStyle = PAL.ink; g.fillRect(0, 0, w, h);
     const ox = L.ox, oy = L.oy, dw = FW * L.s, dh = FH * L.s;
     if (ox < 3 && oy < 3) return;
     const cell = Math.max(2, Math.round(L.s));
-    const key = cell + ':' + ((ctx.sudden ? 1 : 0));
+    const key = cell + ':' + (ctx.sudden ? 1 : 0);
     if (key !== barKey) {
       barKey = key;
       const { canvas, g: pg } = makeCanvas(cell * 4, cell * 4);
@@ -308,14 +338,14 @@ export function makeView(ctx, world, S, art) {
       for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) if (bayer(x, y) < 4) pg.fillRect(x * cell, y * cell, cell, cell);
       barPat = g.createPattern(canvas, 'repeat');
     }
-    g.fillStyle = PAL.night;
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = barPat;
-    g.save();
-    g.beginPath(); g.rect(0, 0, w, h); g.rect(ox, oy, dw, dh);
-    g.clip('evenodd');
-    g.fillRect(0, 0, w, h);
-    g.restore();
+    // only the strips the picture does not cover
+    const R = [];
+    if (oy > 0) R.push(0, 0, w, oy, 0, oy + dh, w, h - oy - dh);
+    if (ox > 0) R.push(0, oy, ox, dh, ox + dw, oy, w - ox - dw, dh);
+    for (let i = 0; i < R.length; i += 4) {
+      g.fillStyle = PAL.night; g.fillRect(R[i], R[i + 1], R[i + 2], R[i + 3]);
+      g.fillStyle = barPat; g.fillRect(R[i], R[i + 1], R[i + 2], R[i + 3]);
+    }
     // bezel rules
     g.fillStyle = PAL.rose;
     const e = Math.max(1, Math.round(L.s / 2));
@@ -323,15 +353,16 @@ export function makeView(ctx, world, S, art) {
     if (ox >= 3) { g.fillRect(ox - e * 2, oy, e, dh); g.fillRect(ox + dw + e, oy, e, dh); }
     // marquee text in a tall bottom bar
     if (oy > 16 * L.s * 0.5 && oy > 28) {
-      const k = Math.max(1, Math.floor(oy / 18));
+      const k = Math.max(1, Math.floor(oy / 40));
       const y = oy + dh + (oy - 7 * k) / 2;
+      const tw = textWidth('CARTRIDGE CANYON') * k, gap = 10 * k;
       drawText(g, 'CARTRIDGE CANYON', w / 2, y, PAL.peach, k, 'c', PAL.ink);
-      drawText(g, '1P', ox + 6, y, S.P[0].col, k, 'l', PAL.ink);
-      drawText(g, '2P', ox + dw - 6, y, S.P[1].col, k, 'r', PAL.ink);
+      drawText(g, flip ? '2P' : '1P', w / 2 - tw / 2 - gap, y, S.P[ctx.me].col, k, 'r', PAL.ink);
+      drawText(g, flip ? '1P' : '2P', w / 2 + tw / 2 + gap, y, S.P[1 - ctx.me].col, k, 'l', PAL.ink);
     }
   }
 
-  function composite() {
+  function composite(merged) {
     const g = ctx.g, w = ctx.width, h = ctx.height;
     g.imageSmoothingEnabled = false;
     bars(g, w, h);
@@ -339,7 +370,7 @@ export function makeView(ctx, world, S, art) {
     g.save();
     g.beginPath(); g.rect(L.ox, L.oy, FW * L.s, FH * L.s); g.clip();
     g.drawImage(fb.canvas, sx, sy, L.cw, L.ch, L.ox, L.oy, FW * L.s, FH * L.s);
-    g.drawImage(ov.canvas, 0, 0, FW, FH, L.ox, L.oy, FW * L.s, FH * L.s);
+    if (!merged) g.drawImage(ov.canvas, 0, 0, FW, FH, L.ox, L.oy, FW * L.s, FH * L.s);
     // scanlines (only where a pixel is big enough to carry them) and a faint phosphor stripe
     if (L.s >= 2.5) {
       g.fillStyle = 'rgba(20,12,40,0.17)';
@@ -347,17 +378,6 @@ export function makeView(ctx, world, S, art) {
       for (let r = 0; r < FH; r++) g.rect(L.ox, L.oy + r * L.s + L.s * 0.7, FW * L.s, L.s * 0.3);
       g.fill();
     }
-    if (!vig) {
-      vig = makeCanvas(64, 36);
-      const gr = vig.g.createRadialGradient(32, 18, 14, 32, 18, 40);
-      gr.addColorStop(0, 'rgba(20,12,40,0)');
-      gr.addColorStop(1, 'rgba(20,12,40,0.5)');
-      vig.g.fillStyle = gr;
-      vig.g.fillRect(0, 0, 64, 36);
-    }
-    g.imageSmoothingEnabled = true;
-    g.drawImage(vig.canvas, L.ox, L.oy, FW * L.s, FH * L.s);
-    g.imageSmoothingEnabled = false;
     if (S.flashW > 0) { g.fillStyle = `rgba(255,241,208,${S.flashW})`; g.fillRect(L.ox, L.oy, FW * L.s, FH * L.s); }
     g.restore();
     // rounded tube corners
@@ -377,11 +397,12 @@ export function makeView(ctx, world, S, art) {
       layout();
       drawWorld();
       drawOverlay();
-      composite();
+      const merged = S.cam.z <= 1.001 && !L.shx && !L.shy; // unzoomed and unshaken: one blit does both layers
+      if (merged) fg.drawImage(ov.canvas, 0, 0);
+      composite(merged);
     },
     /** CSS position of an arena point (for aiming and for the core's focus point). */
     toCss(x, y, out) { out.x = toCssX(x); out.y = toCssY(y); return out; },
-    dispose() { vig = null; barPat = null; },
+    dispose() { barPat = null; },
   };
 }
-export { lerp };

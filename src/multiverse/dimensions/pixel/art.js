@@ -1,8 +1,8 @@
 // Baked art for CARTRIDGE CANYON: dusk sky with a striped sun, three ridges of haze, the
 // chasm's distant spires, the cliffs themselves, and the props that get redrawn each frame.
 import { clamp, hexToRgb, noise2, fbm, makeCanvas } from '../../kit.js';
-import { PAL, FW, FH, bayer, hash } from './palette.js';
-import { disc, line, box } from './px.js';
+import { PAL, FW, FH, bayer, hash, dither } from './palette.js';
+import { disc, line, tri } from './px.js';
 import { C } from './world.js';
 
 const RGB = {};
@@ -23,7 +23,7 @@ export function bakeBackdrop(seed) {
   // sky: a dithered ramp, hottest at the horizon
   for (let y = 0; y < FH; y++) {
     const v = Math.min(7, 0.35 + 6.2 * Math.pow(Math.min(1, y / 116), 1.55));
-    const i0 = Math.floor(v), fr = v - i0;
+    const i0 = Math.floor(v), fr = clamp((v - i0 - 0.7) * 3.3, 0, 1); // flat bands, dithered only where they meet
     for (let x = 0; x < FW; x++) put(img, x, y, bayer(x, y) / 16 < fr ? SKY[Math.min(7, i0 + 1)] : SKY[i0]);
   }
   // the sun: a banded disc with synthwave gaps, and a dithered halo
@@ -49,30 +49,35 @@ export function bakeBackdrop(seed) {
     const near = Math.abs(x - 160) < 70;
     for (let y = top[x]; y < FH; y++) {
       const d = y - top[x];
-      put(img, x, y, d < 1 ? (near ? PAL.coral : PAL.rose) : d > 10 && bayer(x, y) < (d - 10) * 0.9 ? PAL.rose : PAL.orchid);
+      put(img, x, y, d < 1 ? (near ? PAL.coral : PAL.rose) : d > 22 ? PAL.rose : d > 14 && bayer(x, y) < (d - 14) * 2 ? PAL.rose : PAL.orchid);
     }
     for (let y = mes[x]; y < FH; y++) {
       const d = y - mes[x];
-      put(img, x, y, d < 1 ? PAL.orchid : d > 12 && bayer(x, y) < (d - 12) * 0.7 ? PAL.orchid : PAL.plum);
+      put(img, x, y, d < 1 ? PAL.orchid : d > 20 ? PAL.orchid : d > 13 && bayer(x, y) < (d - 13) * 2.2 ? PAL.orchid : PAL.plum);
     }
   }
   // the abyss: fade everything below the plateau line into night
   for (let y = 112; y < FH; y++) {
-    const k = Math.min(1, (y - 112) / 62) * 16;
-    for (let x = 0; x < FW; x++) if (bayer(x, y) < k) put(img, x, y, k > 11 && bayer(x + 2, y + 1) < k - 9 ? PAL.ink : PAL.night);
+    const t = (y - 112) / 68;
+    for (let x = 0; x < FW; x++) {
+      if (t < 0.3) continue;
+      if (t < 0.45) { if (bayer(x, y) < ((t - 0.3) / 0.15) * 16) put(img, x, y, PAL.night); }
+      else if (t < 0.72) put(img, x, y, PAL.night);
+      else if (t < 0.86) put(img, x, y, bayer(x, y) < ((t - 0.72) / 0.14) * 16 ? PAL.ink : PAL.night);
+      else put(img, x, y, PAL.ink);
+    }
   }
   // spires in the chasm
   for (const [cx, w, ty] of [[134, 12, 128], [160, 16, 119], [190, 11, 132]]) {
     for (let y = ty; y < FH - 6; y++) for (let x = cx - w / 2; x < cx + w / 2; x++) {
       const dd = y - ty, lit = x < cx - w / 2 + 2;
       const col = dd < 2 ? PAL.orchid : lit ? PAL.plum : PAL.night;
-      if (dd > 24 && bayer(x, y) < (dd - 24) * 0.45) put(img, Math.round(x), y, PAL.ink);
-      else put(img, Math.round(x), y, col);
+      put(img, Math.round(x), y, dd > 30 ? (bayer(x, y) < (dd - 30) * 1.2 ? PAL.ink : col) : col);
     }
   }
   g.putImageData(img, 0, 0);
   const stars = [];
-  for (let i = 0; i < 46; i++) stars.push({ x: Math.floor(hash(i, 1, seed) * FW), y: Math.floor(hash(i, 2, seed) * 52), ph: hash(i, 3, seed) * 6.28, c: hash(i, 4, seed) > 0.7 ? PAL.peach : PAL.cream });
+  for (let i = 0; i < 34; i++) stars.push({ x: Math.floor(hash(i, 1, seed) * FW), y: Math.floor(hash(i, 2, seed) * 52), ph: hash(i, 3, seed) * 6.28, c: hash(i, 4, seed) > 0.7 ? PAL.peach : PAL.cream });
   return { canvas, stars, clouds: makeClouds(seed) };
 }
 
@@ -103,6 +108,15 @@ export function bakeTerrain(world, seed) {
   const { canvas, g } = makeCanvas(FW, FH);
   const m = new Uint8Array(FW * FH);
   for (const r of world.bodies) for (let y = Math.max(0, r.y); y < Math.min(FH, r.y + r.h); y++) for (let x = Math.max(0, r.x); x < Math.min(FW, r.x + r.w); x++) m[y * FW + x] = 1;
+  // rough up the faces that look into the chasm so the cliffs are rock, not rulers
+  for (let y = world.GY + 2; y < FH - 12; y++) {
+    const jl = Math.round(noise2(y * 0.33, seed * 0.1) * 2.2), jr = Math.round(noise2(y * 0.29 + 50, seed * 0.1) * 2.2);
+    let xl = -1, xr = FW;
+    for (let x = 0; x < FW / 2 && m[y * FW + x]; x++) xl = x;
+    for (let x = FW - 1; x >= FW / 2 && m[y * FW + x]; x--) xr = x;
+    if (xl >= 0 && xl < FW / 2 - 6) { if (jl > 0) for (let x = xl + 1; x <= xl + jl; x++) m[y * FW + x] = 1; else for (let x = xl; x > xl + jl; x--) m[y * FW + x] = 0; }
+    if (xr < FW && xr > FW / 2 + 6) { if (jr > 0) for (let x = xr - 1; x >= xr - jr; x--) m[y * FW + x] = 1; else for (let x = xr; x < xr - jr; x++) m[y * FW + x] = 0; }
+  }
   const at = (x, y) => (x < 0 || x >= FW ? 1 : y < 0 ? 0 : y >= FH ? 1 : m[y * FW + x]);
   const img = g.createImageData(FW, FH);
   const bands = [PAL.plum, PAL.plum, PAL.orchid, PAL.plum];
@@ -121,18 +135,18 @@ export function bakeTerrain(world, seed) {
     else if (plateau && up === 1) col = hv < 0.5 ? PAL.forest : PAL.leaf;
     else if (plateau && up === 2) col = hv < 0.5 ? PAL.forest : PAL.wood;
     else if (plateau && up === 3) col = hv < 0.35 ? PAL.wood : PAL.plum;
-    else if (side === 0 && y > lipY + 1) col = PAL.rose;
-    else if (side === 1 && y > lipY + 1) col = hv < 0.6 ? PAL.coral : PAL.rose;
-    else if (side === 2 && y > lipY + 1) col = PAL.orchid;
+    else if (side === 0 && y > lipY + 1) col = hv < 0.75 ? PAL.rose : PAL.orchid;
+    else if (side === 1 && y > lipY + 1) col = hv < 0.3 ? PAL.rose : PAL.orchid;
     else if (!at(x, y + 1) && y < FH - 1) col = PAL.night;
     else {
-      const band = Math.floor((y + noise2(x * 0.04, y * 0.1 + seed) * 4.5) / 6);
-      col = bands[((band % 4) + 4) % 4];
-      if (hv < 0.05) col = PAL.night;
-      else if (hv > 0.975) col = PAL.rose;
-      else if (col === PAL.orchid && bayer(x, y) < 5) col = PAL.plum;
+      const by = y + Math.round(noise2(x * 0.035, seed * 0.3) * 4);
+      const band = Math.floor(by / 9);
+      col = band % 3 === 1 ? PAL.orchid : PAL.plum;
+      if (by % 9 === 0 && noise2(x * 0.23, y * 0.7 + seed) > -0.25) col = PAL.night; // a stratum line, broken
+      else if (hv < 0.018) col = PAL.night;
+      else if (col === PAL.orchid && by % 9 === 1) col = PAL.rose;
     }
-    if (y > 148 && bayer(x, y) < (y - 148) * 0.5) col = y > 166 ? PAL.ink : PAL.night;
+    if (y > 150 && !(plateau && up < 4)) col = y > 166 ? (bayer(x, y) < (y - 166) * 1.6 ? PAL.ink : PAL.night) : bayer(x, y) < (y - 150) * 1.0 ? PAL.night : col;
     put(img, x, y, col);
   }
   g.putImageData(img, 0, 0);
@@ -149,9 +163,25 @@ export function bakeTerrain(world, seed) {
     cactus(g, mx(11, 3), world.GY, 13, hash(side, 1, seed) > 0.5);
     cactus(g, mx(world.E - 8, 5), world.GY, 8, false);
   }
+  // a mine door cut into each cliff
+  for (const side of [0, 1]) {
+    const dx = side ? FW - 36 : 24, dy = world.GY + 22;
+    mineDoor(g, dx, dy);
+  }
   return { canvas, g };
 }
 
+function mineDoor(g, x, y) {
+  g.fillStyle = PAL.ink; g.fillRect(x - 1, y - 1, 15, 19);
+  g.fillStyle = PAL.wood; g.fillRect(x, y, 13, 18);
+  g.fillStyle = PAL.ink; g.fillRect(x + 2, y + 3, 9, 15);
+  g.fillStyle = PAL.night; g.fillRect(x + 3, y + 4, 7, 14);
+  g.fillStyle = PAL.coral; g.fillRect(x, y, 13, 1);
+  g.fillStyle = PAL.ink; g.fillRect(x + 6, y + 4, 1, 14);
+  g.fillStyle = PAL.peach; g.fillRect(x + 11, y + 6, 1, 2); // a lantern glints in the dark
+  g.fillStyle = PAL.coral; g.fillRect(x + 11, y + 8, 1, 1);
+  g.fillStyle = PAL.wood; g.fillRect(x - 3, y + 17, 19, 2); g.fillStyle = PAL.ink; g.fillRect(x - 3, y + 19, 19, 1); // the sill
+}
 function cactus(g, x, y, h, arms) {
   const rows = (cx, cy, w, hh, c) => { g.fillStyle = c; g.fillRect(cx, cy, w, hh); };
   rows(x - 1, y - h - 1, 5, h + 1, PAL.ink);
@@ -189,28 +219,35 @@ export function drawCrate(g, x, y, hit = 0) {
 
 export function drawSpring(g, x, y, squash) {
   x = Math.round(x); y = Math.round(y);
-  const h = 5 - Math.round(squash * 2);
-  g.fillStyle = PAL.ink; g.fillRect(x - 9, y - 2, 18, 2); g.fillRect(x - 7, y - h - 1, 14, 2);
-  g.fillStyle = PAL.coral; g.fillRect(x - 8, y - h, 16, 1);
-  g.fillStyle = PAL.steel; g.fillRect(x - 8, y - 1, 16, 1);
-  g.fillStyle = PAL.cream;
-  for (let i = -6; i <= 6; i += 4) g.fillRect(x + i, y - h + 1, 1, h - 2);
+  const h = 6 - Math.round(squash * 3); // compressed height of the coil
+  g.fillStyle = PAL.ink; g.fillRect(x - 8, y - 2, 17, 2); g.fillRect(x - 7, y - h - 3, 15, 3);
+  g.fillStyle = PAL.steel; g.fillRect(x - 7, y - 1, 15, 1);
+  g.fillStyle = PAL.coral; g.fillRect(x - 6, y - h - 2, 13, 1);
+  g.fillStyle = PAL.cream; g.fillRect(x - 6, y - h - 2, 4, 1);
+  // zig-zag coil
+  for (let i = 0; i < h - 1; i++) {
+    const zx = x - 4 + ((i % 2) ? 6 : 0);
+    g.fillStyle = PAL.ink; g.fillRect(zx - 1, y - 2 - i, 5, 1);
+    g.fillStyle = i % 2 ? PAL.steel : PAL.cream; g.fillRect(zx, y - 2 - i, 3, 1);
+  }
 }
 
-/** The crossing bird: a big glider with a hooked beak. dir +1 flies to the right. */
+/** The crossing bird: a big glider with a hooked beak and flapping wings. dir +1 flies to the right. */
 export function drawBird(g, x, y, dir, flap) {
   x = Math.round(x); y = Math.round(y);
-  const f = dir, up = Math.sin(flap) > 0;
+  const f = dir, ph = Math.floor((((flap / 6.2832) % 1) + 1) % 1 * 4);
   const R = (px, py, w, h, c) => { g.fillStyle = c; g.fillRect(f > 0 ? x + px : x - px - w, y + py, w, h); };
-  const wy = up ? -8 : 2;
-  // wing (behind): two feathered fingers
-  R(-10, wy < 0 ? -9 : -1, 12, 3, PAL.ink); R(-9, wy < 0 ? -8 : 0, 10, 1, PAL.coral); R(-12, wy < 0 ? -12 : 1, 6, 2, PAL.ink); R(-11, wy < 0 ? -11 : 2, 4, 1, PAL.rose);
-  R(-10, -4, 22, 8, PAL.ink); R(-9, -3, 19, 6, PAL.rose); R(-9, -3, 19, 2, PAL.coral); R(-9, 1, 19, 2, PAL.orchid);
-  R(-16, -2, 8, 3, PAL.ink); R(-15, -1, 7, 1, PAL.orchid); // tail
-  R(9, -6, 8, 6, PAL.ink); R(10, -5, 6, 4, PAL.peach); R(14, -4, 1, 1, PAL.ink); // head
-  R(15, -3, 8, 3, PAL.ink); R(16, -2, 6, 1, PAL.amber); R(20, -1, 3, 2, PAL.ink); // beak
-  R(5, -9, 3, 4, PAL.ink); R(6, -8, 1, 3, PAL.coral); // crest
-  R(wy < 0 ? -3 : 2, wy < 0 ? -13 : -2, 8, 3, PAL.ink); R(wy < 0 ? -2 : 3, wy < 0 ? -12 : -1, 6, 1, PAL.coral); // near wing
+  const T = (ax, ay, bx, by, cx, cy, c) => tri(g, x + f * ax, y + ay, x + f * bx, y + by, x + f * cx, y + cy, c);
+  const tip = ph === 0 ? [-14, -15] : ph === 2 ? [-13, 9] : [-17, -3]; // up, mid, down, mid
+  // far wing, then body, then near wing over it
+  T(2, -3, tip[0] + 2, tip[1] + (ph === 2 ? -1 : 1), -9, -3, PAL.ink); T(1, -3, tip[0] + 3, tip[1] + (ph === 2 ? -2 : 2), -7, -3, PAL.orchid);
+  R(-12, -4, 3, 3, PAL.ink); R(-11, -3, 3, 1, PAL.orchid); R(-16, -3, 5, 2, PAL.ink); R(-15, -2, 4, 1, PAL.rose); // tail feathers
+  R(-10, -5, 22, 9, PAL.ink); R(-9, -4, 20, 7, PAL.rose); R(-9, -4, 20, 2, PAL.coral); R(-9, 1, 20, 2, PAL.orchid);
+  R(9, -8, 9, 7, PAL.ink); R(10, -7, 7, 5, PAL.peach); R(14, -6, 2, 2, PAL.cream); R(15, -5, 1, 1, PAL.ink); // head and eye
+  R(17, -5, 8, 4, PAL.ink); R(18, -4, 7, 2, PAL.amber); R(23, -2, 3, 3, PAL.ink); R(24, -1, 1, 1, PAL.amberD); // hooked beak
+  R(6, -11, 4, 4, PAL.ink); R(7, -10, 2, 3, PAL.coral); // crest
+  T(4, -3, tip[0] - 2, tip[1], -6, -3, PAL.ink); T(3, -3, tip[0] - 1, tip[1] + (ph === 2 ? -1 : 1), -5, -3, PAL.coral);
+  T(2, -3, tip[0] + 1, tip[1] + (ph === 2 ? -2 : 2), -2, -3, PAL.peach);
 }
 
 export function drawBalloon(g, b, t) {
@@ -269,27 +306,26 @@ export function drawLamp(g, x, y, t) {
   g.fillStyle = fl; g.fillRect(x - 1, y - 23, 3, 2);
 }
 
-/** A dithered smoke puff made of stacked pixel discs: hides whatever stands inside it. */
+const SM = { c: null, g: null };
+/** A lumpy cartoon cloud of stacked pixel discs, outlined, shaded, and dissolving by dither: hides whatever stands inside it. */
 export function drawSmoke(g, cx, cy, r, age, life, seed) {
-  const k = Math.min(1, age / 0.5), fade = Math.min(1, (life - age) / 1.6);
-  const rad = r * (0.35 + 0.65 * k);
-  const n = 7;
-  for (let i = 0; i < n; i++) {
-    const a = i * 2.4 + seed, d = rad * 0.5 * (0.4 + 0.6 * hash(i, seed | 0, 3));
-    const px = cx + Math.cos(a + age * 0.35) * d, py = cy + Math.sin(a + age * 0.35) * d * 0.85 - age * 0.7 - rad * 0.2;
-    const rr = Math.round(rad * (0.5 + 0.22 * hash(i, 5, seed | 0)));
-    const lvl = fade * 16;
-    for (let y = -rr; y <= rr; y++) {
-      const hw = Math.round(Math.sqrt(Math.max(0, rr * rr - y * y)));
-      for (let x = -hw; x <= hw; x += 1) {
-        const X = Math.round(px + x), Y = Math.round(py + y);
-        const edge = Math.abs(x) > hw - 2 || y < -rr + 2;
-        if (bayer(X, Y) >= (edge ? lvl * 0.7 : lvl)) continue;
-        g.fillStyle = edge ? PAL.cream : y > rr * 0.3 ? PAL.steel : bayer(X + 1, Y) < 7 ? PAL.cream : PAL.steel;
-        g.fillRect(X, Y, 1, 1);
-      }
+  if (!SM.c) { const m = makeCanvas(72, 64); SM.c = m.canvas; SM.g = m.g; }
+  const t = SM.g, k = Math.min(1, age / 0.45), rad = r * (0.4 + 0.6 * k);
+  t.clearRect(0, 0, 72, 64);
+  const ox = 36, oy = 38, n = 9;
+  const puff = (pass) => {
+    for (let i = 0; i < n; i++) {
+      const a = i * 2.39 + seed, d = rad * 0.55 * (0.25 + 0.75 * hash(i, seed | 0, 3));
+      const px = ox + Math.cos(a + age * 0.2) * d, py = oy + Math.sin(a + age * 0.2) * d * 0.8 - age * 0.5 - (i % 3) * 2;
+      const rr = Math.max(3, Math.round(rad * (0.34 + 0.2 * hash(i, 5, seed | 0))));
+      if (pass === 0) disc(t, px, py, rr + 1, PAL.night);
+      else if (pass === 1) { disc(t, px, py, rr, PAL.steel); disc(t, px - 1, py - 1, rr - 1, PAL.cream); disc(t, px + 1, py + 2, Math.max(1, rr - 3), PAL.steel); disc(t, px - 1, py - 1, Math.max(1, rr - 3), PAL.cream); }
     }
-  }
+  };
+  puff(0); puff(1);
+  const fade = Math.min(1, (life - age) / 1.4);
+  if (fade < 1) { t.globalCompositeOperation = 'destination-out'; t.fillStyle = dither(t, '#000', 16 - fade * 16); t.fillRect(0, 0, 72, 64); t.globalCompositeOperation = 'source-over'; }
+  g.drawImage(SM.c, Math.round(cx) - ox, Math.round(cy) - oy);
 }
 
 export function drawGrenade(g, x, y, t) {
@@ -298,4 +334,25 @@ export function drawGrenade(g, x, y, t) {
   g.fillStyle = PAL.steel; g.fillRect(x - 1, y - 1, 3, 3);
   g.fillStyle = Math.sin(t * 30) > 0 ? PAL.coral : PAL.cream; g.fillRect(x, y - 2, 1, 1);
 }
-export { clamp, box, disc };
+
+/** Soft fog banks for the chasm: wide strips with wavy tops, dithered, tiled horizontally while they drift. */
+export function bakeMist(seed) {
+  const out = [];
+  for (const [i, h, lvl, col, y, sp] of [[0, 16, 5, PAL.orchid, 126, 3], [1, 18, 7, PAL.rose, 140, 5], [2, 18, 9, PAL.plum, 154, 7]]) {
+    const w = 320;
+    const { canvas, g } = makeCanvas(w, h);
+    const img = g.createImageData(w, h);
+    for (let x = 0; x < w; x++) {
+      const top = Math.round(3 + 3.5 * Math.sin((x / w) * 6.2832 * 2 + i) + 2 * Math.sin((x / w) * 6.2832 * 5 + i * 2.1));
+      for (let yy = Math.max(0, top); yy < h; yy++) {
+        const d = yy - top;
+        if (bayer(x, yy) >= (d < 2 ? lvl * 0.6 : lvl + d * 0.5)) continue;
+        const c = RGB[col], k = (yy * w + x) * 4;
+        img.data[k] = c.r; img.data[k + 1] = c.g; img.data[k + 2] = c.b; img.data[k + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    out.push({ canvas, y, sp });
+  }
+  return out;
+}

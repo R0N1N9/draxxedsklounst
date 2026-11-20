@@ -423,15 +423,20 @@ export function buildMap(rng) {
     }
     return best;
   }
-  // Straight walk between two cells without leaving free ground or crossing a ledge?
-  function clearWalk(a, b) {
-    const ax = cellX(a % NCOLS), az = cellZ((a / NCOLS) | 0), bx = cellX(b % NCOLS), bz = cellZ((b / NCOLS) | 0);
-    const n = Math.ceil(Math.hypot(bx - ax, bz - az) / 0.6);
-    let prev = a;
+  // Straight walk from a to b without leaving free ground, crossing a ledge or brushing
+  // anything solid? Cells are coarse (a free cell can still hold the corner of a sandbag
+  // wall), so the body itself is tried against the colliders along the way.
+  const probe = { x: 0, z: 0 };
+  function clearWalk(ax, az, bx, bz) {
+    const n = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / 0.4));
+    let prev = rowOf(az) * NCOLS + colOf(ax);
     for (let i = 1; i <= n; i++) {
-      const k = rowOf(lerp(az, bz, i / n)) * NCOLS + colOf(lerp(ax, bx, i / n));
+      const x = lerp(ax, bx, i / n), z = lerp(az, bz, i / n), k = rowOf(z) * NCOLS + colOf(x);
       if (k !== prev && !canGo(prev, k)) return false;
       prev = k;
+      probe.x = x; probe.z = z;
+      pushOut(probe, 0.42, nFloor[k], 0);
+      if (Math.abs(probe.x - x) + Math.abs(probe.z - z) > 0.03) return false;
     }
     return true;
   }
@@ -476,12 +481,14 @@ export function buildMap(rng) {
     const cells = [];
     for (let k = g; k >= 0; k = came[k]) cells.push(k);
     cells.reverse();
-    const out = [];
-    let i = 0;
+    // Pulled taut from where the body actually is, not from the middle of its cell.
+    const out = [], cx = (k) => cellX(k % NCOLS), cz = (k) => cellZ((k / NCOLS) | 0);
+    let i = 0, px = ax, pz = az;
     while (i < cells.length - 1) {
       let j = Math.min(cells.length - 1, i + 14);
-      while (j > i + 1 && !clearWalk(cells[i], cells[j])) j--;
-      out.push({ x: cellX(cells[j] % NCOLS), z: cellZ((cells[j] / NCOLS) | 0) });
+      while (j > i + 1 && !clearWalk(px, pz, cx(cells[j]), cz(cells[j]))) j--;
+      px = cx(cells[j]); pz = cz(cells[j]);
+      out.push({ x: px, z: pz });
       i = j;
     }
     if (out.length) { const last = out[out.length - 1]; if (Math.hypot(last.x - bx, last.z - bz) < 2) { last.x = bx; last.z = bz; } }
@@ -504,9 +511,10 @@ export function buildMap(rng) {
       if (p.type === 'cart') { x0 = p.x - 1.4; x1 = p.x + 1.4; [z0, z1] = [p.m * p.z - 0.75, p.m * p.z + 0.75]; h = 1.35; }
       else [z0, z1] = zr(p.m, p.z0, p.z1);
       if (x1 - x0 < 1.6 || x1 - x0 < z1 - z0) continue;
-      const kind = h > 1.5 ? 'high' : 'low', n = x1 - x0 > 4.5 ? 2 : 1;
+      // (Three along the long barricades: the middle one looks straight down the centre lane.)
+      const kind = h > 1.5 ? 'high' : 'low', n = x1 - x0 > 6 && kind === 'low' ? 3 : x1 - x0 > 4.5 ? 2 : 1;
       for (let i = 0; i < n; i++) {
-        const x = n === 1 ? (x0 + x1) / 2 : lerp(x0 + 1.1, x1 - 1.1, i);
+        const x = n === 1 ? (x0 + x1) / 2 : lerp(x0 + 1.1, x1 - 1.1, i / (n - 1));
         const px = kind === 'high' ? (i === 0 && n > 1 ? x0 - 0.75 : x1 + 0.75) : x;
         post(x, z1 + 0.75, -1, kind, px);
         post(x, z0 - 0.75, 1, kind, px);

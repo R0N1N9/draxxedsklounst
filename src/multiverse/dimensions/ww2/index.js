@@ -392,13 +392,14 @@ export default {
     }
 
     // ---- one sniper, one frame ----
-    function humanCmd(p) {
-      const inp = ctx.input, c = p.cmd, k = LOOK * lerp(1, 0.24, p.scope);
+    // `first`: a frame's look delta and trigger pulls are spent once, however many slices the frame is cut into.
+    function humanCmd(p, first) {
+      const inp = ctx.input, c = p.cmd, k = first ? LOOK * lerp(1, 0.24, p.scope) : 0;
       c.mx = inp.moveX; c.my = inp.moveY;
       c.yaw = p.yaw - inp.lookX * k;
       c.pitch = clamp(p.pitch - inp.lookY * k, -1.15, 1.15);
-      c.fire = inp.firePressed; c.alt = inp.alt; c.a1 = inp.a1Pressed; c.a2 = inp.a2Pressed;
-      if (inp.jumpPressed && ctx.phase === 'live') c.crouch = !c.crouch;
+      c.fire = first && inp.firePressed; c.alt = inp.alt; c.a1 = first && inp.a1Pressed; c.a2 = first && inp.a2Pressed;
+      if (first && inp.jumpPressed && ctx.phase === 'live') c.crouch = !c.crouch;
       return c;
     }
 
@@ -466,7 +467,7 @@ export default {
       if (!r) return;
       p.x = r.x; p.y = r.y; p.z = r.z; p.yaw = r.yaw; p.pitch = r.pitch; p.k = r.k;
       p.scoped = !!r.sc; p.scope = damp(p.scope, r.sc ? 1 : 0, 13, dt);
-      p.crouch = !!r.cr; p.mvx = r.vx; p.mvz = r.vz; p.speed = Math.hypot(r.vx, r.vz); p.bolt = r.bo; p.ammo = r.am;
+      p.crouch = !!r.cr; p.mvx = r.vx; p.mvz = r.vz; p.speed = Math.hypot(r.vx, r.vz); p.bolt = r.bo; p.ammo = Math.round(r.am); // (numbers arrive interpolated)
       p.recoil = Math.max(0, p.recoil - dt * 5);
     }
 
@@ -495,105 +496,115 @@ export default {
       view.killCam(v);
     }
 
+    function frame(dt, now, first) {
+      const phase = ctx.phase;
+      T = now;
+      if (ctx.sudden && suddenAt < 0) { suddenAt = T; note('THE BARRAGE IS CLOSING ON THE FOUNTAIN', 4); }
+      fx.begin();
+      tick ^= 1; // neither sniper always moves first
+      for (let n = 0; n < 2; n++) {
+        const p = P[n ^ tick];
+        if (p.remote) puppet(p, dt);
+        else step(p, !p.bot ? humanCmd(p, first) : p.alive && phase !== 'intro' ? brain.think(p, P[1 - p.i], dt, p.cmd) : p.cmd, dt); // (a bot's patience starts with the round, not the title card)
+        if (p.dead >= 0) p.dead += dt;
+      }
+      if (phase !== 'intro') stepBullets(dt);
+      // Who is lit, who is marked.
+      for (const p of P) {
+        if (!p.alive) continue;
+        if (suddenAt >= 0) p.markT = T + 1;
+        for (const f of events.flareNow) {
+          if (f.on < 0.35 || Math.hypot(p.x - f.x, p.z - f.z) > FLARE_RADIUS) continue;
+          if (map.los(f.x, f.y, f.z, p.x, p.y + headY(p.k), p.z, T)) p.markT = Math.max(p.markT, T + 0.9);
+        }
+      }
+      // Cans in the air, smoke on the ground, decoys, helmets.
+      for (const c of cans) {
+        if (!c.on) continue;
+        c.age += dt;
+        const i = Math.min(c.n - 1, Math.floor(c.age * 60));
+        c.mesh.position.set(c.path[i * 3], c.path[i * 3 + 1] + 0.05, c.path[i * 3 + 2]);
+        c.mesh.rotation.set(c.age * 9, 0, c.age * 7);
+        if (c.age * 60 >= c.n + 18) { c.on = false; c.mesh.visible = false; popSmoke(c.path[i * 3], c.path[i * 3 + 1], c.path[i * 3 + 2]); }
+      }
+      emitAcc += dt * 12;
+      for (let n = emitAcc | 0; n > 0; n--, emitAcc -= 1) {
+        for (const s of map.smokes) {
+          const r = map.smokeR(s, T);
+          if (r < 0.6 || T > s.t1 - 1) continue;
+          const a = Math.random() * 6.28, d = Math.sqrt(Math.random()) * r * 0.72;
+          fx.smoke(s.x + Math.cos(a) * d, s.y - 1.4 + Math.random() * 2.6, s.z + Math.sin(a) * d, 0, 0.2, 0, 2.3, 0.9, 3.3, 0.6, 0.74, 0.73, 0.7, 0, 0.3, 0.5, 0.2);
+        }
+      }
+      for (let i = map.smokes.length - 1; i >= 0; i--) if (T > map.smokes[i].t1) map.smokes.splice(i, 1);
+      for (const d of decoys) {
+        if (!d.g.visible) continue;
+        const age = T - d.t0;
+        if (d.alive && age > DECOY_LIFE) d.alive = false;
+        // Up over the cover, then the small unsteady movements of a man trying to keep still.
+        if (d.alive) d.g.scale.y = Math.min(1, 0.45 + age * 1.6);
+        else if ((d.g.scale.y -= dt * 2) < 0.06) { d.g.visible = false; continue; }
+        d.g.rotation.set(Math.sin(age * 1.7) * 0.05, d.yaw + Math.sin(age * 0.6) * 0.3, Math.sin(age * 2.3 + 1) * 0.04);
+      }
+      for (const h of helmets) {
+        if (!h.on) continue;
+        h.vy -= 13 * dt;
+        h.x += h.vx * dt; h.y += h.vy * dt; h.z += h.vz * dt;
+        const f = map.floorAt(h.x, h.z, h.y + 0.3, T) + 0.1;
+        if (h.y < f) {
+          h.y = f;
+          if (h.n++ < 4 && Math.abs(h.vy) > 1) { sfx.clink(h.x, h.y, h.z, 1 - h.n * 0.18); h.vy = -h.vy * 0.42; h.vx *= 0.6; h.vz *= 0.6; h.spin *= 0.6; }
+          else { h.vy = 0; h.vx *= 0.8; h.vz *= 0.8; h.spin *= 0.8; }
+        }
+        h.mesh.position.set(h.x, h.y, h.z);
+        h.mesh.rotateOnAxis(A.set(h.ax, 0.4, h.az).normalize(), h.spin * dt);
+      }
+      // The kill moment's extras.
+      if (tollT > 0 && (tollT -= dt) <= 0) sfx.bell(1.1, 0.5);
+      if (dustT > 0) {
+        dustT -= dt;
+        const v = P[ctx.result && ctx.result.victim >= 0 ? ctx.result.victim : 0];
+        for (let i = 0; i < 2; i++) fx.smoke(v.x + (Math.random() - 0.5) * 9, v.y + 4 + Math.random() * 3, v.z + (Math.random() - 0.5) * 9, 0, -2.2, 0, 0.3, 0.5, 1.5, 0.3, 0.6, 0.56, 0.5, 0, 0.3, 0.2, -1.8);
+      }
+      flinch = Math.max(0, flinch - dt * 1.3);
+      notes.a = Math.max(0, notes.a - dt);
+      for (const t of hits) t.a = Math.max(0, t.a - dt);
+
+      view.update(dt, T);
+      events.update(dt, T, view.wt, view.camera);
+      // Bodies: after the camera, so a scoped sniper never sees the inside of their own head.
+      for (const p of P) {
+        const s = pose;
+        s.x = p.x; s.y = p.y; s.z = p.z; s.yaw = p.yaw; s.pitch = p.pitch + (p.scope > 0.5 ? p.swayY : 0); s.k = p.k;
+        s.aim = p.scope > 0.3 ? 1 : lerp(0.85, 0.12, clamp(p.speed / RUN, 0, 1)) * (p.reload > 0 ? 0.5 : 1);
+        s.speed = p.speed; s.mvx = p.mvx; s.mvz = p.mvz; s.bolt = p.bolt > 0 ? 1 - p.bolt / BOLT : p.reload > 0 ? (p.reload * 1.3) % 1 : -1;
+        s.recoil = p.recoil; s.dead = p.dead; s.fx = p.fx; s.fz = p.fz;
+        p.model.update(dt, s);
+        p.model.root.visible = !(p === me && view.scopeAmount > 0.55 && p.alive);
+      }
+      fx.update(dt, view.wt, view.pointScale);
+
+      const m = me;
+      ctx.net.sendState({
+        x: +m.x.toFixed(2), y: +m.y.toFixed(2), z: +m.z.toFixed(2), yaw: +m.yaw.toFixed(3), pitch: +m.pitch.toFixed(3), k: +m.k.toFixed(2),
+        sc: m.scoped ? 1 : 0, cr: m.crouch ? 1 : 0, vx: +m.mvx.toFixed(1), vz: +m.mvz.toFixed(1), bo: +Math.max(0, m.bolt).toFixed(2), am: m.ammo,
+      });
+      ctx.hud.cooldown('fire', m.reload > 0 ? m.reload / RELOAD : Math.max(0, m.bolt) / BOLT);
+      ctx.hud.charges('fire', m.ammo);
+      ctx.hud.cooldown('a1', m.smokes > 0 ? m.smokeCd / SMOKE_CD : 1);
+      ctx.hud.charges('a1', m.smokes);
+      ctx.hud.cooldown('a2', m.decoyCd / DECOY_CD);
+    }
+
     const inst = {
+      // The core clamps a frame's step but the round clock keeps real time: a client that
+      // draws slowly would play in slow motion and fall behind its own world (and its
+      // opponent). So a live frame simulates however long the clock says has passed, in
+      // slices short enough for the collision code.
       update(dt) {
-        const phase = ctx.phase;
-        T = phase === 'over' ? T + dt : ctx.time;
-        if (ctx.sudden && suddenAt < 0) { suddenAt = T; note('THE BARRAGE IS CLOSING ON THE FOUNTAIN', 4); }
-        fx.begin();
-        tick ^= 1; // neither sniper always moves first
-        for (let n = 0; n < 2; n++) {
-          const p = P[n ^ tick];
-          if (p.remote) puppet(p, dt);
-          else step(p, !p.bot ? humanCmd(p) : p.alive ? brain.think(p, P[1 - p.i], dt, p.cmd) : p.cmd, dt);
-          if (p.dead >= 0) p.dead += dt;
-        }
-        if (phase !== 'intro') stepBullets(dt);
-        // Who is lit, who is marked.
-        for (const p of P) {
-          if (!p.alive) continue;
-          if (suddenAt >= 0) p.markT = T + 1;
-          for (const f of events.flareNow) {
-            if (f.on < 0.35 || Math.hypot(p.x - f.x, p.z - f.z) > FLARE_RADIUS) continue;
-            if (map.los(f.x, f.y, f.z, p.x, p.y + headY(p.k), p.z, T)) p.markT = Math.max(p.markT, T + 0.9);
-          }
-        }
-        // Cans in the air, smoke on the ground, decoys, helmets.
-        for (const c of cans) {
-          if (!c.on) continue;
-          c.age += dt;
-          const i = Math.min(c.n - 1, Math.floor(c.age * 60));
-          c.mesh.position.set(c.path[i * 3], c.path[i * 3 + 1] + 0.05, c.path[i * 3 + 2]);
-          c.mesh.rotation.set(c.age * 9, 0, c.age * 7);
-          if (c.age * 60 >= c.n + 18) { c.on = false; c.mesh.visible = false; popSmoke(c.path[i * 3], c.path[i * 3 + 1], c.path[i * 3 + 2]); }
-        }
-        emitAcc += dt * 12;
-        for (let n = emitAcc | 0; n > 0; n--, emitAcc -= 1) {
-          for (const s of map.smokes) {
-            const r = map.smokeR(s, T);
-            if (r < 0.6 || T > s.t1 - 1) continue;
-            const a = Math.random() * 6.28, d = Math.sqrt(Math.random()) * r * 0.72;
-            fx.smoke(s.x + Math.cos(a) * d, s.y - 1.4 + Math.random() * 2.6, s.z + Math.sin(a) * d, 0, 0.2, 0, 2.3, 0.9, 3.3, 0.6, 0.74, 0.73, 0.7, 0, 0.3, 0.5, 0.2);
-          }
-        }
-        for (let i = map.smokes.length - 1; i >= 0; i--) if (T > map.smokes[i].t1) map.smokes.splice(i, 1);
-        for (const d of decoys) {
-          if (!d.g.visible) continue;
-          const age = T - d.t0;
-          if (d.alive && age > DECOY_LIFE) d.alive = false;
-          // Up over the cover, then the small unsteady movements of a man trying to keep still.
-          if (d.alive) d.g.scale.y = Math.min(1, 0.45 + age * 1.6);
-          else if ((d.g.scale.y -= dt * 2) < 0.06) { d.g.visible = false; continue; }
-          d.g.rotation.set(Math.sin(age * 1.7) * 0.05, d.yaw + Math.sin(age * 0.6) * 0.3, Math.sin(age * 2.3 + 1) * 0.04);
-        }
-        for (const h of helmets) {
-          if (!h.on) continue;
-          h.vy -= 13 * dt;
-          h.x += h.vx * dt; h.y += h.vy * dt; h.z += h.vz * dt;
-          const f = map.floorAt(h.x, h.z, h.y + 0.3, T) + 0.1;
-          if (h.y < f) {
-            h.y = f;
-            if (h.n++ < 4 && Math.abs(h.vy) > 1) { sfx.clink(h.x, h.y, h.z, 1 - h.n * 0.18); h.vy = -h.vy * 0.42; h.vx *= 0.6; h.vz *= 0.6; h.spin *= 0.6; }
-            else { h.vy = 0; h.vx *= 0.8; h.vz *= 0.8; h.spin *= 0.8; }
-          }
-          h.mesh.position.set(h.x, h.y, h.z);
-          h.mesh.rotateOnAxis(A.set(h.ax, 0.4, h.az).normalize(), h.spin * dt);
-        }
-        // The kill moment's extras.
-        if (tollT > 0 && (tollT -= dt) <= 0) sfx.bell(1.1, 0.5);
-        if (dustT > 0) {
-          dustT -= dt;
-          const v = P[ctx.result && ctx.result.victim >= 0 ? ctx.result.victim : 0];
-          for (let i = 0; i < 2; i++) fx.smoke(v.x + (Math.random() - 0.5) * 9, v.y + 4 + Math.random() * 3, v.z + (Math.random() - 0.5) * 9, 0, -2.2, 0, 0.3, 0.5, 1.5, 0.3, 0.6, 0.56, 0.5, 0, 0.3, 0.2, -1.8);
-        }
-        flinch = Math.max(0, flinch - dt * 1.3);
-        notes.a = Math.max(0, notes.a - dt);
-        for (const t of hits) t.a = Math.max(0, t.a - dt);
-
-        view.update(dt, T);
-        events.update(dt, T, view.wt, view.camera);
-        // Bodies: after the camera, so a scoped sniper never sees the inside of their own head.
-        for (const p of P) {
-          const s = pose;
-          s.x = p.x; s.y = p.y; s.z = p.z; s.yaw = p.yaw; s.pitch = p.pitch + (p.scope > 0.5 ? p.swayY : 0); s.k = p.k;
-          s.aim = p.scope > 0.3 ? 1 : lerp(0.85, 0.12, clamp(p.speed / RUN, 0, 1)) * (p.reload > 0 ? 0.5 : 1);
-          s.speed = p.speed; s.mvx = p.mvx; s.mvz = p.mvz; s.bolt = p.bolt > 0 ? 1 - p.bolt / BOLT : p.reload > 0 ? (p.reload * 1.3) % 1 : -1;
-          s.recoil = p.recoil; s.dead = p.dead; s.fx = p.fx; s.fz = p.fz;
-          p.model.update(dt, s);
-          p.model.root.visible = !(p === me && view.scopeAmount > 0.55 && p.alive);
-        }
-        fx.update(dt, view.wt, view.pointScale);
-
-        const m = me;
-        ctx.net.sendState({
-          x: +m.x.toFixed(2), y: +m.y.toFixed(2), z: +m.z.toFixed(2), yaw: +m.yaw.toFixed(3), pitch: +m.pitch.toFixed(3), k: +m.k.toFixed(2),
-          sc: m.scoped ? 1 : 0, cr: m.crouch ? 1 : 0, vx: +m.mvx.toFixed(1), vz: +m.mvz.toFixed(1), bo: +Math.max(0, m.bolt).toFixed(2), am: m.ammo,
-        });
-        ctx.hud.cooldown('fire', m.reload > 0 ? m.reload / RELOAD : Math.max(0, m.bolt) / BOLT);
-        ctx.hud.charges('fire', m.ammo);
-        ctx.hud.cooldown('a1', m.smokes > 0 ? m.smokeCd / SMOKE_CD : 1);
-        ctx.hud.charges('a1', m.smokes);
-        ctx.hud.cooldown('a2', m.decoyCd / DECOY_CD);
+        if (ctx.phase !== 'live') { frame(dt, ctx.phase === 'over' ? T + dt : ctx.time, true); return; }
+        const t0 = T, span = Math.max(0, ctx.time - t0), n = clamp(Math.ceil(span / 0.034), 1, 12);
+        for (let i = 1; i <= n && (i === 1 || ctx.phase === 'live'); i++) frame(Math.min(span / n, 0.05), t0 + (span * i) / n, i === 1);
       },
 
       render() { view.render(); },

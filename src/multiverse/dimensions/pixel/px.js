@@ -62,3 +62,21 @@ export function stamp(g, rows, x, y, map, flip = false) {
     }
   }
 }
+
+/** Filled triangle (scanline), for wings and other shards. */
+export function tri(g, x0, y0, x1, y1, x2, y2, color) {
+  g.fillStyle = color;
+  const ys = [y0, y1, y2], top = Math.round(Math.min(...ys)), bot = Math.round(Math.max(...ys));
+  const P = [[x0, y0], [x1, y1], [x2, y2]];
+  for (let y = top; y <= bot; y++) {
+    let lo = 1e9, hi = -1e9;
+    for (let i = 0; i < 3; i++) {
+      const a = P[i], b = P[(i + 1) % 3];
+      if ((a[1] <= y && b[1] > y) || (b[1] <= y && a[1] > y) || a[1] === b[1] && Math.round(a[1]) === y) {
+        const t = a[1] === b[1] ? 0 : (y - a[1]) / (b[1] - a[1]), x = a[0] + (b[0] - a[0]) * t;
+        lo = Math.min(lo, x, a[1] === b[1] ? Math.min(a[0], b[0]) : x); hi = Math.max(hi, x, a[1] === b[1] ? Math.max(a[0], b[0]) : x);
+      }
+    }
+    if (hi >= lo) g.fillRect(Math.round(lo), y, Math.max(1, Math.round(hi) - Math.round(lo) + 1), 1);
+  }
+}

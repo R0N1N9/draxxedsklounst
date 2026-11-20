@@ -25,7 +25,7 @@ export function makeView(ctx, THREE, renderer, W) {
   for (let i = 0; i < 4; i++) S.hits.push({ ang: 0, a: 0, near: false });
   let wt = 0, boom = 2.8, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, blocked = false, bellA = 0, raysK = 0;
   const warm = Q.rich ? 3 : 1; // frames always drawn at the start
-  let frames = 0, tPrev = 0, worst = 0, worstPrev = 0, cost = 0, skipLeft = 0, fresh = false, wasFallen = false, drawnScope = 0;
+  let frames = 0, tPrev = 0, worst = 0, worstPrev = 0, cost = 0, skipLeft = 0, fresh = false, wasFallen = false, drawnScope = 0, debt = 0, drawAt = 0;
   const api = { camera, shot: null, force: 0, wt: 0, scopeAmount: 0, pointScale: 600 };
 
   const dirOf = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
@@ -66,7 +66,7 @@ export function makeView(ctx, THREE, renderer, W) {
   Object.assign(api, {
     shake(level) { trauma = Math.min(1, trauma + level); },
     kick(k) { kickV += 0.34 * k; trauma = Math.min(1, trauma + 0.18 * k); },
-    beginIntro() { introT = 0; skipLeft = 0; },
+    beginIntro() { introT = 0; skipLeft = 0; drawAt = -1e9; },
     // Direction from the eye to whatever the open-sight crosshair is on (false in the scope).
     aim(eye, out) { if (!aimOk) return false; out.subVectors(aimPt, eye).normalize(); return true; },
     killCam(v) {
@@ -78,6 +78,7 @@ export function makeView(ctx, THREE, renderer, W) {
         if (Math.abs(x) > 29 || Math.abs(z) > 59 || !map.los(v.x, v.y + 1.1, v.z, x, y, z, T, true) || !map.los(v.x, v.y + 0.4, v.z, x, y, z, T, true)) continue;
         kc = { v, ang, dist, t: 0, y };
         skipLeft = 0; // the kill is always drawn
+        drawAt = -1e9;
         return;
       }
       kc = { v, ang: 2.5, dist: 2.2, t: 0, y: v.y + 2.4 };
@@ -261,11 +262,15 @@ export function makeView(ctx, THREE, renderer, W) {
       tPrev = now;
       fresh = false;
       if (iv > worst) worst = iv;
+      // A software rasteriser pays for a draw over the next several frames, not in one: add up
+      // everything it stalled since the last draw, and let no more than a sixth of the time go on drawing.
+      if (!Q.rich && iv > 40) debt += iv - 17;
+      const wait = !Q.rich && frames > warm && (iv > 60 || now - drawAt < Math.min(4000, debt * 5));
       if (api.force > 0) api.force--; // (test scripts: draw now)
       // A render with no update before it is the core photographing the world for a
       // transition: the canvas must hold a picture, so put the last graded frame back.
       else if (!inBand && frames > warm) { draw = false; again = true; }
-      else if (++frames > warm && skipLeft > 0) { skipLeft--; draw = false; }
+      else if (++frames > warm && (skipLeft > 0 || wait)) { if (skipLeft > 0) skipLeft--; draw = false; }
       if (draw) {
         // The longest gap since the last real draw is what that draw cost. Two slow draws in
         // a row before anything is skipped: one hitch is not a slow machine.
@@ -278,6 +283,8 @@ export function makeView(ctx, THREE, renderer, W) {
         skipLeft = cost < 75 ? 0 : cost < 150 ? Math.round((cost - 50) / 25) : Math.min(240, Math.round((cost - 50) / 5));
         if (!Q.rich && frames === 1) skipLeft = 15;
         drawnScope = scopeAmt;
+        drawAt = now;
+        debt = 0;
       }
       // The scope mask follows the picture that is actually on the glass.
       S.scope = drawnScope;
