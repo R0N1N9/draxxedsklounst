@@ -28,7 +28,7 @@ build, so unfinished work can sit in the tree safely.
 
 ## Status
 
-Work was paused on 20 November 2026 to fit a usage limit. In matches now: eight worlds
+Work was paused on 20 November 2026 to fit a usage limit. In matches now: nine worlds
 and five transitions.
 
 | Module | Kind | State |
@@ -36,8 +36,7 @@ and five transitions.
 | dev-app | transition (the first-kill reveal) | in matches |
 | synapse, flashback, shatter, continue | transitions | in matches |
 | valley | world (the original game; always opens the match) | in matches |
-| neon, ww2, pixel, terminal, manga, toon, toybox | worlds | in matches |
-| surf | world | built, stopped early; second-engineer pass in progress when work paused |
+| neon, ww2, pixel, terminal, manga, toon, toybox, surf | worlds | in matches |
 | comic | world | built, stopped early, never fully tested; second-engineer pass in progress when work paused |
 | abyss | world (underwater; the owner's showpiece) | first build in progress when work paused |
 | paper | world (flat-drawn first person) | first build done (report in `reports/`); second-engineer pass not started |
@@ -54,7 +53,7 @@ In the owner's order of priority:
 
 1. **abyss** — finish the build if needed, second-engineer pass, then a polish pass on
    the strongest model available: the owner wants it to be the best-looking world.
-2. **surf** — finish its second-engineer pass. The owner asked for three things by name:
+2. **surf** — in matches; a character and spray art pass would lift it (see `reports/surf-handoff.md`). The owner asked for three things by name, all now in:
    waves that push the surfers around, strictly third person, and a kill moment where the
    loser falls into the sea and the winner dives in after them, ending on the lens
    crossing the waterline.

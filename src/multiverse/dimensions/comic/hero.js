@@ -50,7 +50,7 @@ export function makeHeroKit(THREE, mats) {
     hat.rotation.x = -0.14;
     // scarf: a knot and five streaming lengths
     mesh(box, light, torso, 0, 0.67, 0.02, 0.27, 0.1, 0.26);
-    const scarf = [0, 1, 2, 3, 4].map((i) => mesh(box, light, torso, 0, 0.7, 0.2 + i * 0.2, 0.13 - i * 0.016, 0.03, 0.25));
+    const scarf = [0, 1, 2, 3, 4].map((i) => mesh(box, light, torso, 0, 0.7, 0.2 + i * 0.2, 0.14 - i * 0.015, 0.045, 0.23));
     // rifle: long, with a fat scope
     rifle.position.set(0.17, 0.5, -0.2);
     torso.add(rifle);
@@ -112,10 +112,16 @@ export function makeHeroKit(THREE, mats) {
         let dx = wx - s.lvx * 0.22 + 0.2 * Math.sin(tw * 0.7), dy = -0.42 + (run + (air ? 1 : 0) + (ko ? 1 : 0)) * 0.4, dz = 0.3 + wz + Math.max(0, -s.lvz) * 0.3 + (air ? 1.2 : 0);
         const l = Math.hypot(dx, dy, dz) || 1;
         dx /= l; dy /= l; dz /= l;
+        // a chain from the knot: each length starts where the last one ended, so the scarf never comes apart
+        let px = 0, py = 0.7, pz = 0.12;
         for (let i = 0; i < 5; i++) {
-          const m = scarf[i], d = 0.16 + i * 0.2, wv = Math.sin(tw * 9 - i * 1.15) * 0.035 * (i + 1), wl = Math.sin(tw * 6.3 - i * 0.9) * 0.025 * (i + 1);
-          m.position.set(dx * d + wl, 0.7 + dy * d + wv, 0.1 + dz * d);
-          m.rotation.set(-Math.asin(clamp(dy + Math.cos(tw * 9 - i * 1.15) * 0.12, -1, 1)), Math.atan2(dx, dz), 0, 'YXZ');
+          const m = scarf[i], wv = Math.sin(tw * 9 - i * 1.15) * 0.16 * (i + 1) / 5, wl = Math.sin(tw * 6.3 - i * 0.9) * 0.14 * (i + 1) / 5;
+          let ux = dx + wl, uy = dy + wv, uz = dz;
+          const k = Math.hypot(ux, uy, uz) || 1;
+          ux /= k; uy /= k; uz /= k;
+          m.position.set(px + ux * 0.1, py + uy * 0.1, pz + uz * 0.1);
+          m.rotation.set(-Math.asin(clamp(uy, -1, 1)), Math.atan2(ux, uz), 0, 'YXZ');
+          px += ux * 0.19; py += uy * 0.19; pz += uz * 0.19;
         }
       },
     };

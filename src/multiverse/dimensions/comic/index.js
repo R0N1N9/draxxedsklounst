@@ -55,6 +55,7 @@ const LEAP_CD = 4.5, SMOKES = 2, SMOKE_CD = 3, SMOKE_LIFE = 8.5, SMOKE_R = 5.2, 
 const WORD = { brick: 'KRAK', metal: 'PING', wood: 'THUNK', paper: 'THUNK', glass: 'KRAK', blimp: 'BOINK' };
 const CHIP = { brick: rgb('#c9583c'), metal: rgb('#a9bcc9'), wood: rgb('#b36a3c'), paper: rgb('#fff4d6'), glass: rgb('#ffe9a0'), blimp: rgb('#f6e7c1') };
 const STAR = [rgb('#ffe066'), rgb('#fff4d6'), rgb('#ff5e62')];
+const SMOKE = rgb('#f1e8ff'), CREAM = rgb('#fff3e6'), FLAME = rgb('#ffd9a0'), DUST = rgb('#efe2cf'), CANVAS = rgb('#f6e7c1');
 
 export default {
   id: 'comic',
@@ -79,12 +80,12 @@ export default {
     const Q = { rich: true, scale: 1, bloom: true, fxaa: true, lite: false, shadows: true };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { rich: false, scale: 0.42, bloom: false, fxaa: false, lite: true, shadows: false });
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { rich: false, scale: 0.4, bloom: false, fxaa: false, lite: true, shadows: false });
     } catch { /* masked: assume a real GPU */ }
     const W = buildWorld(ctx.rng);
     const scene = new THREE.Scene();
     const sunDir = new THREE.Vector3(-0.86, 0.44, 0.05).normalize();
-    const mats = makeMats(THREE, sunDir, Q.rich), art = makeArt(THREE);
+    const mats = makeMats(THREE, sunDir, Q.rich, Q.shadows), art = makeArt(THREE);
     const city = buildCity(THREE, W, mats, art, ctx.seed), fx = buildFx(THREE, mats, W);
     const post = makePost(THREE, renderer, Q), sfx = makeSfx(ctx), letters = makeLetters(), kit = makeHeroKit(THREE, mats);
     scene.add(city.group, fx.group);
@@ -173,7 +174,8 @@ export default {
     const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
     scene.traverse((o) => { if (o.isMesh && o.castShadow) o.customDepthMaterial = depthMat; });
 
-    const view = makeView(ctx, THREE, renderer, { scene, W, fx, post, P, G, letters, Q, sfx });
+    const stage = (n) => { city.stage(n); fx.group.visible = n >= 3; for (const p of P) p.model.root.visible = p.model.root.visible && n >= 1; };
+    const view = makeView(ctx, THREE, renderer, { scene, W, fx, post, P, G, letters, Q, sfx, stage });
 
     // ---- shooting ----
     function spawnBullet(owner, ox, oy, oz, dx, dy, dz, judge, flags) {
@@ -186,7 +188,7 @@ export default {
     function report(p, x, y, z, dx, dy, dz) {
       const mine = p === me;
       fx.flash(x + dx * 0.25, y + dy * 0.25, z + dz * 0.25, mine ? 0.75 : 1.5, 0.11, STAR[0]);
-      fx.puff(x + dx * 0.5, y + dy * 0.5, z + dz * 0.5, dx * 2, 0.5, dz * 2, 0.12, 0.42, 0.55, '#f1e8ff');
+      fx.puff(x + dx * 0.5, y + dy * 0.5, z + dz * 0.5, dx * 2, 0.5, dz * 2, 0.12, 0.42, 0.55, SMOKE);
       sfx.shot(x, y, z, mine);
       if (!(mine && p.scope > 0.6)) view.pop('BLAM', x + dx * 1.4, y + (mine ? 0.75 : 1.5), z + dz * 1.4, mine ? 0.62 : 1.2, 0.85);
       p.shotT = p.pingT = T; p.pingX = x; p.pingY = y; p.pingZ = z;
@@ -263,7 +265,7 @@ export default {
           } else if (kind) {
             b.on = false;
             const x = b.x + dx * tEnv, y = b.y + dy * tEnv, z = b.z + dz * tEnv;
-            fx.impact(x, y, z, nx, ny, nz, CHIP[surf] || CHIP.brick, kind === 4 ? '#f6e7c1' : null);
+            fx.impact(x, y, z, nx, ny, nz, CHIP[surf] || CHIP.brick, kind === 4 ? CANVAS : null);
             sfx.impact(x, y, z, surf);
             if (kind !== 3) view.pop(WORD[surf] || 'KRAK', x + nx * 0.6, y + ny * 0.6 + 0.7, z + nz * 0.6, 0.85, 0.75);
           } else {
@@ -289,8 +291,10 @@ export default {
       p.leap.on = true; p.leap.t = 0;
       p.scoped = false;
       if (mini) { if (p === me) sfx.hop(); return; }
-      for (let i = 0; i < 5; i++) fx.puff(p.x + (Math.random() - 0.5) * 0.8, p.y + 0.2, p.z + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 3, 0.4, (Math.random() - 0.5) * 3, 0.2, 0.75, 0.7, i & 1 ? '#fff3e6' : '#ffd9a0');
-      view.pop('FWOOSH', p.x, p.y + 2.6, p.z, p === me ? 0.7 : 1.1, 0.8);
+      for (let i = 0; i < 5; i++) fx.puff(p.x + (Math.random() - 0.5) * 0.8, p.y + 0.2, p.z + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 3, 0.4, (Math.random() - 0.5) * 3, 0.2, 0.75, 0.7, i & 1 ? CREAM : FLAME);
+      // yours is written along the way you are going (the lens follows you into it); theirs where they left
+      const L = p.leap, k = p === me ? 0.45 : 0;
+      view.pop('FWOOSH', lerp(L.x0, L.x1, k), lerp(L.y0, L.y1, k) + L.H * 4 * k * (1 - k) + (p === me ? 1.2 : 2.6), lerp(L.z0, L.z1, k), p === me ? 0.8 : 1.1, 0.8);
       sfx.leap(p.x, p.y, p.z, p === me);
       fx.scare(p.x, p.y, p.z, 8);
     }
@@ -298,7 +302,7 @@ export default {
       p.land = hard ? 1 : 0.45;
       sfx.land(p.x, p.y, p.z, p === me, hard);
       if (!hard) return;
-      for (let i = 0; i < 7; i++) { const a = (i / 7) * 6.283; fx.puff(p.x + Math.cos(a) * 0.4, p.y + 0.15, p.z + Math.sin(a) * 0.4, Math.cos(a) * 3.4, 0.25, Math.sin(a) * 3.4, 0.16, 0.6, 0.6, '#efe2cf'); }
+      for (let i = 0; i < 7; i++) { const a = (i / 7) * 6.283; fx.puff(p.x + Math.cos(a) * 0.4, p.y + 0.15, p.z + Math.sin(a) * 0.4, Math.cos(a) * 3.4, 0.25, Math.sin(a) * 3.4, 0.16, 0.6, 0.6, DUST); }
       view.pop('THUD', p.x, p.y + 0.9, p.z, p === me ? 0.7 : 1, 0.7);
       fx.scare(p.x, p.y, p.z, 10);
       if (p === me) view.shake(0.4);
@@ -348,7 +352,7 @@ export default {
         const u = Math.min(1, L.t / L.dur);
         p.x = lerp(L.x0, L.x1, u); p.z = lerp(L.z0, L.z1, u); p.y = lerp(L.y0, L.y1, u) + L.H * 4 * u * (1 - u);
         if (u >= 1) { L.on = false; p.roof = L.roof; p.y = L.y1; p.vy = 0; touchDown(p, !L.mini); }
-        else if (!L.mini && Math.random() < dt * 30) fx.puff(p.x, p.y + 0.1, p.z, 0, -1.5, 0, 0.14, 0.4, 0.45, '#ffd9a0');
+        else if (!L.mini && Math.random() < dt * 30) fx.puff(p.x, p.y + 0.1, p.z, 0, -1.5, 0, 0.14, 0.4, 0.45, FLAME);
       } else {
         const sp = RUN * (p.scoped ? 0.3 : 1) * (p.reload > 0 ? 0.85 : 1) * (1 - p.land * 0.5);
         let f = -cmd.my, s = cmd.mx;
@@ -409,6 +413,7 @@ export default {
     }
 
     const pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, speed: 0, lvx: 0, lvz: 0, aim: 0, recoil: 0, air: 0, land: 0, ko: -1 };
+    const netState = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, sc: 0, vx: 0, vz: 0, air: 0, am: MAG }; // (the core sends the latest values at 20 Hz)
 
     function fell(v) {
       const ki = killInfo && killInfo.v === v.i ? killInfo : null, w = P[1 - v.i];
@@ -451,7 +456,12 @@ export default {
         }
       }
       fx.update(phase === 'over' ? dt : rdt, T, wt, view.camera, rdt);
-      if (fx.trainNow) { sfx.train(); view.pop('RATTLE', 0, 16, 0, 1.5, 1.6); }
+      if (fx.trainNow) {
+        sfx.train();
+        // lettered on the train itself, and only if the reader can see down into the street
+        const cp = view.camera.position, tx = clamp(fx.train(T) || 0, -40, 40);
+        if (W.los(cp.x, cp.y, cp.z, tx, 15.5, 0, T, true)) view.pop('RATTLE', tx, 16, 0, 1.3, 1.6);
+      }
       tick ^= 1; // neither sniper always moves first
       for (let n = 0; n < 2; n++) {
         const p = P[n ^ tick];
@@ -483,12 +493,19 @@ export default {
         p.model.update(phase === 'over' ? dt : rdt, s);
         p.model.root.visible = !(p === me && view.S.scope > 0.5 && p.alive) && p.y > -30;
         // sudden death: a column of your colour says where you are
-        if (ts >= 0 && p.alive && phase === 'live') fx.beam(p.x, p.y + 2.6, p.z, p.x, p.y + 30, p.z, 0.12 + Math.sin(wt * 8 + p.i) * 0.03, p.c[0], p.c[1], p.c[2]);
+        // (as thick on the page far away as near: a hairline would be all ink)
+        if (ts >= 0 && p.alive && phase === 'live') {
+          const cp = view.camera.position, d = Math.hypot(p.x - cp.x, p.z - cp.z);
+          fx.beam(p.x, p.y + 2.6, p.z, p.x, p.y + 30, p.z, (0.12 + Math.sin(wt * 8 + p.i) * 0.03) * Math.max(1, d / 22), p.c[0], p.c[1], p.c[2]);
+        }
       }
       fx.end();
 
       const m = me;
-      ctx.net.sendState({ x: +m.x.toFixed(2), y: +m.y.toFixed(2), z: +m.z.toFixed(2), yaw: +m.yaw.toFixed(3), pitch: +m.pitch.toFixed(3), sc: m.scoped ? 1 : 0, vx: +m.mvx.toFixed(1), vz: +m.mvz.toFixed(1), air: m.leap.on && !m.leap.mini ? 1 : 0, am: m.ammo });
+      const ns = netState;
+      ns.x = +m.x.toFixed(2); ns.y = +m.y.toFixed(2); ns.z = +m.z.toFixed(2); ns.yaw = +m.yaw.toFixed(3); ns.pitch = +m.pitch.toFixed(3);
+      ns.sc = m.scoped ? 1 : 0; ns.vx = +m.mvx.toFixed(1); ns.vz = +m.mvz.toFixed(1); ns.air = m.leap.on && !m.leap.mini ? 1 : 0; ns.am = m.ammo;
+      ctx.net.sendState(ns);
       ctx.hud.cooldown('fire', m.reload > 0 ? m.reload / RELOAD : Math.max(0, m.bolt) / BOLT);
       ctx.hud.charges('fire', m.ammo);
       ctx.hud.cooldown('a1', m.duel ? 1 : m.leapCd / LEAP_CD);

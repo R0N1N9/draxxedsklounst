@@ -97,7 +97,7 @@ export function makeView(ctx, THREE, renderer, S) {
   const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
   const pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, speed: 0, loaded: true, dead: -1, aim: 0, recoil: 0 };
   const vm = { load: 1, kick: 0, sway: { x: 0, y: 0 }, bob: 0, aim: 0, drop: 0 };
-  let tPrev = 0, drawAt = 0, cost = 0, worst = 0, measure = false, drawn = 0, fresh = false, drawnPhase = '';
+  let bornAt = 0, tPrev = 0, drawAt = 0, cost = 0, worst = 0, measure = false, drawn = 0, fresh = false, drawnPhase = '';
   let bob = 0, loadShown = 1, introLoad = 0, frames = 0, govT = 0, govN = 0, govGood = 0, lastNow = 0, shadowEvery = Q.soft ? 6 : 1;
   const HUD = { reticle: { x: 0, y: 0 }, marks: [], ping: pingedAt, notes };
   const killCamPos = new THREE.Vector3(), killLook = new THREE.Vector3(), kM = new THREE.Matrix4(), kQ = new THREE.Quaternion();
@@ -194,7 +194,7 @@ export function makeView(ctx, THREE, renderer, S) {
           if (Math.random() < real * 40) bubbles.emit(p.x + (Math.random() - 0.5) * 0.6, p.y + (Math.random() - 0.5) * 0.5, p.z + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.4, 1.5, (Math.random() - 0.5) * 0.4, 0.05 + Math.random() * 0.08, 0.01, 5, 1, 1, 1, 1, 0.5, 1.2);
         }
         p.model.pose(pose, real);
-        if (!staged.includes(p.model.root)) p.model.root.visible = p !== ME || !!kill;
+        p.model.root.visible = p !== ME || !!kill;
         const reveal = (ctx.sudden || ctx.time < p.revealT || (phase === 'intro' && p !== ME)) && p.alive;
         p.model.ghost.visible = reveal && p !== ME;
         p.model.mat.uniforms.uGhost.value = damp(p.model.mat.uniforms.uGhost.value, p.model.ghost.visible ? 1 : 0, 8, real);
@@ -257,7 +257,7 @@ export function makeView(ctx, THREE, renderer, S) {
         const v = kill.v, k = smoothstep(0, 0.7, kill.t);
         const side = tmpV.set(-kill.dir.z, 0, kill.dir.x).normalize();
         const ang = kill.t * 0.25;
-        killCamPos.set(v.x, v.y, v.z).addScaledVector(side, 6.5 * Math.cos(ang)).addScaledVector(kill.dir, -5 + 3 * Math.sin(ang)).add(tmpV2.set(0, -3.2, 0));
+        killCamPos.set(v.x, v.y, v.z).addScaledVector(side, 5 * Math.cos(ang)).addScaledVector(kill.dir, -3.6 + 2.4 * Math.sin(ang)).add(tmpV2.set(0, -2.6, 0));
         camera.position.lerpVectors(kill.from, killCamPos, ease.inOutCubic(k));
         killLook.set(v.x, v.y + 0.4, v.z);
         camera.quaternion.copy(kill.fromQ);
@@ -274,7 +274,7 @@ export function makeView(ctx, THREE, renderer, S) {
         if (phase === 'intro') {
           // the arrival: just under the swell, looking down the wall, sinking to the start
           y = lerp(-1.25, e3.y, ik);
-          pitch = lerp(-0.62, ME.pitch, ease.inOutCubic(smoothstep(0.35, 1, introK)));
+          pitch = lerp(-0.46, ME.pitch, ease.inOutCubic(smoothstep(0.35, 1, introK)));
         }
         const sh = shoveA * shoveA;
         camera.position.set(e3.x, y + Math.sin(bob) * 0.015, e3.z);
@@ -287,6 +287,7 @@ export function makeView(ctx, THREE, renderer, S) {
       U.uCam.value.copy(camera.position);
       bg.position.copy(camera.position);
       surface.position.set(camera.position.x, 0, camera.position.z);
+      for (const sp of S.spears) if (sp.ribbon.mesh.visible) sp.ribbon.build(camera.position.x, camera.position.y, camera.position.z, 0.035);
       viewModel.root.position.copy(camera.position);
       viewModel.root.quaternion.copy(camera.quaternion);
       // A software rasteriser can take a second over one frame: then draw the scene only
@@ -298,17 +299,36 @@ export function makeView(ctx, THREE, renderer, S) {
       if (measure) { cost = iv; measure = false; }
       if (iv > worst) worst = iv; // a GPU running behind shows up as long frames between draws
       let draw = true;
-      if (api.freeze || Q.soft && !api.always && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < Math.min(6000, Math.max(1000, cost * 5, worst * 5))) draw = false;
-      fresh = false;
-      if (!draw) {
+      // software build: the first two seconds behind the title card show plain water, so the
+      // page answers while the CPU starts on the shaders
+      if (!bornAt) bornAt = now;
+      if (Q.soft && now - bornAt < 2000 && !fresh0Photo()) {
+        renderer.setRenderTarget(null);
+        renderer.setClearColor(0x062a33, 1);
+        renderer.clear();
+        fresh = false;
         HUD.w = ctx.width; HUD.h = ctx.height;
         drawOverlay(ctx, HUD, api, S, camera, project);
         return;
       }
-      drawAt = now; drawn++; measure = true; drawnPhase = phase; worst = 0;
+      if (api.freeze || Q.soft && !api.always && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < (staged.length ? Math.max(700, cost * 1.2) : Math.min(6000, Math.max(1000, cost * 5, worst * 5)))) draw = false;
+      fresh = false;
+      if (!draw) {
+        if (drawn > 0) post.present();
+        HUD.w = ctx.width; HUD.h = ctx.height;
+        drawOverlay(ctx, HUD, api, S, camera, project);
+        return;
+      }
+      if (Q.soft && drawn > 0) {
+        // let the last frame finish first, and count the wait as part of what a frame costs
+        post.sync();
+        const waited = performance.now() - now;
+        cost = Math.max(cost, waited);
+      }
+      drawAt = performance.now(); drawn++; measure = true; drawnPhase = phase; worst = 0;
       // software build: bring the world in a piece per draw, so no one frame has to compile
       // every shader at once (a CPU compiles each one in about a second)
-      if (staged.length && drawn > 1) for (let n = 0; n < 2 && staged.length; n++) staged.shift().visible = true;
+      if (staged.length && drawn > 1) for (const o of staged.shift()) o.visible = true;
       // ---- the frame
       const pf = post.u;
       pf.uBreath.value = zoom * 0.75;
@@ -319,7 +339,7 @@ export function makeView(ctx, THREE, renderer, S) {
       pf.uFlashCol.value.setRGB(0.85, 1, 1);
       pf.uSat.value = kill ? lerp(1.12, 1.25, Math.min(1, kill.t)) : 1.12;
       pf.uMaskK.value = kill || api.shot ? 0.25 : 1;
-      pf.uExposure.value = lerp(1.55, 1.8, U.uDim.value);
+      pf.uExposure.value = lerp(1.42, 1.25, U.uDim.value);
       if (frames % shadowEvery === 0 || frames < 3) post.shadowPass(scene, clamp(camera.position.x, -20, 25), clamp(camera.position.z, -35, 35));
       post.render(scene, camera, !kill && !api.shot && ME.alive ? hands : null);
       renderer.setRenderTarget(null);
@@ -351,12 +371,25 @@ export function makeView(ctx, THREE, renderer, S) {
     },
   };
 
+  // software build: bring the world in one shader program per draw (meshes that share a
+  // program arrive together), so no single frame has to build many pipelines at once
   const staged = [];
   if (Q.soft) {
-    for (const o of [...S.reef.group.children, ...S.life.group.children.filter((c) => c.visible), kraken.group, S.snow.mesh, glow.mesh, S.smoke.mesh, ...P.map((p) => p.model.root)]) {
-      if (o.visible) { o.visible = false; staged.push(o); }
+    const groups = new Map();
+    const keyOf = (o) => { const m = o.material; return `${m.fragmentShader ? m.fragmentShader.length : 0}|${JSON.stringify(m.defines || {})}|${o.isInstancedMesh ? 1 : 0}|${m.side}`; };
+    for (const root of [S.reef.group, kraken.group, S.life.group, ...P.map((p) => p.model.root)]) {
+      root.traverse((o) => {
+        if (!o.isMesh || !o.visible || !o.material) return;
+        const k = keyOf(o);
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(o);
+      });
     }
+    for (const list of groups.values()) { for (const o of list) o.visible = false; staged.push(list); }
   }
+
+  // a render with no update since the last one is the core photographing the world
+  function fresh0Photo() { return !fresh; }
 
   function inkAtCam() {
     let k = 0;
@@ -383,7 +416,7 @@ export function makeView(ctx, THREE, renderer, S) {
     if (avg > 20 && Q.tier < 2) {
       Q.tier++;
       post.setTier(Q.tier);
-      if (Q.tier === 1) post.setShadow(768);
+      if (Q.tier === 1) post.setShadow(1024);
       if (Q.tier === 2) { post.setShadow(512); shadowEvery = 2; S.snow.setCount(1200); }
       govGood = 0;
     } else if (avg < 13 && Q.tier > 0) {
@@ -392,7 +425,7 @@ export function makeView(ctx, THREE, renderer, S) {
       Q.tier--;
       post.setTier(Q.tier);
       shadowEvery = 1;
-      post.setShadow(Q.tier === 0 ? 1024 : 768);
+      post.setShadow(Q.tier === 0 ? 2048 : 1024);
       S.snow.setCount(Q.tier === 0 ? Q.snow : 1800);
     }
   }

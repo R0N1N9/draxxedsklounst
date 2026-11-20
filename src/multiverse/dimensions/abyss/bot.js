@@ -21,7 +21,7 @@ export function makeBot(ctx, W, G) {
     return {
       p, know: null, // { x, y, z, vx, vy, vz, t (when), seen (bool), decoy }
       seenT: 0, settle: 0, notice: 0, err: { y: 0, p: 0 }, post: null, replan: 1 + Math.random() * 2,
-      opening: 2 + Math.random() * 3 * (1 - skill), lastSeen: -99, dodge: 0, dodgeX: 0, dodgeY: 0, dodgeZ: 0, hold: false,
+      opening: 1 + Math.random() * 2 * (1 - skill), lastSeen: -99, dodge: 0, dodgeX: 0, dodgeY: 0, dodgeZ: 0, hold: false,
       wantDecoy: 0, strafe: Math.random() < 0.5 ? -1 : 1, strafeT: 2, prevEx: 0, prevEy: 0, prevEz: 0, estV: [0, 0, 0],
     };
   }
@@ -84,7 +84,7 @@ export function makeBot(ctx, W, G) {
       const d = Math.hypot(ax - e.x, ay - e.y, az - e.z);
       const f = Math.min(0.95, (d * k) / V);
       t = -Math.log(1 - f) / k;
-      const lead = lerp(0.35, 1, skill);
+      const lead = lerp(0.6, 1, skill);
       ax = x + vx * t * lead; az = z + vz * t * lead;
       const drop = (g / k) * t - (g / (k * k)) * (1 - Math.exp(-k * t));
       ay = y + vy * t * lead + drop * lerp(0.75, 1, skill);
@@ -99,7 +99,7 @@ export function makeBot(ctx, W, G) {
 
   function pickPost(b, tx, ty, tz) {
     const p = b.p, T = G.time();
-    const want = lerp(40, 14, clamp(T / 40, 0, 1)) - skill * 4;
+    const want = lerp(30, 10, clamp(T / 22, 0, 1)) - skill * 4;
     let best = null, bestS = -1e9;
     for (const q of W.posts) {
       const dMe = Math.hypot(q.x - p.x, q.z - p.z);
@@ -128,7 +128,7 @@ export function makeBot(ctx, W, G) {
 
     // dodge: a spear it can see heading its way
     const threat = G.incoming(p);
-    if (threat && b.dodge <= 0 && Math.random() < 0.4 + skill * 0.5) {
+    if (threat && b.dodge <= -0.6 && Math.random() < dt * (0.5 + skill * 2)) {
       b.dodge = 0.7;
       // across the spear's line, and up
       const sx = threat.vz, sz = -threat.vx, sl = Math.hypot(sx, sz) || 1, side = Math.random() < 0.5 ? -1 : 1;
@@ -189,16 +189,17 @@ export function makeBot(ctx, W, G) {
     cmd.yaw = p.yaw + angDiff(p.yaw, wantYaw) * turn;
     cmd.pitch = clamp(p.pitch + (wantPitch - p.pitch) * turn, -1.3, 1.3);
     // the error closes as it holds steady on you
-    b.err.y *= Math.exp(-dt * lerp(0.6, 1.8, skill));
-    b.err.p *= Math.exp(-dt * lerp(0.6, 1.8, skill));
+    b.err.y *= Math.exp(-dt * lerp(0.9, 2.2, skill));
+    b.err.p *= Math.exp(-dt * lerp(0.9, 2.2, skill));
     // breath: hold it for anything but a close shot
     const dist = k ? Math.hypot(k.x - p.x, k.y - p.y, k.z - p.z) : 99;
     const wantHold = fresh && p.loaded && dist > 14 && p.air > 0.2 && b.settle > 0.2;
     cmd.alt = wantHold;
     // fire when the aim has settled on the solution
     const settled = Math.abs(angDiff(cmd.yaw, wantYaw)) < 0.01 + 0.004 * (1 - skill) && Math.abs(cmd.pitch - wantPitch) < 0.012;
-    const patience = lerp(0.9, 0.45, skill) + (dist > 30 ? lerp(0.6, 0.2, skill) : 0) + (T < 8 ? 0.3 : 0);
-    if (fresh && p.loaded && settled && b.settle > patience && (p.holding || dist < 16 || p.air < 0.2)) {
+    const patience = lerp(0.75, 0.35, skill) + (dist > 30 ? lerp(0.5, 0.15, skill) : 0) + (dist > 45 ? lerp(1.3, 0.5, skill) : 0) + (T < 6 ? 0.7 : 0);
+    // no sniping across the whole reef in the first seconds: the round opens as a hunt
+    if (fresh && p.loaded && settled && b.settle > patience && (p.holding || dist < 16 || p.air < 0.2) && (T > 5 || dist < 40)) {
       cmd.fire = true;
       b.settle = 0;
       b.err.y = gauss(Math.random) * lerp(0.035, 0.008, skill);

@@ -227,7 +227,7 @@ export function makePost(THREE, renderer, q) {
   const rt = (filter) => new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false, magFilter: filter, minFilter: filter });
   const qa = rt(THREE.LinearFilter), qb = rt(THREE.LinearFilter);
   const page = new THREE.WebGLRenderTarget(4, 4, { depthBuffer: false });
-  const size = new THREE.Vector2(), m4 = new THREE.Matrix4();
+  const size = new THREE.Vector2(), m4 = new THREE.Matrix4(), px = new Uint8Array(4);
   const black = new THREE.Color(0, 0, 0);
   let scale = q.scale;
 
@@ -256,7 +256,8 @@ export function makePost(THREE, renderer, q) {
       // Line weights and dot pitches are set for a 600-line page and scale with the real one.
       u.uPx.value = Math.max(0.75, h / 600);
     },
-    render(world, camera) {
+    /** wait: block until the page itself is printed (a software rasteriser: see view.js), before it is laid on the screen */
+    render(world, camera, wait) {
       const auto = renderer.autoClear;
       renderer.autoClear = true;
       renderer.setRenderTarget(scene);
@@ -277,6 +278,8 @@ export function makePost(THREE, renderer, q) {
       u.uPixAng.value = (2 * u.uTanY.value) / h;
       u.uCam.value.setFromMatrix4(m4.copy(camera.matrixWorld));
       pass(mComic, scene, page, w, h);
+      // (read back from the small page, not the screen: that one is multisampled and would have to be resolved first)
+      if (wait) renderer.readRenderTargetPixels(page, 0, 0, 1, 1, px);
       pass(mPresent, page, null, w, h);
       renderer.setRenderTarget(null);
       renderer.autoClear = auto;

@@ -75,7 +75,7 @@ void main() {
 export function makeSky(THREE, renderer, Q) {
   const sun = new THREE.Vector3(SUN.x, SUN.y, SUN.z);
   // (a software rasteriser paints a smaller panorama: this one pass is its most expensive second)
-  const rt = new THREE.WebGLRenderTarget(Q.soft ? 512 : 1024, Q.soft ? 256 : 512, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: true, wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping });
+  const rt = new THREE.WebGLRenderTarget(Q.soft ? 320 : 1024, Q.soft ? 160 : 512, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: true, wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping });
   {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));

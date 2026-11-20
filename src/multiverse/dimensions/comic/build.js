@@ -124,13 +124,14 @@ export function buildCity(THREE, W, mats, art, seed) {
     }
   }
   // Hoardings and signs carry painted faces, towards the street.
-  const quad = new THREE.PlaneGeometry(1, 1);
+  const quad = new THREE.PlaneGeometry(1, 1), boardMeshes = [];
   owned.push(quad);
   boards.forEach((p, i) => {
     const sgn = p.kind === 'sign', s = p.side ? -1 : 1;
-    const m = mats.make({ map: sgn ? art.signs[(i + (p.seed * 4 | 0)) % art.signs.length] : art.ads[(i + (p.seed * 4 | 0)) % art.ads.length], cut: sgn, erase: true, lit: sgn, side: sgn ? THREE.DoubleSide : THREE.FrontSide });
+    const m = mats.make({ map: sgn ? art.signs[(i + (p.seed * 4 | 0)) % art.signs.length] : art.ads[(i + (p.seed * 4 | 0)) % art.ads.length], cut: true, erase: true, lit: sgn, side: sgn ? THREE.DoubleSide : THREE.FrontSide });
     erasable.push(m);
     const mesh = new THREE.Mesh(quad, m);
+    boardMeshes.push(mesh);
     mesh.scale.set(p.w - (sgn ? 0.4 : 0.3), sgn ? 2.7 : 4.0, 1);
     mesh.position.set(p.x, p.y + (sgn ? 3.05 : 3.45), p.z - s * (sgn ? 0 : 0.02));
     mesh.rotation.y = s > 0 ? Math.PI : 0;
@@ -176,7 +177,7 @@ export function buildCity(THREE, W, mats, art, seed) {
   const blimp = new THREE.Group();
   const hullG = new THREE.SphereGeometry(1, 28, 18).rotateZ(Math.PI / 2); // poles fore and aft: u runs round the hull
   owned.push(hullG);
-  const hull = new THREE.Mesh(hullG, mats.make({ map: art.livery }));
+  const hull = new THREE.Mesh(hullG, mats.make({ map: art.livery, cut: true, erase: true })); // (one shader for everything painted)
   hull.scale.set(BLIMP.rx, BLIMP.ry, BLIMP.rz);
   const dark = mats.make({ color: '#3a2d5c' }), teal = mats.make({ color: '#2bb3a3' }), lamp = mats.make({ color: '#ffe9a0', lit: true });
   const part = (geo, m, x, y, z, sx, sy, sz, rx = 0, rz = 0) => { const q = new THREE.Mesh(geo, m); q.position.set(x, y, z); q.scale.set(sx, sy, sz); q.rotation.set(rx, 0, rz); blimp.add(q); return q; };
@@ -191,6 +192,13 @@ export function buildCity(THREE, W, mats, art, seed) {
   let erase = 0;
   return {
     group, blimp,
+    /** A software rasteriser builds each shader into machine code the first time it draws with it, a stall per shader: the
+     * city is put on the page a part at a time over its first draws (0 sky, 1 walls, 2 cover, 3 everything) to spread them. */
+    stage(n) {
+      for (const m of meshes) m.visible = n >= (propMeshes.includes(m) ? 2 : 1);
+      for (const m of boardMeshes) m.visible = n >= 2;
+      blimp.visible = n >= 3;
+    },
     update(T) {
       const b = W.blimp(T);
       blimp.position.set(b.x, b.y, b.z);
@@ -201,6 +209,11 @@ export function buildCity(THREE, W, mats, art, seed) {
     setErase(k) {
       if (k === erase) return false;
       const was = erase > 0.5;
+      if (k > 0 && !erase) for (const m of erasable) {
+        // from here on these are drawn over the page, blended, after everything solid (see mats.js)
+        m.transparent = true; m.depthWrite = false; m.blending = THREE.CustomBlending; m.blendEquation = THREE.AddEquation;
+        m.blendSrc = THREE.SrcAlphaFactor; m.blendDst = THREE.OneMinusSrcAlphaFactor; m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;
+      }
       erase = k;
       for (const m of erasable) m.uniforms.uErase.value = k;
       for (const m of propMeshes) m.castShadow = k < 0.5;

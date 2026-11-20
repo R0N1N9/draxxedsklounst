@@ -84,7 +84,7 @@ export function makeSea(THREE, rng, roundTime) {
   const uWvA = W.map((w) => new THREE.Vector4(w.dx, w.dz, w.k, w.a)), uWvB = W.map((w) => new THREE.Vector4(w.c, w.h, w.ph, 0));
   const uSea = new THREE.Vector4(0, 1, -1e4, 0);
   let t = 0, calm = 1, pkS = -1e4, pkA = 0;
-  const d = { x: 0, y: 0, z: 0 }, fl = { vx: 0, vz: 0, fold: 1, bx: 0, bz: 0 };
+  const d = { x: 0, y: 0, z: 0 }, fl = { vx: 0, vz: 0, fold: 1, bx: 0, bz: 0 }, sw = { s: 0, amp: 0, z: 0 };
 
   function disp(x, z) {
     let ox = 0, oy = 0, oz = 0;
@@ -156,7 +156,7 @@ export function makeSea(THREE, rng, roundTime) {
     },
     // Where the set wave's crest is (signed distance along its travel, metres from the arena
     // centre; negative = still out to sea) and how big it stands right now.
-    setWave() { return { s: pkS, amp: pkA, z: -pkS }; },
+    setWave() { sw.s = pkS; sw.amp = pkA; sw.z = -pkS; return sw; }, // (one object, refilled: asked every frame)
     // Seconds until the next set wave's crest reaches the arena centre (always > 0).
     nextSet() {
       const tau = t - setT0, arrive = -SET.from / SET.speed, n = Math.max(0, Math.ceil((tau - arrive) / SET.period));

@@ -10,7 +10,9 @@
 import { clamp, lerp, damp, angDiff, angLerp, gauss } from '../../kit.js';
 import { ARENA } from './sea.js';
 
-const GRACE = 10.2; // nobody is hit by a bot before this (and often a little after): the opening is for reading the sea
+// Nobody is hit by a bot before this (and often a little after): the opening is for a person to
+// read the sea. With no person in the duel (autopilot: a demo, or the tests) it is only a breath.
+export const GRACE = 10.2, GRACE_AUTO = 3;
 
 export function makeBot(ctx, sea, world, G) {
   const R = G.R, rnd = Math.random;
@@ -20,7 +22,7 @@ export function makeBot(ctx, sea, world, G) {
     return {
       skill, t: 0, plan: 'open', planT: 0, openT: 3.6 + (1 - skill) * 1.6 + rnd() * 1.2, weave: rnd() < 0.5 ? 1 : -1, weaveT: 1.5 + rnd() * 2,
       seen: 0, lost: 9, braceT: 0, wantBrace: false, relocate: 0, settle: 1, eY: 0, eP: 0, tY: 0, tP: 0, errT: 0, underFire: 0, wasFire: 0,
-      lx: 0, lz: 0, side: rnd() < 0.5 ? 1 : -1, pref: 74 + rnd() * 26, near: 44 + rnd() * 14, closer: rnd() < 0.56 - 0.24 * skill, lead: 1, shots: 0, follow: false, grace: GRACE + rnd() * 3.5,
+      lx: 0, lz: 0, side: rnd() < 0.5 ? 1 : -1, pref: 74 + rnd() * 26, near: 44 + rnd() * 14, closer: rnd() < 0.56 - 0.24 * skill, lead: 1, shots: 0, follow: false, grace: (ctx.autopilot ? GRACE_AUTO : GRACE) + rnd() * 3.5,
     };
   }
 

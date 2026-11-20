@@ -376,6 +376,9 @@ void main() {
   // CREA_VERT reads `color`; the jelly material has none, so give the geometry a white one
   tint(THREE, jellyGeo, () => [1, 1, 1]);
 
+  // the software build keeps the shoals and the lights of the deep, and leaves out the rest
+  if (mats.lean) { turtle.visible = manta.visible = shark.visible = false; for (const m of jellyMeshes) m.visible = false; }
+
   // creature paths (decoration only)
   const tmp = { x: 0, y: 0, z: 0 };
   let sharkA = Math.random() * 6.28, sharkMode = 0, sharkT = 8 + Math.random() * 6, sharkX = 0, sharkY = -15, sharkZ = 0, sharkYaw = 0;

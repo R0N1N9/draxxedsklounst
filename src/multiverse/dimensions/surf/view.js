@@ -8,7 +8,7 @@
 // draws on a machine that has no GPU.
 import { clamp, lerp, damp, smoothstep, noise2 } from '../../kit.js';
 import { drawOverlay } from './overlay.js';
-import { KILL } from './game.js';
+import { KILL, SLOW } from './game.js';
 import { SUN } from './sky.js';
 
 const PROMPTS = {
@@ -82,7 +82,8 @@ export function makeView(ctx, THREE, renderer, W) {
     // fall, the splash, the bow. (High enough that no crest between hides it.)
     const v = k.v.body, hi = 6 + dist * 0.06;
     pA.set(w.x - ux * 14 + rx * 1.2, kc.y + hi, w.z - uz * 14 + rz * 1.2);
-    if (k.splashed) kc.look.lerp(tmp.set(k.x, k.y + 2.6, k.z), Math.min(1, dt * 4)); else kc.look.lerp(tmp.set(v.x, v.y + 0.4, v.z), Math.min(1, dt * 9));
+    // (on the choreography's own clock: the sea's slow motion must not leave the lens behind the body)
+    if (k.splashed) kc.look.lerp(tmp.set(k.x, k.y + 2.6, k.z), Math.min(1, (dt / SLOW) * 4)); else kc.look.set(v.x, v.y + 0.4, v.z);
     lA.copy(kc.look);
     const fA = clamp((2 * Math.atan(4.6 / (dist + 14)) * 180) / Math.PI, 3.2, 30);
     // B — round to the winner's side as they crouch and go: the header in profile
@@ -224,6 +225,14 @@ export function makeView(ctx, THREE, renderer, W) {
       raysK = ahead ? 1 - smoothstep(1.0, 2.0, Math.max(Math.abs(tmp.x), Math.abs(tmp.y))) : 0;
       const pu = post.u, under = me.dive > 0 && me.alive && phase === 'live';
       pu.uTime.value = wt;
+      // The eye adapts: a lens pointed down the sun's road (or at the sun) stops down, so a long
+      // lens into the glitter still shows what is standing in it instead of a white page.
+      {
+        const e = camera.matrixWorld.elements, fx0 = -e[8], fy0 = -e[9], fz0 = -e[10];
+        const road = fx0 * SUN.x - fy0 * SUN.y + fz0 * SUN.z, at = fx0 * SUN.x + fy0 * SUN.y + fz0 * SUN.z;
+        const tele = clamp((60 - camera.fov) / 45, 0.35, 1), glare = smoothstep(0.9, 0.995, Math.max(road, at)) * tele;
+        pu.uExposure.value = damp(pu.uExposure.value, 1 - 0.5 * glare, 3, dt);
+      }
       pu.uRays.value = raysK * 0.8;
       pu.uFlinch.value = me.alive && phase === 'live' ? me.flinch * 0.7 : 0;
       pu.uBrace.value = me.alive && phase === 'live' ? me.brace : 0;
@@ -303,6 +312,7 @@ export function makeView(ctx, THREE, renderer, W) {
         // frame is simply put back.
         if (stills++ > 0) return post.present();
         if (W.settle) W.settle(); // (a round that ends on a hitch still ends on its last frame)
+        fresh = false;
       } else {
         stills = 0;
         if (api.force > 0) api.force--; // (test scripts: draw now)
@@ -313,7 +323,7 @@ export function makeView(ctx, THREE, renderer, W) {
           // more than a sixth of the time go on drawing: the duel itself runs true.
           if (iv > 40) debt += iv - 17;
           if (iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
-          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && api.draws > 2) post.setScale(Math.min(0.72, post.scale * 1.08));
+          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && api.draws > 2) post.setScale(Math.min(0.5, post.scale * 1.08));
         }
       }
       if (W.stage) W.stage(api.draws);
