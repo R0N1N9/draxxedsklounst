@@ -77,6 +77,7 @@ export default {
     const { THREE, renderer } = ctx.three;
     setThree(THREE);
     const scene = new THREE.Scene();
+    if (globalThis.__PAPER_DBG) Object.assign(globalThis.__PAPER_DBG, { scene, ctx }); // DBG
     const camera = new THREE.PerspectiveCamera(60, ctx.width / ctx.height, 0.25, 900);
     camera.rotation.order = 'YXZ';
     const mats = makeLineMats(THREE);
