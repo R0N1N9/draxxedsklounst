@@ -8,7 +8,7 @@
 // draws on a machine that has no GPU.
 import { clamp, lerp, damp, smoothstep, noise2 } from '../../kit.js';
 import { drawOverlay } from './overlay.js';
-import { KILL } from './game.js';
+import { KILL, SLOW } from './game.js';
 import { SUN } from './sky.js';
 
 const PROMPTS = {
@@ -82,7 +82,8 @@ export function makeView(ctx, THREE, renderer, W) {
     // fall, the splash, the bow. (High enough that no crest between hides it.)
     const v = k.v.body, hi = 6 + dist * 0.06;
     pA.set(w.x - ux * 14 + rx * 1.2, kc.y + hi, w.z - uz * 14 + rz * 1.2);
-    if (k.splashed) kc.look.lerp(tmp.set(k.x, k.y + 2.6, k.z), Math.min(1, dt * 4)); else kc.look.lerp(tmp.set(v.x, v.y + 0.4, v.z), Math.min(1, dt * 9));
+    // (on the choreography's own clock: the sea's slow motion must not leave the lens behind the body)
+    if (k.splashed) kc.look.lerp(tmp.set(k.x, k.y + 2.6, k.z), Math.min(1, (dt / SLOW) * 4)); else kc.look.set(v.x, v.y + 0.4, v.z);
     lA.copy(kc.look);
     const fA = clamp((2 * Math.atan(4.6 / (dist + 14)) * 180) / Math.PI, 3.2, 30);
     // B — round to the winner's side as they crouch and go: the header in profile

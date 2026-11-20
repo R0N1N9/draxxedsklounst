@@ -63,6 +63,9 @@ float sunShadow(vec3 p, float bias) {
 float caustics(vec3 p) {
   vec2 q = p.xz - uL.xz / uL.y * p.y;
   float t = uTime, blur = clamp(-p.y * 0.05 - 0.2, 0.0, 2.5);
+#ifdef LEAN
+  return texture2D(tCaustic, q * 0.052 + vec2(t * 0.013, t * 0.008)).r * 0.9;
+#endif
   float a = texture2D(tCaustic, q * 0.052 + vec2(t * 0.013, t * 0.008), blur).r;
   float b = texture2D(tCaustic, q * 0.067 + vec2(-t * 0.010, t * 0.014) + 0.37, blur).r;
   return a * b * 3.2 + (a + b) * 0.12;
@@ -70,6 +73,10 @@ float caustics(vec3 p) {
 
 vec3 lamps(vec3 p, vec3 n) {
   vec3 acc = vec3(0.0);
+#ifdef LEAN
+  for (int i = 0; i < 2; i++) { vec3 l = uLampPos[i] - p; acc += uLampCol[i] * 0.3 / (1.0 + dot(l, l) * 0.08); }
+  return acc;
+#endif
   for (int i = 0; i < 2; i++) {
     vec3 l = uLampPos[i] - p;
     float d = length(l);

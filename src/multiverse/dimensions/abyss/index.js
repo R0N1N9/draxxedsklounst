@@ -78,7 +78,7 @@ export default {
     const Q = { soft: false, tier: 0, scale: 1, shadow: 1024, fish: 260, snow: 2600, msaa: true };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.32, shadow: 512, fish: 60, snow: 700, msaa: false });
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.25, shadow: 512, fish: 60, snow: 700, msaa: false });
     } catch { /* masked: assume a GPU */ }
     const tex = makeTextures(THREE, renderer, Q.soft);
     const U = makeShared(THREE, tex);

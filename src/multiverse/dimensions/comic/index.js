@@ -55,6 +55,7 @@ const LEAP_CD = 4.5, SMOKES = 2, SMOKE_CD = 3, SMOKE_LIFE = 8.5, SMOKE_R = 5.2, 
 const WORD = { brick: 'KRAK', metal: 'PING', wood: 'THUNK', paper: 'THUNK', glass: 'KRAK', blimp: 'BOINK' };
 const CHIP = { brick: rgb('#c9583c'), metal: rgb('#a9bcc9'), wood: rgb('#b36a3c'), paper: rgb('#fff4d6'), glass: rgb('#ffe9a0'), blimp: rgb('#f6e7c1') };
 const STAR = [rgb('#ffe066'), rgb('#fff4d6'), rgb('#ff5e62')];
+const SMOKE = rgb('#f1e8ff'), CREAM = rgb('#fff3e6'), FLAME = rgb('#ffd9a0'), DUST = rgb('#efe2cf'), CANVAS = rgb('#f6e7c1');
 
 export default {
   id: 'comic',
@@ -186,7 +187,7 @@ export default {
     function report(p, x, y, z, dx, dy, dz) {
       const mine = p === me;
       fx.flash(x + dx * 0.25, y + dy * 0.25, z + dz * 0.25, mine ? 0.75 : 1.5, 0.11, STAR[0]);
-      fx.puff(x + dx * 0.5, y + dy * 0.5, z + dz * 0.5, dx * 2, 0.5, dz * 2, 0.12, 0.42, 0.55, '#f1e8ff');
+      fx.puff(x + dx * 0.5, y + dy * 0.5, z + dz * 0.5, dx * 2, 0.5, dz * 2, 0.12, 0.42, 0.55, SMOKE);
       sfx.shot(x, y, z, mine);
       if (!(mine && p.scope > 0.6)) view.pop('BLAM', x + dx * 1.4, y + (mine ? 0.75 : 1.5), z + dz * 1.4, mine ? 0.62 : 1.2, 0.85);
       p.shotT = p.pingT = T; p.pingX = x; p.pingY = y; p.pingZ = z;
@@ -263,7 +264,7 @@ export default {
           } else if (kind) {
             b.on = false;
             const x = b.x + dx * tEnv, y = b.y + dy * tEnv, z = b.z + dz * tEnv;
-            fx.impact(x, y, z, nx, ny, nz, CHIP[surf] || CHIP.brick, kind === 4 ? '#f6e7c1' : null);
+            fx.impact(x, y, z, nx, ny, nz, CHIP[surf] || CHIP.brick, kind === 4 ? CANVAS : null);
             sfx.impact(x, y, z, surf);
             if (kind !== 3) view.pop(WORD[surf] || 'KRAK', x + nx * 0.6, y + ny * 0.6 + 0.7, z + nz * 0.6, 0.85, 0.75);
           } else {
@@ -289,7 +290,7 @@ export default {
       p.leap.on = true; p.leap.t = 0;
       p.scoped = false;
       if (mini) { if (p === me) sfx.hop(); return; }
-      for (let i = 0; i < 5; i++) fx.puff(p.x + (Math.random() - 0.5) * 0.8, p.y + 0.2, p.z + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 3, 0.4, (Math.random() - 0.5) * 3, 0.2, 0.75, 0.7, i & 1 ? '#fff3e6' : '#ffd9a0');
+      for (let i = 0; i < 5; i++) fx.puff(p.x + (Math.random() - 0.5) * 0.8, p.y + 0.2, p.z + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 3, 0.4, (Math.random() - 0.5) * 3, 0.2, 0.75, 0.7, i & 1 ? CREAM : FLAME);
       view.pop('FWOOSH', p.x, p.y + 2.6, p.z, p === me ? 0.7 : 1.1, 0.8);
       sfx.leap(p.x, p.y, p.z, p === me);
       fx.scare(p.x, p.y, p.z, 8);
@@ -298,7 +299,7 @@ export default {
       p.land = hard ? 1 : 0.45;
       sfx.land(p.x, p.y, p.z, p === me, hard);
       if (!hard) return;
-      for (let i = 0; i < 7; i++) { const a = (i / 7) * 6.283; fx.puff(p.x + Math.cos(a) * 0.4, p.y + 0.15, p.z + Math.sin(a) * 0.4, Math.cos(a) * 3.4, 0.25, Math.sin(a) * 3.4, 0.16, 0.6, 0.6, '#efe2cf'); }
+      for (let i = 0; i < 7; i++) { const a = (i / 7) * 6.283; fx.puff(p.x + Math.cos(a) * 0.4, p.y + 0.15, p.z + Math.sin(a) * 0.4, Math.cos(a) * 3.4, 0.25, Math.sin(a) * 3.4, 0.16, 0.6, 0.6, DUST); }
       view.pop('THUD', p.x, p.y + 0.9, p.z, p === me ? 0.7 : 1, 0.7);
       fx.scare(p.x, p.y, p.z, 10);
       if (p === me) view.shake(0.4);
@@ -348,7 +349,7 @@ export default {
         const u = Math.min(1, L.t / L.dur);
         p.x = lerp(L.x0, L.x1, u); p.z = lerp(L.z0, L.z1, u); p.y = lerp(L.y0, L.y1, u) + L.H * 4 * u * (1 - u);
         if (u >= 1) { L.on = false; p.roof = L.roof; p.y = L.y1; p.vy = 0; touchDown(p, !L.mini); }
-        else if (!L.mini && Math.random() < dt * 30) fx.puff(p.x, p.y + 0.1, p.z, 0, -1.5, 0, 0.14, 0.4, 0.45, '#ffd9a0');
+        else if (!L.mini && Math.random() < dt * 30) fx.puff(p.x, p.y + 0.1, p.z, 0, -1.5, 0, 0.14, 0.4, 0.45, FLAME);
       } else {
         const sp = RUN * (p.scoped ? 0.3 : 1) * (p.reload > 0 ? 0.85 : 1) * (1 - p.land * 0.5);
         let f = -cmd.my, s = cmd.mx;

@@ -17,7 +17,9 @@ void main() {
   vec3 up = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);
   float c = cos(iSize.y), s = sin(iSize.y);
   vec2 q = vec2(position.x * c - position.y * s, position.x * s + position.y * c);
-  vec3 w = iPos + (right * q.x + up * q.y) * iSize.x;
+  // never more than about half the view across: bounds the overdraw of a cloud you swim into
+  float cd0 = length(iPos - uCam);
+  vec3 w = iPos + (right * q.x + up * q.y) * min(iSize.x, cd0 * 0.6);
   vQ = position.xy * 2.0;
   vCol = iCol;
   vW = w;

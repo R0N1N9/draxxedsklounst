@@ -86,9 +86,9 @@ export function buildFx(THREE, mats, W) {
   const api = {
     group, box, beam,
     /** A cel cloud ball: grows from r0 to r1 over its life, pops in, shrinks out. */
-    puff(x, y, z, vx, vy, vz, r0, r1, life, hex) {
+    /** c: [r, g, b] (made once with rgb(), never per call) */
+    puff(x, y, z, vx, vy, vz, r0, r1, life, c) {
       const p = P[pi]; pi = (pi + 1) % P.length;
-      const c = typeof hex === 'string' ? rgb(hex) : hex;
       p.on = true; p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz; p.r0 = r0; p.r1 = r1; p.age = 0; p.life = life; p.r = c[0]; p.g = c[1]; p.b = c[2];
     },
     star(x, y, z, vx, vy, vz, s, life, grav, c) {
@@ -108,14 +108,14 @@ export function buildFx(THREE, mats, W) {
     cloud(x, y, z, r, life) {
       for (let i = 0; i < 15; i++) {
         const a = Math.random() * TAU, e = (Math.random() - 0.35) * 1.3, d = r * (0.25 + Math.random() * 0.45), rr = r * (0.34 + Math.random() * 0.2);
-        api.puff(x + Math.cos(a) * Math.cos(e) * d, y + Math.sin(e) * d * 0.7, z + Math.sin(a) * Math.cos(e) * d, Math.cos(a) * 0.12, 0.03, Math.sin(a) * 0.12, rr * 0.9, rr * 1.12, life * (0.86 + Math.random() * 0.14), i % 3 ? '#f1e8ff' : '#e3d2f7');
+        api.puff(x + Math.cos(a) * Math.cos(e) * d, y + Math.sin(e) * d * 0.7, z + Math.sin(a) * Math.cos(e) * d, Math.cos(a) * 0.12, 0.03, Math.sin(a) * 0.12, rr * 0.9, rr * 1.12, life * (0.86 + Math.random() * 0.14), i % 3 ? SMOKE : SMOKE2);
       }
     },
     /** Everything a bullet knocks loose: a burst, chips, a little dust, and the pigeons leave. */
     impact(x, y, z, nx, ny, nz, c, dust) {
       api.flash(x + nx * 0.15, y + ny * 0.15, z + nz * 0.15, 0.7, 0.12, WHITE);
       for (let i = 0; i < 6; i++) api.chip(x, y, z, nx * 3 + (Math.random() - 0.5) * 5, ny * 3 + Math.random() * 4.5, nz * 3 + (Math.random() - 0.5) * 5, 0.07 + Math.random() * 0.1, 0.9, c);
-      for (let i = 0; i < 2; i++) api.puff(x + nx * 0.2, y + ny * 0.2, z + nz * 0.2, nx * 1.2 + (Math.random() - 0.5), 0.8 + ny, nz * 1.2 + (Math.random() - 0.5), 0.16, 0.5, 0.5 + Math.random() * 0.2, dust || '#e9dcc8');
+      for (let i = 0; i < 2; i++) api.puff(x + nx * 0.2, y + ny * 0.2, z + nz * 0.2, nx * 1.2 + (Math.random() - 0.5), 0.8 + ny, nz * 1.2 + (Math.random() - 0.5), 0.16, 0.5, 0.5 + Math.random() * 0.2, dust || DUST);
       api.scare(x, y, z, 11);
     },
     scare(x, y, z, r) {
@@ -124,7 +124,7 @@ export function buildFx(THREE, mats, W) {
     setCamera(camera) { camQ.copy(camera.quaternion); },
     dispose() { for (const g of geos) g.dispose(); },
   };
-  const WHITE = [1, 0.97, 0.86];
+  const WHITE = [1, 0.97, 0.86], SMOKE = rgb('#f1e8ff'), SMOKE2 = rgb('#e3d2f7'), DUST = rgb('#e9dcc8'), STEAM = rgb('#fff3e6');
 
   // ---- the city's own life ----
   const rnd = Math.random;
@@ -195,7 +195,7 @@ export function buildFx(THREE, mats, W) {
     if (steamT <= 0 && chims.length && !W.erased) {
       steamT = 0.22;
       const c = chims[(rnd() * chims.length) | 0];
-      if (Math.hypot(c.x - cam.position.x, c.z - cam.position.z) < 75) api.puff(c.x - 0.2 + rnd() * 0.4, c.y + c.h + 0.9, c.z, 0.5 + rnd() * 0.3, 0.9, 0.1, 0.22, 0.6, 2.4, '#fff3e6');
+      if (Math.hypot(c.x - cam.position.x, c.z - cam.position.z) < 75) api.puff(c.x - 0.2 + rnd() * 0.4, c.y + c.h + 0.9, c.z, 0.5 + rnd() * 0.3, 0.9, 0.1, 0.22, 0.6, 2.4, STEAM);
     }
     // pooled effects
     for (let i = 0; i < C.length; i++) {
