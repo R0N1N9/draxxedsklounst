@@ -111,13 +111,18 @@ const GradeShader = {
 };
 
 export class Game {
-  constructor({ mode, net, quality, paletteKey, name, settings, hostCode, difficulty }) {
+  constructor({ mode, net, quality, paletteKey, name, settings, hostCode, difficulty, mv }) {
     // 'ai' and 'sandbox' run as a host whose "peer" is the local AI.
     this.offline = mode === 'ai' || mode === 'sandbox' ? mode : null;
     if (this.offline) mode = 'host';
     this.mode = mode; // 'practice' | 'host' | 'guest'
     this.difficulty = difficulty || 'normal';
     this.net = net;
+    // Multiverse: this game is one dimension of a larger match. The director starts each
+    // round (mvBegin), is told when one is over (mv.roundOver) and suspends us in between.
+    this.mv = mv || null;
+    this.suspended = false;
+    this.frozen = false;
     this.paused = false;
     this.timeScale = 1;
     this.quality = quality;
@@ -173,7 +178,7 @@ export class Game {
     this._buildViewmodel();
 
     // Match state
-    this.phase = mode === 'practice' ? 'practice' : this.offline === 'sandbox' ? 'sandbox' : 'wait';
+    this.phase = mode === 'practice' ? 'practice' : this.offline === 'sandbox' ? 'sandbox' : this.mv ? 'hold' : 'wait';
     this.uavT = UAV_INTERVAL;
     this.phaseT = 0;
     this.round = 0;
@@ -330,7 +335,7 @@ export class Game {
         this.remoteAlive = true;
         n.sandboxSpawn(1);
         this.hud.message('SANDBOX', 'Press B (or TOOLS) for the tools panel', 3);
-      } else if (this.mode === 'host') {
+      } else if (this.mode === 'host' && !this.mv) {
         this.hud.message(this.offline ? 'AI OPPONENT READY' : 'OPPONENT CONNECTED', 'Match starting…', 2.5);
         setTimeout(() => this._hostStartRound(), 1500);
       }
@@ -339,6 +344,9 @@ export class Game {
       this.oppName = String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16);
     });
     n.on('close', () => {
+      // After the reveal the director reports a lost connection; before it, this is still
+      // the classic duel as far as anyone can tell, so it is reported the classic way.
+      if (this.mv && !this.mv.secret()) return;
       this.hud.card(`<h2>CONNECTION LOST</h2><p>${this.oppName} left the game.</p><button onclick="location.href=location.pathname">Back to menu</button>`);
       this.remote.setVisible(false);
       this.remoteAlive = false;
@@ -396,7 +404,8 @@ export class Game {
     this.round++;
     const flip = this.round % 2 === 0;
     this.sides = flip ? [1, -1] : [-1, 1];
-    this.spawnIdx = [Math.floor(Math.random() * 3), Math.floor(Math.random() * 3)];
+    this.spawnIdx = this._mvSpawn || [Math.floor(Math.random() * 3), Math.floor(Math.random() * 3)];
+    this._mvSpawn = null;
     this.wind.set(Math.random() * Math.PI * 2, 1.5 + Math.random() * 5.5, Math.random() * 1000);
     this.uplinkState.forEach((u) => (u.owner = -1));
     this.phase = 'insert';
@@ -439,7 +448,7 @@ export class Game {
         }
       }
     }
-    if (this.mode !== 'host' || this.phase === 'wait' || this.phase === 'match' || this.phase === 'sandbox') return;
+    if (this.mode !== 'host' || this.phase === 'wait' || this.phase === 'match' || this.phase === 'sandbox' || this.phase === 'hold') return;
     this.phaseT -= dt;
     this.syncT -= dt;
     if (this.syncT <= 0) {
@@ -456,6 +465,12 @@ export class Game {
       const theirs = this.uplinkState.filter((u) => u.owner === 1).length;
       const winner = mine > theirs ? 0 : theirs > mine ? 1 : -1;
       this._hostEndRound(winner, 'time', { up: [mine, theirs] });
+    } else if (this.phase === 'end' && this.mv) {
+      // The director takes it from here (the point throws the match somewhere else) — unless
+      // it declines, as it does for a drawn round before anyone has scored: then this is
+      // still just the classic duel and the next round starts as usual.
+      if (this.mv.roundOver(this.result ? this.result.winner : -1, this.result || {}) === false) this._hostStartRound();
+      else this.phase = 'hold';
     } else if (this.phase === 'end') {
       if (Math.max(...this.scores) >= ROUND.winsToMatch) {
         this.phase = 'match';
@@ -914,6 +929,7 @@ export class Game {
     }
     let dmg = (WEAPONS[shot && shot.wk] || WEAPONS.mk22).damage[cap.part];
     if (cap.part === 'torso' && this.tools.remote.vs === 'plate') dmg = Math.round(dmg * VEST.plateTorso);
+    if (this.mv) dmg = Math.max(dmg || 0, PLAYER.hp); // "Do you want to develop an app?": any hit is the kill
     this.net.send({ t: 'hit', id: b.id, part: cap.part, dmg, dist: Math.round(dist), ip: ip.toArray().map((x) => Math.round(x * 100) / 100) });
     this.audio.hitConfirm(head, 0);
     this.hud.hitMarker(head);
@@ -954,6 +970,7 @@ export class Game {
   // Per-frame
   // -------------------------------------------------------------------------
   _frame() {
+    if (this.suspended) return;
     let dt = Math.min(this.clock.getDelta(), 0.05);
     // Offline modes really pause; online matches keep running underneath the menu.
     if (this.paused && this.mode !== 'guest' && (this.offline || this.mode === 'practice')) {
@@ -968,7 +985,7 @@ export class Game {
     const a = this.input.actions;
     const P = this.player;
     const live = this.phase === 'live';
-    const canMove = this.phase !== 'end' && this.phase !== 'match';
+    const canMove = this.phase !== 'end' && this.phase !== 'match' && this.phase !== 'hold';
     const free = this.phase === 'practice' || this.phase === 'wait' || this.phase === 'sandbox';
     const canFire = live || free;
     if (live || free) this.roundTime += dt;
@@ -1280,6 +1297,115 @@ export class Game {
     }
   }
 
+  // -------------------------------------------------------------------------
+  // Multiverse hooks (see src/multiverse/dimensions/valley/index.js)
+  // -------------------------------------------------------------------------
+  // The transition out of the valley has started: hands off, chrome away.
+  mvFreeze() {
+    this.frozen = true;
+    this.input.enabled = false;
+    this.input.keys.clear();
+    this.input.mouseFire = this.input.mouseScope = false;
+    this.input.move.x = this.input.move.y = 0;
+    this.input.resetScope();
+    this.hud.show(false);
+    this.hud.card('');
+    this.pendingCard = null;
+    // The valley's own pause menu must not ride along into the next dimension.
+    document.getElementById('pause').classList.remove('on');
+    this.paused = false;
+    document.getElementById('touch').classList.remove('active');
+    if (this.loadoutPanel.open) {
+      this.loadoutPanel.open = false;
+      this.loadoutPanel.wrap.classList.remove('on');
+      this.toolsOpen = false;
+    }
+    if (document.pointerLockElement === this.renderer.domElement) document.exitPointerLock();
+  }
+
+  // Another dimension is on screen: stop everything, keep the world for later.
+  mvSuspend() {
+    this.mvFreeze();
+    this.suspended = true;
+    this.renderer.setAnimationLoop(null);
+    this.renderer.domElement.style.display = 'none';
+    if (this.replay.active) this.replay.stop();
+    if (this.tools.feed > 0) this.tools.endFeed();
+    this.tools.reset();
+    for (const k of ['mydrone', 'myhunter', 'enemydrone', 'enemyhunter']) this.audio.stopLoop(k);
+    this.bullets.forEach((b) => b.tracer && this.effects.killTracer(b.tracer));
+    this.bullets.length = 0;
+    this.pings.length = 0;
+    this.hud.clearMarkers();
+    this.remote.setVisible(false);
+    this.remoteAlive = false;
+    this.audio.setWind(0);
+    if (this.audio.windGain) this.audio.windGain.gain.setTargetAtTime(0, this.audio.ctx.currentTime, 0.15);
+    this.phase = 'hold';
+  }
+
+  // Back on screen (still frozen, under the transition) — mvBegin starts the round.
+  // pre = { sides, spawns } for the coming round, known to both clients in advance, so the
+  // view the transition arrives on is the view the round starts from.
+  mvResume(pre) {
+    this.suspended = false;
+    this.frozen = true;
+    this.phase = 'hold';
+    this.result = null;
+    this.renderer.domElement.style.display = '';
+    const side = pre ? pre.sides[this.me] : 0;
+    const sp = pre && this.world.spawns[String(side)] && this.world.spawns[String(side)][pre.spawns[this.me]];
+    if (sp) {
+      this._mvSpawn = pre.spawns;
+      this.player.reset(sp, side < 0 ? Math.PI : 0);
+      this.player.zero = 400;
+    } else this._spawnFree();
+    this.player.eyePos(this.camera.position);
+    this.camera.rotation.set(this.player.pitch, this.player.yaw, 0, 'YXZ');
+    this.camera.fov = WEAPON.baseFov;
+    this.camera.updateProjectionMatrix();
+    this._resize();
+    this.clock.getDelta();
+    this.renderer.setAnimationLoop(() => this._frame());
+  }
+
+  // opening = the first round of the match: it must play exactly like the classic game's
+  // (the lobby beat, the "match starting" message, the same delay before round 1).
+  mvBegin(scores, round, opening) {
+    this.frozen = false;
+    this.scores = scores.slice();
+    this.round = round - 1;
+    this.hud._scoreKey = ''; // the number of pips may have changed
+    this.hud.show(true);
+    document.getElementById('touch').classList.add('active');
+    this.input.enabled = true;
+    if (!opening) this.input.requestLock();
+    if (this.mode !== 'host') return;
+    if (opening) {
+      this.hud.message(this.offline ? 'AI OPPONENT READY' : 'OPPONENT CONNECTED', 'Match starting…', 2.5);
+      setTimeout(() => this._hostStartRound(), 1500);
+    } else this._hostStartRound();
+  }
+
+  // Round one, before anything has been revealed: the valley waits exactly as the classic
+  // game does (free to roam, HUD on) instead of being frozen under a transition.
+  mvLobby() {
+    this.frozen = false;
+    this.phase = 'wait';
+    this.hud.show(true);
+    document.getElementById('touch').classList.add('active');
+    this.input.enabled = true;
+    this.input.requestLock();
+  }
+
+  // Draw the current view into a 2D context (a WebGL canvas can only be copied in the
+  // same task it was rendered in).
+  mvCapture(g, w, h) {
+    if (this.composer) this.composer.render(0);
+    else this.renderer.render(this.scene, this.camera);
+    g.drawImage(this.renderer.domElement, 0, 0, w, h);
+  }
+
   // HUD text helpers
   timerText() {
     if (this.phase === 'practice') return 'RANGE';
@@ -1301,6 +1427,6 @@ export class Game {
       return s ? `${s.hits} HITS · BEST ${s.best}M` : 'NO HITS';
     }
     if (this.phase === 'live' || this.phase === 'sandbox') return `UAV IN ${Math.max(0, Math.ceil(this.uavT))}S`;
-    return { wait: 'STANDBY', insert: 'INSERTION', live: 'WEAPONS HOT', end: 'ROUND OVER', match: 'MATCH OVER' }[this.phase] || '';
+    return { wait: 'STANDBY', hold: 'STANDBY', insert: 'INSERTION', live: 'WEAPONS HOT', end: 'ROUND OVER', match: 'MATCH OVER' }[this.phase] || '';
   }
 }

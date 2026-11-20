@@ -1,0 +1,178 @@
+// TOY BOX — the camera: an orthographic lens looking down on the rug at three-quarters,
+// fitted to whatever screen it finds (lower and flatter on a wide phone, higher on a 4:3
+// tablet), plus the crane move that opens a round and the push-in that ends one. It also
+// owns the mapping between the screen and the floor, which is how a mouse aims here.
+import { clamp, lerp, damp, noise2, ease } from '../../kit.js';
+import { RUG_A, RUG_B } from './world.js';
+import { drawOverlay } from './overlay.js';
+
+// How long the last round took to draw a frame, on this machine. A new round starts at that
+// pace instead of drawing its first frames regardless (which, on a slow machine, costs seconds).
+let lastCost = 0;
+const HEAD = 2.7; // room above the rug's far edge for whoever stands there
+const FOOT = 1.1; // half a soldier's width, base and rifle
+
+export function makeView(ctx, THREE, renderer, o) {
+  const { room, post, P, W, Q, S } = o;
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 300);
+  const me = P[ctx.me];
+  // The lens: looking at (tx, 0, tz), which sits at screen (cx, cy); s = CSS px per world unit.
+  const L = { tx: 0, tz: 0, cx: 1, cy: 1, s: 20, phi: 0.7, psi: 0, sp: 0, cp: 1, sy: 0, cyw: 1 };
+  const fitted = { s: 20, phi: 0.7, cx: 1, cy: 1 };
+  let wt = 0, introT = -1, kc = null, trauma = 0, kick = 0, punch = 0, flashA = 0;
+  let fresh = false, frames = 0, tPrev = 0, worst = 0, worstPrev = 0, skipLeft = 0, held = null;
+  if (lastCost >= 130) worst = worstPrev = lastCost;
+  const api = { camera, L, wt: 0, pxPerUnit: 20 };
+
+  // How big and how steep: fill the width with the rug, then tilt until it fills the height too.
+  function fit() {
+    const w = ctx.width, h = ctx.height, sf = ctx.safe, phone = h < 480;
+    const top = phone ? 30 + sf.top : 56, bottom = phone ? 6 : 14, aw = w - (phone ? 8 : 24), ah = h - top - bottom;
+    let s = Math.max(1, aw / (2 * RUG_A * 1.02)); // (a canvas with no size yet must not make a lens with none)
+    const sin = clamp((ah / s - HEAD * 0.7) / (2 * RUG_B), 0.6, 0.8), phi = Math.asin(sin), cos = Math.cos(phi);
+    s = Math.max(1, Math.min(s, ah / (2 * RUG_B * sin + HEAD * cos)));
+    const cy = top + HEAD * cos * s + RUG_B * sin * s + (ah - (2 * RUG_B * sin + HEAD * cos) * s) * 0.5;
+    fitted.s = s; fitted.phi = phi; fitted.cx = w / 2; fitted.cy = cy;
+  }
+
+  // Thumbs: on a touch screen no soldier may stand under a cluster of buttons. When one walks
+  // into a lower corner, the picture slides up to bring them clear; if the other soldier is too
+  // close to the top for that, it also draws back a little. (Aiming on touch is a direction,
+  // not a spot on the screen, so a moving picture costs the player nothing.)
+  let lift = 0, zoom = 1;
+  const tmp = { x: 0, y: 0 };
+  function thumbs(dt) {
+    const sf = ctx.safe, w = ctx.width, h = ctx.height;
+    if (ctx.phase === 'over') return; // (the kill's camera move starts from wherever the picture was)
+    let wantLift = 0, wantZoom = 1;
+    if (sf.bottom > 0) {
+      const s = L.s, A = h < 480 ? 26 + sf.top : 50, line = h - sf.bottom - 6 - 1.2 * s * L.sp; // (the moulded base and its ring stand in front of the feet)
+      let need = 0, feet = 0, head = 1e9;
+      for (const p of P) {
+        if (!p.alive) continue;
+        // where they would be on the unmoved picture (last frame's lens, with this slide and zoom undone)
+        const f = toScreen(p.x, 0, p.z, tmp), x = w / 2 + (f.x - w / 2) / zoom, fy = (f.y + lift - A) / zoom + A;
+        head = Math.min(head, (toScreen(p.x, 2.9, p.z, tmp).y + lift - A) / zoom + A);
+        if ((x - FOOT * s < sf.left || x + FOOT * s > w - sf.right) && fy - line > need) { need = fy - line; feet = fy; }
+      }
+      if (need > 0) {
+        if (need <= head - A) wantLift = need;
+        else { wantZoom = clamp((line - A) / Math.max(1, feet - head), 0.62, 1); wantLift = Math.max(0, wantZoom * (head - A)); }
+      }
+    }
+    lift = damp(lift, wantLift, 5, dt); zoom = damp(zoom, wantZoom, 4, dt);
+  }
+
+  function toScreen(x, y, z, out) {
+    const dx = x - L.tx, dz = z - L.tz;
+    out.x = L.cx + L.s * (dx * L.cyw - dz * L.sy);
+    out.y = L.cy - L.s * (-L.sp * (dx * L.sy + dz * L.cyw) + L.cp * y);
+    return out;
+  }
+  // The point at height h under screen position (sx, sy).
+  function toFloor(sx, sy, h, out) {
+    const a = (sx - L.cx) / L.s, b = -(sy - L.cy) / L.s, q = (L.cp * h - b) / L.sp;
+    out.x = L.tx + a * L.cyw + q * L.sy;
+    out.z = L.tz - a * L.sy + q * L.cyw;
+    return out;
+  }
+  // A direction on screen (x right, y down) as a direction on the floor that LOOKS the same.
+  function floorDir(sx, sy, out) {
+    const q = sy / L.sp, x = sx * L.cyw + q * L.sy, z = -sx * L.sy + q * L.cyw, l = Math.hypot(x, z) || 1;
+    out.x = x / l; out.z = z / l;
+    return out;
+  }
+  // A stick pushed (mx, my): the same heading on the floor, at the stick's own strength.
+  function moveDir(mx, my, out) {
+    const x = mx * L.cyw + my * L.sy, z = -mx * L.sy + my * L.cyw;
+    out.x = x; out.z = z;
+    return out;
+  }
+
+  Object.assign(api, {
+    toScreen, toFloor, floorDir, moveDir,
+    shake(k) { trauma = Math.min(1, trauma + k); },
+    kick(k) { kick = Math.min(1.2, kick + k); },
+    beginIntro() { introT = 0; api.poke(); },
+    // Draw on the next frame (a phase has changed); then back to whatever pace the machine allows.
+    poke() { skipLeft = 0; },
+    killCam(v) { kc = { v, t: 0, side: v.x < 0 ? 1 : -1, x: v.x, z: v.z }; trauma = Math.min(1, trauma + 0.6); punch = 1; flashA = 0.3; api.poke(); },
+    focus() { const v = kc ? kc.v : P[1 - ctx.me], q = toScreen(v.x, 0.8, v.z, { x: 0, y: 0 }); return { x: clamp(q.x, 0, ctx.width), y: clamp(q.y, 0, ctx.height) }; },
+    resize() { post.resize(); },
+
+    update(dt, slow) {
+      fresh = true;
+      wt += dt;
+      api.wt = wt;
+      fit();
+      const phase = ctx.phase;
+      trauma = Math.max(0, trauma - dt * 1.7);
+      kick = Math.max(0, kick - dt * 7);
+      punch = Math.max(0, punch - dt * (slow ? 2.4 : 1.2));
+      flashA = Math.max(0, flashA - dt * (slow ? 14 : 6));
+      // Play: the lens barely moves — it leans a little with you, so tall things show their sides.
+      thumbs(dt);
+      const anchor = ctx.height < 480 ? 26 + ctx.safe.top : 50;
+      let psi = -0.05 * clamp(me.x / RUG_A, -1, 1) + 0.012 * Math.sin(wt * 0.31), phi = fitted.phi + 0.006 * Math.sin(wt * 0.23), s = fitted.s * zoom, tx = 0, tz = 0, cx = fitted.cx, cy = anchor + zoom * (fitted.cy - anchor) - lift;
+      if (phase === 'intro') {
+        // The arrival: a slow crane round and down onto the rug.
+        if (introT >= 0) introT += dt;
+        const e = ease.inOutCubic(clamp(introT / 3.3, 0, 1));
+        psi = lerp(-0.5, psi, e); s *= lerp(0.8, 1, e); phi -= (1 - e) * 0.09;
+      } else if (phase === 'over' && kc) {
+        // The kill: push in on where they stood, drop a little, swing round.
+        kc.t += dt * (slow ? 2.86 : 1);
+        const e = ease.outCubic(clamp(kc.t / 1.7, 0, 1)), d = clamp(kc.t / 2.8, 0, 1);
+        tx = kc.x * 0.8 * e; tz = kc.z * 0.8 * e;
+        s *= 1 + 0.72 * e + 0.08 * d; psi += kc.side * (0.2 * e + 0.1 * d); phi -= 0.11 * e;
+        cx = lerp(cx, ctx.width / 2, e); cy = lerp(cy, ctx.height * 0.56, e);
+      }
+      if (trauma > 0) { const k = trauma * trauma; cx += noise2(wt * 33, 1.7) * k * 12; cy += noise2(4.1, wt * 31) * k * 12; psi += noise2(wt * 27, 8.8) * k * 0.012; }
+      s *= 1 + kick * 0.012;
+      L.tx = tx; L.tz = tz; L.cx = cx; L.cy = cy; L.s = s; L.phi = phi; L.psi = psi;
+      L.sp = Math.sin(phi); L.cp = Math.cos(phi); L.sy = Math.sin(psi); L.cyw = Math.cos(psi);
+      const w = ctx.width, h = ctx.height;
+      camera.left = -cx / s; camera.right = (w - cx) / s; camera.top = cy / s; camera.bottom = -(h - cy) / s;
+      camera.position.set(tx + L.sy * L.cp * 110, L.sp * 110, tz + L.cyw * L.cp * 110);
+      camera.lookAt(tx, 0, tz);
+      camera.updateProjectionMatrix();
+      camera.updateMatrixWorld();
+      camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+      api.pxPerUnit = s;
+      // The sharp band of the tilt-shift follows the rug.
+      const mid = cy - 0.5 * L.cp * s, half = RUG_B * L.sp * 0.82 * s;
+      post.u.uFocus.value.set(1 - mid / h, Math.min(0.46, (half / h) * (kc ? 1.4 : 1)));
+      post.u.uTime.value = wt; post.u.uPunch.value = punch; post.u.uFlash.value = flashA;
+    },
+
+    render() {
+      // A machine that needs a long time to draw the room (a software rasteriser, mostly)
+      // would play the duel in slow motion, because the core clamps a frame's time step. So
+      // when drawing is that slow, draw less often: the canvas keeps its last picture, the
+      // frames in between cost almost nothing, and the clock stays honest.
+      const now = performance.now(), iv = tPrev ? now - tPrev : 0, hadUpdate = fresh;
+      tPrev = now;
+      fresh = false;
+      if (iv > worst) worst = iv;
+      let draw = true;
+      if (!hadUpdate) { /* the core photographing the world for a transition: always a real frame */ }
+      else if ((++frames > (Q.rich ? 3 : 2) || lastCost > 0) && skipLeft > 0) { skipLeft--; draw = false; } // (the full build gets a third look: its first frames compile shaders)
+      S.w = ctx.width; S.h = ctx.height;
+      // Words stay stuck to the picture they were written for: between real draws, the labels of the last one.
+      drawOverlay(ctx.g, draw || !held ? S : held);
+      if (!draw) return;
+      const cost = Q.rich ? Math.min(worst, worstPrev || worst) : worst; // one hitch is not a slow machine
+      worstPrev = worst;
+      worst = 0;
+      skipLeft = cost < 70 ? 0 : cost < 130 ? 1 : Math.min(120, Math.round(cost / 9));
+      lastCost = cost;
+      held = skipLeft > 0 ? JSON.parse(JSON.stringify(S)) : null;
+      post.render(room.scene, camera);
+      renderer.setRenderTarget(null);
+    },
+  });
+  // The lens must be valid before the first input is read through it.
+  api.update(0, false);
+  fresh = false;
+  return api;
+}

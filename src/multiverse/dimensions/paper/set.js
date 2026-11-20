@@ -1,0 +1,334 @@
+// Everything in the yard that moves: the gantry crane and its box, the forklifts, gulls, windsocks, a drifting paper
+// plane and — in sudden death — the paper curtains closing in. Anything that touches the fight is a pure function of
+// ctx.time (craneAt, forkAt, windAt in layout.js); the rest is dressing on a private clock.
+import { INK, PAPER, ID, GROUND_SHADE, faceTone, darker, lin } from './style.js';
+import { FillBuf, LineBuf, LineSet } from './lines.js';
+import { craneAt, forkAt, CH, CW, FORK_X, yardLimit } from './layout.js';
+import { HOLES, RING, HOLE_R } from './world.js';
+
+const TAU = Math.PI * 2;
+
+function boxInto(F, L, x0, y0, z0, x1, y1, z1, hex, w = 1) {
+  const t = (nx, ny, nz) => faceTone(hex, nx, ny, nz);
+  F.quad([x1, y0, z0], [x1, y0, z1], [x1, y1, z1], [x1, y1, z0], t(1, 0, 0));
+  F.quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], t(-1, 0, 0));
+  F.quad([x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1], t(0, 1, 0));
+  F.quad([x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1], t(0, 0, 1));
+  F.quad([x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], t(0, 0, -1));
+  for (const y of [y0, y1]) { L.add(x0, y, z0, x1, y, z0, INK, w); L.add(x1, y, z0, x1, y, z1, INK, w); L.add(x1, y, z1, x0, y, z1, INK, w); L.add(x0, y, z1, x0, y, z0, INK, w); }
+  L.add(x0, y0, z0, x0, y1, z0, INK, w); L.add(x1, y0, z0, x1, y1, z0, INK, w); L.add(x1, y0, z1, x1, y1, z1, INK, w); L.add(x0, y0, z1, x0, y1, z1, INK, w);
+}
+
+export function makeSet(ctx, THREE, mats, W) {
+  const root = new THREE.Group();
+  W.root.add(root);
+  const geos = [], mls = [], texs = [];
+  const fillMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  mls.push(fillMat);
+  const freeze = (F, L, parent) => {
+    const m = F.mesh(THREE, fillMat);
+    const ls = L.set(THREE, mats.ink);
+    parent.add(m, ls.mesh);
+    geos.push(m.geometry, ls.geo);
+    return { m, ls };
+  };
+
+  // ---- flat cast shadows for the things that move (the static ones are baked into the ground layer) ----
+  const shadowMat = new THREE.MeshBasicMaterial({ color: GROUND_SHADE, side: THREE.DoubleSide });
+  mls.push(shadowMat);
+  const hullPts = [], hullOut = [];
+  function dynShadow() {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(9 * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setIndex(Array.from({ length: 7 }, (_, i) => [0, i + 1, i + 2]).flat());
+    geo.setDrawRange(0, 0);
+    const mesh = new THREE.Mesh(geo, shadowMat);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = -1;
+    geos.push(geo);
+    root.add(mesh);
+    return {
+      mesh,
+      /** Shadow of a box x0..x1, z0..z1 spanning heights y0..y1 under a sun over +x. */
+      set(x0, z0, x1, z1, y0, y1) {
+        hullPts.length = 0;
+        for (const [x, z] of [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]) { hullPts.push([x - 0.62 * y0, z + 0.16 * y0], [x - 0.62 * y1, z + 0.16 * y1]); }
+        hullPts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        const lo = [], up = [];
+        for (const q of hullPts) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+        for (let i = hullPts.length - 1; i >= 0; i--) { const q = hullPts[i]; while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+        lo.pop(); up.pop();
+        hullOut.length = 0;
+        for (const q of lo) hullOut.push(q);
+        for (const q of up) hullOut.push(q);
+        const n = Math.min(9, hullOut.length), a = geo.attributes.position.array;
+        for (let i = 0; i < n; i++) { a[i * 3] = hullOut[i][0]; a[i * 3 + 1] = -0.005; a[i * 3 + 2] = hullOut[i][1]; }
+        geo.attributes.position.needsUpdate = true;
+        geo.setDrawRange(0, Math.max(0, n - 2) * 3);
+      },
+    };
+  }
+  const shadows = [dynShadow(), dynShadow(), dynShadow()];
+
+  // ---- the gantry's box ----
+  const crane = new THREE.Group();
+  {
+    const F = new FillBuf(), L = new LineBuf();
+    const hx = 3, hz = CW / 2, col = '#c8403f';
+    boxInto(F, L, -hx, 0, -hz, hx, CH, hz, col);
+    for (let k = 1; k < 10; k++) for (const z of [-hz - 0.001, hz + 0.001]) L.add(-hx + (k * 2 * hx) / 10, 0.14, z, -hx + (k * 2 * hx) / 10, CH - 0.14, z, darker(col, 0.28), 0.4);
+    for (const x of [-hx - 0.001, hx + 0.001]) for (const o of [-0.7, -0.35, 0.35, 0.7]) L.add(x, 0.12, o, x, CH - 0.12, o, darker(col, 0.34), 0.45);
+    for (let k = 0; k < 5; k++) F.quad([-hx + k * 1.2, 0.05, hz + 0.005], [-hx + k * 1.2 + 0.5, 0.05, hz + 0.005], [-hx + k * 1.2 + 0.8, 0.3, hz + 0.005], [-hx + k * 1.2 + 0.3, 0.3, hz + 0.005], '#f2c230');
+    freeze(F, L, crane);
+  }
+  const trolley = new THREE.Group();
+  const lamps = [];
+  {
+    const F = new FillBuf(), L = new LineBuf();
+    boxInto(F, L, -2.6, 8.6, -2.1, 2.6, 10.6, 2.1, '#d9d1bb', 1.1);
+    freeze(F, L, trolley);
+    for (const sx of [-1, 1]) {
+      const m = new THREE.MeshBasicMaterial({ color: '#4a1410', side: THREE.DoubleSide });
+      mls.push(m);
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), m);
+      geos.push(lamp.geometry);
+      lamp.position.set(sx * 2.1, 9.0, 2.3);
+      const lamp2 = lamp.clone();
+      lamp2.position.z = -2.3;
+      trolley.add(lamp, lamp2);
+      lamps.push(m);
+    }
+  }
+  const cables = new LineSet(THREE, 8, mats.ink, true);
+  root.add(crane, trolley, cables.mesh);
+  const cs = { x: 0, y: 0, warn: 0, moving: 0 };
+
+  // ---- forklifts (one per lane, point-mirrored) ----
+  function forklift(col) {
+    const g = new THREE.Group();
+    const F = new FillBuf(), L = new LineBuf();
+    boxInto(F, L, -0.65, 0.35, -1.0, 0.65, 1.1, 1.1, col);
+    boxInto(F, L, -0.65, 0.35, -1.5, 0.65, 1.0, -1.0, '#3a3a48'); // counterweight
+    boxInto(F, L, -0.1, 0.2, 1.1, 0.1, 2.0, 1.25, '#3a3a48'); // mast
+    boxInto(F, L, -0.55, 0.12, 1.2, -0.35, 0.22, 2.4, '#3a3a48'); boxInto(F, L, 0.35, 0.12, 1.2, 0.55, 0.22, 2.4, '#3a3a48'); // forks
+    boxInto(F, L, -0.6, 0.22, 1.35, 0.6, 0.38, 2.35, '#d9a766'); // pallet
+    boxInto(F, L, -0.5, 0.38, 1.45, 0.5, 1.2, 2.25, '#cf9b62'); // load: a carton
+    L.add(-0.5, 0.8, 2.251, 0.5, 0.8, 2.251, '#a7743c', 0.5);
+    for (const [x, z] of [[-0.45, 0.1], [0.45, 0.1], [-0.45, -0.95], [0.45, -0.95]]) boxInto(F, L, x - 0.12 * Math.sign(x), 0, z - 0.3, x + 0.12 * Math.sign(x), 0.5, z + 0.3, INK, 0.8);
+    for (const x of [-0.6, 0.6]) for (const z of [-0.7, 0.5]) L.add(x, 1.1, z, x, 2.15, z, INK, 1);
+    boxInto(F, L, -0.7, 2.1, -0.85, 0.7, 2.2, 0.65, col);
+    freeze(F, L, g);
+    root.add(g);
+    return g;
+  }
+  const forks = [forklift('#4e9a7e'), forklift('#4e9a7e')];
+  const fk = { z: 0, dz: 1 };
+
+  // ---- windsocks: poles are static; the four pennants are ONE dynamic mesh (plus one line set) ----
+  const FLAGS = [[6.5, -8, 0], [-6.5, 8, 1], [23, 3, 0], [-23, -3, 1]];
+  {
+    const F = new FillBuf(), L = new LineBuf();
+    for (const [x, z] of FLAGS) boxInto(F, L, x - 0.07, 0, z - 0.07, x + 0.07, 5.2, z + 0.07, '#d9d1bb', 0.9);
+    freeze(F, L, root);
+  }
+  const flagPos = new Float32Array(FLAGS.length * 9), flagCol = new Float32Array(FLAGS.length * 9);
+  FLAGS.forEach(([, , k], i) => { const c = lin(ID[k]); for (let v = 0; v < 3; v++) flagCol.set([c.r, c.g, c.b], i * 9 + v * 3); });
+  const flagGeo = new THREE.BufferGeometry();
+  flagGeo.setAttribute('position', new THREE.BufferAttribute(flagPos, 3).setUsage(THREE.DynamicDrawUsage));
+  flagGeo.setAttribute('color', new THREE.BufferAttribute(flagCol, 3));
+  geos.push(flagGeo);
+  const flagMesh = new THREE.Mesh(flagGeo, fillMat);
+  flagMesh.frustumCulled = false;
+  const flagLines = new LineSet(THREE, FLAGS.length * 3, mats.ink, true);
+  geos.push(flagLines.geo);
+  root.add(flagMesh, flagLines.mesh);
+  const FP = [[0, 0], [1.5, 0.08], [0, -0.7]];
+
+  // ---- gulls: flat cut-outs on a carousel, all eight in one dynamic mesh over a three-pose atlas ----
+  const gullCanvas = document.createElement('canvas');
+  gullCanvas.width = 576; gullCanvas.height = 96;
+  {
+    const g = gullCanvas.getContext('2d', { willReadFrequently: true });
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    for (let f = 0; f < 3; f++) {
+      const lift = [-34, 0, 30][f];
+      g.save();
+      g.translate(f * 192, 0);
+      const wing = (s) => { g.beginPath(); g.moveTo(96, 52); g.quadraticCurveTo(96 + s * 40, 52 + lift * 0.4 - 22, 96 + s * 84, 52 + lift); g.quadraticCurveTo(96 + s * 50, 52 + lift * 0.3 + 4, 96 + s * 12, 62); g.closePath(); g.fillStyle = PAPER; g.fill(); g.lineWidth = 6; g.strokeStyle = INK; g.stroke(); };
+      wing(-1); wing(1);
+      g.beginPath(); g.ellipse(96, 56, 22, 10, 0, 0, TAU); g.fillStyle = PAPER; g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(116, 52); g.lineTo(134, 54); g.lineTo(116, 58); g.closePath(); g.fillStyle = '#f2c230'; g.fill(); g.lineWidth = 4; g.stroke();
+      g.restore();
+    }
+  }
+  const gullTex = new THREE.CanvasTexture(gullCanvas);
+  gullTex.colorSpace = THREE.SRGBColorSpace;
+  texs.push(gullTex);
+  const NG = 8, gpos = new Float32Array(NG * 12), guv = new Float32Array(NG * 8), gidx = [];
+  for (let k = 0; k < NG; k++) gidx.push(k * 4, k * 4 + 1, k * 4 + 2, k * 4 + 2, k * 4 + 1, k * 4 + 3);
+  const gullGeo = new THREE.BufferGeometry();
+  gullGeo.setAttribute('position', new THREE.BufferAttribute(gpos, 3).setUsage(THREE.DynamicDrawUsage));
+  gullGeo.setAttribute('uv', new THREE.BufferAttribute(guv, 2).setUsage(THREE.DynamicDrawUsage));
+  gullGeo.setIndex(gidx);
+  geos.push(gullGeo);
+  const gullMat = new THREE.MeshBasicMaterial({ map: gullTex, alphaTest: 0.5, side: THREE.DoubleSide });
+  mls.push(gullMat);
+  const gullMesh = new THREE.Mesh(gullGeo, gullMat);
+  gullMesh.frustumCulled = false;
+  root.add(gullMesh);
+  const gulls = [];
+  for (let k = 0; k < NG; k++) gulls.push({ a: Math.random() * TAU, r: 14 + Math.random() * 42, h: 13 + Math.random() * 14, v: (0.07 + Math.random() * 0.06) * (k % 2 ? 1 : -1), ph: Math.random() * 9 });
+
+  // ---- a paper plane that crosses now and then ----
+  const plane = new THREE.Group();
+  {
+    const F = new FillBuf(), L = new LineBuf();
+    F.tri(0, 0, 3, -2.2, 0.5, -1.5, 0, -0.5, -1.5, '#f7f1e3'); F.tri(0, 0, 3, 2.2, 0.5, -1.5, 0, -0.5, -1.5, '#e5dcc6'); F.tri(0, 0, 3, 0, -0.5, -1.5, 0, 0.15, -1.5, '#c9bfa6');
+    for (const q of [[0, 0, 3, -2.2, 0.5, -1.5], [-2.2, 0.5, -1.5, 0, -0.5, -1.5], [0, -0.5, -1.5, 2.2, 0.5, -1.5], [2.2, 0.5, -1.5, 0, 0, 3], [0, 0, 3, 0, -0.5, -1.5]]) L.add(q[0], q[1], q[2], q[3], q[4], q[5], INK, 1);
+    freeze(F, L, plane);
+    plane.visible = false;
+    root.add(plane);
+  }
+
+  // ---- sudden death: the page closes in from both ends ----
+  const curtains = [1, -1].map((s) => {
+    const g = new THREE.Group();
+    const F = new FillBuf(), L = new LineBuf();
+    boxInto(F, L, -37, 0, 0, 37, 9, 0.5 * s, '#efe7d2', 1.2);
+    for (let x = -36; x < 36; x += 3) F.quad([x, 0.0, -0.01 * s], [x + 1.4, 0.0, -0.01 * s], [x + 2.2, 1.6, -0.01 * s], [x + 0.8, 1.6, -0.01 * s], INK);
+    for (let x = -36; x < 36; x += 3) F.quad([x + 1.4, 0.0, -0.01 * s], [x + 3.0, 0.0, -0.01 * s], [x + 3.8, 1.6, -0.01 * s], [x + 2.2, 1.6, -0.01 * s], '#f2c230');
+    for (let x = -36; x < 36; x += 4) L.add(x, 2.4, -0.02 * s, x + 2, 2.4, -0.02 * s, '#9d927a', 0.6);
+    L.add(-37, 1.6, -0.02 * s, 37, 1.6, -0.02 * s, INK, 1);
+    freeze(F, L, g);
+    g.visible = false;
+    root.add(g);
+    return g;
+  });
+
+  // ---- bullet holes: ring outlines on a shared dynamic line set, the cut itself is in the panel shader ----
+  const holeLines = new LineSet(THREE, Math.max(1, W.panels.length * HOLES * RING), mats.ink, true);
+  for (let i = 0; i < holeLines.cap; i++) holeLines.hide(i);
+  let holeTop = 0; // only the ring slots written so far are drawn
+  root.add(holeLines.mesh);
+  geos.push(holeLines.geo);
+
+  function addHole(p, u, v) {
+    const k = p.hole0 % HOLES;
+    p.hole0++;
+    const slot = (p.hole0 - 1) % HOLES;
+    p.holes[slot] = { u, v };
+    p.uniforms.uHoles.value[slot].set(u, v, HOLE_R);
+    const base = (p.id * HOLES + slot) * RING;
+    for (let i = 0; i < RING; i++) {
+      const a0 = (i / RING) * TAU, a1 = ((i + 1) / RING) * TAU;
+      const uu0 = u + Math.cos(a0) * HOLE_R, vv0 = v + Math.sin(a0) * HOLE_R, uu1 = u + Math.cos(a1) * HOLE_R, vv1 = v + Math.sin(a1) * HOLE_R;
+      holeLines.set(base + i, p.x + p.ux * uu0, p.y0 + vv0, p.z + p.uz * uu0, p.x + p.ux * uu1, p.y0 + vv1, p.z + p.uz * uu1, INK, 0.8, 1);
+    }
+    holeTop = Math.max(holeTop, base + RING);
+    holeLines.flush(holeTop);
+    return k;
+  }
+  /** Is (u, v) on this panel already inside a hole? */
+  const inHole = (p, u, v) => {
+    for (let i = 0; i < p.holes.length; i++) { const h = p.holes[i]; if (h && (h.u - u) ** 2 + (h.v - v) ** 2 < HOLE_R * HOLE_R) return true; }
+    return false;
+  };
+
+  // ---- the dynamic solids, for bullets and bodies ----
+  const dyn = [{ x0: 0, y0: 0, z0: 0, x1: 0, y1: 0, z1: 0 }, { x0: 0, y0: 0, z0: 0, x1: 0, y1: 0, z1: 0 }, { x0: 0, y0: 0, z0: 0, x1: 0, y1: 0, z1: 0 }];
+  const fkA = { z: 0, dz: 1 };
+  /** Fill `out` (3 boxes) with the moving steel at time t. */
+  function boxesAt(t, out = dyn) {
+    craneAt(t, cs);
+    let b = out[0];
+    b.x0 = cs.x - 3; b.x1 = cs.x + 3; b.z0 = -CW / 2; b.z1 = CW / 2; b.y0 = cs.y; b.y1 = cs.y + CH;
+    for (let k = 0; k < 2; k++) {
+      forkAt(t, 0, fkA);
+      const s = k ? -1 : 1;
+      b = out[1 + k];
+      b.x0 = s * -FORK_X - 0.75; b.x1 = s * -FORK_X + 0.75; b.y0 = 0; b.y1 = 2.2;
+      b.z0 = s * fkA.z - 1.5; b.z1 = s * fkA.z + 1.5;
+    }
+    return out;
+  }
+  const rectOf = [{ x: 0, y: 0, w: 6, h: CW }, { x: 0, y: 0, w: 1.5, h: 3 }, { x: 0, y: 0, w: 1.5, h: 3 }];
+  /** The moving steel as movement rects (for walking into the crane's box or a forklift). */
+  function rectsAt(t) {
+    const d = boxesAt(t);
+    for (let i = 0; i < 3; i++) { const r = rectOf[i], b = d[i]; r.x = b.x0; r.y = b.z0; r.w = b.x1 - b.x0; r.h = b.z1 - b.z0; }
+    return rectOf;
+  }
+
+  function update(t, anim, wind, sudT, camera) {
+    craneAt(t, cs);
+    crane.position.set(cs.x, cs.y, 0);
+    crane.rotation.z = cs.moving ? Math.sin(anim * 1.3) * 0.018 : 0;
+    trolley.position.set(cs.x, 0, 0);
+    const blink = cs.warn && Math.floor(anim * 4) % 2 === 0;
+    for (const m of lamps) m.color.set(blink ? '#ff3b30' : '#4a1410');
+    const top = cs.y + CH;
+    shadows[0].set(cs.x - 3, -CW / 2, cs.x + 3, CW / 2, cs.y, top);
+    let n = 0;
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) cables.set(n++, cs.x + sx * 2.3, 8.6, sz * 1.0, cs.x + sx * 2.5 + (cs.moving ? Math.sin(anim * 1.3) * 0.1 : 0), top, sz * 1.0, INK, 0.45);
+    cables.flush(n);
+    for (let k = 0; k < 2; k++) {
+      forkAt(t, 0, fk);
+      const s = k ? -1 : 1, g = forks[k];
+      g.position.set(s * -FORK_X, 0, s * fk.z);
+      shadows[1 + k].set(s * -FORK_X - 0.7, s * fk.z - 1.5, s * -FORK_X + 0.7, s * fk.z + 1.5, 0, 2.1);
+      g.rotation.y = fk.dz * s > 0 ? 0 : Math.PI;
+    }
+    for (let i = 0; i < FLAGS.length; i++) {
+      const w = wind * (i % 2 ? -1 : 1) * 0.8 + wind * 0.2, sx = w >= 0 ? 1 : -1;
+      const rz = -Math.PI * 0.42 + Math.min(1, Math.abs(w)) * Math.PI * 0.42 + Math.sin(anim * 5 + i) * 0.05 * Math.abs(w), ry = Math.sin(anim * 0.6 + i) * 0.1;
+      const cz = Math.cos(rz), sz = Math.sin(rz), cy = Math.cos(ry), sy = Math.sin(ry);
+      for (let v = 0; v < 3; v++) {
+        const x1 = FP[v][0] * sx, y1 = FP[v][1];
+        const x2 = x1 * cz - y1 * sz, y2 = x1 * sz + y1 * cz;
+        flagPos[i * 9 + v * 3] = FLAGS[i][0] + x2 * cy; flagPos[i * 9 + v * 3 + 1] = 5.0 + y2; flagPos[i * 9 + v * 3 + 2] = FLAGS[i][1] - x2 * sy;
+      }
+      for (let e = 0; e < 3; e++) {
+        const a = i * 9 + e * 3, b = i * 9 + ((e + 1) % 3) * 3;
+        flagLines.set(i * 3 + e, flagPos[a], flagPos[a + 1], flagPos[a + 2], flagPos[b], flagPos[b + 1], flagPos[b + 2], INK, 0.9);
+      }
+    }
+    flagGeo.attributes.position.needsUpdate = true;
+    flagLines.flush(FLAGS.length * 3);
+    const me = camera.matrixWorld.elements; // gulls face the camera, drawn into one mesh
+    for (let k = 0; k < NG; k++) {
+      const g = gulls[k];
+      g.a += g.v * 0.016;
+      const cx = Math.sin(g.a) * g.r, cy = g.h + Math.sin(anim * 0.5 + g.ph) * 1.1, cz = Math.cos(g.a * 0.8) * g.r * 0.6;
+      const hw = 1.6 * (g.v > 0 ? 1 : -1), hh = 0.8;
+      for (let v = 0; v < 4; v++) {
+        const sx = v & 1 ? 1 : -1, sy = v & 2 ? 1 : -1, o = k * 12 + v * 3;
+        gpos[o] = cx + me[0] * hw * sx + me[4] * hh * sy; gpos[o + 1] = cy + me[1] * hw * sx + me[5] * hh * sy; gpos[o + 2] = cz + me[2] * hw * sx + me[6] * hh * sy;
+      }
+      const f = Math.floor(anim * 4.2 + g.ph) % 3;
+      for (let v = 0; v < 4; v++) { guv[k * 8 + v * 2] = (f + (v & 1 ? 1 : 0)) / 3; guv[k * 8 + v * 2 + 1] = v & 2 ? 1 : 0; }
+    }
+    gullGeo.attributes.position.needsUpdate = true;
+    gullGeo.attributes.uv.needsUpdate = true;
+    const cyc = anim % 38;
+    plane.visible = cyc < 7;
+    if (plane.visible) {
+      const u = cyc / 7;
+      plane.position.set(-60 + u * 120, 11 + Math.sin(u * 5) * 1.2, -18 + u * 34);
+      plane.rotation.set(Math.sin(u * 6) * 0.15, -Math.PI / 2 + 0.25, Math.sin(u * 4) * 0.3);
+      plane.scale.setScalar(1.3);
+    }
+    for (let i = 0; i < 2; i++) {
+      const c = curtains[i], on = sudT > 0, s = i ? -1 : 1;
+      c.visible = on;
+      if (on) { c.position.z = s * (yardLimit(sudT) + 0.0); c.scale.y = Math.min(1, sudT * 1.2); }
+    }
+    W.clouds.rotation.y = anim * 0.004;
+  }
+
+  return {
+    update, boxesAt, rectsAt, addHole, inHole, dyn,
+    dispose() { for (const g of geos) g.dispose(); for (const m of mls) m.dispose(); for (const t of texs) t.dispose(); },
+  };
+}

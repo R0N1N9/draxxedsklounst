@@ -17,6 +17,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="src/multiverse/multiverse.css" />
+  <link rel="stylesheet" href="src/multiverse/input.css" />
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
   </script>
@@ -31,13 +33,17 @@
     <div class="menu-grid">
     <div class="menu-card">
       <div class="brand">
-        <div class="kicker"><span>// TACTICAL DUEL</span><span>v1.0</span></div>
+        <div class="kicker"><span>// TACTICAL DUEL</span><span>v1.0<i class="rec rec-alt" aria-hidden="true"></i></span></div>
         <h1 id="title">DRAXXED<br />SKLOUNST</h1>
         <p class="tag" id="tagline">One valley. Two rifles. Eight hundred metres.</p>
       </div>
 
       <label class="field callsign"><span>Callsign</span><input id="in-name" maxlength="14" placeholder="Ghost" autocomplete="off" /></label>
       <div id="panel-main" class="panel on">
+        <label class="field" id="field-mode"><span>Mode <em>(host picks)</em></span>
+          <select data-setting="mode"><option value="classic">Duel</option><option value="app">Do you want to develop an app?</option></select></label>
+        <label class="field" id="field-target" style="display:none"><span>Points to win</span>
+          <select data-setting="mvTarget"><option value="3">First to 3</option><option value="5">First to 5</option><option value="7">First to 7</option><option value="10">First to 10</option></select></label>
         <button id="btn-host" class="primary">Host a match</button>
         <button id="btn-join-open">Join with code</button>
         <button id="btn-ai-open">Vs AI</button>
@@ -47,6 +53,7 @@
           <button id="btn-practice" class="ghost">Practice range</button>
           <button id="btn-sandbox" class="ghost">Sandbox</button>
         </div>
+        <button id="btn-lab" class="ghost" style="display:none">Lab</button>
         <details class="settings">
           <summary>Settings</summary>
           <label class="field"><span>Time of day <em>(host picks)</em></span>
@@ -148,6 +155,16 @@
         <button class="ghost back">Back</button>
       </div>
 
+      <div id="panel-lab" class="panel">
+        <p class="hint small">Tick what "Do you want to develop an app?" may use when you host or play solo. ▶ plays one on its own against the AI.</p>
+        <label class="check" id="lab-opener" style="display:none"><input type="checkbox" /> Next match I host: surf, then underwater, straight after the first kill</label>
+        <div class="lab-head">// WORLDS</div>
+        <div class="lab-list" id="lab-dims"></div>
+        <div class="lab-head">// TRANSITIONS</div>
+        <div class="lab-list" id="lab-fx"></div>
+        <button class="ghost back">Back</button>
+      </div>
+
       <div id="panel-loading" class="panel">
         <div class="spinner"></div>
         <p class="hint" id="loading-text">Building the valley…</p>
@@ -155,7 +172,7 @@
     </div>
     <section class="brief">
       <div class="brief-head"><span>// AO BRIEFING — VARGA VALLEY</span><span id="brief-coord">GRID 34T · 1:12 000</span></div>
-      <div class="map-wrap"><canvas id="map"></canvas><div class="sweep"></div></div>
+      <div class="map-wrap"><canvas id="map"></canvas><div class="sweep"></div><i class="rec" aria-hidden="true"><b></b>REC</i></div>
       <div class="brief-stats">
         <div><b id="brief-range">~800 M</b><span id="brief-range-l">engagement range</span></div>
         <div><b>3</b><span>uplinks</span></div>

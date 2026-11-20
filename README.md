@@ -40,12 +40,12 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 - **Predator UAV**: a drone circles high over the valley. Every 60 s of live play it pings both players in red on each other's HUD. For 8 s afterwards you can press **U** to tune into its live thermal feed of the enemy. A UAV jammer blocks the ping and the feed.
 - **Pollo Hermano** (easter egg): pick the Thermal poncho, then the *Pollo Hermano* poncho skin. You wear a yellow chicken suit and your rifle flings yellow chickens instead of bullets: held by the beak, pulled back by the feet, slingshot style. They fly exactly like the rifle's bullets under the current sniping style and do the same damage on a direct hit. A chicken that lands gets up and runs at the enemy (5 m/s) and pecks them (4 damage every 0.6 s) until it's shot: the pistol is ideal. Fling yours at the ground near enemy chickens and they brawl. Up to 8 live chickens each; they wander off after 45 s. The AI shoots chickens near it with its pistol. With the suit selected, the main menu becomes *Draxxed Sklounst: The Reckoning*. Pecked to death? You don't just die: a kraken bursts out of the ground and swallows the town, then a vast AI overlord reaches down from the sky and flicks you off the map: "The AI Overlords have deemed this one unworthy." (Both players watch it instead of the killcam.) In flight a chicken glows and trails yellow like a tracer.
 - **Sniping style** (main menu, host's choice applies to both players). Two bars: the shooting style (bullet physics) and, underneath, the shooting distance:
-  - **Simulation** (like Sniper Elite / ARMA): heavier drag and strong wind. Plays at Extreme range.
-  - **Battlefield** (the default): real drop and travel time, moderate wind. Plays at Long range.
+  - **Halo** (the default): instant hit, no drop, wind or sway, 5×/10×/20× zoom. Plays at Close range.
   - **Call of Duty**: fast bullets, light drop, no wind, slightly bigger hitboxes. Plays at Medium range.
-  - **Halo**: instant hit, no drop, wind or sway, 5×/10×/20× zoom. Plays at Close range.
+  - **Battlefield**: real drop and travel time, moderate wind. Plays at Long range.
+  - **Simulation** (like Sniper Elite / ARMA): heavier drag and strong wind. Plays at Extreme range.
   - **Custom**: sliders for drop, bullet speed (slow to instant), wind, drag, sway and hitbox size.
-  - **Distance** (mix and match with any physics; Long is the default): Auto (the style's own), Close ~250 m (valley floor between the town and the meadow), Medium ~500 m (forward slopes, in the trees), Long ~800 m (ridge to ridge) or Extreme ~1150 m (opposite ridges at opposite ends of the valley). It sets where both sides spawn and where the AI sets up; the valley itself doesn't change.
+  - **Distance** (mix and match with any physics; Close is the default; each sits under the style it suits): Close ~250 m (valley floor between the town and the meadow), Medium ~500 m (forward slopes, in the trees), Long ~800 m (ridge to ridge), Extreme ~1150 m (opposite ridges at opposite ends of the valley) or Auto (the style's own). It sets where both sides spawn and where the AI sets up; the valley itself doesn't change.
   - Option: the rangefinder (F) auto-sets your zero to the measured distance.
 - **Bolt cycling** (standard Mk22 bolt): after a scoped shot, lifting your finger off fire drops you out of the scope so the bolt is worked, then you go straight back in if you're still holding (or have toggled) scope. Keep fire held to stay on target and watch the shot; turn this off in Settings to unscope by hand.
 - **Bipod** (Battlefield-style): go prone and hold still for half a second and it sets itself (turn that off in Settings to set it only by hand), or press **X** (BIPOD on touch). Your support hand reaches forward and flicks the legs down, then the rifle settles. You can't fire while your hand is off the rifle. Once set, the scope is dead still and recoil is reduced. Moving, standing, switching or pressing X again folds the legs; folding with X keeps it up until you move or get up.
@@ -106,6 +106,23 @@ Click the game view with the mouse and it switches to mouse mode: the mouse aims
 | Bipod (prone, stopped) | X | BIPOD |
 | Pause menu | Esc | II |
 | Sandbox tools | B | TOOLS |
+
+## "Do you want to develop an app?"
+
+A second mode, chosen by the host under **Mode** on the main menu (a guest just joins as usual). It starts as the classic duel.
+
+<details>
+<summary>Spoilers: what the mode actually does</summary>
+
+The first time one sniper shoots the other, the game is "hijacked": a cheerful dialog asks *Do you want to develop an app?*, answers itself, and builds a different world around both players. From then on every point lands the match somewhere new — a different perspective, setting, set of controls and loadout each time — through a cinematic transition, until someone reaches the points target (first to 7 by default; **Points to win** appears next to the mode).
+
+- Worlds so far: the valley, a neon top-down arena, a WW2 town square, a pixel-art canyon, an ASCII terminal and a manga street duel. Each one shows its controls on arrival.
+- Nothing differs from the classic game before the first kill, so it works as a surprise.
+- The owner's menu: tap the small red **REC** light in the corner of the briefing map (on narrow screens, the red dot beside `v1.0`). Tick which worlds and transitions the mode may use when you host or play solo, or press ▶ to play one world on its own against the AI or preview a transition. The light is not shown on an invite link. The first match a device hosts plays the surfing world and then the underwater world straight after the first kill (once both are finished); a tick box in the same menu re-arms that for the next hosted match.
+- Open the page with `?lab` to get a **Lab** button that opens the same menu and also lists worlds still being built.
+- The code lives in `src/multiverse/` (`contract.js` documents how worlds and transitions plug in; `tools/mv-test.mjs` plays them headlessly; `tools/multiverse-briefs/` holds the design briefs).
+
+</details>
 
 ## Single-file version
 

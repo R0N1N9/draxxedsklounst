@@ -4,7 +4,7 @@ import { randomCode } from './util.js';
 import { PALETTES } from './atmosphere.js';
 import { drawMap } from './briefmap.js';
 import { renderLoadout } from './loadout.js';
-import { PRESETS, applyRules, normalizeRules, rulesLabel } from './rules.js';
+import { PRESETS, RULES, applyRules, normalizeRules, rulesLabel } from './rules.js';
 import { RANGES } from './range.js';
 
 const $ = (id) => document.getElementById(id);
@@ -12,6 +12,24 @@ const params = new URLSearchParams(location.search);
 const LOCAL = params.has('local'); // two tabs on one machine (testing)
 // Opened as a standalone file (file://): invite links can't point anywhere, so share the code instead.
 const FILE_MODE = location.protocol === 'file:';
+// Dev / test switches for the Multiverse (documented in src/multiverse/contract.js, section 8).
+const num = (k) => (params.has(k) && isFinite(+params.get(k)) ? +params.get(k) : undefined);
+const DEV = {
+  dim: params.get('dim') || null,
+  auto: params.get('auto') === '1',
+  speed: num('speed') || 1,
+  skill: num('skill'),
+  seed: num('seed'),
+  target: num('target'),
+  next: (params.get('next') || '').split(',').filter(Boolean),
+  fx: params.get('fx') || null,
+  fxlab: params.get('fxlab') || null,
+  from: params.get('from') || null,
+  to: params.get('to') || null,
+  fixres: params.get('fixres') === '1',
+  autohost: params.get('autohost') || null,
+  autojoin: params.get('autojoin') || null,
+};
 
 const store = {
   get(k, d) {
@@ -56,6 +74,8 @@ const settings = {
   gyroMode: store.get('gyroMode', 'ontouchstart' in window ? 'scoped' : 'off'),
   gyroSens: store.get('gyroSens', 1),
   gyroInvertY: store.get('gyroInvertY', false),
+  mode: store.get('mode', 'classic'), // 'classic' | 'app' ("Do you want to develop an app?")
+  mvTarget: store.get('mvTarget', 7),
   autoBipod: store.get('autoBipod', true),
   autoCycle: store.get('autoCycle', true),
 };
@@ -85,7 +105,7 @@ function syncSettingUI() {
 document.querySelectorAll('[data-setting]').forEach((el) => {
   const on = () => {
     const k = el.dataset.setting;
-    settings[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : el.value;
+    settings[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' || k === 'mvTarget' ? +el.value : el.value;
     store.set(k, settings[k]);
     if (k === 'gyroMode') primeGyro();
     syncSettingUI();
@@ -115,12 +135,20 @@ function updateTitle() {
   $('tagline').textContent = on ? 'One pollo. Two hermanos. Eight hundred sauce packets.' : 'One valley. Two rifles. Eight hundred metres.';
   document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Draxxed Sklounst';
   document.body.classList.toggle('reckoning', on);
+  $('in-name').placeholder = on ? 'Pollo' : 'Ghost';
 }
 
-// Long range is the default distance; move old "auto" settings over once.
+// Halo at close range is the default. Settings saved before that carry over once: an old
+// "auto" distance becomes long, and the old default pair (Battlefield at long range) becomes
+// the new one — anything else was a deliberate choice and is left alone.
 {
-  const saved = store.get('rules', { preset: 'bf' });
+  const fresh = store.get('rules', null) === null;
+  const saved = store.get('rules', { preset: 'halo', range: 'close' });
   if (!store.get('rangeV2', false)) { if (saved.range === 'auto' || !saved.range) saved.range = 'long'; store.set('rangeV2', true); store.set('rules', saved); }
+  if (!store.get('rulesV3', false)) {
+    if (!fresh && saved.preset === 'bf' && saved.range === 'long') { saved.preset = 'halo'; saved.range = 'close'; store.set('rules', saved); }
+    store.set('rulesV3', true);
+  }
   settings.rules = normalizeRules(saved);
 }
 applyRules(settings.rules);
@@ -136,7 +164,7 @@ function renderStyle() {
   const r = settings.rules;
   $('style-cur').textContent = rulesLabel(r);
   // Shooting style bar.
-  const SUB = { sim: 'realistic', bf: 'default', cod: 'arcade', halo: 'hitscan' };
+  const SUB = { sim: 'realistic', bf: 'ballistic', cod: 'arcade', halo: 'hitscan' };
   const styleBtns = Object.entries(PRESETS).map(([k, p]) => `<button class="${r.preset === k ? 'on' : ''}" data-preset="${k}" title="Like ${p.feel}"><b>${p.short}</b><i>${SUB[k] || ''}</i></button>`);
   styleBtns.push(`<button class="${r.preset === 'custom' ? 'on' : ''}" data-preset="custom"><b>CUSTOM</b><i>your mix</i></button>`);
   $('style-presets').innerHTML = styleBtns.join('');
@@ -152,8 +180,9 @@ function renderStyle() {
   // Shooting distance bar: each range labelled with the game it plays like.
   const sel = RANGES[r.range] ? r.range : 'auto';
   const GAME = { close: 'Halo', medium: 'Call of Duty', long: 'Battlefield', extreme: 'ARMA / Sniper Elite' };
-  $('style-range').innerHTML = [`<button class="${sel === 'auto' ? 'on' : ''}" data-range="auto"><b>AUTO</b><i>${RANGES[def].name}</i></button>`,
-    ...Object.entries(RANGES).map(([k, g]) => `<button class="${sel === k ? 'on' : ''}" data-range="${k}"><b>${g.name.toUpperCase()}</b><i>${g.dist}</i></button>`)].join('');
+  // Same order as the styles above, so each distance sits under the style it suits (AUTO under CUSTOM).
+  $('style-range').innerHTML = [...['close', 'medium', 'long', 'extreme'].map((k) => `<button class="${sel === k ? 'on' : ''}" data-range="${k}"><b>${RANGES[k].name.toUpperCase()}</b><i>${RANGES[k].dist}</i></button>`),
+    `<button class="${sel === 'auto' ? 'on' : ''}" data-range="auto"><b>AUTO</b><i>${RANGES[def].name}</i></button>`].join('');
   $('range-desc').textContent = sel === 'auto' ? `Follows the style: ${RANGES[def].name} (${RANGES[def].dist}, like ${GAME[def]}). ${RANGES[def].desc}` : `Like ${GAME[sel]} (${RANGES[sel].dist}). ${RANGES[sel].desc}`;
 }
 $('style-presets').onclick = (e) => {
@@ -204,9 +233,10 @@ document.querySelectorAll('.back').forEach((b) => (b.onclick = () => {
 const audio = new Audio();
 let net = null;
 let game = null;
+let director = null;
 
 function callsign() {
-  return (settings.name || 'Ghost').replace(/[<>&"]/g, '');
+  return (settings.name || (polloOn() ? 'Pollo' : 'Ghost')).replace(/[<>&"]/g, '');
 }
 
 // Briefing map (drawn from the real terrain).
@@ -221,11 +251,9 @@ function goFullscreen() {
   try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {}); } catch {}
 }
 
-async function startGame(mode, opts = {}) {
-  showPanel('panel-loading');
-  $('loading-text').textContent = 'Building the valley…';
-  // Let the loading panel paint before the heavy world build.
-  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+// Build the valley game. Used directly by Classic mode and, through the director, as the
+// Multiverse's home dimension (opts.mv) — there it starts frozen and the director runs it.
+async function buildValley(mode, opts = {}) {
   const quality = settings.quality === 'auto' ? detectQuality() : settings.quality;
   const { Game } = await import('./game.js');
   game = new Game({
@@ -237,17 +265,67 @@ async function startGame(mode, opts = {}) {
     settings: { ...settings, audio },
     hostCode: opts.code,
     difficulty: opts.difficulty,
+    mv: opts.mv,
   });
   if (opts.oppName) game.oppName = opts.oppName;
   window.__game = game;
-  $('menu').classList.remove('on');
-  $('touch').classList.add('active');
   applyInputSettings();
   document.body.classList.toggle('touch', game.input.touch);
+  wirePause();
+  return game;
+}
+
+async function startGame(mode, opts = {}) {
+  showPanel('panel-loading');
+  $('loading-text').textContent = 'Building the valley…';
+  // Let the loading panel paint before the heavy world build.
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+  await buildValley(mode, opts);
+  $('menu').classList.remove('on');
+  $('touch').classList.add('active');
   game.input.enabled = true;
   game.input.requestLock();
-  wirePause();
 }
+
+// "Do you want to develop an app?": it opens as the ordinary valley duel, and from the first
+// point on every score throws the match somewhere else (src/multiverse). Nothing on screen
+// gives that away beforehand — the menu, the loading text and round one are the classic game's.
+async function startMultiverse(mode, opts = {}) {
+  if (director) return;
+  showPanel('panel-loading');
+  $('loading-text').textContent = 'Building the valley…';
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+  const { Director } = await import('./multiverse/director.js');
+  director = new Director({
+    mode,
+    net: opts.net || null,
+    audio,
+    settings,
+    name: callsign(),
+    oppName: opts.oppName,
+    difficulty: opts.difficulty || aiDiff,
+    match: opts.match,
+    target: settings.mvTarget,
+    first: opts.first,
+    only: opts.only,
+    off: store.get('mvOff', null),
+    // The first match this device hosts shows off the surf-into-underwater pair (see the owner's menu).
+    opener: mode === 'host' && store.get('mvOpener', true),
+    onOpener: () => store.set('mvOpener', false),
+    dev: { ...DEV, ...(opts.dev || {}) },
+    valley: { build: (o) => buildValley(o.mode, { ...o, pal: opts.pal, code: opts.code }) },
+    hello: () => ({ rules: { ...RULES } }),
+  });
+  window.__mv = director;
+  try {
+    await director.start();
+    $('menu').classList.remove('on');
+  } catch (e) {
+    console.error(e);
+    $('loading-text').textContent = 'Something failed to load. Reload the page to try again.';
+  }
+}
+const multiverse = () => settings.mode === 'app';
 
 function wirePause() {
   const pause = $('pause');
@@ -259,17 +337,22 @@ function wirePause() {
     game.paused = on;
   };
   document.addEventListener('pointerlockchange', () => {
-    if (touch && !game.input.mouseMode) return;
+    // Frozen = another dimension (or a transition) is on screen; the director handles pausing there.
+    if ((touch && !game.input.mouseMode) || game.frozen || game.suspended) return;
     const locked = document.pointerLockElement === game.renderer.domElement;
     const cardOpen = $('h-card').classList.contains('on') && $('h-card').querySelector('button');
     show(!locked && !cardOpen && !game.toolsOpen);
   });
-  $('tb-pause').addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); show(true); }, { passive: false });
+  $('tb-pause').addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!game.frozen && !game.suspended) show(true);
+  }, { passive: false });
   $('btn-resume').onclick = () => {
     primeGyro();
     applyInputSettings();
     show(false);
-    game.input.requestLock();
+    if (!game.frozen && !game.suspended) game.input.requestLock();
   };
   $('btn-exit').onclick = () => {
     if (game.net && game.net.close) game.net.close();
@@ -322,8 +405,83 @@ $('btn-ai').onclick = () => {
   audio.unlock();
   primeGyro();
   goFullscreen();
-  startGame('ai', { difficulty: aiDiff });
+  if (multiverse()) startMultiverse('ai', { difficulty: aiDiff });
+  else startGame('ai', { difficulty: aiDiff });
 };
+
+// The lab (any world against the AI, any transition on a loop) would spoil the surprise,
+// so it only shows up when the page is opened with ?lab.
+const syncMode = () => {
+  $('btn-host-go').style.display = multiverse() ? 'none' : '';
+  $('btn-lab').style.display = params.has('lab') ? '' : 'none';
+  // The host picks the mode; someone arriving on an invite link has nothing to pick.
+  $('field-mode').style.display = params.get('join') ? 'none' : '';
+  $('field-target').style.display = multiverse() && !params.get('join') ? '' : 'none';
+};
+document.querySelector('[data-setting="mode"]').addEventListener('change', syncMode);
+syncMode();
+
+// The owner's menu: which worlds and transitions "Do you want to develop an app?" may use,
+// and a way to play any one of them alone. It would spoil the surprise, so nothing in the
+// menu names it: it opens from the recording light on the briefing map (beside the version
+// number on screens too narrow for the map), which reads as set dressing and is left out
+// altogether on an invite link — or from the Lab button on a page opened with ?lab, which
+// also lists what is still being built.
+const openLab = async () => {
+  showPanel('panel-lab');
+  const { DIMENSIONS, TRANSITIONS, loadDimension, loadTransition, openerDimension } = await import('./multiverse/registry.js');
+  // Whether the next hosted match opens with the showpiece pair: spent by the first match
+  // that plays it, and re-armed here (shown only once both worlds are playable).
+  const showpiece = openerDimension();
+  $('lab-opener').style.display = showpiece ? '' : 'none';
+  if (showpiece) {
+    const box = $('lab-opener').querySelector('input');
+    box.checked = store.get('mvOpener', true);
+    box.onchange = () => store.set('mvOpener', box.checked);
+  }
+  const all = params.has('lab');
+  const listed = (list) => list.filter((x) => !x.dev && (all || !x.wip));
+  const off = { dims: [], fx: [], ...(store.get('mvOff', null) || {}) };
+  const go = (opts) => { audio.unlock(); primeGyro(); goFullscreen(); startMultiverse('ai', { difficulty: aiDiff, ...opts }); };
+  const fill = (box, key, list, load, note, onPlay) => {
+    box.innerHTML = '';
+    for (const e of listed(list)) {
+      const row = document.createElement('div');
+      row.className = 'lab-row';
+      row.innerHTML = '<label><input type="checkbox" /><span></span></label><button class="ghost" title="Play">▶</button>';
+      const [tick, name, play] = [row.querySelector('input'), row.querySelector('span'), row.querySelector('button')];
+      const label = (title, sub) => { name.textContent = title; const sm = document.createElement('small'); sm.textContent = [sub, note(e)].filter(Boolean).join(' · '); name.appendChild(sm); };
+      label(e.id, '');
+      tick.checked = !off[key].includes(e.id);
+      tick.onchange = () => {
+        off[key] = off[key].filter((id) => id !== e.id);
+        if (!tick.checked) off[key].push(e.id);
+        store.set('mvOff', off);
+      };
+      play.onclick = () => onPlay(e);
+      box.appendChild(row);
+      load(e.id).then((m) => label(m.name, m.perspective || `${m.duration} s`), () => { play.disabled = true; row.classList.add('dead'); });
+    }
+    if (!box.children.length) box.innerHTML = '<p class="hint small">Nothing here yet.</p>';
+  };
+  const lead = (id) => DIMENSIONS.find((d) => d.then === id);
+  fill($('lab-dims'), 'dims', DIMENSIONS, loadDimension,
+    (e) => (e.id === 'valley' ? 'always opens the match' : lead(e.id) ? `follows ${lead(e.id).id}` : ''),
+    (e) => go({ first: e.id, only: e.id }));
+  fill($('lab-fx'), 'fx', TRANSITIONS, loadTransition,
+    (e) => (e.first ? 'the first kill' : e.link ? 'links two worlds' : ''),
+    (e) => {
+      // Shown between the two worlds it was made for, or between two picked at random.
+      const made = DIMENSIONS.find((d) => d.via === e.id);
+      const dims = made ? [made.id, made.then] : listed(DIMENSIONS).filter((d) => d.id !== 'valley').map((d) => d.id).sort(() => Math.random() - 0.5);
+      go({ dev: { fxlab: e.id, from: dims[0], to: dims[1] || dims[0] } });
+    });
+};
+$('btn-lab').onclick = openLab;
+document.querySelectorAll('.rec').forEach((el) => {
+  if (params.get('join')) el.remove();
+  else el.addEventListener('click', openLab);
+});
 
 // Sandbox
 $('btn-sandbox').onclick = () => {
@@ -367,7 +525,7 @@ $('btn-host').onclick = async () => {
   }
   $('host-status').textContent = 'Waiting for your friend to join…';
   net.on('open', () => {
-    if (!game) {
+    if (!game && !director) {
       $('host-status').textContent = 'Friend connected!';
       enterAsHost();
     }
@@ -401,7 +559,8 @@ function copy(text) {
 
 function enterAsHost() {
   goFullscreen();
-  startGame('host', { net, code: hostCode, pal: settings.pal });
+  if (multiverse()) startMultiverse('host', { net, code: hostCode, pal: settings.pal });
+  else startGame('host', { net, code: hostCode, pal: settings.pal });
 }
 $('btn-host-go').onclick = () => {
   audio.unlock();
@@ -429,7 +588,10 @@ $('btn-join').onclick = async () => {
     if (m.rules) applyRules(m.rules);
     $('join-status').textContent = 'Connected!';
     goFullscreen();
-    startGame('guest', { net, pal: PALETTES[m.pal] ? m.pal : 'dusk', oppName: String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16) });
+    const o = { net, pal: PALETTES[m.pal] ? m.pal : 'dusk', oppName: String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16) };
+    // The host decides the mode: a Multiverse host says so in its hello.
+    if (m.mv) startMultiverse('guest', { ...o, match: m.mv });
+    else startGame('guest', o);
   });
   net.on('open', () => {
     $('join-status').textContent = 'Connected — waiting for host…';
@@ -447,4 +609,19 @@ if (params.get('join')) {
   showPanel('panel-join');
   $('in-code').value = params.get('join').toUpperCase().slice(0, 5);
   $('join-status').textContent = 'Tap Join to enter the match.';
+}
+
+// ---- Dev / test entry points (no clicks needed) ----
+if (DEV.autohost) {
+  audio.unlock();
+  net = new Net();
+  hostCode = DEV.autohost;
+  net.host(hostCode, { local: LOCAL }).then(() => net.on('open', () => startMultiverse('host', { net, code: hostCode, pal: settings.pal })));
+} else if (DEV.autojoin) {
+  audio.unlock();
+  $('in-code').value = DEV.autojoin;
+  $('btn-join').click();
+} else if (DEV.dim || DEV.fxlab || params.get('mv') === 'ai') {
+  audio.unlock();
+  startMultiverse('ai', { difficulty: aiDiff });
 }
