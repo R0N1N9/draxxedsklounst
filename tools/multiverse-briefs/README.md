@@ -16,8 +16,10 @@ them can be rebuilt or given another polish pass later.
 | shatter | transition | top tier | standard tier |
 | flashback | transition | top tier | standard tier |
 | neon | world | top tier | top tier |
-| ww2 | world | top tier | standard tier |
+| ww2 | world | top tier | top tier |
 | pixel | world | standard tier | standard tier |
+| terminal | world | standard tier | standard tier |
+| manga | world | standard tier | standard tier |
 
 Everything from `pixel` on is built on the standard tier to stay inside a usage limit.
 To raise one to the top tier's finish later, run its second-engineer brief again on the

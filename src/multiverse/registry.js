@@ -10,10 +10,10 @@
 
 export const DIMENSIONS = [
   { id: 'valley', load: () => import('./dimensions/valley/index.js') },
-  { id: 'neon', wip: true, load: () => import('./dimensions/neon/index.js') },
+  { id: 'neon', load: () => import('./dimensions/neon/index.js') },
   { id: 'comic', wip: true, load: () => import('./dimensions/comic/index.js') },
   { id: 'pixel', load: () => import('./dimensions/pixel/index.js') },
-  { id: 'ww2', wip: true, load: () => import('./dimensions/ww2/index.js') },
+  { id: 'ww2', load: () => import('./dimensions/ww2/index.js') },
   { id: 'surf', wip: true, load: () => import('./dimensions/surf/index.js') },
   { id: 'abyss', wip: true, load: () => import('./dimensions/abyss/index.js') },
   { id: 'orbit', wip: true, load: () => import('./dimensions/orbit/index.js') },

@@ -16,10 +16,11 @@ export function makeView(ctx, world, S, pal, term) {
   Y.g = Y.canvas.getContext('2d');
   Y.mg = Y.masked.getContext('2d');
   const mask = makeCanvas(COLS, ROWS), maskImg = mask.g.createImageData(COLS, ROWS);
+  for (let i = 0; i < COLS * ROWS; i++) maskImg.data[i * 4] = maskImg.data[i * 4 + 1] = maskImg.data[i * 4 + 2] = 255;
   const cur = new Float32Array(COLS * ROWS).fill(0.2), mem = new Uint8Array(COLS * ROWS);
   const halos = new Map();
   const tmp = { x: 0, y: 0 }, tmp2 = { x: 0, y: 0 };
-  let sizeKey = '', frame = 0, fontCheck = 0, layerDirty = true;
+  let sizeKey = '', frame = 0, fontCheck = 0, layerDirty = true, maskDirty = true;
   const myCol = ctx.players[ctx.me].color, foeCol = ctx.players[1 - ctx.me].color;
   const colOf = (i) => ctx.players[i].color;
   const V = { L, crt };
@@ -37,7 +38,7 @@ export function makeView(ctx, world, S, pal, term) {
     mx = L.mx; my = L.my; u = L.u;
     crt.size(w, h, ctx.dpr);
     sizeLayer(Y, L, crt.rs);
-    layerDirty = true;
+    layerDirty = maskDirty = true;
     return true;
   };
   V.dirty = () => { layerDirty = true; };
@@ -53,15 +54,17 @@ export function makeView(ctx, world, S, pal, term) {
   V.fog = (dt) => {
     const vis = S.vis, k = Math.min(1, dt * 16), lit = 1 - S.fog;
     const d = maskImg.data;
+    let changed = false;
     for (let i = 0; i < COLS * ROWS; i++) {
       if (vis[i]) mem[i] = 1;
       let t = vis[i] ? 0.55 + 0.45 * (vis[i] / 255) : mem[i] ? 0.4 : 0.2;
       t += (0.92 - t) * lit;
       cur[i] += (t - cur[i]) * k;
-      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = 255;
-      d[i * 4 + 3] = Math.round(cur[i] * 255);
+      const a = Math.round(cur[i] * 255);
+      if (d[i * 4 + 3] !== a) { d[i * 4 + 3] = a; changed = true; }
     }
-    mask.g.putImageData(maskImg, 0, 0);
+    // A sniper standing still leaves the fog alone: the map is only re-masked (two full-size passes) when it changes.
+    if (changed) { mask.g.putImageData(maskImg, 0, 0); maskDirty = true; }
   };
 
   const halo = (col) => {
@@ -91,14 +94,18 @@ export function makeView(ctx, world, S, pal, term) {
       renderLayer(Y, L, world, pal);
       Y.ver = world.gridVersion();
       layerDirty = false;
+      maskDirty = true;
     }
-    const mg = Y.mg, w = Y.masked.width, h = Y.masked.height;
-    mg.globalCompositeOperation = 'copy';
-    mg.drawImage(Y.canvas, 0, 0);
-    mg.globalCompositeOperation = 'destination-in';
-    mg.imageSmoothingEnabled = false;
-    mg.drawImage(mask.canvas, 0, 0, COLS, ROWS, 0, 0, w, h);
-    mg.globalCompositeOperation = 'source-over';
+    if (maskDirty) {
+      const mg = Y.mg, w = Y.masked.width, h = Y.masked.height;
+      mg.globalCompositeOperation = 'copy';
+      mg.drawImage(Y.canvas, 0, 0);
+      mg.globalCompositeOperation = 'destination-in';
+      mg.imageSmoothingEnabled = false;
+      mg.drawImage(mask.canvas, 0, 0, COLS, ROWS, 0, 0, w, h);
+      mg.globalCompositeOperation = 'source-over';
+      maskDirty = false;
+    }
     g.drawImage(Y.masked, mx, my, L.mw, L.mh);
   }
 
