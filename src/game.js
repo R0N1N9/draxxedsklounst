@@ -595,6 +595,7 @@ export class Game {
       if (this.mode === 'host') this._hostEndRound(1 - this.me, 'kill', { part: m.part, dist: m.dist });
       if (!shot && this.offline === 'sandbox') setTimeout(() => this._sandboxRespawn(), 2500);
       if (shot) {
+        this._ghostLooks(false);
         this.replay.start({
           mode: 'victim',
           shooterHist: this.remoteHist.slice(),
@@ -641,6 +642,7 @@ export class Game {
     const shot = this.myShots.get(id);
     if (!shot || this.replay.active) return;
     this.killShown = id;
+    this._ghostLooks(true);
     this.replay.start({
       mode: 'killer',
       shooterHist: this.selfHist.slice(),
@@ -650,6 +652,13 @@ export class Game {
       onDone: () => this._showPendingCard(),
     });
     this._replayLabel(`${PART_NAMES[part]}`, `${Math.round(dist)} m`);
+  }
+
+  // Replay ghosts wear the right outfits: A is the shooter, B the victim.
+  _ghostLooks(shooterIsMe) {
+    const me = this.tools.myLook(), them = this.tools.remoteLook();
+    this.ghostA.setLook(shooterIsMe ? me : them);
+    this.ghostB.setLook(shooterIsMe ? them : me);
   }
 
   _replayLabel(a, b) {
@@ -802,6 +811,7 @@ export class Game {
       this.practiceStats.hits++;
       if (head) this.practiceStats.best = Math.max(this.practiceStats.best, Math.round(dist));
       if (head && dist > 250 && !this.replay.active && shot) {
+        this._ghostLooks(true);
         this.replay.start({ mode: 'practice', shooterHist: this.selfHist.slice(), victimHist: [], shot, impact: ip, onDone: () => {} });
         this._replayLabel('HEADSHOT', `${Math.round(dist)} m`);
       }
@@ -1011,6 +1021,7 @@ export class Game {
   }
 
   _updateViewmodel(dt, replaying) {
+    this.viewmodel.setLook(this.tools.myLook());
     const P = this.player;
     const scopedRifle = P.def.scope && P.scopeT > 0.6;
     this.viewmodel.visible = !replaying && P.alive && !scopedRifle && !this.tools.thermalActive();
@@ -1039,6 +1050,7 @@ export class Game {
     this.remote.setVisible(visible && this.remoteAlive);
     if (!s) return;
     s.w = this.remoteWpn;
+    this.remote.setLook(this.tools.remoteLook());
     this.remote.update(dt, s);
     // Scope glint: bright when they're scoped in and pointing at you.
     let glint = 0;

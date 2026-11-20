@@ -289,6 +289,25 @@ class Arm {
     thumb.rotation.y = side * 0.6;
     this.hand.add(thumb);
     for (const o of [this.upper.mesh, this.upper.capA, this.upper.capB, this.fore.mesh, this.fore.capB, this.cuff, this.hand]) root.add(o);
+    this.sleeves = [this.upper.mesh, this.upper.capA, this.upper.capB, this.fore.mesh, this.fore.capB];
+    // Poncho fabric bunched over the left upper arm (the flap is thrown over that shoulder).
+    if (side < 0) {
+      this.drape = segment(0.085, 0.066, C.sleeve);
+      this.drape.capA.visible = false;
+      for (const o of [this.drape.mesh, this.drape.capB]) root.add(o);
+    }
+  }
+
+  setLook(wraith, poncho) {
+    const sl = mat(wraith ? '#2f3134' : C.sleeve), gl = mat(wraith ? '#1b1c1e' : C.glove);
+    for (const o of this.sleeves) o.material = sl;
+    this.cuff.material = mat(wraith ? '#232427' : C.sleeveDark);
+    this.hand.traverse((o) => { if (o.isMesh && o.material !== mat(C.glovePad)) o.material = gl; });
+    if (this.drape) {
+      const dm = mat(wraith ? '#3a3d40' : '#4d5338');
+      this.drape.mesh.material = this.drape.capB.material = dm;
+      this.drape.mesh.visible = this.drape.capB.visible = poncho;
+    }
   }
 
   pose(shoulder, handPos, handFwd, pole) {
@@ -297,6 +316,7 @@ class Arm {
     const wrist = handPos.clone().addScaledVector(handFwd, -0.075);
     const elbow = solveElbow(shoulder, wrist, a, b, pole);
     placeSeg(this.upper, shoulder, elbow);
+    if (this.drape) placeSeg(this.drape, shoulder, shoulder.clone().lerp(elbow, 0.62));
     placeSeg(this.fore, elbow, wrist);
     this.cuff.position.copy(wrist).addScaledVector(handFwd, -0.03);
     this.cuff.quaternion.setFromUnitVectors(UP, handFwd);
@@ -333,6 +353,16 @@ export class ViewModel {
 
   set visible(v) {
     this.root.visible = v;
+  }
+
+  // look: { outfit, poncho } — sleeves/gloves follow the outfit, poncho drapes the left arm.
+  setLook(look) {
+    const wraith = look.outfit === 'wraith', poncho = wraith || !!look.poncho;
+    const key = wraith + ':' + poncho;
+    if (this._look === key) return;
+    this._look = key;
+    this.armR.setLook(wraith, false);
+    this.armL.setLook(wraith, poncho);
   }
 
   muzzleWorld(out = new THREE.Vector3()) {

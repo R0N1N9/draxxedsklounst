@@ -32,6 +32,7 @@ export function validLoadout(lo) {
   const out = { ...DEFAULT_LOADOUT };
   if (lo && RIFLES.includes(lo.rifle)) out.rifle = lo.rifle;
   out.bolt = lo && lo.bolt === 'straight' ? 'straight' : 'standard';
+  out.outfit = lo && lo.outfit === 'wraith' ? 'wraith' : 'ghillie';
   if (lo) for (const s of SLOTS) if (TOOLS[lo[s.key]] && TOOLS[lo[s.key]].slot === s.key) out[s.key] = lo[s.key];
   return out;
 }
@@ -41,7 +42,7 @@ export function randomLoadout() {
     const keys = Object.keys(TOOLS).filter((k) => TOOLS[k].slot === slot);
     return keys[Math.floor(Math.random() * keys.length)];
   };
-  return { rifle: RIFLES[Math.floor(Math.random() * RIFLES.length)], scout: pick('scout'), stealth: pick('stealth'), tactical: pick('tactical') };
+  return { outfit: Math.random() < 0.5 ? 'wraith' : 'ghillie', rifle: RIFLES[Math.floor(Math.random() * RIFLES.length)], scout: pick('scout'), stealth: pick('stealth'), tactical: pick('tactical') };
 }
 
 // Fixed-wing loitering drone flight + search, shared by players and the AI.
@@ -186,7 +187,7 @@ export class ToolSystem {
     this.darts = [];
     this.flying = []; // grenades / darts in flight (mine)
     this.drone = null; // my drone
-    this.remote = { kf: 0, tp: 0, jm: 0, dr: null, hd: null };
+    this.remote = { kf: 0, tp: 0, lk: 0, jm: 0, dr: null, hd: null };
     this.nextId = 1;
     this.loadout = validLoadout(game.settings && game.settings.loadout);
     game.player.rifleKey = this.loadout.rifle;
@@ -210,6 +211,15 @@ export class ToolSystem {
     this.g.player.equip();
     this.g.player.straightPull = this.loadout.bolt === 'straight';
     this.resetMine();
+  }
+
+  // Outfit + poncho, as Avatar.setLook wants them.
+  myLook() {
+    return { outfit: this.loadout.outfit, poncho: this.has('poncho') };
+  }
+
+  remoteLook() {
+    return { outfit: this.remote.lk ? 'wraith' : 'ghillie', poncho: !!this.remote.tp };
   }
 
   has(tool) {
@@ -257,6 +267,7 @@ export class ToolSystem {
     return {
       kf: this.has('killflash') ? 1 : 0,
       tp: this.has('poncho') ? 1 : 0,
+      lk: this.loadout.outfit === 'wraith' ? 1 : 0,
       jm: this.jammer ? 1 : 0,
       dr: d ? [Math.round(d.pos.x * 10) / 10, Math.round(d.pos.y * 10) / 10, Math.round(d.pos.z * 10) / 10] : 0,
       hd: this.hunter ? [Math.round(this.hunter.pos.x * 10) / 10, Math.round(this.hunter.pos.y * 10) / 10, Math.round(this.hunter.pos.z * 10) / 10, Math.round(this.hunter.heading * 100) / 100, this.hunter.locked ? 1 : 0, Math.round(this.hunter.bank * 100) / 100] : 0,
@@ -266,6 +277,7 @@ export class ToolSystem {
   onRemoteState(m) {
     this.remote.kf = m.kf | 0;
     this.remote.tp = m.tp | 0;
+    this.remote.lk = m.lk | 0;
     this.remote.jm = m.jm | 0;
     this.remote.dr = Array.isArray(m.dr) ? new THREE.Vector3(m.dr[0], m.dr[1], m.dr[2]) : null;
     this.remote.hd = Array.isArray(m.hd) ? { pos: new THREE.Vector3(m.hd[0], m.hd[1], m.hd[2]), heading: m.hd[3], locked: !!m.hd[4], bank: m.hd[5] || 0 } : null;
@@ -397,6 +409,7 @@ export class ToolSystem {
   _spawnDecoy({ id, p, yaw, mine }) {
     const accent = mine ? (this.g.me === 0 ? '#e0a040' : '#40c8d8') : this.g.me === 0 ? '#40c8d8' : '#e0a040';
     const av = new Avatar(accent, 31 + id);
+    av.setLook(mine ? this.myLook() : this.remoteLook());
     av.update(0, { p, yaw, pitch: -0.03, st: 2, moving: false });
     this.scene.add(av.root);
     const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glintTexture(), color: 0xfff4e0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));

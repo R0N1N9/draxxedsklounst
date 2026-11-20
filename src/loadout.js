@@ -1,10 +1,18 @@
 // Loadout picker: one tool per slot. Used inline in the main menu and as an in-game overlay.
 import { TOOLS, SLOTS, validLoadout } from './tools.js';
 import { WEAPONS, RIFLES } from './weapons.js';
+import { OUTFITS } from './avatar.js';
+import { showPreview } from './preview.js';
 
 export function renderLoadout(el, loadout, onChange) {
   let lo = validLoadout(loadout);
+  el.innerHTML = `<div class="lo-op"><div class="lo-prev"><div class="lo-cap"></div></div><div class="lo-slot lo-outfits"></div></div><div class="lo-list"></div>`;
+  const list = el.querySelector('.lo-list'), prev = el.querySelector('.lo-prev'), outfits = el.querySelector('.lo-outfits');
   const draw = () => {
+    const poncho = lo.stealth === 'poncho';
+    outfits.innerHTML = `<div class="lo-head"><span>Operator</span><em>drag to turn</em></div><div class="lo-opts">${Object.entries(OUTFITS).map(([k, o]) => `<button class="lo-opt${lo.outfit === k ? ' on' : ''}" data-slot="outfit" data-tool="${k}"><b>${o.name}</b><span>${o.desc}</span></button>`).join('')}</div>`;
+    prev.querySelector('.lo-cap').innerHTML = `${OUTFITS[lo.outfit].name.toUpperCase()}${poncho ? ' <i>+ THERMAL PONCHO</i>' : ''}`;
+    showPreview(prev, { outfit: lo.outfit, poncho });
     const rifles = `<div class="lo-slot"><div class="lo-head"><span>Rifle</span><em>+ M18 pistol (key 2)</em></div>
       <div class="lo-opts">${RIFLES.map((k) => { const w = WEAPONS[k]; return `<button class="lo-opt${lo.rifle === k ? ' on' : ''}" data-slot="rifle" data-tool="${k}">
         <b>${w.name} <i>${w.caliber} · ${w.mag}+1</i></b><span>${w.desc}</span></button>`; }).join('')}</div>
@@ -13,7 +21,7 @@ export function renderLoadout(el, loadout, onChange) {
         <button class="lo-opt${lo.bolt !== 'straight' ? ' on' : ''}" data-slot="bolt" data-tool="standard"><b>Standard bolt</b><span>Fire scoped, then come off the scope to work the bolt before the next shot.</span></button>
         <button class="lo-opt${lo.bolt === 'straight' ? ' on' : ''}" data-slot="bolt" data-tool="straight"><b>Straight-pull bolt</b><span>Cycles while you stay scoped, and a little faster. Slightly more muzzle climb.</span></button>
       </div>` : ''}</div>`;
-    el.innerHTML = rifles + SLOTS.map((s) => {
+    list.innerHTML = rifles + SLOTS.map((s) => {
       const opts = Object.entries(TOOLS).filter(([, t]) => t.slot === s.key);
       return `<div class="lo-slot"><div class="lo-head"><span>${s.label}</span><em>${s.keyHint === 'passive' ? 'always on' : 'key ' + s.keyHint}</em></div>
         <div class="lo-opts">${opts.map(([k, t]) => `<button class="lo-opt${lo[s.key] === k ? ' on' : ''}" data-slot="${s.key}" data-tool="${k}">

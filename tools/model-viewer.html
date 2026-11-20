@@ -63,6 +63,7 @@
       const a = new Avatar(i === 1 ? '#40c8d8' : '#e0a040', 7 + i);
       a.root.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       scene.add(a.root);
+      a.setLook({ outfit: params.get('outfit') || 'ghillie', poncho: params.get('poncho') === '1' });
       a.update(0, { p: new THREE.Vector3(p.x, 0, p.st === 2 ? 0.3 : 0), yaw: 0, pitch: p.pitch, st: p.st, moving: false });
       return a;
     });

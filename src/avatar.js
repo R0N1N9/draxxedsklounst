@@ -83,6 +83,8 @@ function ghillieMaterial() {
 function mesh(geo, hex, flat = false) {
   const m = new THREE.Mesh(geo, mat(hex, flat));
   m.castShadow = true;
+  m.userData.hex = hex;
+  m.userData.flat = flat;
   return m;
 }
 
@@ -159,6 +161,156 @@ function seeded(seed) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+// ---------------------------------------------------------------------------
+// Outfits: 'ghillie' (default) and 'wraith' (hooded poncho, balaclava, goggles).
+// Any outfit can wear the thermal poncho; the wraith wears a cloth one anyway.
+// ---------------------------------------------------------------------------
+export const OUTFITS = {
+  ghillie: { name: 'Ghillie', desc: 'Jute ghillie, boonie hat, painted face. Melts into grass and scrub.' },
+  wraith: { name: 'Wraith', desc: 'Hooded poncho thrown over the left shoulder, balaclava and goggles. Dark urban camo.' },
+};
+const WRAITH_MAP = {
+  [PAL.fatigue]: '#37393c',
+  [PAL.fatigueDark]: '#2b2d30',
+  [PAL.vest]: '#3f413f',
+  [PAL.pouch]: '#363834',
+  [PAL.glove]: '#1d1e20',
+  [PAL.boot]: '#1c1b1b',
+  [PAL.face]: '#1f2022', // balaclava
+};
+const CAMO = {
+  olive: ['#363c2a', '#454b33', '#535940', '#61633f', '#3d3a2b'],
+  urban: ['#222426', '#2d3033', '#3a3d40', '#4b4e50', '#5d605f'],
+};
+const LINING = { foil: '#9fa3a0', dark: '#1e1f1e' };
+
+function hash3(x, y, z) {
+  let h = (Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(z, 1440662683)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const sm = (t) => t * t * (3 - 2 * t);
+  const fx = sm(x - xi), fy = sm(y - yi), fz = sm(z - zi);
+  const L = (a, b, t) => a + (b - a) * t;
+  const c = (dx, dy, dz) => hash3(xi + dx, yi + dy, zi + dz);
+  return L(L(L(c(0, 0, 0), c(1, 0, 0), fx), L(c(0, 1, 0), c(1, 1, 0), fx), fy), L(L(c(0, 0, 1), c(1, 0, 1), fx), L(c(0, 1, 1), c(1, 1, 1), fx), fy), fz);
+}
+// Blotchy camo: two octaves of value noise quantised into the palette.
+function camoColors(geo, pal, seed) {
+  const pos = geo.attributes.position, n = pos.count;
+  const out = new Float32Array(n * 3), c = new THREE.Color();
+  for (let i = 0; i < n; i++) {
+    const x = pos.getX(i) + seed, y = pos.getY(i), z = pos.getZ(i);
+    const v = vnoise(x * 4.2, y * 4.2, z * 4.2) * 0.8 + vnoise(x * 11 + 9, y * 11, z * 11) * 0.2;
+    const k = Math.max(0, Math.min(pal.length - 1, Math.floor((v - 0.18) * pal.length * 1.6)));
+    c.set(pal[k]);
+    out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
+  }
+  return out;
+}
+
+// Grid surface from fn(u, v) -> Vector3, wound so its front faces point outward.
+function cloth(nu, nv, fn, outward) {
+  const pos = [], idx = [];
+  for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) pos.push(...fn(i / nu, j / nv).toArray());
+  for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) {
+    const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const mid = (Math.floor(nv / 2) * (nu + 1) + Math.floor(nu / 2));
+  const p = new THREE.Vector3().fromBufferAttribute(g.attributes.position, mid);
+  const nrm = new THREE.Vector3().fromBufferAttribute(g.attributes.normal, mid);
+  if (nrm.dot(outward(p)) < 0) {
+    for (let k = 0; k < idx.length; k += 3) [idx[k + 1], idx[k + 2]] = [idx[k + 2], idx[k + 1]];
+    g.setIndex(idx);
+    g.computeVertexNormals();
+  }
+  return g;
+}
+
+const ponchoMats = {};
+function ponchoOuter() {
+  return (ponchoMats.outer ||= withHaze(new THREE.MeshLambertMaterial({ vertexColors: true }), { key: 'poncho' }));
+}
+function ponchoLining(kind) {
+  return (ponchoMats[kind] ||= withHaze(new THREE.MeshLambertMaterial({ color: LINING[kind], side: THREE.BackSide }), { key: 'ponchoL' }));
+}
+
+// Poncho in spine space (hip joint at origin, shoulders ~y 0.47, back is +Z, left is -X).
+function buildPonchoBody() {
+  const parts = [];
+  // Main body: hangs from the shoulders down the back and both sides to mid-thigh.
+  const cape = cloth(34, 16, (u, v) => {
+    const th = -2.3 + u * 4.0; // 0 = back; negative wraps round the left side further
+    let r, y;
+    if (v < 0.16) {
+      const k = Math.pow(v / 0.16, 0.7);
+      r = 0.13 + 0.15 * k;
+      y = 0.63 - 0.12 * k;
+    } else {
+      const k = (v - 0.16) / 0.84;
+      r = 0.28 + 0.1 * k + 0.024 * k * Math.sin(th * 8 + k * 1.7) + 0.01 * k * Math.sin(th * 19);
+      y = 0.51 - 0.88 * k + 0.035 * Math.sin(th * 4.5 + 1) * k * k * k;
+    }
+    const k2 = Math.min(1, Math.max(0, (v - 0.16) / 0.25));
+    const back = Math.max(0, Math.cos(th));
+    return new THREE.Vector3(Math.sin(th) * r * 1.08, y, Math.cos(th) * r * 0.82 + back * 0.1 * k2 + 0.02);
+  }, (p) => new THREE.Vector3(p.x, 0, p.z - 0.02));
+  parts.push(cape);
+  // Front flap thrown up across the chest and over the left shoulder, hanging down the back.
+  const curve = new THREE.CatmullRomCurve3([
+    [0.28, 0.0, -0.03], [0.21, 0.08, -0.19], [0.07, 0.22, -0.23], [-0.09, 0.4, -0.2],
+    [-0.21, 0.56, -0.09], [-0.255, 0.635, 0.05], [-0.235, 0.52, 0.2], [-0.17, 0.3, 0.28], [-0.1, 0.05, 0.3],
+  ].map((a) => new THREE.Vector3(...a)));
+  const tmp = new THREE.Vector3();
+  const flap = cloth(14, 40, (u, t) => {
+    const c = curve.getPointAt(t), tan = curve.getTangentAt(t);
+    const n = c.clone().sub(tmp.set(0, Math.min(0.45, Math.max(0.05, c.y)), 0.02)).normalize();
+    const w = new THREE.Vector3().crossVectors(tan, n).normalize();
+    const n2 = new THREE.Vector3().crossVectors(w, tan).normalize();
+    const sh = Math.exp(-Math.pow((t - 0.6) / 0.14, 2)); // bunched over the shoulder
+    const ends = Math.max(0, 1 - Math.abs(t - 0.6) / 0.6);
+    const grow = Math.min(1, t / 0.28);
+    const wd = 0.065 + 0.07 * grow * grow * (3 - 2 * grow) - 0.035 * sh + 0.02 * (1 - ends) * (t > 0.6 ? 1 : 0);
+    const th = 0.034 + 0.03 * sh + 0.012 * Math.sin(t * 15);
+    const a = u * Math.PI * 2;
+    // Folds running along the roll, plus a droop on the lower edge.
+    const ripple = 0.016 * Math.sin(t * 28 + Math.cos(a) * 1.5) * (1 - sh) + 0.01 * Math.sin(a * 3 + t * 20);
+    const droop = Math.cos(a) < 0 ? 0.03 * (1 - sh) * grow : 0;
+    return c.clone().addScaledVector(w, Math.cos(a) * wd).addScaledVector(n2, Math.sin(a) * th + ripple).addScaledVector(n, 0.01).add(tmp.set(0, -droop, 0));
+  }, (p) => {
+    let best = 0, bd = 1e9;
+    for (let i = 0; i <= 40; i++) { const d = curve.getPointAt(i / 40).distanceToSquared(p); if (d < bd) { bd = d; best = i / 40; } }
+    return p.clone().sub(curve.getPointAt(best));
+  });
+  parts.push(flap);
+  // Bunched cowl round the neck where the hood meets the body.
+  const cowl = new THREE.TorusGeometry(0.135, 0.05, 8, 20).rotateX(Math.PI / 2).scale(1.15, 1, 0.95).translate(0, 0.6, 0.0);
+  return { parts, cowl };
+}
+
+// Hood in head space (head centre at origin, face toward -Z).
+function buildHood() {
+  return cloth(22, 14, (u, v) => {
+    const b = 0.05 + v * Math.PI * 0.82;
+    const open = 0.32 + 0.6 * v; // front opening widens toward the chin
+    const a = -(Math.PI - open) + u * 2 * (Math.PI - open);
+    const r = 0.152 * (1 + 0.55 * Math.max(0, v - 0.62));
+    const front = Math.max(0, -Math.cos(a));
+    return new THREE.Vector3(
+      Math.sin(a) * Math.sin(b) * r,
+      Math.cos(b) * r * 1.12 + 0.015 + 0.02 * Math.max(0, Math.cos(a)) * (1 - v) * (1 - v),
+      Math.cos(a) * Math.sin(b) * r * 1.06 + 0.02 - 0.035 * front * (1 - v),
+    );
+  }, (p) => new THREE.Vector3(p.x, p.y - 0.015, p.z - 0.02));
 }
 
 function buildRifle() {
@@ -315,6 +467,7 @@ export class Avatar {
     );
     drape.castShadow = true;
     this.spine.add(drape);
+    this.ghilliePart = drape;
 
     // --- Head: painted face, boonie hat, ghillie veil ---
     this.neck = new THREE.Group();
@@ -336,9 +489,65 @@ export class Avatar {
     const crown = mesh(new THREE.CylinderGeometry(0.095, 0.108, 0.1, 14), P.hat);
     crown.position.set(0, 0.11, 0);
     head.add(crown);
-    head.add(new THREE.Mesh(strands(rng, 60, [0, 0.07, 0.05, 0.32, 0.02, 0.26], [0.1, 0.22], [0.12, 0]), ghillieMaterial()));
+    const veil = new THREE.Mesh(strands(rng, 60, [0, 0.07, 0.05, 0.32, 0.02, 0.26], [0.1, 0.22], [0.12, 0]), ghillieMaterial());
+    head.add(veil);
+    this.hatParts = [brim, crown, veil];
+    this.faceParts = [paint, nose];
+    // Wraith: goggles, respirator half-mask (the balaclava is the head recoloured).
+    const mask = new THREE.Group();
+    const band = mesh(new THREE.TorusGeometry(0.103, 0.011, 6, 22).rotateX(Math.PI / 2).scale(0.93, 1, 1), '#141516');
+    band.position.y = 0.02;
+    mask.add(band);
+    for (const sx of [-1, 1]) {
+      const cup = mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.035, 12).rotateX(Math.PI / 2), '#161718');
+      cup.position.set(sx * 0.04, 0.02, -0.098);
+      cup.rotation.y = sx * 0.22;
+      mask.add(cup);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.025, 14), mat('#2f4a4c'));
+      lens.position.set(sx * 0.043, 0.02, -0.117);
+      lens.rotation.y = Math.PI + sx * 0.22;
+      mask.add(lens);
+    }
+    const resp = mesh(new THREE.SphereGeometry(0.06, 12, 8).scale(1.05, 0.75, 0.7), '#28292b');
+    resp.position.set(0, -0.055, -0.075);
+    mask.add(resp);
+    for (const sx of [-1, 1]) {
+      const filt = mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.02, 10).rotateX(Math.PI / 2), '#1a1b1c');
+      filt.position.set(sx * 0.04, -0.065, -0.11);
+      filt.rotation.y = sx * 0.5;
+      mask.add(filt);
+    }
+    head.add(mask);
+    this.mask = mask;
     this.head = head;
     this.neck.add(head);
+
+    // --- Poncho (shown for the Wraith, or anyone wearing the thermal poncho) ---
+    this.poncho = new THREE.Group();
+    this.ponchoMeshes = [];
+    const pb = buildPonchoBody();
+    const addCloth = (geo, parent, lining = true) => {
+      const outer = new THREE.Mesh(geo, ponchoOuter());
+      outer.castShadow = true;
+      outer.userData.camo = { olive: camoColors(geo, CAMO.olive, seed * 0.37), urban: camoColors(geo, CAMO.urban, seed * 0.37) };
+      geo.setAttribute('color', new THREE.BufferAttribute(outer.userData.camo.olive.slice(), 3));
+      parent.add(outer);
+      this.ponchoMeshes.push(outer);
+      if (lining) {
+        const inner = new THREE.Mesh(geo, ponchoLining('dark'));
+        inner.userData.lining = true;
+        parent.add(inner);
+        this.ponchoMeshes.push(inner);
+      }
+    };
+    for (const g of pb.parts) addCloth(g, this.poncho);
+    addCloth(pb.cowl, this.poncho, false);
+    this.spine.add(this.poncho);
+    this.hood = new THREE.Group();
+    addCloth(buildHood(), this.hood);
+    head.add(this.hood);
+    this.look = null;
+    this.setLook({ outfit: 'ghillie', poncho: false });
 
     // --- Aim group: rifle and arms (pitches with aim) ---
     this.aim = new THREE.Group();
@@ -379,8 +588,41 @@ export class Avatar {
     this.root.visible = v;
   }
 
+  // look: { outfit: 'ghillie' | 'wraith', poncho: bool (thermal poncho equipped) }
+  setLook(look) {
+    const outfit = look && look.outfit === 'wraith' ? 'wraith' : 'ghillie';
+    const thermal = !!(look && look.poncho);
+    const key = outfit + thermal;
+    if (this.look === key) return;
+    this.look = key;
+    const wraith = outfit === 'wraith';
+    const hooded = wraith || thermal;
+    this.poncho.visible = this.hood.visible = hooded;
+    this.ghilliePart.visible = !hooded;
+    for (const o of this.hatParts) o.visible = !hooded;
+    for (const o of this.faceParts) o.visible = !wraith;
+    this.mask.visible = wraith;
+    const setMat = (o, m) => {
+      if (o.userData.coolMat) o.userData.coolMat = m;
+      else o.material = m;
+    };
+    this.root.traverse((o) => {
+      if (!o.isMesh || !o.userData.hex) return;
+      const hex = wraith ? WRAITH_MAP[o.userData.hex] || o.userData.hex : o.userData.hex;
+      setMat(o, mat(hex, o.userData.flat));
+    });
+    for (const o of this.ponchoMeshes) {
+      if (o.userData.lining) setMat(o, ponchoLining(thermal ? 'foil' : 'dark'));
+      else {
+        o.geometry.attributes.color.array.set(o.userData.camo[wraith ? 'urban' : 'olive']);
+        o.geometry.attributes.color.needsUpdate = true;
+      }
+    }
+  }
+
   update(dt, s) {
     // s: { p, yaw, pitch, st, moving }
+    this.poncho.scale.set(1, 1, 1);
     this.root.position.copy(s.p);
     this.root.rotation.y = s.yaw;
     const st = s.st | 0;
@@ -427,6 +669,7 @@ export class Avatar {
       kL.rotation.x = kR.rotation.x = -0.08;
       this.spine.rotation.x = 0;
       this.neck.rotation.x = 1.25 + s.pitch * 0.4;
+      this.poncho.scale.set(1.05, 1, 0.62); // lies flatter over the back when prone
     }
   }
 }
