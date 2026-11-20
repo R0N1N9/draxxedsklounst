@@ -73,7 +73,7 @@ async function open(query, tag) {
     fail(`[${tag}] console: ${t.slice(0, 400)}`);
   });
   page.on('pageerror', (e) => fail(`[${tag}] exception: ${String(e.stack || e).slice(0, 600)}`));
-  await page.goto(BASE + '?' + query);
+  await page.goto(BASE + '?fixres=1&' + query); // fixres: screenshots at full resolution, not the adaptive one
   return page;
 }
 const state = (page) => page.evaluate(() => (window.__mv ? window.__mv.state : null));

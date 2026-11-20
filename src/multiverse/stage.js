@@ -31,6 +31,7 @@ export class Stage {
     this.width = 1;
     this.height = 1;
     this.dpr = 1;
+    this.glScale = 1; // adaptive resolution of the 3D layer (the director lowers it when frames run long)
     this._resize = () => this.resize();
     addEventListener('resize', this._resize);
     addEventListener('orientationchange', this._resize);
@@ -48,12 +49,28 @@ export class Stage {
     for (const c of [this.canvas, this.fxCanvas]) {
       if (c.width !== pw || c.height !== ph) { c.width = pw; c.height = ph; }
     }
-    for (const r of [this.renderer, this.fxRenderer]) {
-      if (!r) continue;
-      r.setPixelRatio(dpr);
-      r.setSize(w, h, false);
+    if (this.renderer) {
+      this.renderer.setPixelRatio(dpr * this.glScale);
+      this.renderer.setSize(w, h, false);
+    }
+    if (this.fxRenderer) {
+      this.fxRenderer.setPixelRatio(dpr);
+      this.fxRenderer.setSize(w, h, false);
     }
     if (changed && this.onResize) this.onResize(w, h);
+  }
+
+  // Render the 3D layer at a fraction of the device resolution. Dimensions hear about it
+  // through resize() so they can re-size composers and render targets.
+  setGlScale(k) {
+    k = Math.max(0.5, Math.min(1, k));
+    if (Math.abs(k - this.glScale) < 0.01) return;
+    this.glScale = k;
+    if (this.renderer) {
+      this.renderer.setPixelRatio(this.dpr * k);
+      this.renderer.setSize(this.width, this.height, false);
+    }
+    if (this.onResize) this.onResize(this.width, this.height);
   }
 
   // Which game layers are visible: '2d', 'three' (GL with the 2D canvas as an overlay) or null.
@@ -93,6 +110,7 @@ export class Stage {
   _reset(r, fx) {
     r.setRenderTarget(null);
     r.resetState();
+    if (!fx) this.glScale = 1;
     r.setPixelRatio(this.dpr);
     r.setSize(this.width, this.height, false);
     r.setViewport(0, 0, this.width, this.height);

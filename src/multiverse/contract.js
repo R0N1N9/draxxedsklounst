@@ -23,6 +23,11 @@
 // Tone: stylized and bloodless. Hits are light, ink, sparks, pixels, confetti —
 // never gore.
 //
+// Originality: worlds may be inspired by an era, a genre or a school of art (a
+// 1930s cartoon, a manga page, a 90s arcade cabinet), never copied from a
+// specific work: no existing game's, film's or studio's characters, names,
+// logos, levels, music or signature designs. Everything here is an original.
+//
 // -----------------------------------------------------------------------------
 // 1. DIMENSION MODULE
 // -----------------------------------------------------------------------------
@@ -60,7 +65,10 @@
  *             clamped (<= 1/20) and time-scaled (the core slows time during the kill moment).
  *             Called in every phase — see ctx.phase for what you may do in each.
  * @property {() => void} render            draw one frame
- * @property {(w:number, h:number) => void} [resize]   CSS-pixel size changed (update camera aspect)
+ * @property {(w:number, h:number) => void} [resize]   the CSS-pixel size changed (update the camera
+ *             aspect) OR the shared renderer's pixel ratio changed: the core lowers the 3D
+ *             resolution when frames run long. Size composers and render targets from
+ *             renderer.getDrawingBufferSize() / renderer.getPixelRatio(), and do it here.
  * @property {(phase:'intro'|'live'|'over') => void} [onPhase]
  * @property {(msg:Object) => void} [onNet] an event the remote player's instance sent with ctx.net.send
  * @property {() => {x:number, y:number}} [focus]  CSS-pixel screen position of the round's
@@ -170,10 +178,13 @@
 // that scale with ctx.botSkill; it must move, use cover and use its abilities.
 // A dimension must be fun against the bot — that is how most rounds are played.
 //
-// SCALE: this is a sniper duel. Spawns are far apart for the world's scale, but
-// each player must be able to locate the other within a few seconds — either
-// both are on screen, or there is a sightline / scope / indicator that gets you
-// there. Rounds should usually resolve in 15-60 s.
+// SCALE: this is a sniper duel. Spawns are far apart for the world's scale, with
+// open ground between them: a player can hold the range and make the long shot,
+// or work their way in and take an easier one at more risk — both must be real
+// options. Each player must be able to locate the other within a few seconds
+// (both on screen, or a sightline / scope / tell that gets you there). Hitting at
+// range takes skill — lead, drop, sway, timing, reading the world — never just
+// putting a cursor on a target. Rounds should usually resolve in 15-60 s.
 //
 // ONE SHOT: a clean hit wins the point. (Armour, shields and near-miss
 // mechanics are fine as flavour; long health bars are not.)
@@ -401,6 +412,7 @@
 //   ?target=<n>       points to win (default 7)
 //   ?next=<id,id,..>  forced order of the following dimensions
 //   ?fx=<id>|none     force every transition to be <id>; 'none' = hard cut
+//   ?fixres=1         keep the 3D layer at full resolution (no adaptive scaling)
 //   ?fxlab=<id>&from=<dimId>&to=<dimId>   transition lab: no gameplay, loops the transition
 //   ?autohost=<CODE>&local=1 / ?autojoin=<CODE>&local=1   online match over BroadcastChannel
 //                     between two tabs of one browser (add dim/auto/etc. on the host)

@@ -18,8 +18,14 @@ export default {
 
   async create(ctx) {
     let cur = ctx;
-    ROUND.winsToMatch = ctx.target; // the valley HUD draws one pip per point needed
-    ROUND.insert = 7;
+    // Built for round one, the valley must be indistinguishable from the classic game (the
+    // mode keeps its secret until the first point), so its HUD and timings stay untouched.
+    // Coming back later, it shows the real target and gets going a little quicker.
+    const afterReveal = () => {
+      ROUND.winsToMatch = cur.target; // one pip per point needed
+      ROUND.insert = 7;
+    };
+    if (ctx.round > 1) afterReveal();
     const game = await ctx.valley.build({
       mode: ctx.mode,
       net: ctx.transport,
@@ -38,7 +44,7 @@ export default {
       begin() { game.mvBegin(cur.score, cur.round); },
       freeze() { game.mvFreeze(); },
       suspend() { game.mvSuspend(); },
-      resume(next) { cur = next; game.mvResume(); },
+      resume(next) { cur = next; afterReveal(); game.mvResume(); },
       capture(g, w, h) { game.mvCapture(g, w, h); },
       dispose() { game.mvSuspend(); },
     };

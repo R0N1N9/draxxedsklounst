@@ -9,7 +9,7 @@ import { MvInput } from './input.js';
 import { AudioKit } from './audiokit.js';
 import { MvHud } from './hud.js';
 import { Mux } from './transport.js';
-import { loadDimension, loadTransition, playableDimensions, playableTransitions, metaOf } from './registry.js';
+import { loadDimension, loadTransition, playableDimensions, playableTransitions, firstTransition, metaOf } from './registry.js';
 import { PLAYER_COLORS, DEFAULTS, BOT_SKILL } from './contract.js';
 import { mulberry32 } from '../util.js';
 import finale from './finale.js';
@@ -174,6 +174,12 @@ export class Director {
 
   _nextFx() {
     if (this.dev.fx) return this.dev.fx;
+    // The first point of a match gets the reveal.
+    if (!this.revealed) {
+      this.revealed = true;
+      const id = firstTransition();
+      if (id && !this.broken.has(id)) return id;
+    }
     return this._draw('fxBag', playableTransitions(), this.lastFx) || 'none';
   }
 
@@ -821,6 +827,20 @@ export class Director {
   // ---------------------------------------------------------------------------
   // Frame
   // ---------------------------------------------------------------------------
+  // 3D dimensions render at full device resolution while the frame rate holds, and give
+  // up pixels (down to half) when it does not — an iPad should never chug.
+  _adaptResolution(dt) {
+    if (this.dev.fixres || !this.inst || !this.mod || this.mod.native || this.mod.renderer !== 'three' || this.fx || this.paused) { this._ft = 0; this._fn = 0; return; }
+    this._ft = (this._ft || 0) + dt;
+    this._fn = (this._fn || 0) + 1;
+    if (this._fn < 45) return;
+    const avg = this._ft / this._fn;
+    this._ft = this._fn = 0;
+    const k = this.stage.glScale;
+    if (avg > 1 / 48) this.stage.setGlScale(k * 0.85);
+    else if (avg < 1 / 57 && k < 1) this.stage.setGlScale(k * 1.08);
+  }
+
   _frame(now) {
     this.raf = requestAnimationFrame(this._frameBound);
     const dt = Math.min((now - this.last) / 1000, 0.05);
@@ -837,6 +857,7 @@ export class Director {
       }
     }
     const speed = Math.max(1, this.dev.speed | 0);
+    this._adaptResolution(dt);
     if (this.lab && this.lab.frozen) { /* frames are rendered on demand */ }
     else if (this.fx) this._fxFrame(dt * speed);
     else if (this.inst && !this.mod.native && this.phase !== 'final' && this.phase !== 'loading') {

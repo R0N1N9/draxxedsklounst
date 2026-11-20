@@ -3,14 +3,47 @@
 // which keeps start-up light and means one broken module cannot take down the rest.
 //
 // `dev: true` keeps an entry out of the match rotation (examples / templates).
+// `wip: true` does the same for a module that is still being built: it can be loaded by id
+// (?dim=, ?fxlab=, the lab) but matches do not visit it until the flag is removed.
+// `first: true` marks the transition reserved for the FIRST point of a match — the moment
+// the mode shows its hand — which never comes round again in the rotation.
 
 export const DIMENSIONS = [
   { id: 'valley', load: () => import('./dimensions/valley/index.js') },
+  { id: 'neon', wip: true, load: () => import('./dimensions/neon/index.js') },
+  { id: 'comic', wip: true, load: () => import('./dimensions/comic/index.js') },
+  { id: 'pixel', wip: true, load: () => import('./dimensions/pixel/index.js') },
+  { id: 'ww2', wip: true, load: () => import('./dimensions/ww2/index.js') },
+  { id: 'surf', wip: true, load: () => import('./dimensions/surf/index.js') },
+  { id: 'abyss', wip: true, load: () => import('./dimensions/abyss/index.js') },
+  { id: 'orbit', wip: true, load: () => import('./dimensions/orbit/index.js') },
+  { id: 'arcade', wip: true, load: () => import('./dimensions/arcade/index.js') },
+  { id: 'toon', wip: true, load: () => import('./dimensions/toon/index.js') },
+  { id: 'manga', wip: true, load: () => import('./dimensions/manga/index.js') },
+  { id: 'noir', wip: true, load: () => import('./dimensions/noir/index.js') },
+  { id: 'terminal', wip: true, load: () => import('./dimensions/terminal/index.js') },
+  { id: 'toybox', wip: true, load: () => import('./dimensions/toybox/index.js') },
+  { id: 'tapestry', wip: true, load: () => import('./dimensions/tapestry/index.js') },
+  { id: 'petri', wip: true, load: () => import('./dimensions/petri/index.js') },
   { id: 'example-2d', dev: true, load: () => import('./dimensions/example-2d/index.js') },
   { id: 'example-3d', dev: true, load: () => import('./dimensions/example-3d/index.js') },
 ];
 
 export const TRANSITIONS = [
+  { id: 'dev-app', first: true, wip: true, load: () => import('./transitions/dev-app.js') },
+  { id: 'synapse', wip: true, load: () => import('./transitions/synapse.js') },
+  { id: 'flashback', wip: true, load: () => import('./transitions/flashback.js') },
+  { id: 'shatter', wip: true, load: () => import('./transitions/shatter.js') },
+  { id: 'wormhole', wip: true, load: () => import('./transitions/wormhole.js') },
+  { id: 'channel-surf', wip: true, load: () => import('./transitions/channel-surf.js') },
+  { id: 'cosmic-zoom', wip: true, load: () => import('./transitions/cosmic-zoom.js') },
+  { id: 'reboot', wip: true, load: () => import('./transitions/reboot.js') },
+  { id: 'storybook', wip: true, load: () => import('./transitions/storybook.js') },
+  { id: 'slot-machine', wip: true, load: () => import('./transitions/slot-machine.js') },
+  { id: 'bullet-hole', wip: true, load: () => import('./transitions/bullet-hole.js') },
+  { id: 'evolution', wip: true, load: () => import('./transitions/evolution.js') },
+  { id: 'elevator', wip: true, load: () => import('./transitions/elevator.js') },
+  { id: 'continue', wip: true, load: () => import('./transitions/continue.js') },
   { id: 'example', dev: true, load: () => import('./transitions/example.js') },
 ];
 
@@ -50,8 +83,9 @@ export function loadTransition(id) {
   });
 }
 
-export const playableDimensions = () => DIMENSIONS.filter((d) => !d.dev).map((d) => d.id);
-export const playableTransitions = () => TRANSITIONS.filter((d) => !d.dev).map((d) => d.id);
+export const playableDimensions = () => DIMENSIONS.filter((d) => !d.dev && !d.wip).map((d) => d.id);
+export const playableTransitions = () => TRANSITIONS.filter((d) => !d.dev && !d.wip && !d.first).map((d) => d.id);
+export const firstTransition = () => (TRANSITIONS.find((d) => d.first && !d.dev && !d.wip) || {}).id || null;
 
 export function metaOf(mod) {
   return { id: mod.id, name: mod.name, tagline: mod.tagline || '', perspective: mod.perspective || '', palette: mod.palette };

@@ -669,6 +669,8 @@ export class AudioKit {
       const d = tr.dest;
       const g = tr.gain;
       const dec = tr.decay;
+      // The factors on the noise layers make a drum's `gain` its approximate
+      // peak, as it is for a pitched note: filtered noise comes out much quieter.
       switch (tr.type) {
         case 'kick':
           this._osc(d, live, m, t, 'sine', 150, 45, Math.min(0.1, dec), dec, g, 0.002, 0, 0);

@@ -24,6 +24,7 @@ const DEV = {
   fxlab: params.get('fxlab') || null,
   from: params.get('from') || null,
   to: params.get('to') || null,
+  fixres: params.get('fixres') === '1',
   autohost: params.get('autohost') || null,
   autojoin: params.get('autojoin') || null,
 };
@@ -71,7 +72,7 @@ const settings = {
   gyroMode: store.get('gyroMode', 'ontouchstart' in window ? 'scoped' : 'off'),
   gyroSens: store.get('gyroSens', 1),
   gyroInvertY: store.get('gyroInvertY', false),
-  mode: store.get('mode', 'multiverse'),
+  mode: store.get('mode', 'classic'), // 'classic' | 'app' ("Do you want to develop an app?")
   mvTarget: store.get('mvTarget', 7),
 };
 
@@ -198,11 +199,13 @@ async function startGame(mode, opts = {}) {
   game.input.requestLock();
 }
 
-// Multiverse match: the director owns the match and mounts one dimension at a time.
+// "Do you want to develop an app?": it opens as the ordinary valley duel, and from the first
+// point on every score throws the match somewhere else (src/multiverse). Nothing on screen
+// gives that away beforehand — the menu, the loading text and round one are the classic game's.
 async function startMultiverse(mode, opts = {}) {
   if (director) return;
   showPanel('panel-loading');
-  $('loading-text').textContent = 'Tearing a hole in reality…';
+  $('loading-text').textContent = 'Building the valley…';
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
   const { Director } = await import('./multiverse/director.js');
   director = new Director({
@@ -225,10 +228,10 @@ async function startMultiverse(mode, opts = {}) {
     $('menu').classList.remove('on');
   } catch (e) {
     console.error(e);
-    $('loading-text').textContent = 'The multiverse failed to load. Reload the page to try again.';
+    $('loading-text').textContent = 'Something failed to load. Reload the page to try again.';
   }
 }
-const multiverse = () => settings.mode !== 'classic';
+const multiverse = () => settings.mode === 'app';
 
 function wirePause() {
   const pause = $('pause');
@@ -305,25 +308,13 @@ $('btn-ai').onclick = () => {
   else startGame('ai', { difficulty: aiDiff });
 };
 
-// Mode: Multiverse (every point changes dimension) or Classic (the valley only).
-const MODE_DESC = {
-  multiverse: 'Every point tears the duel into a new dimension: new perspective, new map, new tools. Same one clean shot.',
-  classic: 'The original duel. Varga Valley only, first to 4 rounds.',
-};
+// The lab (any world against the AI, any transition on a loop) would spoil the surprise,
+// so it only shows up when the page is opened with ?lab.
 const syncMode = () => {
-  const mv = multiverse();
-  document.querySelectorAll('#mode-seg button').forEach((b) => b.classList.toggle('on', (b.dataset.m === 'classic') !== mv));
-  $('mode-desc').textContent = MODE_DESC[mv ? 'multiverse' : 'classic'];
-  $('brand-kicker').textContent = mv ? '// MULTIVERSE DUEL' : '// TACTICAL DUEL';
-  $('brand-tag').textContent = mv ? 'Two rifles. One clean shot. Every dimension.' : 'One valley. Two rifles. Eight hundred metres.';
-  $('ai-hint').textContent = mv
-    ? `A Multiverse match against an AI sniper, first to ${settings.mvTarget}. It starts in the valley; every point after that lands you somewhere new.`
-    : 'A full match against an AI sniper: same rounds, uplinks, UAV sweeps and killcams.';
-  $('btn-host-go').style.display = mv ? 'none' : '';
-  $('btn-lab').style.display = mv ? '' : 'none';
+  $('btn-host-go').style.display = multiverse() ? 'none' : '';
+  $('btn-lab').style.display = params.has('lab') ? '' : 'none';
 };
-document.querySelectorAll('#mode-seg button').forEach((b) => (b.onclick = () => { store.set('mode', (settings.mode = b.dataset.m)); syncMode(); }));
-document.querySelector('[data-setting="mvTarget"]').addEventListener('change', syncMode);
+document.querySelector('[data-setting="mode"]').addEventListener('change', syncMode);
 syncMode();
 
 // Dimension lab: any dimension against the AI, or a transition on a loop.
