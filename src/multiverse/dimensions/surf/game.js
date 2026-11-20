@@ -310,7 +310,7 @@ export function makeGame(ctx, sea, world, fx) {
     if (was && !p.dive) fx.dive(p, 1);
     p.ammo = Math.round(r.am); p.reload = r.rl ? 1 : 0;
     p.wake += Math.hypot(p.x - px, p.z - pz);
-    p.slope = 0;
+    p.slope = p.air || p.dive ? 0 : sea.slope(p.x, p.z, -Math.sin(p.hd), -Math.cos(p.hd));
   }
 
   // The wipe-out: the board goes one way, the sniper the other.
@@ -323,6 +323,8 @@ export function makeGame(ctx, sea, world, fx) {
     const b = v.body, s = v.brd;
     b.x = v.x; b.y = v.y + 0.9; b.z = v.z; b.vx = dx * 5.5; b.vy = 10.5; b.vz = dz * 5.5; b.rot = 0; b.spin = 13; b.wet = false;
     s.x = v.x; s.y = v.y + 0.2; s.z = v.z; s.vx = -dx * 2.2 + dz * 1.5; s.vy = 25; s.vz = -dz * 2.2 - dx * 1.5; s.rot = 0; s.spin = 17; s.wet = false;
+    stepDead(v, 0.09); // the first frame of the wipe-out already has everything in the air
+    v.dead = 0;
     fx.wipeout(v, dx, dz);
   }
   function stepDead(p, dt) {

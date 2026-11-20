@@ -14,7 +14,7 @@ export const STEEL = [
 ];
 // [kind, cx, cz, width, height, y0, yaw] — paper stops your view but never a bullet
 export const PAPER = [
-  ['up', 0, 31.2, 5.8, 1.4, 0, 0],
+  ['up', 0, 33.6, 2.6, 2.1, 0, 0],
   ['fragile', -6.5, 24, 3.2, 2.5, 0, 0.25],
   ['hazard', 6, 17.5, 3.0, 2.4, 0, -0.3],
   ['crate', 0.6, 10.5, 2.6, 2.2, 0, 0.12],
@@ -76,7 +76,8 @@ export function makeNav(rects) {
       blocked[j * nx + i] = b ? 1 : 0;
     }
   }
-  const dist = new Int16Array(nx * nz);
+  const dist0 = new Int16Array(nx * nz);
+  const newField = () => new Int16Array(nx * nz);
   const queue = new Int32Array(nx * nz);
   const cell = (x, z) => {
     const i = Math.min(nx - 1, Math.max(0, Math.floor((x - x0) / NAV))), j = Math.min(nz - 1, Math.max(0, Math.floor((z - z0) / NAV)));
@@ -84,7 +85,7 @@ export function makeNav(rects) {
   };
   const centre = (c, out) => { out.x = x0 + ((c % nx) + 0.5) * NAV; out.z = z0 + (Math.floor(c / nx) + 0.5) * NAV; return out; };
   /** Fill dist with steps-from-goal (-1 unreachable) by flood fill from the free cell nearest the goal. */
-  function field(gx, gz) {
+  function field(gx, gz, dist = dist0) {
     dist.fill(-1);
     let g = cell(gx, gz);
     if (blocked[g]) { // nearest free cell
@@ -109,7 +110,7 @@ export function makeNav(rects) {
     }
   }
   /** The next waypoint (world x, z) from (x, z) downhill on the current field, or null when there is none. */
-  function step(x, z, out) {
+  function step(x, z, out, dist = dist0) {
     const c = cell(x, z), i = c % nx, j = (c / nx) | 0;
     let best = dist[c] >= 0 ? dist[c] : 1e9, bn = -1;
     for (let dj = -1; dj <= 1; dj++) {
@@ -128,5 +129,5 @@ export function makeNav(rects) {
     return centre(bn, out);
   }
   const free = (x, z) => !blocked[cell(x, z)];
-  return { field, step, free, dist, cell, centre, blocked, nx, nz, x0, z0 };
+  return { field, step, free, newField, cell, centre, blocked, nx, nz, x0, z0 };
 }

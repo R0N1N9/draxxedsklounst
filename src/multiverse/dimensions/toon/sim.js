@@ -162,7 +162,7 @@ export function makeSim(ctx, w, S, sound, fx) {
     sound.bonk(x, big);
     fx.ring(x, y, 8, big ? 70 : 40, 0.3, '#1b1612');
     fx.burst(x, y, big ? 12 : 7, big ? 420 : 260, 0.3);
-    if (big) { fx.text('BONK!', x, y - 36, 54, '#f7f0de', 1.3, -0.12); S.shake.add(0.6); } else fx.text('bonk', x, y - 26, 22, '#f7f0de', 0.6);
+    if (big) S.shake.add(0.6); else fx.text('bonk', x, y - 26, 22, '#f7f0de', 0.6);
   }
 
   function crateOut(judge) {
@@ -213,11 +213,12 @@ export function makeSim(ctx, w, S, sound, fx) {
     let pair = null;
     for (const q of S.holes) if (q.owner === p.i && !q.b) pair = q;
     if (pair) {
-      if (Math.abs(pair.a.x - p.x) < 90 && Math.abs(pair.a.y - p.y) < 40) { p.a1msg = 'TOO CLOSE! walk away first'; p.a1msgT = 1.6; return false; }
+      if (Math.abs(pair.a.x - p.x) < 90 && Math.abs(pair.a.y - p.y) < 40) { p.a1msg = 'TOO CLOSE|walk further away'; p.a1msgT = 1.6; return false; }
       pair.b = newHole(p.x, p.y, 1);
       pair.age = 0;
       p.a1cd = 6.5;
       p.a1n = 2;
+      if (!p.bot && p.i === ctx.me && !S.holeTold2) { S.holeTold2 = true; p.a1msg = 'WALK INTO ONE HOLE|POP OUT OF THE OTHER'; p.a1msgT = 3.2; }
       if (online && p.i === ctx.me) ctx.net.send({ k: 'hole', n: 1, x: r1(p.x), y: r1(p.y), pid: pair.id });
     } else {
       for (let i = S.holes.length - 1; i >= 0; i--) if (S.holes[i].owner === p.i) S.holes.splice(i, 1);
@@ -225,6 +226,7 @@ export function makeSim(ctx, w, S, sound, fx) {
       S.holes.push(pair);
       p.a1n = 1;
       p.a1lock = 0.4;
+      if (!p.bot && p.i === ctx.me && !S.holeTold1) { S.holeTold1 = true; p.a1msg = 'NOW SLAP|THE TWIN'; p.a1msgT = 2.6; }
       if (online && p.i === ctx.me) ctx.net.send({ k: 'hole', n: 0, x: r1(p.x), y: r1(p.y), pid: pair.id });
     }
     p.sq.v -= 8;
@@ -300,7 +302,8 @@ export function makeSim(ctx, w, S, sound, fx) {
 
   function grabLadder(p, l, fromTop) {
     p.lad = l;
-    p.x = l.x; p.vx = 0; p.vy = 0; p.ground = false; p.plat = '';
+    p.vx = 0; p.vy = 0; p.ground = false; p.plat = '';
+    if (!fromTop) p.x = l.x;
     if (fromTop) p.y = ladderTop(w, l) + 4;
     p.charge = 0;
     sound.rung(p.x);
@@ -343,6 +346,7 @@ export function makeSim(ctx, w, S, sound, fx) {
     if (p.lad) {
       const l = p.lad, top = ladderTop(w, l);
       p.st = 2; p.h = PH; p.ground = false;
+      p.x += (l.x - p.x) * Math.min(1, dt * 16); // swing onto the rungs
       const dy = live && p.stun <= 0 ? (cmd.my < -0.2 ? -1 : cmd.my > 0.2 ? 1 : 0) : 0;
       p.y += dy * CLIMB * dt;
       p.climb += Math.abs(dy) * dt * 11;
@@ -360,7 +364,7 @@ export function makeSim(ctx, w, S, sound, fx) {
     if (rooted) p.charge = Math.min(1, p.charge + dt / 1.1);
     else p.charge = Math.max(0, p.charge - dt * 4);
     if (rooted && ((p.charge * 12) | 0) !== ((c0 * 12) | 0)) sound.ratchet(p.x, p.charge);
-    if (rooted && c0 < 1 && p.charge >= 1) sound.ready(p.x);
+    if (rooted && c0 < 1 && p.charge >= 1) { if (p.i === ctx.me) sound.ready(p.x); else sound.glint(p.x); }
     if (rooted && c0 < 0.2 && p.charge >= 0.2 && p.i === ctx.me) S.tookAim = true;
     const wasDuck = p.st === 1;
     p.st = live && p.stun <= 0 && p.ground && cmd.my > 0.6 && !rooted && !topEntry(p) ? 1 : 0;
@@ -400,7 +404,7 @@ export function makeSim(ctx, w, S, sound, fx) {
       fx.dust(p.x, p.y, 4, 0, 9);
     }
     // springboards
-    if (p.ground && p.plat === 'solid' && p.spCd <= 0 && live) {
+    if (p.ground && p.plat === 'solid' && p.spCd <= 0 && live && (Math.abs(p.vx) > 70 || !wasGround)) { // standing still on the pad does not fire it: that is how you reach the ladder
       for (const s of w.springs) {
         if (p.x >= s.x0 && p.x <= s.x1 && Math.abs(p.y - s.y) < 3) {
           p.vy = -SPRING; p.vx = clamp(p.vx + s.dir * 160, -RUN, RUN); p.ground = false; p.spCd = 0.4; p.coyote = 0;
@@ -425,6 +429,7 @@ export function makeSim(ctx, w, S, sound, fx) {
       p.a2cd = 11;
       const id = p.i * 1000 + ++decoyN;
       plantDecoy(p.i, id, p.x, p.y, p.face);
+      if (!p.bot && p.i === ctx.me && !S.decoyTold) { S.decoyTold = true; p.a1msg = 'A CUT-OUT OF YOU|bait for their cork'; p.a1msgT = 2.8; }
       if (online && p.i === ctx.me) ctx.net.send({ k: 'decoy', id, x: r1(p.x), y: r1(p.y), f: p.face });
       if (p.i === ctx.me) S.usedDecoy = true;
     }
@@ -444,7 +449,9 @@ export function makeSim(ctx, w, S, sound, fx) {
     if (dt > 0) { p.vx += ((r.x - p.x) / dt - p.vx) * Math.min(1, dt * 10); p.vy += ((r.y - p.y) / dt - p.vy) * Math.min(1, dt * 10); }
     const wasG = p.ground;
     p.x = r.x; p.y = r.y; p.a = p.aim = r.a;
-    p.st = r.s | 0; p.ground = !!r.g; p.charge = (r.c || 0) / 100; p.stun = r.z ? 0.5 : 0; p.hat = !!r.h;
+    const ch0 = p.charge;
+    p.st = r.s | 0; p.ground = !!r.g; p.charge = (r.c || 0) / 100;
+    if (ch0 < 0.99 && p.charge >= 0.99) sound.glint(p.x); p.stun = r.z ? 0.5 : 0; p.hat = !!r.h;
     p.sink = r.t ? 1 : 0;
     p.h = p.st === 1 ? PHC : PH;
     p.remoteHidden = !!r.t;

@@ -10,7 +10,7 @@ export const PW = 20, PH = 100, PHC = 60, SHOULDER = 62; // body half width, sta
 export const SPAWN = [170, 1430];
 export const PIV = { x: 800, y: 520 };
 export const PLANK = 190, CRATE = 58;
-export const GRAV = 1900, RUN = 285, JUMP = 760, CLIMB = 190, SPRING = 1000;
+export const GRAV = 1900, RUN = 285, JUMP = 650, CLIMB = 190, SPRING = 1000;
 export const CAR_Y = FLOOR - 36, CAR_W = 132;
 export const ANVIL = { warn: 1.7, fall: 0.35, stay: 3.4, w: 72, h: 56 };
 export const TRAIN = { warn: 2, len: 470, speed: 920 };
@@ -25,16 +25,16 @@ export function buildWorld(rng) {
   add({ x: 1150, y: GY, w: 1150, h: 1400, k: 'mesa' });
   add({ x: 450, y: FLOOR, w: 700, h: 700, k: 'floor' });
   add({ x: 735, y: PIV.y + 4, w: 130, h: FLOOR - PIV.y - 4, k: 'pillar' });
-  const rockL = { x: 290, y: GY - 100, w: 82, h: 100, k: 'rock' };
+  const rockL = { x: 246, y: GY - 64, w: 96, h: 64, k: 'rock' };
   add(rockL);
   add(mirror(rockL));
-  const perchL = { x: 250, y: 215, w: 170, h: 12, k: 'board' };
+  const perchL = { x: 204, y: 205, w: 200, h: 12, k: 'board' };
   const boards = [perchL, mirror(perchL)];
   const ladders = [
-    { x: 264, top: 215, bot: GY, z0: 244, z1: 284, k: 'perch' },
-    { x: 1336, top: 215, bot: GY, z0: 1316, z1: 1356, k: 'perch' },
-    { x: 472, top: GY, bot: FLOOR, z0: 408, z1: 450, k: 'cliff' },
-    { x: 1128, top: GY, bot: FLOOR, z0: 1150, z1: 1192, k: 'cliff' },
+    { x: 222, top: 205, bot: GY, z0: 202, z1: 242, k: 'perch' },
+    { x: 1378, top: 205, bot: GY, z0: 1358, z1: 1398, k: 'perch' },
+    { x: 472, top: GY, bot: FLOOR, z0: 352, z1: 400, k: 'cliff' },
+    { x: 1128, top: GY, bot: FLOOR, z0: 1200, z1: 1248, k: 'cliff' },
     { x: 718, top: PIV.y, bot: FLOOR, z0: 700, z1: 736, k: 'pillar' },
     { x: 882, top: PIV.y, bot: FLOOR, z0: 864, z1: 900, k: 'pillar' },
   ];
@@ -47,7 +47,7 @@ export function buildWorld(rng) {
     anvils: [], // live anvil rects, rebuilt every frame
     cr: [], // everything a cork can hit, rebuilt every frame
     ev: buildEvents(rng),
-    handPh: 0,
+    carOn: true,
   };
   w.carX = (t) => MID + 300 * Math.sin(t * 0.43 + w.car.ph);
   refresh(w, 0);
@@ -226,7 +226,7 @@ export function moveBody(w, b, dt) {
         for (let i = 0; i < w.boards.length; i++) { const q = w.boards[i]; if (xr > q.x && xl < q.x + q.w) test(q.y, 'board'); }
         if (onPlank(b.x)) test(plankY(w, b.x), 'see');
         const c = w.car;
-        if (Math.abs(b.x - w.hand) < c.w / 2) test(c.y, 'car');
+        if (w.carOn && Math.abs(b.x - w.hand) < c.w / 2) test(c.y, 'car');
       }
       if (kind) { b.y = best; b.vy = 0; b.ground = true; b.plat = kind; }
     } else {

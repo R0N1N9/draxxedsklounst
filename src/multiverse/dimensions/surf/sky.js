@@ -12,15 +12,16 @@ export const SUN_COLOR = [1.0, 0.56, 0.24];
 export const HAZE_GLSL = `
 vec3 hazeColor(vec3 dir, vec3 sun) {
   float s = max(dot(dir, sun), 0.0);
-  return mix(vec3(0.50, 0.37, 0.47), vec3(1.25, 0.66, 0.30), s * s * s) + vec3(1.3, 0.55, 0.12) * pow(s, 24.0);
+  return mix(vec3(0.19, 0.185, 0.3), vec3(0.95, 0.46, 0.2), s * s * s) + vec3(1.1, 0.42, 0.08) * pow(s, 24.0);
 }`;
 
-// vec3 skyTex(vec3 dir) — look the panorama up. Rows are packed towards the horizon.
+// vec3 skyTex(vec3 dir, float lod) — look the panorama up (lod > 0: blurred, for what rough water
+// mirrors). Rows are packed towards the horizon.
 export const SKY_GLSL = `
 uniform sampler2D tSky;
-vec3 skyTex(vec3 d) {
+vec3 skyTex(vec3 d, float lod) {
   float v = sqrt(clamp(asin(clamp(d.y, 0.0, 1.0)) * 0.63662, 0.0, 1.0));
-  return texture2D(tSky, vec2(atan(d.x, d.z) * 0.1591549 + 0.5, v * 0.985 + 0.0075)).rgb;
+  return textureLod(tSky, vec2(atan(d.x, d.z) * 0.1591549 + 0.5, v * 0.985 + 0.0075), lod).rgb;
 }`;
 
 const BAKE = `precision highp float;
@@ -33,20 +34,22 @@ void main() {
   float az = (vUv.x - 0.5) * 6.2831853, el = vUv.y * vUv.y * 1.5707963;
   vec3 d = vec3(sin(az) * cos(el), sin(el), cos(az) * cos(el));
   float y = d.y, sd = max(dot(d, uSunDir), 0.0), saz = max(dot(normalize(d.xz), normalize(uSunDir.xz)), 0.0);
-  vec3 col = mix(hazeColor(d, uSunDir), mix(vec3(0.30, 0.31, 0.60), vec3(0.95, 0.50, 0.40), saz * saz), smoothstep(0.0, 0.2, y));
-  col = mix(col, vec3(0.055, 0.14, 0.36), smoothstep(0.12, 0.8, y));
-  col += vec3(1.0, 0.5, 0.17) * (pow(sd, 5.0) * 0.4 + pow(sd, 36.0) * 1.1);
+  vec3 col = mix(hazeColor(d, uSunDir), mix(vec3(0.085, 0.12, 0.3), vec3(0.6, 0.27, 0.22), saz * saz), smoothstep(0.0, 0.22, y));
+  // opposite the sun: the blue-grey shadow of the earth on the horizon, and the rose belt above it
+  col = mix(col, vec3(0.5, 0.27, 0.33), smoothstep(0.005, 0.07, y) * (1.0 - smoothstep(0.07, 0.24, y)) * (1.0 - saz) * 0.8);
+  col = mix(col, vec3(0.014, 0.06, 0.17), smoothstep(0.1, 0.8, y));
+  col += vec3(1.0, 0.45, 0.13) * (pow(sd, 5.0) * 0.3 + pow(sd, 36.0) * 0.9);
   // Clouds live on a plane overhead; dividing by height lays them down towards the horizon.
   vec2 p = d.xz / (y + 0.1);
   vec2 ls = normalize(uSunDir.xz) * 0.22;
   // high cirrus: thin streaks that have already gone pink
   float ci = smoothstep(0.5, 0.82, fbm(p * vec2(0.22, 0.95) + vec2(11.0, 3.0) + fbm(p * 0.4) * 0.8)) * smoothstep(0.03, 0.3, y);
-  col = mix(col, mix(vec3(0.95, 0.5, 0.55), vec3(1.9, 0.95, 0.5), saz * saz), ci * 0.55);
+  col = mix(col, mix(vec3(0.62, 0.3, 0.38), vec3(1.5, 0.7, 0.34), saz * saz), ci * 0.6);
   // low deck: long bars, dark bellies, burning edges on the side that faces the sun
   vec2 q = p * vec2(0.42, 1.25) + vec2(2.0, -1.0);
   float n = deck(q), dens = smoothstep(0.5, 0.7, n) * smoothstep(0.012, 0.09, y) * (1.0 - smoothstep(0.55, 0.95, y) * 0.6);
   float lit = clamp((n - deck(q + ls * vec2(0.42, 1.25))) * 5.0 + 0.42, 0.0, 1.0);
-  vec3 cl = mix(mix(vec3(0.20, 0.17, 0.33), vec3(0.46, 0.22, 0.30), saz * saz), mix(vec3(1.25, 0.6, 0.52), vec3(3.0, 1.3, 0.42), pow(saz, 1.5)), lit * lit);
+  vec3 cl = mix(mix(vec3(0.085, 0.075, 0.17), vec3(0.3, 0.13, 0.17), saz * saz), mix(vec3(0.95, 0.4, 0.36), vec3(2.6, 1.05, 0.3), pow(saz, 1.5)), lit * lit);
   col = mix(col, cl, dens * 0.92);
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -60,7 +63,7 @@ ${SKY_GLSL}
 ${HAZE_GLSL}
 void main() {
   vec3 d = normalize(vDir);
-  vec3 col = d.y > 0.0 ? skyTex(d) : hazeColor(normalize(vec3(d.x, 0.0, d.z)), uSunDir);
+  vec3 col = d.y > 0.0 ? skyTex(d, 0.0) : hazeColor(normalize(vec3(d.x, 0.0, d.z)), uSunDir);
   float sd = dot(d, uSunDir);
   // The disc: flattened a touch by the thick air, white-hot in the middle.
   vec3 e = d - uSunDir; e.y *= 1.18;
@@ -69,9 +72,10 @@ void main() {
   gl_FragColor = vec4(col, 0.0); // alpha 0 marks "sky" for the light shafts
 }`;
 
-export function makeSky(THREE, renderer) {
+export function makeSky(THREE, renderer, Q) {
   const sun = new THREE.Vector3(SUN.x, SUN.y, SUN.z);
-  const rt = new THREE.WebGLRenderTarget(1024, 512, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping });
+  // (a software rasteriser paints a smaller panorama: this one pass is its most expensive second)
+  const rt = new THREE.WebGLRenderTarget(Q.soft ? 512 : 1024, Q.soft ? 256 : 512, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: true, wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping });
   {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));

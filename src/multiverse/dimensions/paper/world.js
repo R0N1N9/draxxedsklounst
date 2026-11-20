@@ -2,7 +2,7 @@
 // a handful of merged meshes (one fill mesh, one line set) so the whole drawn world costs a few draw calls.
 import { INK, PAPER, KRAFT, CONT, SKY, GROUND, GROUND_SHADE, YARD_OUT, WALL, TRIM, ID, faceTone, darker, lighter, lin } from './style.js';
 import { FillBuf, LineBuf, LineSet } from './lines.js';
-import { drawSheet, drawMascot, drawBerthSign, drawCloud } from './art.js';
+import { drawSheet, drawMascot, drawBerthSign, drawCloud, dieCut } from './art.js';
 import { CW, CH, STEEL, PAPER as PAPERS, SPAWN_Z, BUILD_Z, YARD_X, GANTRY_X, makeNav } from './layout.js';
 
 export const HOLES = 12, RING = 12, HOLE_R = 0.17;
@@ -13,7 +13,7 @@ precision highp float;
 uniform sampler2D uMap; uniform vec2 uSize; uniform vec3 uHoles[${HOLES}];
 varying vec2 vUv;
 void main() {
-  vec4 c = texture2D(uMap, vUv);
+  vec4 c = texture2D(uMap, vec2(gl_FrontFacing ? vUv.x : 1.0 - vUv.x, vUv.y)); // printed on both sides, never mirrored
   if (c.a < 0.04) discard;
   vec2 p = (vUv - vec2(0.5, 0.0)) * uSize;
   for (int i = 0; i < ${HOLES}; i++) { vec3 h = uHoles[i]; if (h.z > 0.0 && length(p - h.xy) < h.z) discard; }
@@ -129,6 +129,14 @@ export function buildWorld(ctx, THREE, mats) {
     for (let k = -5; k <= 5; k++) GM.ground([[k * 6 - 0.07, s * 33.5], [k * 6 + 0.07, s * 33.5], [k * 6 + 0.07, s * BUILD_Z], [k * 6 - 0.07, s * BUILD_Z]], 0, '#c4bfae');
   }
   for (let z = -38; z < 38; z += 6) GM.ground([[-0.09, z], [0.09, z], [0.09, z + 3], [-0.09, z + 3]], 0, PAPER);
+  for (const half of [1, -1]) { // painted chevrons down the centre lane, pointing away from each sniper's own end: a ruler for the eye
+    for (const z0 of [8, 17, 26]) {
+      const zc = half * z0, f = -half; // forward is towards the other end
+      const P = (x, d) => [x, zc + f * d];
+      GM.ground([P(-1.4, -0.9), P(0, 0.5), P(0, 1.1), P(-1.4, -0.3)], 0, PAPER);
+      GM.ground([P(1.4, -0.9), P(0, 0.5), P(0, 1.1), P(1.4, -0.3)], 0, PAPER);
+    }
+  }
   for (const x of [-3.7, 3.7]) for (let z = -35; z < 35; z += 2.4) GM.ground([[x - 0.06, z], [x + 0.06, z], [x + 0.06, z + 1.2], [x - 0.06, z + 1.2]], 0, '#f2c230');
   for (const s of [1, -1]) { // spawn pads: a ring and a wide stripe in the sniper's colour
     const col = ID[s > 0 ? 0 : 1];
@@ -226,7 +234,7 @@ export function buildWorld(ctx, THREE, mats) {
   // ---- paper panels (cardboard barricades, signs on poles, mascots) ----
   const texCache = new Map();
   let pid = 0;
-  const mascotTex = tex((g) => drawMascot(g), 256, 512);
+  const mascotTex = tex((g) => { drawMascot(g); dieCut(g, 256, 512, 7, '#fffdf5'); }, 256, 512);
   function panel(kind, cx, cz, w, h, y0, yaw, idCol) {
     const key = `${kind}|${w}|${h}|${idCol || ''}`;
     let t = texCache.get(key);
@@ -243,6 +251,12 @@ export function buildWorld(ctx, THREE, mats) {
     mesh.rotation.y = yaw;
     root.add(mesh);
     const ux = Math.cos(yaw), uz = -Math.sin(yaw);
+    if (kind !== 'mascot' || true) { // flat cast shadow: the sheet's four corners thrown along the sun
+      const q = [];
+      for (const u of [-w / 2, w / 2]) for (const v of [y0, y0 + h]) q.push([cx + ux * u - 0.62 * v, cz + uz * u + 0.16 * v]);
+      q.push([cx + ux * (-w / 2), cz + uz * (-w / 2)], [cx + ux * (w / 2), cz + uz * (w / 2)]);
+      GS.ground(hull(q), 0, GROUND_SHADE);
+    }
     const p = { id: pid++, kind, x: cx, z: cz, w, h, y0, yaw, nx: Math.sin(yaw), nz: Math.cos(yaw), ux, uz, holes: [], hole0: 0, uniforms, fig: kind === 'mascot' };
     panels.push(p);
     const edge = (u, v, u2, v2) => L.add(cx + ux * u, y0 + v, cz + uz * u, cx + ux * u2, y0 + v2, cz + uz * u2, INK, 1);
@@ -288,6 +302,17 @@ export function buildWorld(ctx, THREE, mats) {
     solid(x - 0.3, 0, z - 0.3, x + 0.3, h, z + 0.3);
   };
   for (const [x, z, c] of [[-27, 36, '#3f78b5'], [-26, 37.4, '#e2603a'], [27, -36, '#e7b43c'], [26, -37.4, '#4e9a7e'], [4.5, 22, '#c8403f'], [-4.5, -22, '#3f78b5']]) drum(x, z, c);
+
+  // bollards along the edge of each apron: a yellow row that reads the yard's far end from a long way off
+  for (const sz of [1, -1]) for (let k = -5; k <= 5; k++) {
+    if (Math.abs(k) < 1) continue;
+    const x = k * 5.6, z = sz * 35.4;
+    box(x - 0.13, 0, z - 0.13, x + 0.13, 0.9, z + 0.13, '#f2c230', { w: 0.9 });
+    box(x - 0.14, 0.5, z - 0.14, x + 0.14, 0.68, z + 0.14, INK, { noEdges: true });
+    GS.ground([[x - 0.1, z], [x + 0.1, z], [x - 0.6, z + 0.14], [x - 0.4, z + 0.14]], 0, GROUND_SHADE);
+    rects.push({ x: x - 0.2, y: z - 0.2, w: 0.4, h: 0.4 });
+    boxes.push({ x0: x - 0.13, y0: 0, z0: z - 0.13, x1: x + 0.13, y1: 0.9, z1: z + 0.13 });
+  }
 
   // ---- skyline: flat layers of distant blocks and dock cranes, drawn in a bluer ink ----
   const FAR_INK = '#46566f';

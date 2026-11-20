@@ -9,7 +9,7 @@ import { MvInput } from './input.js';
 import { AudioKit } from './audiokit.js';
 import { MvHud } from './hud.js';
 import { Mux } from './transport.js';
-import { loadDimension, loadTransition, playableDimensions, playableTransitions, firstTransition, metaOf } from './registry.js';
+import { loadDimension, loadTransition, playableDimensions, playableTransitions, firstTransition, dimensionKind, metaOf } from './registry.js';
 import { PLAYER_COLORS, DEFAULTS, BOT_SKILL } from './contract.js';
 import { mulberry32 } from '../util.js';
 import finale from './finale.js';
@@ -207,9 +207,28 @@ export class Director {
     return id;
   }
 
+  // The next world: still a shuffle bag (nothing repeats until everything has been seen),
+  // but from what is left in the bag take the one LEAST like the worlds just played, so a
+  // match keeps changing viewpoint (first person / third person / top-down / side-on) and
+  // look (2D / 3D) instead of serving two of a kind in a row.
   _nextDim() {
     if (this.dev.next.length) return this.dev.next.shift();
-    return this._draw('dimBag', playableDimensions(), this.mod && this.mod.id) || this.first;
+    const cur = this.mod && this.mod.id;
+    const pool = playableDimensions().filter((id) => !this.broken.has(id));
+    if (pool.length <= 1) return pool[0] || this.first;
+    let bag = this.dimBag.filter((id) => pool.includes(id) && id !== cur);
+    if (!bag.length) bag = shuffled(pool.filter((id) => id !== cur), this.pick);
+    const last = dimensionKind(cur), prev = dimensionKind(this.prevDim);
+    const cost = (id) => {
+      const k = dimensionKind(id);
+      return (k.view === last.view ? 4 : 0) + (k.look === last.look ? 2 : 0) + (k.view === prev.view ? 1 : 0);
+    };
+    let best = 0;
+    for (let i = 1; i < bag.length; i++) if (cost(bag[i]) < cost(bag[best])) best = i; // ties keep the shuffled order
+    const [id] = bag.splice(best, 1);
+    this.dimBag = bag;
+    this.prevDim = cur;
+    return id;
   }
 
   _nextFx() {

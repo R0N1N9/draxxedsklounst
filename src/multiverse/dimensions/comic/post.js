@@ -111,15 +111,15 @@ void main() {
     if (c.a > 0.95) col = alb;
     else {
       float l = c.a / 0.9;
-      vec3 sh = alb * vec3(0.4, 0.3, 0.6) + vec3(0.03, 0.0, 0.07);
+      vec3 sh = alb * vec3(0.5, 0.36, 0.68) + vec3(0.04, 0.0, 0.1);
       vec3 hi = alb * vec3(1.05, 1.0, 0.9) + vec3(0.03, 0.01, 0.0);
       float r = 1.0 - smoothstep(0.2, 0.6, l);
-      float cov = 1.0 - smoothstep(-0.05, 0.05, dots(fc, 5.5 * uPx, 0.52) - r * 0.76);
+      float cov = 1.0 - smoothstep(-0.04, 0.04, dots(fc, 6.5 * uPx, 0.52) - r * 0.76);
       col = mix(hi, sh, cov * step(0.03, r));
     }
     // Distance washes everything towards the sunset behind it.
-    hz = smoothstep(60.0, 380.0, z) * 0.86;
-    vec3 haze = mix(vec3(0.72, 0.22, 0.5), vec3(1.0, 0.56, 0.3), pow(max(dot(normalize(dir.xz), normalize(uSun.xz)), 0.0), 3.0));
+    hz = smoothstep(55.0, 300.0, z) * 0.9;
+    vec3 haze = mix(vec3(0.83, 0.3, 0.52), vec3(1.0, 0.6, 0.32), pow(max(dot(normalize(dir.xz), normalize(uSun.xz)), 0.0), 3.0));
     col = mix(col, haze, hz);
   }
   // ---- the kill: everything behind the victim becomes a burst ----
@@ -140,15 +140,16 @@ void main() {
   col += texture2D(tBloom, vUv).rgb * 0.9;
   // ---- speed lines: leaping, and the rush of the scope ----
   float rad = length(p * vec2(uAspect, 1.0));
-  float sp = max(uSpeed, uScope * 0.55);
-  if (sp > 0.01) {
-    float an = atan(p.y, p.x) * 28.6;
+  float lines = 0.0, lineTone = 0.0;
+  if (uSpeed > 0.01 || uScope > 0.001) {
+    float an = atan(p.y, p.x) * 19.1;
     float id = floor(an), fr = fract(an);
-    float rnd = h21(vec2(id, floor(uTime * 14.0)));
-    float start = mix(1.5, 0.62 + rnd * 0.55, sp);
-    float wdt = 0.5 * rnd * smoothstep(start, start + 0.5, rad);
-    float ln = step(abs(fr - 0.5), wdt * 0.5) * step(0.35, rnd);
-    col = mix(col, rnd > 0.7 ? vec3(1.0, 0.97, 0.88) : INK, ln);
+    float rnd = h21(vec2(id, floor(uTime * 12.0)));
+    float start = mix(1.6, 0.7 + rnd * 0.5, max(uSpeed, uScope));
+    float wdt = rnd * smoothstep(start, start + 0.45, rad);
+    lines = step(abs(fr - 0.5), wdt * 0.42) * step(0.3, rnd);
+    lineTone = step(0.72, rnd);
+    col = mix(col, lineTone > 0.5 ? vec3(1.0, 0.97, 0.88) : INK, lines * step(0.01, uSpeed) * (1.0 - step(0.001, uScope)));
   }
   // ---- the scope: the view punches in to its own panel, set at an angle on bare paper ----
   if (uScope > 0.001) {
@@ -159,7 +160,7 @@ void main() {
     if (dq > bw) {
       vec3 paper = vec3(0.99, 0.96, 0.87);
       float sh2 = max(abs(q.x - 0.035) - hb.x, abs(q.y + 0.035) - hb.y);
-      col = sh2 < bw ? INK : mix(paper, INK, (1.0 - smoothstep(-0.04, 0.04, dots(fc, 6.0 * uPx, 0.5) - 0.3)) * 0.18);
+      col = sh2 < bw ? INK : mix(mix(paper, INK, (1.0 - smoothstep(-0.04, 0.04, dots(fc, 6.0 * uPx, 0.5) - 0.3)) * 0.14), INK, lines * (1.0 - lineTone));
     } else if (dq > -bw) col = INK;
   }
   // ---- paper ----
@@ -190,7 +191,7 @@ void main() {
   gl_FragColor = vec4((lB < lMin || lB > lMax) ? a : b, 1.0);
 }`;
 
-// q: { scale (scene resolution relative to the drawing buffer), bloom, fxaa }
+// q: { scale (scene resolution relative to the drawing buffer), bloom, fxaa, prepass }
 export function makePost(THREE, renderer, q) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
@@ -207,6 +208,7 @@ export function makePost(THREE, renderer, q) {
     uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunR: { value: new THREE.Vector3(1, 0, 0) }, uSunU: { value: new THREE.Vector3(0, 0, 1) },
     uScope: { value: 0 }, uSpeed: { value: 0 }, uFlash: { value: 0 }, uSudden: { value: 0 }, uSplash: { value: new THREE.Vector4(0.5, 0.5, 0, 1e6) }, uSplashCol: { value: new THREE.Vector3(1, 0.3, 0.3) },
   };
+  const mDepth = new THREE.MeshBasicMaterial({ colorWrite: false });
   const mPre = mat(PREFILTER), mBlur = mat(BLUR, { uDir: { value: new THREE.Vector2() } }), mComic = mat(COMIC, u), mPresent = mat(PRESENT);
   const depth = new THREE.DepthTexture(4, 4);
   depth.type = THREE.UnsignedIntType;
@@ -248,6 +250,16 @@ export function makePost(THREE, renderer, q) {
       renderer.autoClear = true;
       renderer.setRenderTarget(scene);
       renderer.setClearColor(black, 1); // sky: no colour, "unlit", depth 1 — the pass paints it
+      if (q.prepass) {
+        // No GPU: lay the depth down first so every pixel is shaded once, however many walls
+        // stand behind one another. (Layer 1 holds what is cut out with discard.)
+        camera.layers.disable(1);
+        world.overrideMaterial = mDepth;
+        renderer.render(world, camera);
+        world.overrideMaterial = null;
+        camera.layers.enable(1);
+        renderer.autoClear = false;
+      }
       renderer.render(world, camera);
       const w = scene.width, h = scene.height;
       if (q.bloom) {
@@ -272,7 +284,7 @@ export function makePost(THREE, renderer, q) {
       renderer.setRenderTarget(null);
       for (const t of [scene, qa, qb, page]) t.dispose();
       depth.dispose();
-      for (const m of [mPre, mBlur, mComic, mPresent]) m.dispose();
+      for (const m of [mPre, mBlur, mComic, mPresent, mDepth]) m.dispose();
       geo.dispose();
     },
   };

@@ -4,6 +4,8 @@
 import { INK, PAPER, KRAFT, ID, ID_DARK, darker, lighter } from './style.js';
 
 const TAU = Math.PI * 2;
+const PAIR_A = [[INK, 6], ['#fffdf5', 2.4]], PAIR_B = [['#fffdf5', 5], [INK, 2]], PAIR_C = [['#fffdf5', 4], [INK, 1.6]];
+const COMPASS_NAMES = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
 const FONT = (px, w = 800) => `${w} ${px}px Rajdhani, "Arial Narrow", "Helvetica Neue", sans-serif`;
 const MONO = (px) => `700 ${px}px "JetBrains Mono", Menlo, "Courier New", monospace`;
 const angDiff = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; else if (d <= -Math.PI) d += TAU; return d; };
@@ -20,7 +22,7 @@ export function makeOverlay(ctx) {
   const S = { // refreshed by index.js every frame
     t: 0, scope: 0, fovS: 16, kick: 0, bolt: 1, ammo: 0, mag: 4, reload: -1, bob: 0, bobS: 0, alive: true, live: false, me: 0,
     e: 0, edgeLeft: 0, edgeCd: 0, standCharges: 2, windR: 0, heading: 0, enemyHeading: 0, enemyKnown: 0, enemyVis: false, enemyOn: false, ex: 0, ey: 0, edist: 0,
-    tells: [], prompt: '', promptKey: '', note: '', noteA: 0, burst: 0, bx: 0, by: 0, crumple: 0, victim: false, sudden: false, ruler: 60, aimOnFoe: 0, device: 'kbm', over: false, winner: false,
+    tells: [], prompt: '', promptKey: '', spot: '', spotKey: '', note: '', noteA: 0, burst: 0, bx: 0, by: 0, crumple: 0, victim: false, sudden: false, ruler: 60, aimOnFoe: 0, device: 'kbm', over: false, winner: false,
     safeL: 0, safeR: 0, safeB: 0, spread: 8,
   };
   const idc = (i) => ID[i];
@@ -51,12 +53,12 @@ export function makeOverlay(ctx) {
     const s = Math.max(0.5, Math.min(1.35, h / 700));
     const scopeDown = S.scope;
     const kick = S.kick;
-    const bx = w * 0.88 + (S.bobS * 5 + 40 * scopeDown) * s, by = h * 1.0 + (S.bob * 7 + 360 * scopeDown) * s;
+    const bx = w * 0.9 + (S.bobS * 6 + 40 * scopeDown) * s, by = h * 0.97 + (S.bob * 8 + 360 * scopeDown) * s;
     g.save();
     g.globalAlpha = 1 - Math.min(1, scopeDown * 1.4);
-    g.translate(bx + kick * 22 * s, by + kick * 14 * s);
-    g.scale(-s, s);
-    g.rotate(0.3 - kick * 0.06);
+    g.translate(bx + kick * 26 * s, by + kick * 18 * s);
+    g.scale(-s * 0.86, s * 0.86);
+    g.rotate(-0.2 + kick * 0.07);
     const line = (lw) => { g.lineWidth = lw; g.strokeStyle = INK; g.lineJoin = 'round'; g.lineCap = 'round'; g.stroke(); };
     const fill = (c, lw = 7) => { g.fillStyle = c; g.fill(); line(lw); };
     const id = idc(S.me), idd = ID_DARK[S.me];
@@ -72,6 +74,13 @@ export function makeOverlay(ctx) {
     rrect(g, 200, -4, 330, 26, 8); fill('#59627a', 7);
     rrect(g, 505, -12, 56, 42, 8); fill('#1f2230', 7);
     g.fillStyle = '#3b4258'; for (const x of [516, 532, 548]) g.fillRect(x, -6, 5, 30);
+    if (kick > 0.45) { // the muzzle flash: a hard-edged starburst, gone in a few frames
+      const r = 46 + 80 * kick;
+      g.beginPath();
+      for (let i = 0; i < 18; i++) { const a = (i / 18) * TAU, rr_ = i % 2 ? r * 0.42 : r; g.lineTo(580 + Math.cos(a) * rr_, 9 + Math.sin(a) * rr_); }
+      g.closePath(); fill('#ffe27a', 7);
+      g.beginPath(); g.arc(580, 9, r * 0.3, 0, TAU); fill('#fffdf0', 5);
+    }
     // scope
     rrect(g, 40, -76, 250, 44, 18); fill('#262a39', 8);
     rrect(g, 255, -88, 64, 68, 12); fill('#1b1e2b', 8);
@@ -98,7 +107,7 @@ export function makeOverlay(ctx) {
     if (a <= 0.01) return;
     g.globalAlpha = a;
     g.lineCap = 'round';
-    for (const [col, lw] of [[INK, 6], ['#fffdf5', 2.4]]) {
+    for (const [col, lw] of PAIR_A) {
       g.strokeStyle = col; g.lineWidth = lw;
       g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.stroke();
       g.beginPath();
@@ -115,7 +124,7 @@ export function makeOverlay(ctx) {
   function scope(cx, cy) {
     const a = S.scope;
     if (a < 0.02) return;
-    const w = ctx.width, h = ctx.height, R = Math.min(w, h) * 0.46 * (1.12 - 0.12 * a);
+    const w = ctx.width, h = ctx.height, R = Math.min(w, h) * 0.405 * (1.12 - 0.12 * a);
     g.globalAlpha = Math.min(1, a * 1.6);
     g.fillStyle = '#1c1a24';
     g.beginPath(); g.rect(0, 0, w, h); g.arc(cx, cy, R, 0, TAU, true); g.fill();
@@ -131,7 +140,7 @@ export function makeOverlay(ctx) {
     // reticle
     const px = (h / 2) / Math.tan((S.fovS * Math.PI) / 360); // pixels per radian
     g.lineCap = 'butt';
-    for (const [col, lw] of [['#fffdf5', 5], [INK, 2]]) {
+    for (const [col, lw] of PAIR_B) {
       g.strokeStyle = col; g.lineWidth = lw;
       g.beginPath();
       g.moveTo(cx - R + 14, cy); g.lineTo(cx - 14, cy); g.moveTo(cx + 14, cy); g.lineTo(cx + R - 14, cy);
@@ -147,15 +156,15 @@ export function makeOverlay(ctx) {
       const x = cx + k * tick;
       if (Math.abs(x - cx) > R - 24) continue;
       const big = k % 2 === 0;
-      for (const [col, lw] of [['#fffdf5', 4], [INK, 1.6]]) { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); g.moveTo(x, cy - (big ? 9 : 5)); g.lineTo(x, cy + (big ? 9 : 5)); g.stroke(); }
+      for (const [col, lw] of PAIR_C) { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); g.moveTo(x, cy - (big ? 9 : 5)); g.lineTo(x, cy + (big ? 9 : 5)); g.stroke(); }
       if (big && Math.abs(k) <= 4) { g.fillStyle = '#fffdf5'; g.fillText(String(Math.abs(k)), x, cy + 13); }
     }
     g.fillStyle = INK; g.beginPath(); g.arc(cx, cy, 3.4, 0, TAU); g.fill();
     g.fillStyle = '#fffdf5'; g.beginPath(); g.arc(cx, cy, 1.6, 0, TAU); g.fill();
     // range readout under the lens
     const rt = S.enemyVis ? `${Math.round(S.edist)} M` : '-- M';
-    tag(rt, cx, cy + R - 30, 15, '#fffdf5');
-    label('1 TICK = 1 M', cx, cy - R + 24, 11, '#fffdf5', 'center', 700);
+    tag(rt, cx + R * 0.56, cy - R * 0.5, 15, '#fffdf5');
+    label('1 TICK = 1 M', cx - R * 0.56, cy - R * 0.5, 11, '#fffdf5', 'center', 700);
     g.globalAlpha = 1;
   }
 
@@ -169,7 +178,7 @@ export function makeOverlay(ctx) {
     rrect(g, x0, top, w, h, 4); g.clip();
     const hd = ((-S.heading * 180) / Math.PI + 720) % 360;
     g.strokeStyle = INK; g.fillStyle = INK; g.lineWidth = 2;
-    const names = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+    const names = COMPASS_NAMES;
     for (let d = Math.floor((hd - half) / 5) * 5; d <= hd + half; d += 5) {
       const x = cx + (d - hd) * ppd, dd = ((d % 360) + 360) % 360;
       const major = dd % 15 === 0;
@@ -204,6 +213,8 @@ export function makeOverlay(ctx) {
 
   // ---- ammo tag + cooldown pips ----
   function ammoTag(cx, bottom) {
+    const u = ctx.height < 480 ? 0.8 : 1;
+    g.save(); g.translate(cx, bottom); g.scale(u, u); cx = 0; bottom = 0;
     const mag = S.mag, w = 26 + mag * 24 + 52, h = 36;
     const x = cx - w / 2, y = bottom - h;
     sticker(x, y, w, h, '#f7f1e3', 6, 3);
@@ -221,12 +232,7 @@ export function makeOverlay(ctx) {
     g.fillStyle = S.reload >= 0 ? '#e2603a' : idc(S.me); g.fillRect(bx, y + 14, bw * f, 8);
     g.lineWidth = 2.5; g.strokeStyle = INK; g.strokeRect(bx, y + 14, bw, 8);
     if (S.reload >= 0) label('RELOAD', cx, y - 9, 12, INK, 'center', 800);
-  }
-
-  // ---- ability chips (drawn in-world as folded labels above the ammo tag): edge-on and standee state ----
-  function abilities(cx, y) {
-    const items = [['EDGE-ON', S.e > 0.5 ? 1 : 0, S.edgeCd, S.edgeLeft > 0], ['STANDEE', 0, S.standCd, false]];
-    void items;
+    g.restore();
   }
 
   // ---- range callout on the enemy ----
@@ -264,24 +270,28 @@ export function makeOverlay(ctx) {
   }
 
   // ---- prompts that teach as you play ----
-  function prompt(cx, y) {
-    if (!S.prompt || !S.live || !S.alive) return;
+  function prompt(cx, y, span, text = S.prompt, keyText = S.promptKey, sub = false) {
+    if (!text || !S.live || !S.alive) return;
+    const small = ctx.height < 480, px = (small ? 13 : 17) - (sub ? 2 : 0), h = (small ? 26 : 32) - (sub ? 4 : 0);
     const pulse = 0.5 + 0.5 * Math.sin(S.t * 5);
-    g.font = FONT(17);
-    const keyW = S.promptKey ? g.measureText(S.promptKey).width + 18 : 0;
-    const tw = g.measureText(S.prompt).width, w = tw + 26 + keyW, h = 32;
+    g.font = FONT(px);
+    const keyW = keyText ? g.measureText(keyText).width + 16 : 0;
+    const tw = g.measureText(text).width, w = tw + 24 + keyW;
+    if (w > span) { cx = ctx.width / 2; y = ctx.height - Math.max(S.safeB, 0) - 8 - (sub ? 40 : 0); } // too wide for the gap between the thumbs: ride above them
     const x = cx - w / 2;
     sticker(x, y - h, w, h, '#fffdf5', 7, 3);
-    let tx = x + 13;
-    if (S.promptKey) {
-      sticker(tx, y - h + 5, keyW, h - 10, idc(S.me), 5, 2);
-      label(S.promptKey, tx + keyW / 2, y - h / 2 + 1, 15, INK);
+    let tx = x + 12;
+    if (keyText) {
+      sticker(tx, y - h + 4, keyW, h - 8, idc(S.me), 5, 2);
+      label(keyText, tx + keyW / 2, y - h / 2 + 1, px - 2, INK);
       tx += keyW + 8;
     }
-    label(S.prompt, tx, y - h / 2 + 1, 17, INK, 'left');
-    g.lineWidth = 2; g.strokeStyle = idc(S.me); g.globalAlpha = pulse * 0.7;
-    rrect(g, x - 5, y - h - 5, w + 10, h + 10, 10); g.stroke();
-    g.globalAlpha = 1;
+    label(text, tx, y - h / 2 + 1, px, INK, 'left');
+    if (!sub) {
+      g.lineWidth = 2; g.strokeStyle = idc(S.me); g.globalAlpha = pulse * 0.7;
+      rrect(g, x - 5, y - h - 5, w + 10, h + 10, 10); g.stroke();
+      g.globalAlpha = 1;
+    }
   }
 
   // ---- edge-on: the screen thins to a slit and says why you cannot shoot ----
@@ -305,25 +315,45 @@ export function makeOverlay(ctx) {
     }
   }
 
-  // ---- kill: the page crumples over the victim; a starburst sticker over the shooter's hit ----
+  // ---- kill: the page crumples over the victim — a jittered mesh of paper facets folds in over the view ----
+  const NX = 9, NY = 6, FACE = [];
+  {
+    const hh = (n) => { const v = Math.sin(n * 127.1 + 311.7) * 43758.5453; return v - Math.floor(v); };
+    const V = [];
+    for (let j = 0; j <= NY; j++) for (let i = 0; i <= NX; i++) V.push([i / NX + (i > 0 && i < NX ? (hh(i * 9 + j * 31) - 0.5) * 0.07 : 0), j / NY + (j > 0 && j < NY ? (hh(i * 17 + j * 7 + 3) - 0.5) * 0.09 : 0)]);
+    for (let j = 0; j < NY; j++) for (let i = 0; i < NX; i++) {
+      const a = V[j * (NX + 1) + i], b = V[j * (NX + 1) + i + 1], c = V[(j + 1) * (NX + 1) + i + 1], d = V[(j + 1) * (NX + 1) + i];
+      const k = (i + j) % 2;
+      const t = k ? [[a, b, d], [b, c, d]] : [[a, b, c], [a, c, d]];
+      for (const tri of t) FACE.push({ p: tri, at: 0.08 + hh(FACE.length * 3.7) * 0.6, tone: Math.floor(hh(FACE.length * 5.1) * 4) });
+    }
+  }
+  const TONES = ['#f7f1e3', '#ebe3cf', '#ddd4bd', '#fbf7ec'];
   function crumple(w, h) {
     const c = S.crumple;
     if (c <= 0) return;
-    const e = c * c * (3 - 2 * c);
-    const cx = w / 2, cy = h / 2;
-    g.save();
-    // the sheet's edge folds in from every side as faceted flat polygons
-    const n = 14;
-    for (let i = 0; i < n; i++) {
-      const a0 = (i / n) * TAU, a1 = ((i + 1) / n) * TAU, jig = 0.82 + 0.18 * Math.sin(i * 12.9);
-      const r0 = Math.hypot(w, h) * 0.62, r1 = r0 * (1 - 0.8 * e * jig);
-      const x0 = cx + Math.cos(a0) * r0, y0 = cy + Math.sin(a0) * r0, x1 = cx + Math.cos(a1) * r0, y1 = cy + Math.sin(a1) * r0;
-      const ix0 = cx + Math.cos(a0) * r1, iy0 = cy + Math.sin(a0) * r1, ix1 = cx + Math.cos(a1) * r1, iy1 = cy + Math.sin(a1) * r1;
-      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.lineTo(ix1, iy1); g.lineTo(ix0, iy0); g.closePath();
-      g.fillStyle = i % 3 === 0 ? '#e9e1cc' : i % 3 === 1 ? '#f7f1e3' : '#d8cfb8'; g.fill();
-      g.lineWidth = 4; g.strokeStyle = INK; g.lineJoin = 'round'; g.stroke();
+    const e = c * c * (3 - 2 * c), cx = w / 2, cy = h / 2;
+    g.lineJoin = 'round';
+    for (let n = 0; n < FACE.length; n++) {
+      const f = FACE[n];
+      const a = Math.max(0, Math.min(1, (e - f.at) / 0.25));
+      if (a <= 0.01) continue;
+      g.globalAlpha = a;
+      // each facet draws in towards the middle on its own, turning a little: a ragged crumpling edge, not a shrinking rectangle
+      const mx = ((f.p[0][0] + f.p[1][0] + f.p[2][0]) / 3) * w, my = ((f.p[0][1] + f.p[1][1] + f.p[2][1]) / 3) * h;
+      const r = 0.12 + 0.32 * f.at, pull = 1 - r * e, sc = 1 - 0.22 * e * (0.4 + f.at), rot = (f.tone - 1.5) * 0.35 * e;
+      const px = cx + (mx - cx) * pull, py = cy + (my - cy) * pull, co = Math.cos(rot), si = Math.sin(rot);
+      g.beginPath();
+      for (let k = 0; k < 3; k++) {
+        const dx = (f.p[k][0] * w - mx) * sc, dy = (f.p[k][1] * h - my) * sc;
+        const x = px + dx * co - dy * si, y = py + dx * si + dy * co;
+        if (k) g.lineTo(x, y); else g.moveTo(x, y);
+      }
+      g.closePath();
+      g.fillStyle = TONES[f.tone]; g.fill();
+      g.lineWidth = 3; g.strokeStyle = INK; g.stroke();
     }
-    g.restore();
+    g.globalAlpha = 1;
   }
   function burst(w, h) {
     if (S.burst <= 0) return;
@@ -348,18 +378,20 @@ export function makeOverlay(ctx) {
       edge(w, h);
       tells();
       callout();
-      const top = h < 480 ? 46 : 60;
+      const top = (h < 480 ? 46 : 60) + (S.sudden ? (h < 480 ? 22 : 28) : 0); // the SUDDEN DEATH banner takes the slot below the score
       compass(cx, top);
       // bottom-centre stack, kept between the thumbs' clusters
       const left = Math.max(S.safeL, 0), right = Math.max(S.safeR, 0);
       const mid = (left + (w - right)) / 2;
       const bottom = h - 12 - (S.safeB > 0 && w - left - right < 300 ? S.safeB * 0.6 : 0);
       ammoTag(Math.max(mid, 110), bottom);
-      prompt(Math.max(mid, 140), bottom - 50);
+      const py = bottom - (h < 480 ? 42 : 50), span = w - left - right - 16;
+      prompt(Math.max(mid, 140), py, span);
+      prompt(Math.max(mid, 140), py - (h < 480 ? 34 : 46), span, S.spot, S.spotKey, true);
       if (S.noteA > 0.02 && S.note) { g.globalAlpha = Math.min(1, S.noteA * 2); tag(S.note, cx, cy + h * 0.2, 17, '#ff8e6b'); g.globalAlpha = 1; }
     } else {
       callout();
-      compass(cx, h < 480 ? 46 : 60);
+      compass(cx, (h < 480 ? 46 : 60) + (S.sudden ? (h < 480 ? 22 : 28) : 0));
     }
     crumple(w, h);
     burst(w, h);

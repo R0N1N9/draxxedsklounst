@@ -75,12 +75,11 @@ export function makeSfx(ctx) {
     erase() { A.noise({ filter: 'bandpass', freq: 1800, freqEnd: 3800, q: 0.7, dur: 1.4, gain: 0.3, attack: 0.3 }); A.sfx('riser', { gain: 0.4 }); },
     showdown() { A.sfx('drop', { gain: 0.6 }); A.sfx('bell', { gain: 0.5, delay: 0.1 }); },
     // the splash page: one enormous hit, then a cymbal that the slow motion stretches out
-    kill(x, y, z) {
+    kill() {
       A.sfx('boom', { gain: 0.8 });
       A.tone({ type: 'square', freq: 330, freqEnd: 82, dur: 0.3, gain: 0.2 });
       A.noise({ filter: 'highpass', freq: 5200, dur: 1.5, gain: 0.22, attack: 0.002 });
       for (let i = 0; i < 5; i++) A.tone({ type: 'triangle', freq: [587, 698, 880, 1175, 1397][i], dur: 0.5, gain: 0.07, delay: 0.42 + i * 0.07 });
-      void x; void y; void z;
     },
   };
 }

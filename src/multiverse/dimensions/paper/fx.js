@@ -127,6 +127,7 @@ export function makeFx(THREE, mats) {
   }
   const bullets = []; // {s, age}
   function addBullet(s, hex) { bullets.push({ s, age: 0, hex }); }
+  let windPush = 0; // drifting paper leans on the wind: the cheapest wind gauge in the world
   const beaconPos = [{ x: 0, y: 0, z: 0, on: false }, { x: 0, y: 0, z: 0, on: false }];
 
   function update(dt, anim) {
@@ -138,7 +139,7 @@ export function makeFx(THREE, mats) {
       if (p.age >= p.life) { p.live = false; fillIM.setMatrixAt(i, zero); inkIM.setMatrixAt(i, zero); continue; }
       const k = Math.exp(-1.4 * dt);
       p.vx *= k; p.vz *= k; p.vy = p.vy * k - p.g * dt * (p.flut ? 0.55 : 1);
-      if (p.flut) { p.vx += Math.sin(p.age * 7 + i) * 2.4 * dt; p.vz += Math.cos(p.age * 6 + i * 2) * 2.4 * dt; }
+      if (p.flut) { p.vx += Math.sin(p.age * 7 + i) * 2.4 * dt + windPush * 5 * dt; p.vz += Math.cos(p.age * 6 + i * 2) * 2.4 * dt; }
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       if (p.y < 0.03) { p.y = 0.03; p.vy = 0; p.vx *= 0.6; p.vz *= 0.6; p.sx = p.sy = p.sz = 0; }
       p.rx += p.sx * dt; p.ry += p.sy * dt; p.rz += p.sz * dt;
@@ -178,7 +179,7 @@ export function makeFx(THREE, mats) {
   }
 
   return {
-    root, scrap, burst, mark, addShot, addBullet, update, beaconPos, bullets,
+    root, scrap, burst, mark, addShot, addBullet, update, beaconPos, bullets, setWind(w) { windPush = w; },
     clear() { for (const p of P) p.live = false; for (const t of trails) t.live = false; bullets.length = 0; },
     dispose() { for (const g of geos) g.dispose(); for (const m of mls) m.dispose(); for (const t of texs) t.dispose(); fillIM.dispose(); inkIM.dispose(); marks.dispose(); },
   };

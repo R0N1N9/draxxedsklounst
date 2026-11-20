@@ -2,13 +2,12 @@
 // only rock, wall and far mesas are static). The ink outlines of the terrain are NOT baked into the picture:
 // they are three pre-jittered Path2D variants that the renderer cycles ~12 times a second, so the rock itself
 // boils like a cel while its (costly) hatching stays in the bitmap.
-import { clamp, makeCanvas, makeRng, rand } from '../../kit.js';
-import { noise2 } from '../../kit.js';
+import { clamp, makeCanvas, makeRng, rand, noise2 } from '../../kit.js';
 import { C, hash1 } from './ink.js';
 import { W, GY, FLOOR, PIV, LIP } from './world.js';
 
 export const BOUNDS = { x0: -300, y0: -260, x1: 1900, y1: 1180 };
-export const ARCH = [{ x: 540, y: FLOOR }, { x: 1060, y: FLOOR }]; // painted tunnel mouths on the canyon floor
+export const ARCH = [{ x: 520, y: FLOOR }, { x: 1080, y: FLOOR }]; // painted tunnel mouths on the canyon floor
 const FACE = [[0, 0], [4, 24], [-6, 62], [12, 98], [12, 122], [-2, 160], [-10, 232], [2, 280], [2, 302], [-12, 362], [-6, 420], [0, FLOOR - GY]];
 
 function layer(x0, y0, x1, y1, ppu) {
@@ -54,7 +53,7 @@ function mesa(g, rng, side) {
   const lx = f[0][0];
   g.lineTo(lx - dir * 26, GY);
   g.quadraticCurveTo(lx + dir * 2, GY, lx + dir * 4, GY + 16);
-  for (const [x, y] of f) g.lineTo(x, y);
+  for (let i = 1; i < f.length; i++) g.lineTo(f[i][0], f[i][1]);
   g.lineTo(f[f.length - 1][0], BOUNDS.y1);
   g.lineTo(side ? W + 300 : -300, BOUNDS.y1);
   g.closePath();
@@ -204,8 +203,9 @@ export function bakeStage(seed, ppu) {
 
   // far mesas (soft, low resolution: they are the distance)
   const far = layer(BOUNDS.x0, 140, BOUNDS.x1, 560, Math.min(0.8, p));
-  farRange(far.g, rng, '#e1d8c3', '#d8cfb9', 300, 560, 6, 200, 360, 0.05);
-  farRange(far.g, rng, '#cfc5ad', '#c6bba3', 380, 560, 8, 150, 300, 0.07);
+  farRange(far.g, rng, '#e9e0cb', '#e0d6c0', 300, 560, 6, 200, 360, 0.05);
+  const near = layer(BOUNDS.x0, 140, BOUNDS.x1, 560, Math.min(0.8, p));
+  farRange(near.g, rng, '#d3c9b1', '#cabfa7', 380, 560, 8, 150, 300, 0.08);
 
   // the back wall of the canyon, with the painted tunnel mouths and the warning boards
   const wall = layer(330, 330, 1270, FLOOR + 6, Math.min(1, p));
@@ -217,8 +217,8 @@ export function bakeStage(seed, ppu) {
     g.lineTo(1300, FLOOR + 10);
     g.closePath();
     g.save(); g.clip();
-    g.fillStyle = '#c1b69f'; g.fillRect(300, 330, 1000, FLOOR - 320);
-    for (let y = 400, i = 0; y < FLOOR; y += 34 + rng() * 26, i++) { g.fillStyle = i % 2 ? '#b5aa93' : '#c9bfa8'; g.fillRect(300, y, 1000, 14 + rng() * 14); }
+    g.fillStyle = '#ada28c'; g.fillRect(300, 330, 1000, FLOOR - 320);
+    for (let y = 400, i = 0; y < FLOOR; y += 34 + rng() * 26, i++) { g.fillStyle = i % 2 ? '#a0957f' : '#b8ad97'; g.fillRect(300, y, 1000, 14 + rng() * 14); }
     const grd = g.createLinearGradient(0, 420, 0, FLOOR);
     grd.addColorStop(0, 'rgba(27,22,18,0)'); grd.addColorStop(1, 'rgba(27,22,18,0.42)');
     g.fillStyle = grd; g.fillRect(300, 330, 1000, FLOOR - 320);
@@ -228,8 +228,8 @@ export function bakeStage(seed, ppu) {
     g.lineWidth = 4; g.strokeStyle = C.ink; g.stroke();
     for (const a of ARCH) arch(g, a.x, a.y);
     // a rail of two stripes leads from each arch to the floor
-    billboard(g, rng, 800, 400, 'MIND THE\nANVILS', -0.04);
-    billboard(g, rng, 640, 640, 'LOOK LEFT\nLOOK RIGHT', 0.03);
+    billboard(g, rng, 545, 440, 'MIND THE\nANVILS', -0.05);
+    billboard(g, rng, 1058, 440, 'LOOK LEFT\nLOOK RIGHT', 0.04);
   }
 
   // terrain: both mesas, the floor, the pillar, the boulders, rail ties
@@ -242,9 +242,9 @@ export function bakeStage(seed, ppu) {
     g.moveTo(722, FLOOR + 6); g.lineTo(738, PIV.y + 40); g.quadraticCurveTo(730, PIV.y + 2, 760, PIV.y + 2);
     g.lineTo(840, PIV.y + 2); g.quadraticCurveTo(870, PIV.y + 2, 862, PIV.y + 40); g.lineTo(878, FLOOR + 6);
     g.closePath(); g.clip();
-    g.fillStyle = C.g2; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y + 10);
-    for (let y = PIV.y + 20, i = 0; y < FLOOR; y += 26 + rng() * 14, i++) { g.fillStyle = i % 2 ? C.g1 : C.g3; g.fillRect(700, y, 200, 9 + rng() * 6); }
-    hatch(g, 800, PIV.y, 900, FLOOR, 8, 0.34, 1.6);
+    g.fillStyle = C.g1; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y + 10);
+    for (let y = PIV.y + 20, i = 0; y < FLOOR; y += 26 + rng() * 14, i++) { g.fillStyle = i % 2 ? C.paper2 : C.g2; g.fillRect(700, y, 200, 9 + rng() * 6); }
+    hatch(g, 806, PIV.y, 900, FLOOR, 8, 0.4, 1.7);
     const gr = g.createLinearGradient(0, PIV.y, 0, FLOOR);
     gr.addColorStop(0, 'rgba(27,22,18,0)'); gr.addColorStop(1, 'rgba(27,22,18,0.4)');
     g.fillStyle = gr; g.fillRect(700, PIV.y, 200, FLOOR - PIV.y);
@@ -259,13 +259,16 @@ export function bakeStage(seed, ppu) {
     g.fillStyle = C.paper2; g.fillRect(LIP[0] - 20, FLOOR, 800, 12);
     hatch(g, LIP[0], FLOOR, LIP[1], FLOOR + 300, 9, 0.25, 1.6);
     speckle(g, rng, LIP[0], FLOOR + 8, LIP[1], FLOOR + 300, 120, 'rgba(27,22,18,0.3)', 1.6);
+    const fg = g.createLinearGradient(0, FLOOR, 0, FLOOR + 220);
+    fg.addColorStop(0, 'rgba(27,22,18,0)'); fg.addColorStop(1, 'rgba(27,22,18,0.55)');
+    g.fillStyle = fg; g.fillRect(LIP[0] - 20, FLOOR, 800, 500);
     g.restore();
     // rail ties along the floor
     g.fillStyle = C.g5;
     for (let x = LIP[0] + 6; x < LIP[1]; x += 26) g.fillRect(x, FLOOR - 4, 14, 8);
     g.fillStyle = C.ink; g.fillRect(LIP[0], FLOOR - 8, LIP[1] - LIP[0], 3);
-    boulder(g, rng, 290, GY - 100, 82, 100, true);
-    boulder(g, rng, W - 290 - 82, GY - 100, 82, 100, false);
+    boulder(g, rng, 246, GY - 64, 96, 64, true);
+    boulder(g, rng, W - 246 - 96, GY - 64, 96, 64, false);
     // pebbles and tufts on the mesa tops
     for (const side of [0, 1]) {
       for (let i = 0; i < 9; i++) {
@@ -274,21 +277,18 @@ export function bakeStage(seed, ppu) {
         g.beginPath(); g.ellipse(x, y, 3 + rng() * 4, 2 + rng() * 2, 0, 0, 6.283); g.fill(); g.stroke();
       }
     }
-    // two signposts: mind the anvils; the springboard
-    billboard(g, rng, 90, GY - 46, 'LOOK UP!', -0.06);
-    billboard(g, rng, W - 90, GY - 46, 'LOOK UP!', 0.06);
   }
-  return { far, wall, terr: t, paths: outlines(rng) };
+  return { far, near, wall, terr: t, paths: outlines(rng) };
 }
 
 /** The ink on the rock: 3 variants of the same lines, each jittered differently. */
 function outlines(rng) {
   const out = [];
   for (let v = 0; v < 3; v++) {
-    const path = new Path2D();
+    const edge = new Path2D(), strata = new Path2D();
     const j = (i, a) => (hash1(i * 3.77 + v * 51.3) - 0.5) * 2 * a;
     let n = 0;
-    const line = (pts, closed = false) => {
+    const line = (pts, closed = false, path = edge) => {
       path.moveTo(pts[0][0] + j(n++, 1.8), pts[0][1] + j(n++, 1.8));
       for (let i = 1; i < pts.length; i++) {
         const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
@@ -302,7 +302,7 @@ function outlines(rng) {
       // strata edges across the face
       for (let k = 0; k < 6; k++) {
         const y = GY + 70 + k * 78 + hash1(k * 9.1 + side * 3.3) * 20, x = (f[Math.min(f.length - 1, 2 + k * 2)] || f[f.length - 1])[0];
-        line([[x, y], [x - dir * 30, y + 3], [x - dir * 62, y - 1], [x - dir * (90 + hash1(k + side) * 40), y + 4]]);
+        line([[x, y], [x - dir * 30, y + 3], [x - dir * 62, y - 1], [x - dir * (90 + hash1(k + side) * 40), y + 4]], false, strata);
       }
     }
     // floor lip
@@ -311,10 +311,10 @@ function outlines(rng) {
     line([[722, FLOOR], [738, PIV.y + 40], [731, PIV.y + 4], [760, PIV.y + 1]]);
     line([[840, PIV.y + 1], [869, PIV.y + 4], [862, PIV.y + 40], [878, FLOOR]]);
     // boulders
-    for (const bx of [290, W - 290 - 82]) {
-      line([[bx + 4, GY], [bx - 8, GY - 66], [bx + 20, GY - 94], [bx + 41, GY - 108], [bx + 64, GY - 92], [bx + 90, GY - 58], [bx + 80, GY]], false);
+    for (const bx of [246, W - 246 - 96]) {
+      line([[bx + 2, GY], [bx - 8, GY - 34], [bx + 20, GY - 58], [bx + 48, GY - 70], [bx + 76, GY - 58], [bx + 104, GY - 32], [bx + 94, GY]], false);
     }
-    out.push(path);
+    out.push({ edge, strata });
   }
   return out;
 }
