@@ -275,7 +275,7 @@ export function drawChase(g, w, h, ch) {
   const qp0 = clamp(u * 0.04, 17, 50);
   const text = ch.words.join(' ');
   g.font = `700 ${qp0}px ${SANS}`;
-  const qp = qp0 * Math.min(1, (w * 0.8) / Math.max(1, g.measureText(text).width));
+  const qp = qp0 * Math.min(1, (w * 0.7) / Math.max(1, g.measureText(text).width)); // clear of the scale bar
   g.font = `700 ${qp}px ${SANS}`;
   const full = g.measureText(text).width, space = g.measureText(' ').width;
   const by = h * 0.9;

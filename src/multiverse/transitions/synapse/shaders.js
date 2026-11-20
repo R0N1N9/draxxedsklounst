@@ -46,7 +46,7 @@ void main() {
   float coc = cocAt(z) * zc * uTan;
   float core = max(rad, minW);
   float w = core + coc;
-  float nearK = smoothstep(3.0, 13.0, z);         // nothing may smear across the lens...
+  float nearK = aKA.x < 0.5 ? smoothstep(5.0, 20.0, z) : smoothstep(3.0, 13.0, z); // nothing may smear across the lens (the axon we ride may come closer)...
   p += side * sgn * w * step(0.004, nearK);       // ...and what has faded costs no fill
   float lit = litAt(aTim, uTime), front = frontAt(aTim, uTime, 14.0);
   float idle = 0.7 + 0.3 * sin(aKA.y * 0.45 - uTime * 1.6 + aTim.w * 6.2832);
@@ -476,7 +476,7 @@ varying vec2 vUv;
 uniform sampler2D tGrow, tTo;
 uniform float uK, uAspect, uIslT, uOut, uHasTo;
 uniform vec2 uTexel;
-uniform vec3 uInk, uAccent, uWhite;
+uniform vec3 uInk, uEdge, uAccent, uWhite;
 uniform vec4 uIsl;     // the title's island: centre.xy, half extents (field space)
 ${GLSL_NOISE}
 float lum(vec2 uv) { return dot(texture2D(tTo, uv).rgb, vec3(0.299, 0.587, 0.114)); }
@@ -494,12 +494,12 @@ void main() {
 
   float a = 1.0 - smoothstep(0.1, 0.25, tau);
   float sk = smoothstep(0.0, 0.03, tau);
-  // The new world as the nervous system first draws it: outlines on the dark.
+  // The new world as the nervous system first draws it: its outlines, on its own ground.
   vec3 to = texture2D(tTo, vUv).rgb;
   float gx = lum(vUv + vec2(uTexel.x, 0.0)) - lum(vUv - vec2(uTexel.x, 0.0));
   float gy = lum(vUv + vec2(0.0, uTexel.y)) - lum(vUv - vec2(0.0, uTexel.y));
   float edge = smoothstep(0.02, 0.2, length(vec2(gx, gy)) * 2.0) * uHasTo;
-  vec3 sketch = mix(uInk * 0.9, to, 0.3 * uHasTo) + uAccent * edge * 1.2;
+  vec3 sketch = mix(mix(uInk, to, 0.3 * uHasTo), uEdge, edge);
   sketch = mix(sketch, to, smoothstep(0.05, 0.2, tau) * uHasTo);
   // The shore: the next palette bleeding into the white ahead of the front.
   float shore = smoothstep(-0.12, 0.0, tau) * (1.0 - sk) * smoothstep(0.0, 0.06, uK);

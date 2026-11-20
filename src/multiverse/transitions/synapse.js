@@ -12,26 +12,26 @@
 //
 // BEAT SHEET (10.4 s, swap at 6.66 s)
 //   0.00  the old world, untouched (the cut in is invisible)
-//   0.0 → 1.2   ACT 1 · pull back: the picture shrinks onto a cornea; iris, lids and a
-//               catchlight arrive around it; an "optic record" types who / what / how
-//   1.2 → 1.6   the pupil dilates; the last image collapses like a tube switching off
+//   0.0 → 1.2   ACT 1 · pull back: the picture shrinks into a pupil; iris, lids, lashes and
+//               a catchlight close in around it; an "optic record" types who / what / how
+//   1.2 → 1.6   the pupil blows; the last image collapses like a tube switching off
 //   1.55 → 2.3  plunge through the pupil — the scale bar falls from metres to microns
 //   2.3 → 2.9   ACT 2 · the forest, at rest: the first cell holds the old world as a memory
 //   2.9         ignition
 //   2.98 → 5.66 the chase: hops accelerate, relay cells fire, recruited cells light in
 //               amber and cyan, the loser's last thought lands a word per node; from 4.4
 //               the next world's palette floods the tissue from the far end
-//   5.66 → 6.5  the synapse: vesicles driven into the membrane, sparks across the cleft,
-//               the spine takes the hit — white-out (solid white from 6.5)
+//   5.66 → 6.5  the synapse, held as a tableau: vesicles driven into the membrane, sparks
+//               across the cleft, the spine takes the hit — white-out (solid from 6.5)
 //   6.66        THE SWAP, held on white
-//   6.78        ACT 3 · the title lands in ink on the white
+//   6.78        ACT 3 · the title rises in ink on the white
 //   7.08 → 10.2 the post-synaptic tree grows through the white; behind its front the new
 //               world is line art, then real; the title's island is the last white to go
 //   10.4        fully transparent
 //
 // AXES OF VARIATION (all drawn once from ctx.rng)
 //   1. stain — five tissue colour schemes (violet / GFP / crimson / brainbow / silver)
-//   2. network — route curvature, 1-3 relay cells, 7-15 hops, forest density and layout
+//   2. network — route curvature, 1-3 relay cells, ten to eighteen hops, forest density and layout
 //   3. camera — which flank, start elevation, how far it corkscrews, sway, roll, lens,
 //      and the angle of the final tableau at the synapse
 //   4. the eye — iris pattern, framing, pupil sizes, which way the picture turns as it
@@ -89,12 +89,15 @@ export default {
     const irisHex = loser ? loser.color : ctx.from.palette.accent;
     const pal = ctx.to.palette;
     const acc = accentPair(pal.accent);
-    const accRgb = rgb(acc.light), white = [1, 1, 1];
+    const accRgb = rgb(acc.light);
     const pulseRgb = rgb(mixHex(colL, '#ffffff', 0.22));
     const stain = pick(rng, STAINS);
     const bgTo = rgb(pal.bg), bgMax = Math.max(bgTo[0], bgTo[1], bgTo[2], 1e-3);
     const bg2 = bgTo.map((v, i) => v * Math.min(1, 0.2 / bgMax) + accRgb[i] * 0.03); // the next world's ground, kept dark enough to be haze
     const ink = mixHex('#07070d', luminance(pal.bg) < 0.2 ? pal.bg : '#000000', 0.45);
+    // What the new world is first drawn on, and with: a dark world as light on ink, a pale one as ink on its own paper.
+    const pale = luminance(pal.bg) > 0.35;
+    const ground = pale ? rgb(pal.bg, 0.92) : rgb(ink, 0.9), stroke = pale ? rgb(acc.dark) : accRgb;
 
     // The next world's second voice: its foreground if that is a light, else a paler accent.
     const fgRgb = luminance(pal.fg) > 0.25 ? rgb(pal.fg) : accRgb.map((v) => lerp(v, 1, 0.5));
@@ -133,7 +136,7 @@ export default {
       thoughts = ['I HAD THE SHOT. I HAD IT.', `NICE ONE, ${W}.`, 'SHOULD HAVE KEPT MOVING.', 'WAS THAT A GLINT—', 'LAG. DEFINITELY LAG.', 'WHO PUTS A SNIPER THERE?', `HOW DID ${W} SEE ME?`, 'I NEVER EVEN HEARD IT.',
         `SO MUCH FOR ${ctx.from.name}.`, `WAIT. IS THAT ${ctx.to.name}?`];
       if (how) thoughts.push(`${how}? REALLY?`, `OF COURSE. ${how}.`);
-      if (ctx.matchPoint) thoughts.push('NOT LIKE THIS. NOT NOW.', 'MATCH POINT. BREATHE.', 'MATCH POINT. BREATHE.');
+      if (ctx.matchPoint) thoughts.push('NOT LIKE THIS. NOT NOW.', 'MATCH POINT. BREATHE.', 'ONE MORE AND IT IS OVER.');
       if ((ctx.score[loser.index] || 0) === 0 && (ctx.score[winner.index] || 0) >= 2) thoughts.push('STILL ZERO. GREAT.');
     }
     const words = pick(rng, thoughts).split(' ');
@@ -188,7 +191,7 @@ export default {
     const down = [], up = [];
     for (let i = 0; i < LEVELS; i++) { down.push(rt(byte)); if (i < LEVELS - 1) up.push(rt(byte)); }
     const aspect0 = ctx.width / ctx.height;
-    const rtGrow = new THREE.WebGLRenderTarget(Math.round(400 * clamp(aspect0, 1, 2.4)), 400, { ...rtOpts, type: THREE.UnsignedByteType });
+    const rtGrow = new THREE.WebGLRenderTarget(Math.round(400 * clamp(aspect0, 1, 2.4)), 400, { ...rtOpts, ...byte });
 
     const v2 = () => new THREE.Vector2();
     const pDown = fullscreenPass(THREE, { fragmentShader: SH.DOWN_FRAG, uniforms: { tSrc: { value: null }, uTexel: { value: v2() }, uCoded: { value: 0 } } });
@@ -215,7 +218,7 @@ export default {
       fragmentShader: SH.ARRIVE_FRAG,
       uniforms: {
         tGrow: { value: rtGrow.texture }, tTo: { value: texBlack }, uK: { value: 0 }, uAspect: { value: 1 }, uIslT: { value: 1.27 }, uOut: { value: 1 }, uHasTo: { value: 0 },
-        uTexel: { value: v2() }, uInk: { value: V3(rgb(ink)) }, uAccent: { value: V3(accRgb) }, uWhite: { value: new THREE.Vector3(1, 1, 1) }, uIsl: { value: new THREE.Vector4(0.9, 0.4, 0.3, 0.12) },
+        uTexel: { value: v2() }, uInk: { value: V3(ground) }, uEdge: { value: V3(stroke) }, uAccent: { value: V3(accRgb) }, uWhite: { value: new THREE.Vector3(1, 1, 1) }, uIsl: { value: new THREE.Vector4(0.9, 0.4, 0.3, 0.12) },
       },
     });
 
@@ -417,13 +420,15 @@ export default {
     cue(T.plunge0, () => { A.sfx('whoosh', { gain: 0.9 }); A.noise({ filter: 'bandpass', freq: 180, freqEnd: 2600, q: 1.2, dur: 0.85, gain: 0.3, attack: 0.55 }); });
     [0, 0.22, 0.4].forEach((d, i) => cue(T.plunge1 - 0.05 + d, () => A.tone({ freq: [1318, 988, 1760][i], dur: 0.7, gain: 0.05, pan: [-0.5, 0.4, 0][i], attack: 0.02 })));
     cue(T.ignite, () => { A.sfx('zap', { gain: 0.9 }); A.sfx('thud', { gain: 0.8 }); A.tone({ type: 'sawtooth', freq: 110, freqEnd: 330, dur: 0.5, gain: 0.06, attack: 0.02 }); });
+    // Each landing is a note: a minor pentatonic climbing two octaves over the run, however many hops it has.
     const scale = [0, 3, 5, 7, 10];
     for (let j = 1; j <= J; j++) {
-      const f = 392 * Math.pow(2, (scale[j % 5] + 12 * Math.floor(j / 5)) / 12), pan = j & 1 ? 0.45 : -0.45;
+      const n = Math.round((j / J) * 10);
+      const f = 330 * Math.pow(2, (scale[n % 5] + 12 * Math.floor(n / 5)) / 12), pan = j & 1 ? 0.45 : -0.45;
       cue(st[j].land, () => {
         A.tone({ type: 'triangle', freq: f, dur: 0.18, gain: 0.15, pan, attack: 0.002 });
         A.noise({ filter: 'highpass', freq: 5200, dur: 0.035, gain: 0.14, attack: 0.001, pan });
-        if (st[j].kind === 'soma') A.sfx('chime', { gain: 0.5, pitch: 0.5 + 0.12 * j });
+        if (st[j].kind === 'soma') A.sfx('chime', { gain: 0.5, pitch: 0.5 + 0.45 * (j / J) });
         if (st[j].kind === 'terminal') A.sfx('thud', { gain: 0.7 });
       });
     }
@@ -514,6 +519,7 @@ export default {
           if (o) o.dispose();
         }
         renderer.setRenderTarget(null);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
       },
     };
   },

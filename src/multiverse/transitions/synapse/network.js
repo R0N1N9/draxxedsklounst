@@ -147,7 +147,7 @@ export function buildNetwork(THREE, rng, o) {
   const rb = new Ribbons();
   const sm = new Quads({ position: 3, aCorner: 2, aSom: 4, aCol: 3, aLit: 3, aTim: 4 });
   const sp = new Quads({ position: 3, aCorner: 2, aVel: 3, aTim: 4, aCol: 3, aKind: 1 });
-  const P = V(), Tn = V(), Bn = V(), Nn = V(), Q = V();
+  const P = V(), Tn = V(), Bn = V(), Nn = V();
   const sheathCol = rgb(stain.sheath);
   const moteCol = rgb(stain.mote);
 
@@ -353,7 +353,7 @@ export function buildNetwork(THREE, rng, o) {
     const lit = prog > 0.7 && chance(rng, 0.65) ? o.accent : o.sideCols[side++ & 1];
     const tOut = passTime(s), lag = 0.03 + rho2 * 0.006;
     const ord = order(s);
-    neuron(c, rad, { trees: randInt(rng, 4, 6), len: [9, 20], depth: 2, r0: rand(rng, 0.2, 0.34), flare: 2.2, wander: 0.6, col: tissue(), somaCol: somaCol(), lit, fire: fires ? tOut + lag : NEVER, speed: 55, decay: 1.0, sustain: 0.42, order: ord, tile: randInt(rng, 0, 3), mem: rand(rng, 0.3, 0.7), avoid: null });
+    neuron(c, rad, { trees: randInt(rng, 4, 6), len: [9, 20], depth: 2, r0: rand(rng, 0.2, 0.34), flare: 1.4, wander: 0.6, col: tissue(), somaCol: somaCol(), lit, fire: fires ? tOut + lag : NEVER, speed: 55, decay: 1.0, sustain: 0.42, order: ord, tile: randInt(rng, 0, 3), mem: rand(rng, 0.3, 0.7), avoid: null });
     if (fires) {
       // The collateral: a sagging thread from the axon to the cell.
       const bend = unit(rng), pts = [], n = 26;
@@ -391,12 +391,7 @@ export function buildNetwork(THREE, rng, o) {
     sp.add({ position: [P.x + Bn.x * dx + Nn.x * dy, P.y + Bn.y * dx + Nn.y * dy, P.z + Bn.z * dx + Nn.z * dy], aVel: [rand(rng, 0.3, 1.2), rand(rng, 0.3, 1.2), rand(rng, 0.3, 1.2)], aTim: [0, 1, rand(rng, 0.045, 0.15), rng()], aCol: mul(moteCol, rand(rng, 0.25, 1.0)), aKind: [0] });
   }
 
-  return {
-    route, L, stations, hops: J, relays, pulseS, camS, passTime, cleftS,
-    ribbons: rb.build(THREE), somas: sm.build(THREE), sprites: sp.build(THREE),
-    // Q is scratch for callers that only need a point back.
-    point: (s) => route.at(s, Q),
-  };
+  return { route, L, stations, hops: J, relays, pulseS, camS, passTime, cleftS, ribbons: rb.build(THREE), somas: sm.build(THREE), sprites: sp.build(THREE) };
 }
 
 /**

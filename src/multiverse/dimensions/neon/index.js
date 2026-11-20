@@ -79,7 +79,7 @@ export default {
       vis: 1,                                  // how visible the enemy is to the local player
       ghost: { on: false, x: 0, y: 0, a: 0, t: 0 }, // where they were last seen
       seeing: true,
-      pulse: { flash: 0, soon: 0, n: 0 },
+      pulse: { flash: 0, soon: 0, age: 0 },      // the four-bar reveal: its flash, its count-in, seconds since
       painted: 0,                              // an enemy laser is on the local player
       lock: false,                             // the local laser is on the enemy
       introT: -1, liveT: 0,
@@ -491,6 +491,7 @@ export default {
         if (live && !ctx.sudden) {
           const n = Math.floor(time / PULSE_EVERY), since = time - n * PULSE_EVERY;
           pu.flash = n >= 1 ? Math.exp(-since * 3) : 0;
+          pu.age = since;
           pu.soon = clamp((since - (PULSE_EVERY - 4 * BEAT)) / (4 * BEAT), 0, 1);
           const beat = pu.soon > 0 ? Math.floor(pu.soon * 4) : -1;
           if (beat !== countN) { countN = beat; if (beat >= 0) sound.count(beat); }

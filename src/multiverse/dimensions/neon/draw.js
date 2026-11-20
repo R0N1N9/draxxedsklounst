@@ -2,8 +2,9 @@
 // the dark may hide go down first, then the shadow volumes, then every source of light
 // (cover, tiles, lasers, rails, the local sniper) on top of the dark.
 import { TAU, clamp, clamp01, lerp, makeCanvas, makeRng, hashSeed, hexToRgb, ease, angDiff } from '../../kit.js';
-import { W, H, R, MID, GANTRY, CH_TOP, CH_BOT, BEAT, PULSE_EVERY, SPAWNS, SHUTTER, DRONE, RELOAD, BEAM_FADE } from './world.js';
+import { W, H, R, MID, GANTRY, CH_TOP, CH_BOT, BEAT, PULSE_EVERY, SPAWNS, BEAM_FADE } from './world.js';
 import { makeActors } from './actors.js';
+import { makeProps } from './props.js';
 import { MARGIN, bakeFloor, bakeHalo } from './floor.js';
 import { INK, VIOLET, EDGE, PINK, HOT, HAZARD, font } from './style.js';
 
@@ -72,11 +73,6 @@ export function makeRenderer(ctx, world, S) {
 
   // ---- decoration with a life of its own (cosmetic: seeded so it is stable, not synced) ----
   const rnd = makeRng(hashSeed(ctx.seed, 'neon-decor'));
-  const watchers = [];
-  for (const [x, y] of [[40, 870], [98, 858], [46, 796], [152, 882], [28, 738], [30, 30], [78, 24], [-34, 300], [-34, 540], [240, -30], [520, H + 32]]) {
-    for (const m of [0, 1]) watchers.push({ x: m ? W - x : x, y, a: m ? Math.PI : 0, ph: rnd() * TAU, size: 7 + rnd() * 4, cue: rnd() });
-  }
-  watchers.push({ x: MID.x, y: H + 34, a: -Math.PI / 2, ph: rnd() * TAU, size: 10, cue: rnd() });
   const couriers = [];
   for (let i = 0; i < 9; i++) couriers.push({ v: rnd() < 0.5, at: (1 + Math.floor(rnd() * (i % 2 ? 8 : 15))) * 100, speed: (90 + rnd() * 160) * (rnd() < 0.5 ? -1 : 1), off: rnd() * 2000, pink: rnd() < 0.4 });
   const motes = [];
@@ -243,7 +239,8 @@ export function makeRenderer(ctx, world, S) {
     return out;
   }
 
-  const A = makeActors({ ctx, g, S, world, view, cols, glow, line, neon, label, toScreen });
+  const A = makeActors({ ctx, g, S, world, view, cols, glow, line, label, toScreen });
+  const props = makeProps({ ctx, g, S, world, view, rnd, glow, line, neon, label });
 
   // Grid lines lit inside a ring: how the lattice carries a beat, a shot, a shockwave.
   function latticeRing(x, y, r, band, col, alpha) {
@@ -368,11 +365,17 @@ export function makeRenderer(ctx, world, S) {
     }
 
     // ---- architecture: light, so it shows in the dark ----
-    drawWatchers(px);
+    props.watchers(px);
     g.fillStyle = '#0a0826';
     g.fill(gantryPath);
     drawGantry(px, beat);
     neon(outlinePath, EDGE, wide * 1.1, 1, 1 + 0.9 * thump); // every tube in the room keeps time
+    if (S.pulse.soon > 0) { // the pulse is coming: light runs down both sides of the rim and meets at the bottom
+      g.setLineDash([rimLen * S.pulse.soon, rimLen * 2]);
+      neon(rimR, PINK, wide * 1.7, 0.95);
+      neon(rimL, PINK, wide * 1.7, 0.95);
+      g.setLineDash([]);
+    }
     if (cover > 0.01) {
       const flick = st.dissolve > 0 ? 0.55 + 0.45 * Math.sin(t * 70) : 1; // sudden death: the cover gutters out
       g.globalAlpha = cover;
@@ -393,9 +396,10 @@ export function makeRenderer(ctx, world, S) {
       g.globalAlpha = cover * 0.9;
       g.fill(nodesPath);
       g.globalAlpha = 1;
-      drawMachines(px, wide, cover * flick);
+      props.machines(px, wide, cover * flick);
     }
     if (st.crushK >= 0) drawCrush(wide, t);
+    props.inspector(px);
 
     // ---- light on the floor: tiles, rings, scars ----
     g.globalCompositeOperation = 'lighter';
@@ -539,6 +543,14 @@ export function makeRenderer(ctx, world, S) {
       g.globalCompositeOperation = 'source-over';
     }
 
+    // ---- the four-bar pulse: a white wave through every line of the lattice ----
+    if (S.pulse.flash > 0.03) {
+      g.save();
+      g.clip(outlinePath);
+      latticeRing(MID.x, MID.y, 60 + S.pulse.age * 2600, 220, HOT, Math.min(1, S.pulse.flash * 1.3));
+      g.restore();
+    }
+
     // ---- what is always seen: the local sniper and what belongs to it ----
     A.shown(wide);
     g.restore();
@@ -583,59 +595,6 @@ export function makeRenderer(ctx, world, S) {
     g.globalAlpha = 1;
   }
 
-  // Shutters on their rails, and the floor polisher doing its rounds whatever happens.
-  function drawMachines(px, wide, alpha) {
-    for (const s of world.shutters) {
-      const x = s.x - SHUTTER.thick / 2, y = s.y - SHUTTER.len / 2;
-      g.fillStyle = 'rgba(255,79,176,0.2)';
-      g.globalAlpha = alpha;
-      g.fillRect(x, y, SHUTTER.thick, SHUTTER.len);
-      g.beginPath();
-      g.rect(x, y, SHUTTER.thick, SHUTTER.len);
-      neon(null, PINK, wide, alpha);
-      g.strokeStyle = HOT;
-      g.globalAlpha = alpha * 0.7;
-      g.lineWidth = Math.max(1, px);
-      for (let i = -2; i <= 2; i++) line(s.x - 4, s.y + i * 24 + 4, s.x + 4, s.y + i * 24 - 4);
-      g.globalAlpha = 1;
-    }
-    const d = world.drone, hs = DRONE.size / 2, mad = S.droneHit > 0;
-    // The strip it has just polished.
-    const back = d.x - (MID.x + DRONE.amp * Math.sin(((ctx.time - 1.6) / DRONE.period) * TAU));
-    g.globalCompositeOperation = 'lighter';
-    g.strokeStyle = PINK;
-    g.globalAlpha = 0.1 * alpha;
-    g.lineWidth = DRONE.size - 6;
-    g.lineCap = 'butt';
-    line(d.x, d.y, d.x - back, d.y);
-    g.globalCompositeOperation = 'source-over';
-    g.save();
-    g.translate(d.x, d.y);
-    if (mad) g.translate(Math.sin(S.t * 90) * 2, 0);
-    g.fillStyle = INK;
-    g.globalAlpha = alpha;
-    g.fillRect(-hs, -hs, DRONE.size, DRONE.size);
-    g.beginPath();
-    g.rect(-hs, -hs, DRONE.size, DRONE.size);
-    neon(null, mad ? HAZARD : PINK, wide * 0.9, alpha);
-    g.strokeStyle = HOT;
-    g.globalAlpha = alpha * 0.8;
-    g.lineWidth = Math.max(1.2, px);
-    const spin = S.t * 7;
-    g.beginPath();
-    g.arc(0, 0, hs * 0.55, spin, spin + 1.9);
-    g.stroke();
-    g.beginPath();
-    g.arc(0, 0, hs * 0.55, spin + Math.PI, spin + Math.PI + 1.9);
-    g.stroke();
-    g.globalAlpha = alpha * (Math.sin(S.t * 5) > 0.2 ? 1 : 0.25);
-    g.fillStyle = mad ? HAZARD : HOT;
-    g.fillRect(hs - 7, -hs + 3, 4, 4);
-    g.restore();
-    label(mad ? '!!' : 'MOP-3', d.x, d.y - hs - 11, 8, mad ? HAZARD : PINK, alpha * (view.k > 0.5 ? 0.8 : 0), 'center');
-    g.globalAlpha = 1;
-  }
-
   // Sudden death: the walls close in, and what is outside them is gone.
   function drawCrush(wide, t) {
     const f = world.state.safe;
@@ -656,41 +615,6 @@ export function makeRenderer(ctx, world, S) {
     g.rect(f.x0, f.y0, f.x1 - f.x0, f.y1 - f.y0);
     neon(null, HAZARD, wide * 1.2, 0.8 + 0.2 * Math.sin(t * 12));
     g.restore();
-  }
-
-  // Watcher drones crowd the glass: they follow the shooting, and their cameras flash on a kill.
-  function drawWatchers(px) {
-    const wt = S.watch, t = S.t;
-    for (let i = 0; i < watchers.length; i++) {
-      const o = watchers[i];
-      const y = o.y + Math.sin(t * 1.1 + o.ph) * 4, x = o.x + Math.cos(t * 0.7 + o.ph) * 3;
-      o.a += angDiff(o.a, Math.atan2(wt.y - y, wt.x - x)) * 0.07;
-      const s = o.size * (1 + 0.35 * wt.jolt * (0.5 + o.cue));
-      const c = Math.cos(o.a), sn = Math.sin(o.a);
-      g.strokeStyle = EDGE;
-      g.globalAlpha = 0.6;
-      g.lineWidth = Math.max(1.2, px);
-      g.lineJoin = 'round';
-      g.beginPath();
-      g.moveTo(x + c * s * 1.3, y + sn * s * 1.3);
-      g.lineTo(x - c * s * 0.8 - sn * s * 0.85, y - sn * s * 0.8 + c * s * 0.85);
-      g.lineTo(x - c * s * 0.35, y - sn * s * 0.35);
-      g.lineTo(x - c * s * 0.8 + sn * s * 0.85, y - sn * s * 0.8 - c * s * 0.85);
-      g.closePath();
-      g.stroke();
-      g.fillStyle = HOT;
-      g.globalAlpha = 0.85;
-      g.fillRect(x + c * s * 0.45 - 1.2, y + sn * s * 0.45 - 1.2, 2.4, 2.4);
-      if (S.kill) { // flashbulbs
-        const dt = S.kill.t - o.cue * 0.55;
-        if (dt > 0 && dt < 0.25) {
-          g.globalCompositeOperation = 'lighter';
-          glow(x + c * s, y + sn * s, 46, HOT, 1 - dt / 0.25);
-          g.globalCompositeOperation = 'source-over';
-        }
-      }
-    }
-    g.globalAlpha = 1;
   }
 
   return {
