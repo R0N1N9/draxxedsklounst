@@ -38,7 +38,7 @@ and five transitions.
 | valley | world (the original game; always opens the match) | in matches |
 | neon, ww2, pixel, terminal, manga, toon, toybox, surf | worlds | in matches |
 | comic | world | built, stopped early, never fully tested; second-engineer pass in progress when work paused |
-| abyss | world (underwater; the owner's showpiece) | first build in progress when work paused |
+| abyss | world (underwater; the owner's showpiece) | first build done (report in `reports/`); needs its second-engineer pass, then a top-tier polish pass |
 | paper | world (flat-drawn first person) | first build done (report in `reports/`); second-engineer pass not started |
 | plunge | linking transition, surf → abyss | brief only; build once both worlds are finished |
 | snow, orbit, heli, worm, arcade, noir, tapestry, petri | worlds | brief only |

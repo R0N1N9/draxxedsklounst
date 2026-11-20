@@ -4,14 +4,16 @@
 // bubble trail of a spear back to whoever fired it, and a sonar ping. A decoy fools it at
 // range like it fools you; its own sonar shows it the truth.
 //
-// Its plan: open from the spawn, scanning; ping when it knows nothing; work from post to
-// post (preferring cover) towards where it last had you, holding a range that shrinks as
-// the round goes on; when it sees you, stop, hold its breath for the long shot, lead you,
-// hold over for the drop, and fire once the aim has settled; then move while it reloads.
-// It kicks out of the way of a spear it sees coming. Skill scales notice time, settle
-// time, aim and lead error, patience and how often it uses its tools.
+// It fights the way a spearfisher would hunt: from range. Each round it has a temperament
+// (a patient sniper who holds 45-55 m, or a stalker who works in to 25-30 m through the
+// kelp, the arches and the wreck), and the range it is happy with shrinks only slowly as
+// the round wears on. It opens by taking cover, holds a post with a sightline, holds its
+// breath, leads and holds over, fires — and then moves while it reloads, because its spear
+// just drew a line of bubbles back to it. It does not swim into your mask: under ~14 m it
+// backs off unless sudden death has closed the ring. Skill scales notice time, aim error,
+// lead, patience and how often it uses its tools.
 import { clamp, lerp, angDiff, gauss } from '../../kit.js';
-import { rayWorld, kelpAlong, heightAt, ARENA } from './world.js';
+import { rayWorld, kelpAlong, heightAt, ARENA, SPAWN } from './world.js';
 
 export function makeBot(ctx, W, G) {
   const skill = clamp(ctx.botSkill, 0, 1);
@@ -20,9 +22,12 @@ export function makeBot(ctx, W, G) {
   function create(p) {
     return {
       p, know: null, // { x, y, z, vx, vy, vz, t (when), seen (bool), decoy }
-      seenT: 0, settle: 0, notice: 0, err: { y: 0, p: 0 }, post: null, replan: 1 + Math.random() * 2,
-      opening: 1 + Math.random() * 2 * (1 - skill), lastSeen: -99, dodge: 0, dodgeX: 0, dodgeY: 0, dodgeZ: 0, hold: false,
-      wantDecoy: 0, strafe: Math.random() < 0.5 ? -1 : 1, strafeT: 2, prevEx: 0, prevEy: 0, prevEz: 0, estV: [0, 0, 0],
+      seenT: 0, settle: 0, notice: 0, err: { y: 0, p: 0 }, post: null, replan: 0,
+      // temperament: 0 sniper .. 1 stalker, and when it allows itself the first shot
+      style: Math.random(), firstShot: 4.5 + Math.random() * 3.5,
+      lastSeen: -99, dodge: 0, dodgeX: 0, dodgeY: 0, dodgeZ: 0,
+      moveT: 0, firedAt: { x: 0, y: 0, z: 0 }, drift: Math.random() * 6.28,
+      resid: { y: gauss(Math.random) * lerp(0.011, 0.0035, skill), p: gauss(Math.random) * lerp(0.008, 0.0025, skill) },
     };
   }
 
@@ -39,6 +44,12 @@ export function makeBot(ctx, W, G) {
     const kelp = kelpAlong(W, ax, ay, az, x, y, z), ink = G.inkAlong(ax, ay, az, x, y, z);
     const v = (1 - d / range) * 1.6 - kelp - ink * 2;
     return clamp(v, 0, 1);
+  }
+  // a clear line between two points through rock and kelp (for choosing a post)
+  function clearLine(ax, ay, az, bx, by, bz) {
+    const dx = bx - ax, dy = by - ay, dz = bz - az, d = Math.hypot(dx, dy, dz) || 1;
+    if (rayWorld(W, ax, ay, az, dx / d, dy / d, dz / d, d - 1) < d - 1.1) return false;
+    return kelpAlong(W, ax, ay, az, bx, by, bz) < 0.5;
   }
 
   function setKnow(b, x, y, z, vx, vy, vz, seen, decoy) {
@@ -97,15 +108,39 @@ export function makeBot(ctx, W, G) {
   }
   const sol = { yaw: 0, pitch: 0, t: 0 };
 
-  function pickPost(b, tx, ty, tz) {
-    const p = b.p, T = G.time();
-    const want = lerp(30, 10, clamp(T / 22, 0, 1)) - skill * 4;
+  // The range this diver wants to fight at: its temperament, closing slowly as the round
+  // goes on; in sudden death the ring decides.
+  function wantRange(b, T) {
+    if (ctx.sudden) return 9;
+    return Math.max(17, lerp(52, 30, b.style) - clamp(T / 75, 0, 1) * 16 - skill * 3);
+  }
+
+  // A post to hold or move to. `sightline`: it wants to see (tx,ty,tz) from there (sniping);
+  // otherwise it wants to get there unseen (stalking, or moving off after a shot).
+  function pickPost(b, tx, ty, tz, want, sightline) {
+    const p = b.p, f = b.firedAt, moving = b.moveT > 0;
     let best = null, bestS = -1e9;
+    const cand = [];
     for (const q of W.posts) {
-      const dMe = Math.hypot(q.x - p.x, q.z - p.z);
-      if (dMe > 26 || dMe < 4) continue;
+      const dMe = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z);
+      if (dMe > 24 || dMe < 3.5) continue;
       const dT = Math.hypot(q.x - tx, q.y - ty, q.z - tz);
-      const s = -Math.abs(dT - want) * 1.1 + q.cover * (1.2 + skill) - dMe * 0.15 + Math.random() * 4 + (G.inCage(q.x, q.z) ? 0 : -60);
+      let s = -Math.abs(dT - want) * 0.9 + q.cover * (sightline ? 0.7 + skill * 0.6 : 1.4 + skill) - dMe * 0.12 + Math.random() * 3;
+      if (dT < 13 && !ctx.sudden) s -= (13 - dT) * 4; // never swim into their mask
+      if (!G.inCage(q.x, q.z)) s -= 60;
+      if (moving) s -= Math.max(0, 7 - Math.hypot(q.x - f.x, q.y - f.y, q.z - f.z)) * 2.5; // off the line its spear drew
+      cand.push(q, s);
+    }
+    // the best few, judged on what they can see
+    for (let n = 0; n < 6 && cand.length; n++) {
+      let bi = -1;
+      for (let i = 1; i < cand.length; i += 2) if (bi < 0 || cand[i] > cand[bi]) bi = i;
+      const q = cand[bi - 1];
+      let s = cand[bi];
+      cand.splice(bi - 1, 2);
+      const see = clearLine(q.x, q.y + 0.3, q.z, tx, ty, tz);
+      if (sightline) s += see ? 9 : -4;
+      else s += see ? -3 : 2;
       if (s > bestS) { bestS = s; best = q; }
     }
     return best;
@@ -118,13 +153,15 @@ export function makeBot(ctx, W, G) {
     b.notice = lerp(1.0, 0.3, skill);
     perceive(b, e, dt);
     const k = b.know, fresh = k && T - k.t < 1.2 && k.seen;
-    // the opening: hold near the spawn and look down the reef
-    let tx = -p.x * 0, ty = p.y, tz = -p.z;
-    if (k) { tx = k.x; ty = k.y; tz = k.z; }
+    // where it thinks you are: what it knows, or your spawn
+    const home = SPAWN[1 - p.i];
+    const tx = k ? k.x : home.x, ty = k ? k.y : home.y, tz = k ? k.z : home.z;
+    const dist = Math.hypot(tx - p.x, ty - p.y, tz - p.z);
+    const want = wantRange(b, T);
     // sonar when it knows nothing for long enough
-    if (p.pingCd <= 0 && (!k || T - k.t > lerp(9, 4, skill)) && T > b.opening * 0.5 && Math.random() < dt * (0.4 + skill)) cmd.a1 = true;
-    // a decoy when it is about to cross open water, now and then
-    if (p.decoyCd <= 0 && T > 6 && Math.random() < dt * 0.05 * (0.3 + skill)) cmd.a2 = true;
+    if (p.pingCd <= 0 && (!k || T - k.t > lerp(9, 4, skill)) && T > 3 && Math.random() < dt * (0.4 + skill)) cmd.a1 = true;
+    // a decoy before it moves off, now and then
+    if (p.decoyCd <= 0 && T > 6 && b.moveT > 0 && Math.random() < dt * 0.5 * (0.3 + skill)) cmd.a2 = true;
 
     // dodge: a spear it can see heading its way
     const threat = G.incoming(p);
@@ -134,33 +171,41 @@ export function makeBot(ctx, W, G) {
       const sx = threat.vz, sz = -threat.vx, sl = Math.hypot(sx, sz) || 1, side = Math.random() < 0.5 ? -1 : 1;
       b.dodgeX = (sx / sl) * side; b.dodgeZ = (sz / sl) * side; b.dodgeY = 0.4;
       cmd.jump = skill > 0.4;
+      b.replan = Math.min(b.replan, 0.8);
     }
     b.dodge -= dt;
+    b.moveT -= dt;
 
-    // move
+    // what to do: engage what it sees at a range it likes, or move (to a post with a
+    // sightline, closing through cover, or off the line of its last shot)
+    const tooClose = fresh && dist < 14 && !ctx.sudden;
+    const engage = fresh && e.alive && b.moveT <= 0 && !tooClose;
     b.replan -= dt;
     if (!b.post || b.replan <= 0 || Math.hypot(b.post.x - p.x, b.post.y - p.y, b.post.z - p.z) < 2) {
-      b.replan = lerp(6, 3, skill) + Math.random() * 2;
-      if (T > b.opening) b.post = pickPost(b, tx, ty, tz);
+      b.replan = lerp(6, 3.5, skill) + Math.random() * 2;
+      // it holds a sightline when the range is right (or it is a sniper and has waited);
+      // otherwise it works in through cover
+      const sightline = b.moveT <= 0 && (dist < want + 10 || (b.style < 0.5 && T > 12));
+      b.post = pickPost(b, tx, ty, tz, tooClose ? want + 6 : want, sightline);
     }
     let wx = 0, wy = 0, wz = 0;
-    const engaging = fresh && e.alive && (k.decoy < 0 ? true : true);
     if (b.dodge > 0) { wx = b.dodgeX; wy = b.dodgeY; wz = b.dodgeZ; }
-    else if (b.post && !(engaging && b.settle > 0.15)) {
+    else if (b.post && !(engage && b.settle > 0.15)) {
       wx = b.post.x - p.x; wy = b.post.y - p.y; wz = b.post.z - p.z;
       const l = Math.hypot(wx, wy, wz) || 1;
-      wx /= l; wy /= l; wz /= l;
+      // ease in at the post: hover, do not overshoot
+      const sp = clamp(l / 3, 0.25, 1);
+      wx = (wx / l) * sp; wy = (wy / l) * sp; wz = (wz / l) * sp;
       // over obstacles rather than into them
       const ex = G.eye(p, tmp);
       if (rayWorld(W, ex.x, ex.y, ex.z, wx, wy, wz, 4) < 3.5) wy += 0.9;
       if (heightAt(p.x + wx * 2, p.z + wz * 2) > p.y - 1.6) wy += 0.7;
-    } else if (engaging) {
-      // side-step while reloading
-      b.strafeT -= dt;
-      if (b.strafeT <= 0) { b.strafeT = 1.2 + Math.random() * 2; b.strafe *= -1; }
+    } else if (engage) {
+      // holding a post: a slow drift so it is never a still target, more while reloading
+      b.drift += dt * 0.7;
       const dx = tx - p.x, dz = tz - p.z, l = Math.hypot(dx, dz) || 1;
-      const k2 = p.loaded ? 0.15 : 0.7;
-      wx = (dz / l) * b.strafe * k2; wz = (-dx / l) * b.strafe * k2;
+      const k2 = (p.loaded ? 0.12 : 0.45) * Math.sin(b.drift);
+      wx = (dz / l) * k2; wz = (-dx / l) * k2; wy = 0.12 * Math.cos(b.drift * 0.7);
     }
     // stay out of the kraken's arms
     const kp = G.krakenNear(p);
@@ -174,7 +219,7 @@ export function makeBot(ctx, W, G) {
     if (fresh && e.alive) {
       const vx = k.decoy >= 0 ? k.vx : e.vx, vy = k.decoy >= 0 ? k.vy : e.vy, vz = k.decoy >= 0 ? k.vz : e.vz; // (it reads your motion while it sees you)
       solve(p, k.x, k.y + 0.05, k.z, vx, vy, vz, sol);
-      wantYaw = sol.yaw + b.err.y; wantPitch = sol.pitch + b.err.p;
+      wantYaw = sol.yaw + b.err.y + b.resid.y; wantPitch = sol.pitch + b.err.p + b.resid.p;
       b.settle += dt;
     } else {
       // look where it expects you
@@ -188,23 +233,30 @@ export function makeBot(ctx, W, G) {
     const turn = 1 - Math.exp(-dt * lerp(3, 8, skill));
     cmd.yaw = p.yaw + angDiff(p.yaw, wantYaw) * turn;
     cmd.pitch = clamp(p.pitch + (wantPitch - p.pitch) * turn, -1.3, 1.3);
-    // the error closes as it holds steady on you
+    // the error closes as it holds steady on you — but never quite to nothing
     b.err.y *= Math.exp(-dt * lerp(0.9, 2.2, skill));
     b.err.p *= Math.exp(-dt * lerp(0.9, 2.2, skill));
     // breath: hold it for anything but a close shot
-    const dist = k ? Math.hypot(k.x - p.x, k.y - p.y, k.z - p.z) : 99;
-    const wantHold = fresh && p.loaded && dist > 14 && p.air > 0.2 && b.settle > 0.2;
+    const wantHold = fresh && engage && p.loaded && dist > 14 && p.air > 0.2 && b.settle > 0.2;
     cmd.alt = wantHold;
     // fire when the aim has settled on the solution
     const settled = Math.abs(angDiff(cmd.yaw, wantYaw)) < 0.01 + 0.004 * (1 - skill) && Math.abs(cmd.pitch - wantPitch) < 0.012;
-    const patience = lerp(0.75, 0.35, skill) + (dist > 30 ? lerp(0.5, 0.15, skill) : 0) + (dist > 45 ? lerp(1.3, 0.5, skill) : 0) + (T < 6 ? 0.7 : 0);
-    // no sniping across the whole reef in the first seconds: the round opens as a hunt
-    if (fresh && p.loaded && settled && b.settle > patience && (p.holding || dist < 16 || p.air < 0.2) && (T > 5 || dist < 40)) {
+    const patience = lerp(0.8, 0.4, skill) + (dist > 30 ? lerp(0.6, 0.2, skill) : 0) + (dist > 45 ? lerp(1.2, 0.5, skill) : 0);
+    const close = fresh && dist < 14; // up close it shoots from the hip
+    if (fresh && p.loaded && settled && T > b.firstShot && ((engage && b.settle > patience && (p.holding || p.air < 0.2)) || (close && b.settle > patience * 0.6))) {
       cmd.fire = true;
       b.settle = 0;
       b.err.y = gauss(Math.random) * lerp(0.035, 0.008, skill);
       b.err.p = gauss(Math.random) * lerp(0.025, 0.006, skill);
-      b.replan = Math.min(b.replan, 0.5);
+      // its hands are never perfectly still: a little error that the wait does not remove
+      b.resid.y = gauss(Math.random) * lerp(0.011, 0.0035, skill);
+      b.resid.p = gauss(Math.random) * lerp(0.008, 0.0025, skill);
+      // and then it moves: its spear just drew a line of bubbles back to it
+      if (Math.random() < lerp(0.5, 0.85, skill) || dist < 22) {
+        b.moveT = lerp(1.4, 2.4, Math.random());
+        b.firedAt.x = p.x; b.firedAt.y = p.y; b.firedAt.z = p.z;
+        b.replan = 0;
+      }
     }
     cmd.mx = 0; cmd.my = 0;
     return cmd;

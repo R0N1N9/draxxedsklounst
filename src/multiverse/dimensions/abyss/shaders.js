@@ -79,7 +79,7 @@ float caustics(vec3 p) {
 vec3 lamps(vec3 p, vec3 n) {
   vec3 acc = vec3(0.0);
 #ifdef LEAN
-  for (int i = 0; i < 2; i++) { vec3 l = uLampPos[i] - p; acc += uLampCol[i] * 0.3 / (1.0 + dot(l, l) * 0.08); }
+  for (int i = 0; i < 2; i++) { vec3 l = uLampPos[i] - p; float d2 = dot(l, l); acc += uLampCol[i] * 0.3 * smoothstep(0.3, 2.0, d2) / (1.0 + d2 * 0.08); }
   return acc;
 #endif
   for (int i = 0; i < 2; i++) {
@@ -87,7 +87,8 @@ vec3 lamps(vec3 p, vec3 n) {
     float d = length(l);
     l /= max(d, 1e-3);
     float cone = smoothstep(0.78, 0.95, dot(-l, uLampDir[i]));
-    acc += uLampCol[i] * (cone * 0.85 + 0.15) * max(dot(n, l) * 0.8 + 0.2, 0.0) * exp(-d * 0.06) / (1.0 + d * d * 0.045);
+    // (nothing within arm's reach takes its own lamp's light: no hot spot on the gun in your hands)
+    acc += uLampCol[i] * (cone * 0.85 + 0.15) * max(dot(n, l) * 0.8 + 0.2, 0.0) * exp(-d * 0.06) / (1.0 + d * d * 0.045) * smoothstep(0.5, 1.4, d);
   }
   return acc;
 }

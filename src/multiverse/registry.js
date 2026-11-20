@@ -10,6 +10,8 @@
 // dives after them, and the duel carries on underwater). The world named by `then` is only
 // reached that way while its lead-in is playable; a transition marked `link: true` is only
 // ever played as somebody's `via`, never drawn in the rotation.
+// `opener: true` marks the chained pair the owner wants shown off first: in the first match a
+// device hosts, it is the world that follows the first kill (see Director._armOpener).
 // `dev: true` keeps an entry out of the match rotation (examples / templates).
 // `wip: true` does the same for a module that is still being built: it can be loaded by id
 // (?dim=, ?fxlab=, the lab) but matches do not visit it until the flag is removed.
@@ -22,7 +24,7 @@ export const DIMENSIONS = [
   { id: 'comic', view: 'tp', look: '3d', wip: true, load: () => import('./dimensions/comic/index.js') },
   { id: 'pixel', view: 'side', look: '2d', load: () => import('./dimensions/pixel/index.js') },
   { id: 'ww2', view: 'tp', look: '3d', load: () => import('./dimensions/ww2/index.js') },
-  { id: 'surf', view: 'tp', look: '3d', then: 'abyss', via: 'plunge', load: () => import('./dimensions/surf/index.js') },
+  { id: 'surf', view: 'tp', look: '3d', then: 'abyss', via: 'plunge', opener: true, load: () => import('./dimensions/surf/index.js') },
   { id: 'abyss', view: 'fp', look: '3d', wip: true, load: () => import('./dimensions/abyss/index.js') },
   { id: 'orbit', view: 'side', look: '2d', wip: true, load: () => import('./dimensions/orbit/index.js') },
   { id: 'arcade', view: 'fp', look: '3d', wip: true, load: () => import('./dimensions/arcade/index.js') },
@@ -111,6 +113,11 @@ export function chainOf(id, ok = () => true) {
   if (!to || to.dev || to.wip || !ok(to.id)) return null;
   const fx = TRANSITIONS.find((t) => t.id === e.via);
   return { dim: to.id, fx: fx && !fx.dev && !fx.wip && ok(fx.id) ? fx.id : null };
+}
+// The opener, if it and the world it leads into can both be played.
+export function openerDimension(ok = () => true) {
+  const e = DIMENSIONS.find((d) => d.opener && !d.dev && !d.wip && ok(d.id));
+  return e && chainOf(e.id, ok) ? e.id : null;
 }
 // Worlds that are only reached through their lead-in (while that lead-in can be played).
 export const chainedDimensions = (ok = () => true) =>
