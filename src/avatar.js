@@ -750,6 +750,14 @@ export class Avatar {
     const capBack = cap.clone();
     capBack.rotation.y = Math.PI;
     capBack.children.forEach((c) => { if (c.position.z < -0.09) c.visible = false; });
+    // Snapback opening and strap, now at the forehead.
+    const gap = new THREE.Mesh(new THREE.CircleGeometry(0.03, 12, 0, Math.PI).scale(1.1, 0.9, 1), mat('#26211d'));
+    gap.position.set(0, 0.04, 0.109);
+    capBack.add(gap); // capBack is turned round, so +Z here is the wearer's front
+    const strap = mesh(slab(0.07, 0.012, 0.006, 0.002), P.web);
+    strap.position.set(0, 0.046, 0.11);
+    capBack.add(strap);
+    capBack.children[1].rotation.x = -0.22; // bill rides a little higher at the back
     head.add(capBack);
     this.hats.capback = capBack;
     const beanie = new THREE.Group();
