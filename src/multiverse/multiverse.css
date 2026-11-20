@@ -108,3 +108,5 @@
 .lab-list button { padding: 8px 8px; font-size: 12px; letter-spacing: 0.08em; text-align: left; }
 .lab-list button small { display: block; font: 400 9px var(--mono); letter-spacing: 0.12em; opacity: 0.6; margin-top: 2px; }
 .lab-head { margin: 8px 0 2px; font: 600 10px var(--mono); letter-spacing: 0.24em; color: var(--amber); }
+#mv-lab-exit { position: fixed; z-index: 19; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); padding: 6px 10px; font: 600 10px var(--mono);
+  letter-spacing: 0.2em; color: #e8e6f0; background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(232, 230, 240, 0.3); cursor: pointer; }

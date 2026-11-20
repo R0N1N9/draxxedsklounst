@@ -17,6 +17,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="src/multiverse/multiverse.css" />
+  <link rel="stylesheet" href="src/multiverse/input.css" />
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
   </script>
@@ -31,13 +33,17 @@
     <div class="menu-grid">
     <div class="menu-card">
       <div class="brand">
-        <div class="kicker"><span>// TACTICAL DUEL</span><span>v1.0</span></div>
+        <div class="kicker"><span id="brand-kicker">// MULTIVERSE DUEL</span><span>v2.0</span></div>
         <h1>DRAXXED<br />SKLOUNST</h1>
-        <p class="tag">One valley. Two rifles. Eight hundred metres.</p>
+        <p class="tag" id="brand-tag">Two rifles. One clean shot. Every dimension.</p>
       </div>
 
       <label class="field callsign"><span>Callsign</span><input id="in-name" maxlength="14" placeholder="Ghost" autocomplete="off" /></label>
       <div id="panel-main" class="panel on">
+        <div class="mv-mode">
+          <div class="seg" id="mode-seg"><button data-m="multiverse" class="on">Multiverse</button><button data-m="classic">Classic</button></div>
+          <p class="hint small" id="mode-desc"></p>
+        </div>
         <button id="btn-host" class="primary">Host a match</button>
         <button id="btn-join-open">Join with code</button>
         <button id="btn-ai-open">Vs AI</button>
@@ -46,8 +52,11 @@
           <button id="btn-practice" class="ghost">Practice range</button>
           <button id="btn-sandbox" class="ghost">Sandbox</button>
         </div>
+        <button id="btn-lab" class="ghost">Dimension lab</button>
         <details class="settings">
           <summary>Settings</summary>
+          <label class="field"><span>Multiverse · points to win <em>(host picks)</em></span>
+            <select data-setting="mvTarget"><option value="3">First to 3</option><option value="5">First to 5</option><option value="7">First to 7</option><option value="10">First to 10</option></select></label>
           <label class="field"><span>Time of day <em>(host picks)</em></span>
             <select id="in-pal"><option value="dusk">Dusk</option><option value="golden">Golden hour</option></select></label>
           <label class="field"><span>Graphics</span>
@@ -64,7 +73,8 @@
         </details>
         <details class="controls">
           <summary>How to play</summary>
-          <p>You and your friend start on opposite ridgelines, ~800 m apart. One life per round. First to 4 rounds wins.</p>
+          <p><b>Multiverse:</b> the duel starts in Varga Valley. Every time a sniper scores, reality tears and both of you land in a different dimension — new perspective, new map, new tools — until someone reaches the target score. Each dimension shows its own controls as you arrive.</p>
+          <p><b>The valley</b> (and Classic mode): you start on opposite ridgelines, ~800 m apart. One life per round.</p>
           <ul>
             <li><b>Bullets drop and drift.</b> Set your zero (Q/E) to the range, read the wind from flags, smoke and drifting embers, and lead moving targets.</li>
             <li><b>Scope glint</b> gives you away when you're scoped in and pointed at them. 12× glints most, 4× least.</li>
@@ -113,12 +123,21 @@
       </div>
 
       <div id="panel-ai" class="panel">
-        <p class="hint">A full match against an AI sniper: same rounds, uplinks, UAV sweeps and killcams.</p>
+        <p class="hint" id="ai-hint">A full match against an AI sniper: same rounds, uplinks, UAV sweeps and killcams.</p>
         <div class="seg" id="ai-diff">
           <button data-d="easy">Recruit</button><button data-d="normal" class="on">Veteran</button><button data-d="hard">Elite</button>
         </div>
         <p class="hint small" id="ai-desc"></p>
         <button id="btn-ai" class="primary">Deploy</button>
+        <button class="ghost back">Back</button>
+      </div>
+
+      <div id="panel-lab" class="panel">
+        <p class="hint small">Jump straight into any dimension against the AI, or preview a transition.</p>
+        <div class="lab-head">// DIMENSIONS</div>
+        <div class="lab-list" id="lab-dims"></div>
+        <div class="lab-head">// TRANSITIONS</div>
+        <div class="lab-list" id="lab-fx"></div>
         <button class="ghost back">Back</button>
       </div>
 

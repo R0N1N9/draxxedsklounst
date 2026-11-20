@@ -515,7 +515,7 @@ export class Director {
     this.result = { winner: m.winner, victim: m.victim, how: m.how || '' };
     this.history.push({ id: this.mod.id, name: this.mod.name, winner: m.winner });
     this.next = m.next;
-    this._log('point', { round: this.round, winner: m.winner, how: m.how, score: this.score.slice(), next: m.next.dim, fx: m.next.fx });
+    this._log('point', { round: this.round, winner: m.winner, how: m.how, time: Math.round(this.time * 10) / 10, score: this.score.slice(), next: m.next.dim, fx: m.next.fx });
     this.preload = Promise.all([
       m.next.dim === FINALE ? null : loadDimension(m.next.dim).catch((e) => this._error('preload dim', e)),
       m.next.fx && m.next.fx !== 'none' ? loadTransition(m.next.fx).catch((e) => this._error('preload fx', e)) : null,
@@ -877,7 +877,7 @@ export class Director {
         if (!this.frozen) setTimeout(() => !this.frozen && this.begin(), 900);
       },
       // Deterministic frame: restart this leg from the same seeds and step to time t.
-      async renderAt(t) {
+      async renderAt(t, probe) {
         this.frozen = true;
         if (d.fx) {
           if (d.fx.inst) { try { d.fx.inst.dispose(); } catch {} }
@@ -902,13 +902,43 @@ export class Director {
           while (fx.swapping) await new Promise((r) => setTimeout(r, 0));
           d._fxFrame(0);
         }
-        return { ok: d.fx === fx, t: fx.t, swapped: fx.swapped, duration: fx.mod.duration, swapAt: fx.mod.swapAt, errors: d.errors.slice() };
+        const out = { ok: d.fx === fx, t: fx.t, swapped: fx.swapped, duration: fx.mod.duration, swapAt: fx.mod.swapAt, errors: d.errors.slice() };
+        return probe && out.ok ? Object.assign(out, d._probe()) : out;
       },
     };
+    const x = document.createElement('button');
+    x.id = 'mv-lab-exit';
+    x.textContent = '✕ EXIT LAB';
+    x.onclick = () => this.exit();
+    document.body.appendChild(x);
     this.phase = 'intro';
     this.dimPhase = 'intro';
     this.last = performance.now();
     this.raf = requestAnimationFrame(this._frameBound);
     setTimeout(() => !this.lab.frozen && this.lab.begin(), 600);
+  }
+
+  // Measure the overlay for the test tool: how much of the screen it covers, and how far
+  // the composite is from the old / new world. Must run in the same task as the render.
+  _probe() {
+    const pw = 64, ph = 36, st = this.stage, fx = this.fx;
+    const c = (this._probeCanvas ||= Object.assign(document.createElement('canvas'), { width: pw, height: ph }));
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const draw = (...layers) => {
+      g.clearRect(0, 0, pw, ph);
+      for (const l of layers) g.drawImage(l, 0, 0, pw, ph);
+      return g.getImageData(0, 0, pw, ph).data;
+    };
+    const diff = (a, b) => {
+      let sum = 0;
+      for (let i = 0; i < a.length; i += 4) sum += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+      return sum / (pw * ph * 3 * 255);
+    };
+    const over = draw(st.fxGlCanvas, st.fxCanvas);
+    let covered = 0;
+    for (let i = 3; i < over.length; i += 4) if (over[i] >= 250) covered++;
+    const firstDiff = diff(draw(st.fromImage, st.fxGlCanvas, st.fxCanvas), draw(st.fromImage));
+    const lastDiff = fx && fx.swapped ? diff(draw(st.toImage, st.fxGlCanvas, st.fxCanvas), draw(st.toImage)) : 1;
+    return { coverage: covered / (pw * ph), firstDiff, lastDiff };
   }
 }
