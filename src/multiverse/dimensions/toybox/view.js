@@ -74,7 +74,7 @@ export function makeView(ctx, THREE, renderer, o) {
     kick(k) { kick = Math.min(1.2, kick + k); },
     beginIntro() { introT = 0; api.poke(); },
     poke() { skipLeft = 0; },
-    killCam(v) { kc = { v, t: 0, side: v.x < 0 ? 1 : -1, x: v.x, z: v.z }; trauma = Math.min(1, trauma + 0.6); punch = 1; flashA = 0.55; api.poke(); },
+    killCam(v) { kc = { v, t: 0, side: v.x < 0 ? 1 : -1, x: v.x, z: v.z }; trauma = Math.min(1, trauma + 0.6); punch = 1; flashA = 0.3; api.poke(); },
     focus() { const v = kc ? kc.v : P[1 - ctx.me], q = toScreen(v.x, 0.8, v.z, { x: 0, y: 0 }); return { x: clamp(q.x, 0, ctx.width), y: clamp(q.y, 0, ctx.height) }; },
     resize() { post.resize(); },
 
