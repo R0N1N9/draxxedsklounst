@@ -3,7 +3,7 @@
 // offline, the bot's), judges only its own corks, and treats the other sniper as a puppet.
 import { clamp, spring, segRect, pointInRect, segCircle } from '../../kit.js';
 import {
-  GY, FLOOR, W, PW, PH, PHC, SHOULDER, SPAWN, GRAV, RUN, JUMP, CLIMB, SPRING, PIV, PLANK, LIP, ANVIL, TRAIN, WEED, CRATE,
+  FLOOR, W, PW, PH, PHC, SHOULDER, RUN, JUMP, CLIMB, SPRING, PIV, PLANK, ANVIL, WEED, CRATE,
   moveBody, plankY, onPlank, ladderTop, anvilState, trainState, weedState, birdState, refresh, shotParams,
 } from './world.js';
 import { GUN } from './figures.js';
@@ -447,7 +447,7 @@ export function makeSim(ctx, w, S, sound, fx) {
     p.flash = Math.max(0, p.flash - dt);
     p.rt = Math.max(0, p.rt - dt);
     p.reload = p.rmax > 0 ? p.rt / p.rmax : 0;
-    p.sq.x = p.sq.x; spring(p.sq, 0, 330, 14, dt);
+    spring(p.sq, 0, 330, 14, dt);
     p.a1msgT -= dt; p.scare = Math.max(0, p.scare - dt);
     if (!r || !p.alive || !Number.isFinite(r.x) || !Number.isFinite(r.y) || !Number.isFinite(r.a)) return;
     if (dt > 0) { p.vx += ((r.x - p.x) / dt - p.vx) * Math.min(1, dt * 10); p.vy += ((r.y - p.y) / dt - p.vy) * Math.min(1, dt * 10); }

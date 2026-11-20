@@ -16,7 +16,7 @@ export function makeView(ctx, THREE, renderer, o) {
   const L = { tx: 0, tz: 0, cx: 1, cy: 1, s: 20, phi: 0.7, psi: 0, sp: 0, cp: 1, sy: 0, cyw: 1 };
   const fitted = { s: 20, phi: 0.7, cx: 1, cy: 1 };
   let wt = 0, introT = -1, kc = null, trauma = 0, kick = 0, punch = 0, flashA = 0;
-  let fresh = false, frames = 0, tPrev = 0, worst = 0, worstPrev = 0, skipLeft = 0;
+  let fresh = false, frames = 0, tPrev = 0, worst = 0, worstPrev = 0, skipLeft = 0, held = null;
   const api = { camera, L, force: 0, wt: 0, pxPerUnit: 20 };
 
   // How big and how steep: fill the width with the rug, then tilt until it fills the height too.
@@ -74,7 +74,7 @@ export function makeView(ctx, THREE, renderer, o) {
     kick(k) { kick = Math.min(1.2, kick + k); },
     beginIntro() { introT = 0; api.poke(); },
     poke() { skipLeft = 0; },
-    killCam(v) { kc = { v, t: 0, side: v.x < 0 ? 1 : -1, x: v.x, z: v.z }; trauma = Math.min(1, trauma + 0.6); punch = 1; flashA = 0.55; api.poke(); },
+    killCam(v) { kc = { v, t: 0, side: v.x < 0 ? 1 : -1, x: v.x, z: v.z }; trauma = Math.min(1, trauma + 0.6); punch = 1; flashA = 0.3; api.poke(); },
     focus() { const v = kc ? kc.v : P[1 - ctx.me], q = toScreen(v.x, 0.8, v.z, { x: 0, y: 0 }); return { x: clamp(q.x, 0, ctx.width), y: clamp(q.y, 0, ctx.height) }; },
     resize() { post.resize(); },
 
@@ -136,19 +136,23 @@ export function makeView(ctx, THREE, renderer, o) {
       else if (++frames > 3 && skipLeft > 0) { skipLeft--; draw = false; }
       if (api.log) api.log.push(Math.round(now) * (draw ? 1 : -1));
       S.w = ctx.width; S.h = ctx.height;
-      drawOverlay(ctx.g, S);
+      // Words stay stuck to the picture they were written for: between real draws, the labels of the last one.
+      drawOverlay(ctx.g, draw || !held ? S : held);
       if (!draw) return;
       const cost = Q.rich ? Math.min(worst, worstPrev || worst) : worst; // one hitch is not a slow machine
       worstPrev = worst;
       worst = 0;
       skipLeft = cost < 70 ? 0 : cost < 130 ? 1 : Math.min(120, Math.round(cost / 9));
       api.cost = cost; api.drawn = (api.drawn || 0) + 1;
+      held = skipLeft > 0 ? JSON.parse(JSON.stringify(S)) : null;
       post.render(room.scene, camera);
       renderer.setRenderTarget(null);
     },
   });
   // (test scripts) how long n real draws take, GPU work included
   api.bench = (n = 3) => { const gl = renderer.getContext(), t0 = performance.now(); const px = new Uint8Array(4); for (let i = 0; i < n; i++) { if (Q.nopost) { renderer.setRenderTarget(null); renderer.render(room.scene, camera); } else post.render(room.scene, camera); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); } renderer.setRenderTarget(null); return (performance.now() - t0) / n; };
-  fit();
+  // The lens must be valid before the first input is read through it.
+  api.update(0, false);
+  fresh = false;
   return api;
 }

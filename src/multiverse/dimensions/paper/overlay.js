@@ -405,7 +405,9 @@ export function makeOverlay(ctx) {
       const left = Math.max(S.safeL, 0), right = Math.max(S.safeR, 0);
       const mid = (left + (w - right)) / 2;
       const bottom = h - 12 - (S.safeB > 0 && w - left - right < 300 ? S.safeB * 0.6 : 0);
-      ammoTag(Math.max(mid, 110), bottom);
+      // the shared ability chips sit bottom-right on desktop: slide the ammo tag left rather than lie under them
+      const tagW = (26 + S.mag * 24 + 52) * (h < 480 ? 0.8 : 1), chipsL = S.device === 'touch' ? w - right : w - 510;
+      ammoTag(Math.max(left + tagW / 2 + 8, Math.min(Math.max(mid, 110), chipsL - tagW / 2 - 14)), bottom);
       const py = bottom - (h < 480 ? 42 : 50), span = w - left - right - 16;
       prompt(Math.max(mid, 140), py, span);
       prompt(Math.max(mid, 140), py - (h < 480 ? 34 : 46), span, S.spot, S.spotKey, true);

@@ -36,7 +36,7 @@ void main() {
   float y = d.y, sd = max(dot(d, uSunDir), 0.0), saz = max(dot(normalize(d.xz), normalize(uSunDir.xz)), 0.0);
   vec3 col = mix(hazeColor(d, uSunDir), mix(vec3(0.085, 0.12, 0.3), vec3(0.6, 0.27, 0.22), saz * saz), smoothstep(0.0, 0.22, y));
   // opposite the sun: the blue-grey shadow of the earth on the horizon, and the rose belt above it
-  col = mix(col, vec3(0.5, 0.27, 0.33), smoothstep(0.005, 0.07, y) * (1.0 - smoothstep(0.07, 0.24, y)) * (1.0 - saz) * 0.8);
+  col = mix(col, vec3(0.43, 0.27, 0.34), smoothstep(0.005, 0.07, y) * (1.0 - smoothstep(0.07, 0.24, y)) * (1.0 - saz) * 0.65);
   col = mix(col, vec3(0.014, 0.06, 0.17), smoothstep(0.1, 0.8, y));
   col += vec3(1.0, 0.45, 0.13) * (pow(sd, 5.0) * 0.3 + pow(sd, 36.0) * 0.9);
   // Clouds live on a plane overhead; dividing by height lays them down towards the horizon.

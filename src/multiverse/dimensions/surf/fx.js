@@ -4,7 +4,7 @@
 //   streaks  instanced ribbons: a round's white-hot head and the line it leaves in the air
 //   wakes    a foam ribbon behind each board that rides the surface
 //   rainbow  the bow that hangs in the mist of a wipe-out
-import { clamp, GLSL_NOISE } from '../../kit.js';
+import { clamp, fbm, GLSL_NOISE } from '../../kit.js';
 import { HAZE_GLSL } from './sky.js';
 
 const MAX = 1500, SEGS = 128, WAKE_N = 44, WAKE_LIFE = 5.5;
@@ -31,22 +31,23 @@ void main() {
   vec3 c = iCol.rgb * (1.0 + back * 2.4 * step(iSR.z, 1.5) * (1.0 - iSR.w));
   if (iSR.w < 0.5) c = mix(c, hazeColor(vd, uSunDir), 1.0 - exp(-dist * 0.00045));
   vCol = vec4(c, iCol.a);
-  vK = vec3(iSR.z, iSR.w, fract(iPos.x * 0.37 + iPos.z * 0.71 + iSR.y));
+  vK = vec3(iSR.z, iSR.w, 0.0);
 }`;
+// (One texture fetch per pixel: spray is the most overdrawn thing in the picture.)
 const SPRITE_F = `precision highp float;
+uniform sampler2D tPuff;
 varying vec2 vUv;
 varying vec4 vCol;
 varying vec3 vK;
-${GLSL_NOISE}
 void main() {
   vec2 c = vUv * 2.0 - 1.0;
   float r = length(c), a;
-  if (vK.x < 0.5) { a = smoothstep(1.0, 0.2, r + (noise(c * 2.4 + vK.z * 41.0) - 0.5) * 0.6); a *= a; }
-  else if (vK.x < 1.5) a = smoothstep(1.0, 0.5, r);
-  else if (vK.x < 2.5) a = smoothstep(0.55, 0.8, r) * smoothstep(1.0, 0.86, r) * (0.55 + 0.7 * noise(c * 5.0 + vK.z * 17.0));
+  if (vK.x < 0.5) a = texture2D(tPuff, vUv).r;
+  else if (vK.x < 1.5) a = 1.0 - smoothstep(0.5, 1.0, r);
+  else if (vK.x < 2.5) a = smoothstep(0.55, 0.8, r) * (1.0 - smoothstep(0.86, 1.0, r)) * (0.45 + 1.1 * texture2D(tPuff, vUv * 0.5 + 0.25).g);
   else a = pow(max(0.0, 1.0 - r), 3.0) * 1.3 + pow(max(0.0, 1.0 - abs(c.x) * 10.0 - abs(c.y) * 0.95), 2.0) + pow(max(0.0, 1.0 - abs(c.y) * 10.0 - abs(c.x) * 0.95), 2.0);
   a *= vCol.a;
-  if (a < 0.003) discard;
+  if (a < 0.004) discard;
   gl_FragColor = vec4(vCol.rgb * a, a * (1.0 - vK.y));
 }`;
 const STREAK_V = `
@@ -98,7 +99,7 @@ void main() {
   gl_FragColor = vec4(col * a * uA, 0.0);
 }`;
 
-export function makeFx(THREE, sky, detail, sunCol) {
+export function makeFx(THREE, sky, detail, sunCol, Q) {
   const group = new THREE.Group();
   const blend = { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor };
   const quadPos = new Float32Array([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]), quadIdx = [0, 1, 2, 0, 2, 3];
@@ -115,7 +116,20 @@ export function makeFx(THREE, sky, detail, sunCol) {
   for (const a of [iPos, iSR, iCol]) a.setUsage(THREE.DynamicDrawUsage);
   sGeo.setAttribute('iPos', iPos); sGeo.setAttribute('iSR', iSR); sGeo.setAttribute('iCol', iCol);
   sGeo.instanceCount = 0;
-  const sMat = new THREE.ShaderMaterial({ uniforms: { uSunDir: { value: sky.sun } }, vertexShader: SPRITE_V, fragmentShader: SPRITE_F, ...blend });
+  // A puff of spray: a soft ball with a torn edge (r), and plain cloud for breaking up rings (g).
+  const puff = (() => {
+    const N = 64, data = new Uint8Array(N * N * 4);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const cx = (x + 0.5) / N * 2 - 1, cy = (y + 0.5) / N * 2 - 1, n = fbm(cx * 2.2 + 5, cy * 2.2 + 9, 4);
+      const a = clamp((1 - (Math.hypot(cx, cy) + n * 0.7)) / 0.8, 0, 1), o = (y * N + x) * 4;
+      data[o] = Math.round(a * a * 255); data[o + 1] = Math.round(clamp(0.5 + n, 0, 1) * 255); data[o + 3] = 255;
+    }
+    const t = new THREE.DataTexture(data, N, N, THREE.RGBAFormat);
+    t.magFilter = t.minFilter = THREE.LinearFilter;
+    t.needsUpdate = true;
+    return t;
+  })();
+  const sMat = new THREE.ShaderMaterial({ uniforms: { uSunDir: { value: sky.sun }, tPuff: { value: puff } }, vertexShader: SPRITE_V, fragmentShader: SPRITE_F, ...blend });
   const sprites = new THREE.Mesh(sGeo, sMat);
   sprites.frustumCulled = false;
   sprites.renderOrder = 6;
@@ -128,10 +142,11 @@ export function makeFx(THREE, sky, detail, sunCol) {
   }
   // The colour of white water in this light.
   const WR = 0.5 + sunCol[0] * 0.55, WG = 0.52 + sunCol[1] * 0.5, WB = 0.6 + sunCol[2] * 0.45;
-  const rnd = (a = 1) => (Math.random() - 0.5) * 2 * a;
+  const rnd = (a = 1) => (Math.random() - 0.5) * 2 * a, thin = !!(Q && Q.soft); // (a software rasteriser gets every other puff)
+  let thinN = 0;
   const api = {
     group, emit,
-    mist(x, y, z, vx, vy, vz, life, s0, s1, a = 0.5, grav = 1.5, drag = 1.2) { emit(0, x, y, z, vx, vy, vz, life, s0, s1, WR, WG, WB, a, grav, drag, 0, rnd(0.6)); },
+    mist(x, y, z, vx, vy, vz, life, s0, s1, a = 0.5, grav = 1.5, drag = 1.2) { if (thin && (thinN ^= 1)) return; emit(0, x, y, z, vx, vy, vz, life, s0, s1, WR, WG, WB, a, grav, drag, 0, rnd(0.6)); },
     drop(x, y, z, vx, vy, vz, life, s, a = 0.9) { emit(1, x, y, z, vx, vy, vz, life, s, s * 0.5, WR * 1.2, WG * 1.2, WB * 1.2, a, 12, 0.2, 0); },
     ring(x, y, z, s0, s1, life, a = 0.8) { emit(2, x, y + 0.08, z, 0, 0, 0, life, s0, s1, WR, WG, WB, a, 0, 0, 0); },
     star(x, y, z, size, r, g, b, life = 0.05) { emit(3, x, y, z, 0, 0, 0, life, size, size * 0.6, r, g, b, 1, 0, 0, 1); },
@@ -281,7 +296,7 @@ export function makeFx(THREE, sky, detail, sunCol) {
     }
   };
   api.dispose = () => {
-    sGeo.dispose(); sMat.dispose(); tGeo.dispose(); tMat.dispose(); wMat.dispose(); bow.geometry.dispose(); bowMat.dispose();
+    puff.dispose(); sGeo.dispose(); sMat.dispose(); tGeo.dispose(); tMat.dispose(); wMat.dispose(); bow.geometry.dispose(); bowMat.dispose();
     for (const w of wakes) w.geo.dispose();
   };
   return api;

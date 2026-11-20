@@ -1,8 +1,8 @@
 // The set dressing that moves: ladders, springboards, the seesaw rock with its crate tower, the handcar, the
 // train, anvils, tumbleweeds, the vulture, portable holes, corks, the sun, clouds and the dancing cacti.
 import { clamp } from '../../kit.js';
-import { C, blob, blobPath, poly, hose, starPath, jit, wline, letters } from './ink.js';
-import { GY, FLOOR, PIV, PLANK, CRATE, CAR_Y, CAR_W, TRAIN, WEED, ladderTop } from './world.js';
+import { C, blob, blobPath, poly, hose, jit, letters } from './ink.js';
+import { GY, FLOOR, PIV, PLANK, CRATE, CAR_Y, CAR_W, ladderTop } from './world.js';
 import { drawHat } from './figures.js';
 
 const PAPER = '#f7f0de';
@@ -446,4 +446,3 @@ export function drawCactus(g, x, y, s, T, E, seed, face = true) {
   g.restore();
 }
 
-export { WEED, TRAIN, GY };

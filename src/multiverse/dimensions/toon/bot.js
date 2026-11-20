@@ -3,8 +3,8 @@
 // the rock, snipe from the perch, work up to the lip, spring across to the island or climb down and up the
 // pillar. It ducks and jumps corks it has noticed, steps out of anvil shadows, drops decoys and portable holes,
 // and can be fooled by a decoy. Skill scales its reaction time, aim error, lead and nerve.
-import { clamp, angLerp, gauss, damp } from '../../kit.js';
-import { GY, FLOOR, W, PW, PH, PHC, SHOULDER, PIV, SPAWN, RUN, JUMP, LIP, ANVIL, shotParams, traceCork, anvilState, weedState, birdState, plankY, onPlank } from './world.js';
+import { clamp, angLerp, gauss } from '../../kit.js';
+import { GY, FLOOR, W, PW, PH, SHOULDER, PIV, ANVIL, shotParams, traceCork, onPlank } from './world.js';
 import { GUN } from './figures.js';
 
 const PLANS = ['hold', 'rock', 'perch', 'lip', 'launch', 'descend'];

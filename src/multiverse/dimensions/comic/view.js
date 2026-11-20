@@ -36,7 +36,7 @@ export function makeView(ctx, THREE, renderer, X) {
     } catch { /* a lost context: carry on as if it had finished */ }
     sync = null;
     cost = performance.now() - syncAt;
-    drawAfter = performance.now() + Math.min(3000, cost * 1.5);
+    drawAfter = performance.now() + Math.min(9000, cost * 3);
   }
   const lt = { ok: false, x: 0, z: 0, roof: 0 };
   const api = { camera, shot: null, force: 0, lt, S, get frames() { return frames; }, get busy() { pollSync(); return !!sync; }, get cost() { return cost; } };
@@ -255,7 +255,7 @@ export function makeView(ctx, THREE, renderer, X) {
           tmp.set(camera.position.x - p.x, camera.position.y - p.y - EYE, camera.position.z - p.z);
           const d = tmp.length();
           if (d < 6 || tmp.dot(F) / d < 0.94) continue;
-          fx.flash(p.x + F.x * 0.7, p.y + EYE + 0.05 + F.y * 0.7, p.z + F.z * 0.7, clamp(d * 0.022, 0.3, 2.2), 0.3, GLINT);
+          fx.flash(p.x + F.x * 0.7, p.y + EYE + 0.05 + F.y * 0.7, p.z + F.z * 0.7, clamp(d * 0.0065, 0.14, 0.62), 0.26, GLINT);
           if (p !== me && human && phase === 'live' && Math.random() < 0.5) X.sfx.glint();
         }
       }

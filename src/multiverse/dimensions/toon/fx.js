@@ -1,6 +1,6 @@
 // Cartoon juice: inked smoke puffs, stars, wood chips, speed lines, expanding rings and the big hand-lettered
 // BONK! pops. One pooled field, nothing allocated after construction.
-import { C, blob, blobPath, starPath, letters, wline, jit } from './ink.js';
+import { C, blob, blobPath, starPath, letters } from './ink.js';
 
 const K = { puff: 0, dot: 1, star: 2, spark: 3, ring: 4, text: 5, chip: 6, feather: 7, note: 8 };
 
@@ -127,4 +127,3 @@ export function makeFx(max = 240) {
   return f;
 }
 
-export { wline, jit };

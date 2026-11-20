@@ -91,7 +91,7 @@ void main() {
   vec3 col = vCol;
   float unlit = uLit;
   int kind = int(vKind + 0.5);
-  if (kind == 1) {
+  if (kind == 1 || kind == 2) {
     // A building: tar on top, a cornice, and rows of windows spaced to fit each wall exactly.
     if (n.y > 0.7) {
       col = mix(vec3(0.8, 0.62, 0.6), vCol, 0.22);
@@ -100,8 +100,9 @@ void main() {
       float wd = xf ? vScl.z : vScl.x;
       float uu = ((xf ? vLp.z : vLp.x) + 0.5) * wd;
       float top = (0.5 - vLp.y) * vScl.y;
-      float cnt = max(1.0, floor(wd / 2.7));
-      vec2 cell = vec2(uu / (wd / cnt), (top - 1.1) / 3.3);
+      float big = kind == 2 ? 2.0 : 1.0;
+      float cnt = max(1.0, floor(wd / (2.7 * big)));
+      vec2 cell = vec2(uu / (wd / cnt), (top - 1.1) / (3.3 * big));
       vec2 id = floor(cell), f = fract(cell);
       float seed = h21(floor(vWp.xz * 0.37) + (xf ? 7.0 : 3.0));
       if (top < 0.55) col = vCol * 1.16 + 0.05;
@@ -110,7 +111,7 @@ void main() {
         if (r > 0.76) { col = mix(vec3(1.0, 0.88, 0.45), vec3(1.0, 0.64, 0.32), step(0.93, r)); unlit = 1.0; }
         else col = dot(n, uSun) > 0.25 ? vec3(0.98, 0.56, 0.36) : vec3(0.2, 0.15, 0.36);
         // a sash bar across the middle of every window
-        if (abs(f.y - 0.47) < 0.02) { col = vCol * 0.7; unlit = uLit; }
+        if (kind == 1 && abs(f.y - 0.47) < 0.02) { col = vCol * 0.7; unlit = uLit; }
       }
     }
   } else if (kind == 3) {

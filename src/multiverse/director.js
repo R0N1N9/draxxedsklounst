@@ -92,6 +92,11 @@ export class Director {
     this.target = Math.max(1, (o.match && o.match.target) || this.dev.target || o.target || DEFAULTS.target);
     this.matchSeed = ((o.match && o.match.seed) ?? this.dev.seed ?? Math.floor(Math.random() * 0xffffffff)) >>> 0;
     this.first = (o.match && o.match.first) || this.dev.dim || o.first || 'valley';
+    // The owner's hidden menu: worlds / transitions switched off for matches this client
+    // decides (hosting or solo), and `only` = play one world round after round.
+    this.off = new Set([...((o.off && o.off.dims) || []), ...((o.off && o.off.fx) || [])]);
+    this.only = (!this.online && o.only) || null;
+    this.revealed = !!this.only; // nothing to reveal when a world was picked by hand
 
     this.score = [0, 0];
     this.round = 1;
@@ -195,8 +200,10 @@ export class Director {
 
   // The worlds the rotation draws from: everything playable except worlds that are only
   // reached through their lead-in (see `then` in the registry).
+  _usable(id) { return !this.broken.has(id) && !this.off.has(id); }
+
   _rotation() {
-    const ok = (id) => !this.broken.has(id);
+    const ok = (id) => this._usable(id);
     const chained = chainedDimensions(ok);
     return playableDimensions().filter((id) => ok(id) && !chained.includes(id));
   }
@@ -224,8 +231,9 @@ export class Director {
   _nextDim(kill) {
     this.linkFx = null;
     if (this.dev.next.length) return this.dev.next.shift();
+    if (this.only && !this.broken.has(this.only)) return this.only;
     const cur = this.mod && this.mod.id;
-    const link = kill ? chainOf(cur, (id) => !this.broken.has(id)) : null;
+    const link = kill ? chainOf(cur, (id) => this._usable(id)) : null;
     if (link) {
       this.linkFx = link.fx;
       this.prevDim = cur;
@@ -254,11 +262,11 @@ export class Director {
     if (!this.revealed) {
       this.revealed = true;
       const id = firstTransition();
-      if (id && !this.broken.has(id)) return id;
+      if (id && this._usable(id)) return id;
     }
     // A chained pair of worlds brings its own transition.
     if (this.linkFx) { const id = this.linkFx; this.linkFx = null; return id; }
-    return this._draw('fxBag', playableTransitions(), this.lastFx) || 'none';
+    return this._draw('fxBag', playableTransitions().filter((id) => !this.off.has(id)), this.lastFx) || 'none';
   }
 
   // ---------------------------------------------------------------------------

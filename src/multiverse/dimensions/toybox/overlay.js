@@ -2,6 +2,7 @@
 // of embossed label-maker tape, stuck to the thing it describes.
 import { clamp, roundRect, TAU } from '../../kit.js';
 
+const PAPER = '#f4ecd8', INK = '#211c17';
 const FONT = '"Arial Rounded MT Bold", Futura, "Trebuchet MS", Rajdhani, sans-serif';
 export const PROMPTS = {
   kbm: [['CLICK', 'to shoot'], ['hold RIGHT MOUSE', 'to brace: steady aim']],
@@ -88,12 +89,12 @@ export function drawOverlay(g, S) {
   // ---- the first shots are taught on the rug itself ----
   if (S.prompt > 0.01 && me.alive) {
     const lines = PROMPTS[S.device] || PROMPTS.kbm, first = S.step === 0, L = first ? lines[0] : lines[1];
-    let x = me.hx, y = me.hy - px * 2.6;
+    let x = me.hx, y = me.hy - px * (2.6 + 2.2 * S.intro);
     if (S.device === 'touch' && first) { x = S.w * 0.74; y = Math.min(S.h * 0.42, S.h - S.safe.bottom - px * 3); } // where the thumb should go
     if (y < S.top + px * 2) y = me.y + px * 2.4;
     g.font = `800 ${px}px ${FONT}`;
     const w = g.measureText(L[0] + L[1]).width + px * 2.4;
-    tape(g, clear(S, x, y, w), y, L[0], L[1], '#2b2f3a', px, S.prompt * (0.82 + 0.18 * Math.sin(t * 4)));
+    tape(g, clear(S, x, y, w), y, L[0], L[1], PAPER, px * 1.08, S.prompt * (0.88 + 0.12 * Math.sin(t * 4)), INK);
     if (S.device === 'touch' && first) {
       // a thumb-sized ring that slides and lets go
       const u = (t * 0.7) % 1, ax = x - 26 + Math.min(1, u * 1.6) * 52, ay = y + px * 3.4, al = S.prompt * (u > 0.75 ? 1 - (u - 0.75) * 4 : 1);
@@ -109,7 +110,7 @@ export function drawOverlay(g, S) {
     const y = me.y + px * 1.9;
     if (S.spotted > 0.01) tape(g, clear(S, me.x, y, 110), y, 'SPOTTED', 'you are lit up', '#c22f2f', small, S.spotted * (0.7 + 0.3 * Math.sin(t * 14)));
     else if (S.litTag > 0.01) tape(g, clear(S, me.x, y, 120), y, 'IN THE LIGHT', 'easy target', '#b8791c', small, S.litTag);
-    else if (S.stuck > 0.01) tape(g, clear(S, me.x, y, 130), y, S.device === 'touch' ? 'TAP BRACE' : 'LET GO OF BRACE', 'to move', '#2b2f3a', small, S.stuck);
+    else if (S.stuck > 0.01) tape(g, clear(S, me.x, y, 130), y, S.device === 'touch' ? 'TAP BRACE' : 'LET GO OF BRACE', 'to move', PAPER, small, S.stuck, INK);
   }
   if (foe.alive && S.live && S.foeLit > 0.01) {
     const y = foe.hy - px * 1.8, w = tape(g, clear(S, foe.hx, y, 90), y, 'LIT UP', '', '#e8eef5', small, Math.min(1, S.foeLit * 3), '#1a2230');

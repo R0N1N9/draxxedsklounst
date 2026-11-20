@@ -146,8 +146,8 @@ export function buildCity(THREE, W, mats, art, seed) {
   for (const s of [-1, 1]) B.add(0, 11.6, s * 2.5, 280, 0.5, 0.2, '#6d5c8f');
   for (let x = -130; x <= 130; x += 20) for (const s of [-1, 1]) B.add(x, 5.3, s * 2.1, 0.7, 10.7, 0.7, '#4b3b6b');
   const tower = (x, z, w, d, h, hex) => {
-    F.add(x, h / 2, z, w, h, d, hex, 1);
-    if (rng() < 0.5 && h > 45) { const k = rand(rng, 0.5, 0.75); F.add(x, h + 4, z, w * k, 8, d * k, hex, 1); if (rng() < 0.6) FK.add(x, h + 8 + 6, z, w * k * 0.5, 12, d * k * 0.5, PAL.far[3]); }
+    F.add(x, h / 2, z, w, h, d, hex, 2);
+    if (rng() < 0.5 && h > 45) { const k = rand(rng, 0.5, 0.75); F.add(x, h + 4, z, w * k, 8, d * k, hex, 2); if (rng() < 0.6) FK.add(x, h + 8 + 6, z, w * k * 0.5, 12, d * k * 0.5, PAL.far[3]); }
     else if (rng() < 0.35) { F.add(x + w * 0.2, h + 1.6, z, 3.2, 3.2, 3.2, PAL.far[1]); }
   };
   // the canyon walls beyond the two blocks, and whatever closes its ends

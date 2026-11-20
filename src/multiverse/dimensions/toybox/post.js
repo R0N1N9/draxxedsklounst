@@ -35,7 +35,7 @@ void main() {
   float f = clamp((abs(vUv.y - uFocus.x) - uFocus.y) / max(0.5 - uFocus.y, 0.05), 0.0, 1.0);
   f = f * f * (3.0 - 2.0 * f) * uTilt;
   // A breath of lateral colour at the edges; a real kick of it when someone is hit.
-  vec2 ca = c * dot(c, c) * (0.008 + 0.03 * uPunch);
+  vec2 ca = c * dot(c, c) * (0.006 + 0.012 * uPunch);
   vec3 sharp = vec3(texture2D(tSrc, vUv + ca).r, texture2D(tSrc, vUv).g, texture2D(tSrc, vUv - ca).b);
   vec3 col = mix(sharp, texture2D(tHalf, vUv).rgb, clamp(f * 2.2, 0.0, 1.0));
   col = mix(col, texture2D(tQuarter, vUv).rgb, clamp(f * 2.2 - 1.0, 0.0, 1.0));
@@ -43,7 +43,7 @@ void main() {
   col = aces(col * 1.05);
   // Grade: cool, slightly lifted shadows; warm highlights; a little extra colour, as toys have.
   float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  col = mix(vec3(l), col, 1.06 - 0.35 * uPunch);
+  col = mix(vec3(l), col, 1.06 - 0.2 * uPunch);
   col *= mix(vec3(0.9, 0.97, 1.14), vec3(1.07, 1.0, 0.9), smoothstep(0.08, 0.7, l));
   col = clamp((col - 0.5) * 1.06 + 0.5, 0.0, 1.0);
   col = pow(col, vec3(1.0 / 2.2));

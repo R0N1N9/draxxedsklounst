@@ -45,6 +45,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
     return {
       m, mat,
       set(x0, y0, z0, x1, y1, z1, w, a) {
+        if (!(x0 + y0 + z0 + x1 + z1 + w === x0 + y0 + z0 + x1 + z1 + w)) { m.visible = false; return; } // never hand the GPU a NaN
         const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1, nx = (-dz / l) * w, nz = (dx / l) * w;
         p.setXYZ(0, x0 - nx, y0, z0 - nz); p.setXYZ(1, x0 + nx, y0, z0 + nz); p.setXYZ(2, x1 - nx, y1, z1 - nz); p.setXYZ(3, x1 + nx, y1, z1 + nz);
         p.needsUpdate = true;
@@ -212,8 +213,8 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       }
       for (let k = 0; k < 26; k++) chips.emit(x, 0.5 + R() * 1.1, z, dx * (2 + R() * 8) + S() * 9, 2 + R() * 8, dz * (2 + R() * 8) + S() * 9, 0.7 + R() * 0.7, 0.16, 0.07, pc[i][0], pc[i][1], pc[i][2], 1, 24, 0.5, true);
       for (let k = 0; k < 16; k++) sparks.emit(x, 0.9, z, S() * 22, R() * 12, S() * 22, 0.2 + R() * 0.25, 0.26, 0.04, 3 + pc[i][0] * 3, 3 + pc[i][1] * 3, 3 + pc[i][2] * 3, 1, 14, 2);
-      sparks.emit(x, 1, z, 0, 0, 0, 0.14, 5, 1, 4, 3.6, 3, 1, 0, 0);
-      flash.position.set(x, 2, z); flash.intensity = 34;
+      sparks.emit(x, 1, z, 0, 0, 0, 0.12, 3, 0.6, 2.2, 2, 1.7, 1, 0, 0);
+      flash.position.set(x, 2, z); flash.intensity = 20;
     },
 
     // p: the simulation's soldier. aim: { on, x1, z1, bx, bz, hasB, full } — where its laser goes.

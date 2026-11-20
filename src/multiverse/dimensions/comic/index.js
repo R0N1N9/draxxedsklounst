@@ -127,7 +127,7 @@ export default {
       return {
         i, x: s.x, y: W.roofs[s.roof].h, z: s.z, vy: 0, roof: s.roof, yaw: s.yaw, pitch: -0.05, alive: true, ko: -1, kvx: 0, kvy: 0, kvz: 0, starT: 0,
         scoped: false, scope: 0, ammo: MAG, bolt: 0, boltStep: 0, reload: 0, recoil: 0, speed: 0, mvx: 0, mvz: 0, stepT: 0, swayX: 0, swayY: 0, swayT: i * 4.1,
-        leap: mkLeap(), leapCd: 0, land: 0, duel: false, smokes: SMOKES, smokeCd: 0, shotT: -9, pingT: -9, pingX: 0, pingY: 0, pingZ: 0, vis: 0, airN: 0,
+        leap: mkLeap(), leapCd: 0, land: 0, duel: false, leaps: 0, smokes: SMOKES, smokeCd: 0, shotT: -9, pingT: -9, pingX: 0, pingY: 0, pingZ: 0, vis: 0, airN: 0,
         remote: ctx.opponent === 'remote' && i !== ctx.me, bot: null, model, c: rgb(ctx.players[i].color), color: ctx.players[i].color,
         cmd: { mx: 0, my: 0, yaw: s.yaw, pitch: -0.05, fire: false, alt: false, a1: false, a2: false, leapTo: null },
       };
@@ -378,6 +378,7 @@ export default {
           const to = cmd.leapTo || view.lt;
           if (to && (cmd.leapTo || to.ok) && Math.hypot(to.x - p.x, to.z - p.z) <= LEAP_MAX + 2) {
             p.leapCd = LEAP_CD;
+            p.leaps++;
             startLeap(p, to.x, to.z, to.roof, false);
             if (p === me && !p.bot) taught.leap = true;
             ctx.net.send({ k: 'l', x: +to.x.toFixed(2), z: +to.z.toFixed(2), r: to.roof, m: 0 });
