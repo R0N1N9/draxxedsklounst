@@ -25,7 +25,7 @@ export function buildWorld(rng) {
   add({ x: 1150, y: GY, w: 1150, h: 1400, k: 'mesa' });
   add({ x: 450, y: FLOOR, w: 700, h: 700, k: 'floor' });
   add({ x: 735, y: PIV.y + 4, w: 130, h: FLOOR - PIV.y - 4, k: 'pillar' });
-  const rockL = { x: 290, y: GY - 100, w: 82, h: 100, k: 'rock' };
+  const rockL = { x: 286, y: GY - 64, w: 96, h: 64, k: 'rock' };
   add(rockL);
   add(mirror(rockL));
   const perchL = { x: 250, y: 215, w: 170, h: 12, k: 'board' };

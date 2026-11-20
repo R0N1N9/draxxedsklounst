@@ -18,7 +18,7 @@ export function makeBot(ctx, w, S, p) {
   const b = {
     plan: '', planT: 0, stage: 0, goalX: p.x, wait: 0, readyAt: 7.5 + Math.random() * 4 + (1 - skill) * 3, held: 0, chargeGoal: 0, seen: 0,
     err: 0, errT: 0, target: null, lockT: 0, dodgeT: 0, dodgeKind: 0, spotted: 0, react: 0.62 - 0.46 * skill, jumpT: 0, side: 0, sideT: 0, strafeT: 1,
-    stuck: 0, lastX: p.x, lastY: p.y, decoyT: 4 + Math.random() * 8, holeStage: 0, holeT: 14 + Math.random() * 10, desired: p.aim, fireWait: 0, spot: [0, 0],
+    noOk: 0, leadK: 1, charging: false, stuck: 0, lastX: p.x, lastY: p.y, decoyT: 4 + Math.random() * 8, holeStage: 0, holeT: 14 + Math.random() * 10, desired: p.aim, fireWait: 0, spot: [0, 0],
     pose: 0,
   };
   const sp = { v: 0, g: 0 };
@@ -212,7 +212,7 @@ export function makeBot(ctx, w, S, p) {
     // ---- sidestep around, now and then, so the other bot has to lead ----
     if (!p.lad && p.ground && b.sideT <= 0 && (b.plan === 'hold' || b.plan === 'lip' || b.plan === 'island') && b.dodgeT <= 0) {
       b.sideT = 0.5 + Math.random() * 1.2;
-      b.side = Math.random() < 0.35 ? 0 : Math.random() < 0.5 ? -1 : 1;
+      b.side = Math.random() < 0.55 ? 0 : Math.random() < 0.5 ? -1 : 1;
     }
     if (!p.lad && p.ground && b.side && cmd.mx === 0 && b.plan !== 'rock' && !b.charging) {
       const lim = b.plan === 'island' ? [600, 740] : b.plan === 'lip' ? [320, 430] : [60, 330];
@@ -242,46 +242,46 @@ export function makeBot(ctx, w, S, p) {
     shotParams(0, ctx.sudden, sp);
     const sx = p.x + p.face * 7, sy = shoulderY();
     const dist = Math.hypot(tg.x - sx, tg.y - sy);
-    // how much to charge: far shots from a standstill, when this bot is good enough to bother
-    const still = Math.abs(p.vx) < 40 && p.ground && !p.lad;
-    const wantsCharge = dist > 540 && skill > 0.3 && still && !p.lad && (e.charge < 0.5 || skill > 0.7) && b.plan !== 'rock';
-    if (!b.charging && wantsCharge && p.rt < 0.6 && live && S.tl > b.readyAt - 3 && b.dodgeT <= 0 && !th) { b.charging = true; b.chargeGoal = clamp(0.35 + 0.65 * Math.min(1, dist / 1100), 0.3, 1) * (0.7 + 0.3 * skill); }
-    if (b.charging && (!wantsCharge || b.dodgeT > 0 || p.stun > 0)) b.charging = false;
+    // far shots are worth charging for, if this bot is good enough to bother and the line is clear of rock
+    const wantsCharge = dist > 560 && skill > 0.3 && p.ground && !p.lad && (e.charge < 0.6 || skill > 0.7) && b.plan !== 'rock' && b.noOk < 0.6;
+    if (!b.charging && wantsCharge && p.rt < 0.5 && S.tl > b.readyAt - 2.5 && b.dodgeT <= 0 && !th && p.stun <= 0) { b.charging = true; b.chargeGoal = clamp(0.4 + 0.6 * Math.min(1, dist / 1100), 0.35, 1) * (0.75 + 0.25 * skill); }
+    if (b.charging && (!wantsCharge || b.dodgeT > 0 || p.stun > 0 || b.noOk > 0.7)) b.charging = false;
     cmd.alt = b.charging;
     const c = p.charge;
     // predicted target position: lead by the flight time, with skill deciding how well it is judged
     let tx = tg.x, ty = tg.y - tg.h * 0.45;
-    const leadK = 0.25 + 0.7 * skill + gauss(Math.random) * 0.12 * (1 - skill);
-    let ok = false, high = false;
+    if (b.errT <= 0) { b.errT = 0.6 + Math.random() * 0.8; b.err = gauss(Math.random) * (0.06 - 0.047 * skill) * (1 - 0.5 * c); b.leadK = 0.3 + 0.7 * skill + gauss(Math.random) * 0.15 * (1 - skill); }
+    let ok = false;
     for (let pass = 0; pass < 2 && !ok; pass++) {
-      high = pass === 1;
+      const high = pass === 1;
       let ex = tx, ey = ty;
       solve(sx, sy, ex, ey, c, high);
-      for (let it = 0; it < 2 && sol.ok; it++) { ex = tg.x + tg.vx * sol.t * leadK; ey = ty; solve(sx, sy, ex, ey, c, high); }
-      if (!sol.ok) continue;
+      for (let it = 0; it < 2 && sol.ok; it++) { ex = tg.x + tg.vx * sol.t * b.leadK; ey = ty; solve(sx, sy, ex, ey, c, high); }
+      if (!sol.ok || sol.t > 1.9) continue;
       // is the arc clear all the way?
       const L = GUN.base + 9 + c * GUN.sect * GUN.n;
       shotParams(c, ctx.sudden, sp);
       const n = traceCork(w, sx + Math.cos(sol.a) * L, sy + Math.sin(sol.a) * L, Math.cos(sol.a) * sp.v, Math.sin(sol.a) * sp.v, sp.g, sol.t + 0.1, 0.05, tr);
       const hx = tr[(n - 1) * 2], hy = tr[(n - 1) * 2 + 1];
-      ok = Math.hypot(hx - ex, hy - ey) < 70 || n * 0.05 > sol.t - 0.02;
+      ok = Math.hypot(hx - ex, hy - ey) < 80 || n * 0.05 > sol.t + 0.02;
       if (ok) { tx = ex; ty = ey; }
     }
-    // aim error: re-rolled every so often, bigger for a recruit and for a moving or rushing bot
-    if (b.errT <= 0) { b.errT = 0.5 + Math.random() * 0.7; b.err = gauss(Math.random) * (0.062 - 0.05 * skill) * (1 - 0.45 * c); b.pose = gauss(Math.random); }
+    b.noOk = ok ? 0 : b.noOk + dt;
+    // no clear shot for a while: go and find one
+    if (b.noOk > 2.2 && !p.lad && live) { b.noOk = 0; b.plan = Math.random() < 0.5 ? 'lip' : 'perch'; b.stage = 0; b.planT = 6; b.charging = false; }
     const want = ok ? sol.a + b.err : dxe > 0 ? -0.35 : Math.PI + 0.35;
     b.desired = want;
     cmd.a = angLerp(p.aim, want, 1 - Math.exp(-dt * (5 + 11 * skill)));
     // fire: after the opening feel-out, once the aim has settled and the reaction time has passed
     b.seen = ok ? b.seen + dt : 0;
-    const settled = Math.abs(((cmd.a - want + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.012 + 0.02 * (1 - skill);
+    const settled = Math.abs(((cmd.a - want + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.014 + 0.02 * (1 - skill);
     const nerve = ctx.sudden ? 0.15 : 1;
-    if (live && ok && S.tl >= b.readyAt * nerve && p.rt <= 0 && p.stun <= 0 && !p.lad && settled && b.seen > b.react * 0.7 + 0.1) {
-      if (b.charging) { if (c >= b.chargeGoal) { cmd.fire = true; b.charging = false; b.readyAt = Math.max(b.readyAt, S.tl + 0.3); } } else if (!wantsCharge || skill < 0.3 || p.rt <= 0 && dist < 540 || Math.random() < dt * 0.5) { cmd.fire = true; }
+    if (live && ok && S.tl >= b.readyAt * nerve && p.rt <= 0 && p.stun <= 0 && !p.lad && settled && b.seen > b.react * 0.6 + 0.1) {
+      if (b.charging) { if (c >= b.chargeGoal) { cmd.fire = true; b.charging = false; } } else if (!wantsCharge) cmd.fire = true;
     }
-    if (cmd.fire) b.seen = 0;
+    if (cmd.fire) { b.seen = 0; b.fireWait = 0; }
     return cmd;
   }
 
-  return { think, cmd };
+  return { think, cmd, b };
 }

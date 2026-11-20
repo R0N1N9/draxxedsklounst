@@ -263,8 +263,8 @@ export function bakeStage(seed, ppu) {
     g.fillStyle = C.g5;
     for (let x = LIP[0] + 6; x < LIP[1]; x += 26) g.fillRect(x, FLOOR - 4, 14, 8);
     g.fillStyle = C.ink; g.fillRect(LIP[0], FLOOR - 8, LIP[1] - LIP[0], 3);
-    boulder(g, rng, 290, GY - 100, 82, 100, true);
-    boulder(g, rng, W - 290 - 82, GY - 100, 82, 100, false);
+    boulder(g, rng, 286, GY - 64, 96, 64, true);
+    boulder(g, rng, W - 286 - 96, GY - 64, 96, 64, false);
     // pebbles and tufts on the mesa tops
     for (const side of [0, 1]) {
       for (let i = 0; i < 9; i++) {
@@ -310,8 +310,8 @@ function outlines(rng) {
     line([[722, FLOOR], [738, PIV.y + 40], [731, PIV.y + 4], [760, PIV.y + 1]]);
     line([[840, PIV.y + 1], [869, PIV.y + 4], [862, PIV.y + 40], [878, FLOOR]]);
     // boulders
-    for (const bx of [290, W - 290 - 82]) {
-      line([[bx + 4, GY], [bx - 8, GY - 66], [bx + 20, GY - 94], [bx + 41, GY - 108], [bx + 64, GY - 92], [bx + 90, GY - 58], [bx + 80, GY]], false);
+    for (const bx of [286, W - 286 - 96]) {
+      line([[bx + 2, GY], [bx - 8, GY - 34], [bx + 20, GY - 58], [bx + 48, GY - 70], [bx + 76, GY - 58], [bx + 104, GY - 32], [bx + 94, GY]], false);
     }
     out.push(path);
   }
