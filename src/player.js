@@ -3,6 +3,7 @@ import { PLAYER, WEAPON, MAP } from './config.js';
 import { clamp, lerp, noise2 } from './util.js';
 import { zeroAngle } from './ballistics.js';
 import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
+import { RULES } from './rules.js';
 
 const HEIGHTS = [1.8, 1.25, 0.55];
 const EYES = [PLAYER.eyeStand, PLAYER.eyeCrouch, PLAYER.eyeProne];
@@ -27,7 +28,8 @@ export class LocalPlayer {
     this.rifleKey = WEAPONS[rifleKey] && WEAPONS[rifleKey].slot === 'rifle' ? rifleKey : 'mk22';
     const mk = (key) => {
       const d = WEAPONS[key];
-      return { def: d, mag: d.mag, chamber: 1, reserve: d.mag * d.spareMags, zoomIdx: d.zooms.length - 1, zero: d.fixedZero || 400 };
+      const z = d.zooms.indexOf(12);
+      return { def: d, mag: d.mag, chamber: 1, reserve: d.mag * d.spareMags, zoomIdx: z >= 0 ? z : d.zooms.length - 1, zero: d.fixedZero || 400 };
     };
     this.arms = [mk(this.rifleKey), mk('m18')];
     this.slot = 0;
@@ -73,7 +75,17 @@ export class LocalPlayer {
   // Muzzle velocity of the weapon in hand (suppressor only fits the rifle).
   get muzzle() {
     const d = this.def;
-    return d.slot === 'rifle' && this.suppressed ? Math.round(d.muzzle * SUPPRESSOR_FACTOR) : d.muzzle;
+    return Math.round((d.slot === 'rifle' && this.suppressed ? d.muzzle * SUPPRESSOR_FACTOR : d.muzzle) * RULES.speed);
+  }
+
+  // Zoom steps: the sniping style can override them (e.g. Halo's 5× / 10×).
+  get zooms() {
+    return this.def.scope && RULES.zooms ? RULES.zooms : this.def.zooms;
+  }
+
+  // Prone and still: the bipod is down and the scope doesn't move at all.
+  get bipod() {
+    return this.stance === 2 && !this.moving && this.def.slot === 'rifle';
   }
 
   refill() {
@@ -129,7 +141,7 @@ export class LocalPlayer {
   }
 
   get zoom() {
-    return this.def.zooms[Math.min(this.zoomIdx, this.def.zooms.length - 1)];
+    return this.zooms[Math.min(this.zoomIdx, this.zooms.length - 1)];
   }
 
   fov() {
@@ -146,7 +158,8 @@ export class LocalPlayer {
 
   // Sway offset in radians (yaw, pitch).
   sway(out = { x: 0, y: 0 }) {
-    let amp = SWAY[this.stance] * 0.001 * this.def.sway;
+    let amp = SWAY[this.stance] * 0.001 * this.def.sway * RULES.sway;
+    if (this.bipod) amp = 0;
     if (this.moving) amp *= 2.4;
     if (this.wounded) amp *= 1.6;
     if (this.holding) amp *= 0.12;
@@ -201,7 +214,8 @@ export class LocalPlayer {
     if (a.swap || (!this.scoped && (a.zoomIn || a.zoomOut) && !a.touchZoom)) this.switchTo(1 - this.slot);
     this.scoped = wantScope;
     this.scopeT = clamp(this.scopeT + (wantScope ? dt / 0.18 : -dt / 0.12), 0, 1);
-    if (a.zoomIn && this.scoped) this.zoomIdx = Math.min(this.zoomIdx + 1, this.def.zooms.length - 1);
+    if (this.zoomIdx > this.zooms.length - 1) this.zoomIdx = this.zooms.length - 1;
+    if (a.zoomIn && this.scoped) this.zoomIdx = Math.min(this.zoomIdx + 1, this.zooms.length - 1);
     if (a.zoomOut && this.scoped) this.zoomIdx = Math.max(this.zoomIdx - 1, 0);
     if (a.zeroUp) this.zero = Math.min(this.zero + WEAPON.zeroStep, WEAPON.zeroMax);
     if (a.zeroDown) this.zero = Math.max(this.zero - WEAPON.zeroStep, WEAPON.zeroMin);
@@ -319,7 +333,7 @@ export class LocalPlayer {
     this.cycleT = d.cycle;
     // Semi-autos chamber the next round straight away.
     if (d.kind === 'semi' && w.mag > 0) { w.mag--; w.chamber = 1; }
-    this.recoil = d.recoil * (this.stance === 2 ? 0.6 : 1);
+    this.recoil = d.recoil * (this.bipod ? 0.35 : this.stance === 2 ? 0.6 : 1);
     if (d.kind === 'bolt') this.holding = false;
   }
 }

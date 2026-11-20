@@ -10,6 +10,7 @@ import { segSegClosest, clamp } from './util.js';
 import { crestAt, DAM_X } from './terrain.js';
 import { randomLoadout, TOOLS, HunterFlight } from './tools.js';
 import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
+import { RULES } from './rules.js';
 
 export const DIFFICULTY = {
   easy: { name: 'RECRUIT', err: 3.0e-3, react: 3.0, settle: 2.6, detect: 0.45, lead: 0.5, wind: 0.3, prone: false },
@@ -18,7 +19,7 @@ export const DIFFICULTY = {
 };
 const EYE = [PLAYER.eyeStand, PLAYER.eyeCrouch, PLAYER.eyeProne];
 const BODY_H = [1.8, 1.25, 0.55];
-const ZOOM_GLINT = { 4: 0.35, 8: 0.7, 12: 1 };
+const ZOOM_GLINT = { 4: 0.35, 5: 0.4, 8: 0.7, 10: 0.85, 12: 1, 16: 1.15, 20: 1.3 };
 const CALM = { at: (t, out) => out.set(0, 0) };
 
 function gauss() {
@@ -103,6 +104,10 @@ export class BotPeer {
       case 'died':
         this.state = 'idle';
         this.scoped = false;
+        break;
+      case 'supply':
+        // A cargo drone dropping near the player gives their position away.
+        if (this.behaviour === 'hostile' && m.p) this._learn(new THREE.Vector3(...m.p), 0.5);
         break;
       case 'uav':
         if (this.jammer) this.jammer = false;
@@ -194,7 +199,7 @@ export class BotPeer {
 
   get muzzle() {
     const d = this.wdef;
-    return !this.pistol && this.loadout && this.loadout.stealth === 'suppressor' ? Math.round(d.muzzle * SUPPRESSOR_FACTOR) : d.muzzle;
+    return Math.round((!this.pistol && this.loadout && this.loadout.stealth === 'suppressor' ? d.muzzle * SUPPRESSOR_FACTOR : d.muzzle) * RULES.speed);
   }
 
   // Sandbox: (re)spawn on a ridge without a round message.

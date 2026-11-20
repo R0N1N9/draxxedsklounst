@@ -152,7 +152,7 @@ export class Hud {
       document.getElementById('h-wname').textContent = `${D.name} · ${D.caliber}`.toUpperCase();
     }
     this.el.zero.textContent = D.scope ? `ZERO ${player.zero} M · ${player.zoom}×` : 'IRON SIGHTS · 1 / 2 SWAP';
-    this.el.stance.textContent = ['STANDING', 'CROUCHED', 'PRONE'][player.stance] + (player.wounded ? ' · WOUNDED' : '');
+    this.el.stance.textContent = ['STANDING', 'CROUCHED', 'PRONE'][player.stance] + (player.bipod ? ' · BIPOD DOWN' : '') + (player.wounded ? ' · WOUNDED' : '');
     this.el.breath.classList.toggle('on', player.scopeT > 0.9);
     this.el.breathFill.style.transform = `scaleX(${player.breath})`;
     this.el.breath.classList.toggle('lock', player.breathLock > 0);
@@ -188,7 +188,14 @@ export class Hud {
       return `<span class="chip${n ? '' : ' empty'}"><kbd>${key}</kbd>${TOOL_SHORT[tool]} ×${n}</span>`;
     };
     const stealth = L.stealth === 'jammer' ? `${TOOL_SHORT.jammer} ${T.jammer ? 'READY' : 'USED'}` : TOOL_SHORT[L.stealth];
-    const html = chip('T', L.scout) + chip('G', L.tactical) + `<span class="chip passive">${stealth}</span>`;
+    const sup = g.supply ? g.supply.status : 'READY';
+    const html = chip('T', L.scout) + chip('G', L.tactical) + `<span class="chip${sup === 'USED' ? ' empty' : ''}"><kbd>V</kbd>SUPPLY ${sup}</span>` + `<span class="chip passive">${stealth}</span>`;
+    const ps2 = document.getElementById('pill-supply');
+    if (ps2) {
+      const t = `SUPPLY ${sup === 'READY' ? '' : sup === 'USED' ? '✓' : '…'}`.trim();
+      if (ps2.textContent !== t) ps2.textContent = t;
+      ps2.classList.toggle('empty', sup === 'USED');
+    }
     if (html !== this._toolsHtml) {
       this._toolsHtml = html;
       document.getElementById('h-tools').innerHTML = html;

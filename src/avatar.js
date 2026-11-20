@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { withHaze } from './atmosphere.js';
+import { RULES } from './rules.js';
 
 // Stance: 0 stand, 1 crouch (kneeling), 2 prone.
 // Local space: feet at origin, facing -Z.
@@ -34,7 +35,7 @@ export function worldCapsules(pos, yaw, stance, out = []) {
   out.length = 0;
   for (const part of ['head', 'torso', 'legs']) {
     const [a, b, r] = c[part];
-    out.push({ part, a: tf(a), b: tf(b), r });
+    out.push({ part, a: tf(a), b: tf(b), r: r * (RULES.hitbox || 1) });
   }
   return out;
 }

@@ -4,6 +4,7 @@ import { randomCode } from './util.js';
 import { PALETTES } from './atmosphere.js';
 import { drawMap } from './briefmap.js';
 import { renderLoadout } from './loadout.js';
+import { PRESETS, applyRules, normalizeRules, rulesLabel } from './rules.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -94,6 +95,39 @@ function primeGyro() {
   if (settings.gyroMode !== 'off' && DM && typeof DM.requestPermission === 'function') DM.requestPermission().catch(() => {});
 }
 settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); };
+settings.rules = normalizeRules(store.get('rules', { preset: 'bf' }));
+applyRules(settings.rules);
+
+// ---- Sniping style ----
+function saveRules(r) {
+  settings.rules = normalizeRules(r);
+  store.set('rules', settings.rules);
+  applyRules(settings.rules);
+  renderStyle();
+}
+function renderStyle() {
+  const r = settings.rules;
+  $('style-cur').textContent = rulesLabel(r);
+  const opts = Object.entries(PRESETS).map(([k, p]) => `<button class="lo-opt${r.preset === k ? ' on' : ''}" data-preset="${k}"><b>${p.name} <i>like ${p.feel}</i></b><span>${p.desc}</span></button>`);
+  opts.push(`<button class="lo-opt${r.preset === 'custom' ? ' on' : ''}" data-preset="custom"><b>Custom</b><span>Set drop, bullet speed, wind, drag, sway and hitbox size yourself.</span></button>`);
+  $('style-presets').innerHTML = opts.join('');
+  $('style-custom').style.display = r.preset === 'custom' ? '' : 'none';
+  document.querySelectorAll('[data-sr]').forEach((el) => { el.value = String(r[el.dataset.sr]); });
+  document.querySelectorAll('[data-sv]').forEach((el) => { el.textContent = `${Math.round(r[el.dataset.sv] * 100)}%`; });
+  $('style-autozero').checked = !!r.autoZero;
+}
+$('style-presets').onclick = (e) => {
+  const b = e.target.closest('[data-preset]');
+  if (!b) return;
+  const k = b.dataset.preset;
+  saveRules(k === 'custom' ? { ...settings.rules, preset: 'custom', zooms: null } : { preset: k, autoZero: settings.rules.autoZero });
+};
+document.querySelectorAll('[data-sr]').forEach((el) => el.addEventListener('input', () => {
+  saveRules({ ...settings.rules, preset: 'custom', [el.dataset.sr]: +el.value });
+}));
+$('style-autozero').onchange = (e) => saveRules({ ...settings.rules, autoZero: e.target.checked });
+$('btn-style').onclick = () => { renderStyle(); showPanel('panel-style'); };
+renderStyle();
 
 // ---- Menu wiring ----
 $('in-name').value = settings.name;
@@ -344,6 +378,7 @@ $('btn-join').onclick = async () => {
   net.on('hello', (m) => {
     if (gotHello) return;
     gotHello = true;
+    if (m.rules) applyRules(m.rules);
     $('join-status').textContent = 'Connected!';
     goFullscreen();
     startGame('guest', { net, pal: PALETTES[m.pal] ? m.pal : 'dusk', oppName: String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16) });

@@ -295,6 +295,7 @@ export class Input {
       tactical: p('KeyG') || p('tactical'),
       loadout: p('KeyL') || p('loadout'),
       feed: p('KeyU') || p('feed'),
+      supply: p('KeyV') || p('supply'),
       slot1: p('Digit1'),
       slot2: p('Digit2'),
       swap: p('swap'),

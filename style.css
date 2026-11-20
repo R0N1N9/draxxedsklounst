@@ -372,3 +372,8 @@ body.touch #h-hint { bottom: 30%; }
 #touch .tb.sm.zdn, #touch .tb.sm.zup, #touch .tb.sm.rng, #touch .tb.sm.swp { border-color: rgba(98, 217, 232, 0.5); }
 #touch .tb.sm.swp span { font-size: 7px; }
 .tbar-r { width: auto; }
+
+/* Sniping style */
+.style-opts { grid-template-columns: 1fr !important; }
+.style-custom { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
+#btn-style em.cur { font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em; color: var(--amber); margin-left: 8px; }

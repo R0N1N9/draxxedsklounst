@@ -24,10 +24,13 @@ import { ToolSystem, setThermal } from './tools.js';
 import { LoadoutPanel } from './loadout.js';
 import { ViewModel } from './viewmodel.js';
 import { WEAPONS } from './weapons.js';
+import { Supply } from './supply.js';
+import { RULES, rulesLabel } from './rules.js';
 import { PALETTES as PALS } from './atmosphere.js';
 
 const ACCENTS = ['#e0a040', '#40c8d8'];
-const ZOOM_GLINT = { 4: 0.32, 8: 0.68, 12: 1.0 };
+// Higher magnification = bigger objective = more glint.
+const ZOOM_GLINT = { 4: 0.32, 5: 0.4, 8: 0.68, 10: 0.85, 12: 1.0, 16: 1.15, 20: 1.3 };
 const UAV_INTERVAL = 60;
 const PART_NAMES = { head: 'HEADSHOT', torso: 'BODY SHOT', legs: 'LEG SHOT' };
 
@@ -195,6 +198,7 @@ export class Game {
 
     this.targets = [];
     this.tools = new ToolSystem(this);
+    this.supply = new Supply(this);
     this.loadoutPanel = new LoadoutPanel(this, settings.saveLoadout);
     if (this.offline) this.net = new BotPeer(this, { difficulty: this.difficulty, behaviour: this.offline === 'sandbox' ? 'passive' : 'hostile' });
     if (mode === 'practice') this._setupPractice();
@@ -310,8 +314,10 @@ export class Game {
   _setupNet() {
     const n = this.net;
     this.tools.bindNet(n);
+    n.on('supply', (m) => this.supply.onRemote(m));
+    n.on('supplytaken', (m) => this.supply.onRemoteTaken(m));
     n.on('open', () => {
-      n.send({ t: 'hello', name: this.name, pal: this.paletteKey });
+      n.send({ t: 'hello', name: this.name, pal: this.paletteKey, rules: { ...RULES } });
       if (this.offline === 'sandbox') {
         this.sides = [-1, 1];
         this.remoteAlive = true;
@@ -488,6 +494,7 @@ export class Game {
     this.hud.clearMarkers();
     this.hud.card('');
     this.tools.reset();
+    this.supply.reset();
     this.remoteHp = 100;
     this.remoteAlive = true;
     this.remoteDeadLock = false;
@@ -497,7 +504,7 @@ export class Game {
     this.killShown = null;
     if (this.replay.active) this.replay.stop();
     this.roundTime = 0;
-    this.hud.message(`ROUND ${this.round}`, `Insertion — weapons cold · ${side < 0 ? 'South' : 'North'} ridge`, 4);
+    this.hud.message(`ROUND ${this.round}`, `Insertion — weapons cold · ${side < 0 ? 'South' : 'North'} ridge · ${rulesLabel()} rules`, 4);
   }
 
   _onRoundResult(r) {
@@ -830,6 +837,11 @@ export class Game {
     P.range = dist;
     P.rangeShow = 5;
     this.audio.click();
+    // Auto-zero: dial the scope to the measured range so the crosshair is the hit point.
+    if (RULES.autoZero && dist && P.def.scope && RULES.gravity > 0) {
+      P.zero = Math.round(clamp(dist, 50, 1500) / 5) * 5;
+      this.hud.message('', `Zero set ${P.zero} m`, 1.2);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -882,6 +894,7 @@ export class Game {
     } else if (!replaying && P.alive) {
       if (canFire && a.scout) this.tools.useScout();
       if (canFire && a.tactical) this.tools.useTactical();
+      if (canFire && a.supply) this.supply.call();
       const flyFrom = this.sandbox && this.sandbox.fly ? P.pos.clone() : null;
       P.update(dt, a, this.world, { canMove });
       if (flyFrom) this.sandbox.flyMove(dt, flyFrom);
@@ -906,6 +919,7 @@ export class Game {
     this._updateUplinks(dt, live);
     this._updateBullets(dt);
     this.tools.update(dt);
+    this.supply.update(dt);
     this._updatePractice(dt);
     this._updateRemote(dt);
     this._updatePings();

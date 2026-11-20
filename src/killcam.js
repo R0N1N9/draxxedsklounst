@@ -72,13 +72,15 @@ export class Replay {
     const p = opts.shot.o.clone(), v = opts.shot.v.clone();
     const path = [{ p: p.clone(), t: 0 }];
     let t = 0, best = Infinity;
-    const dt = 1 / 240;
-    while (t < 5) {
+    // Small steps (≤ 2 m) so very fast rounds (Halo-style instant hits) still trace cleanly.
+    const dt = Math.min(1 / 240, 2 / Math.max(1, v.length()));
+    let n = 0;
+    while (t < 5 && n++ < 20000) {
       stepProjectile(p, v, dt, this.wind, opts.shot.windT0 + t);
       t += dt;
       path.push({ p: p.clone(), t });
       const d = p.distanceTo(opts.impact);
-      if (d > best + 0.01 && best < 3) break;
+      if (d > best + 0.01 && (best < 3 || path.length > 4)) break;
       best = Math.min(best, d);
     }
     path[path.length - 1].p.copy(opts.impact);
