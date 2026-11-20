@@ -38,6 +38,7 @@ const DECOY_SPEED = 8.5, DECOY_LIFE = 7;
 const DIRS = ['E', 'NE', 'N', 'NW', 'W', 'SW', 'S', 'SE'];
 const compass = (dx, dy) => DIRS[((Math.round((Math.atan2(-dy, dx) / (Math.PI / 4))) % 8) + 8) % 8];
 const wobble = (ph) => 0.62 * Math.sin(ph) + 0.38 * Math.sin(ph * 2.37 + 1.3);
+const IDLE = ['cron: job 4 done', 'cpu0: 71C', 'gc: sweeping lane', 'swap: 3% used', 'sshd: 2 failed logins', 'fsck: / clean', 'ntp: drift +0.002s', 'daemon[417]: restarted'];
 const r2 = (v) => Math.round(v * 100) / 100;
 
 export default {
@@ -81,11 +82,12 @@ export default {
       world, ctx,
     };
     const view = makeView(ctx, world, S, pal, term);
+    S.view = view;
     for (const p of P) if (!p.remote && (p.i !== me || ctx.autopilot)) p.bot = makeBot(ctx, world, S, p);
     const viewers = online ? [me] : [0, 1];
     const human = { mx: 0, my: 0, a: 0, fire: false, alt: false, a1: false, a2: false };
     const cmds = [null, null], ptr = { x: 0, y: 0 };
-    let helped = false, wasSudden = false, decayWave = 0, hearT = [0, 0], doorShut = [false, false, false, false], wasLive = false, glitchT = 8 + Math.random() * 6, pingN = 0;
+    let helped = false, wasSudden = false, decayWave = 0, hearT = [0, 0], doorShut = [false, false, false, false], wasLive = false, glitchT = 8 + Math.random() * 6, idleT = 12;
     const heard = (v) => v === me;
 
     // ---- commands ----
@@ -360,7 +362,8 @@ export default {
       for (const v of viewers) {
         S.reveal[v] = Math.max(0, S.reveal[v] - dt);
         const k = S.know[v], foe = P[1 - v], me_ = P[v];
-        const s = ctx.phase === 'live' ? sees(v) : 2;
+        const s = ctx.phase === 'live' ? sees(v) : 0;
+        const sv = ctx.phase === 'live' ? s : foe.alive ? 2 : 0; // what the screen shows: both snipers, before and after the duel
         if (s) {
           k.x = foe.x; k.y = foe.y; k.vx = foe.vx; k.vy = foe.vy; k.t = S.t; k.vis = true; k.seenT = s === 2 ? k.seenT + dt : 0; k.kind = s === 2 ? 'seen' : 'ping';
         } else {
@@ -376,13 +379,13 @@ export default {
           }
         }
         if (v === me) {
-          const tgt = s === 2 ? 1 : s === 1 ? 1 : 0;
+          const tgt = sv ? 1 : 0;
           const was = S.seen.a > 0.5;
           S.seen.a = damp(S.seen.a, tgt, tgt ? 26 : 8, dt);
-          S.seen.mode = s === 2 ? 'los' : s === 1 ? 'blip' : S.seen.mode;
+          S.seen.mode = sv === 2 ? 'los' : sv === 1 ? 'blip' : S.seen.mode;
           if (s === 2 && !was && ctx.phase === 'live' && S.liveT > 0.5 && S.t - S.ghost.t > 0.4) term.say(`contact: hostile in sight · ${Math.round(Math.hypot(foe.x - me_.x, foe.y - me_.y))} cols`, 'sys');
-          if (!s && was && foe.alive) { S.ghost.on = true; S.ghost.x = foe.x; S.ghost.y = foe.y; S.ghost.t = S.t; }
-          if (s) S.ghost.on = false;
+          if (!sv && was && foe.alive) { S.ghost.on = true; S.ghost.x = foe.x; S.ghost.y = foe.y; S.ghost.t = S.t; }
+          if (sv) S.ghost.on = false;
         }
       }
       // decoys: seen by the same rules as the sniper they imitate
@@ -457,7 +460,11 @@ export default {
           const shut = d.e < 0.05;
           if (shut && !doorShut[d.id]) { doorShut[d.id] = true; if (live) sound.doorShut(d.c0 + 2); }
           if (!shut) doorShut[d.id] = false;
-          if (d.warn && live && !d.beeped) { d.beeped = true; sound.doorWarn(); } else if (!d.warn) d.beeped = false;
+          if (d.warn && live && !d.beeped) {
+            d.beeped = true;
+            sound.doorWarn();
+            if (Math.hypot(d.c0 + 2 - P[me].x, d.r * 2 - P[me].y) < 34) term.say(`door ${d.id + 1}: closing`, 'warn');
+          } else if (!d.warn) d.beeped = false;
         }
 
         for (const p of P) if (!p.remote) cmds[p.i] = p.bot ? p.bot.think(dt) : humanCmd(p);
@@ -485,6 +492,7 @@ export default {
           S.kill.typed += rdt * 40;
           if (S.kill.t < 0.9) S.glitch = Math.max(S.glitch, 0.7 * (1 - S.kill.t / 0.9));
         }
+        if (live && (idleT -= dt) <= 0) { idleT = 11 + Math.random() * 10; term.say(IDLE[(Math.random() * IDLE.length) | 0], 'sys'); }
         glitchT -= dt;
         if (glitchT <= 0 && live) { glitchT = 7 + Math.random() * 9; S.glitch = Math.max(S.glitch, 0.35); } // the monitor is old
         camera(dt);

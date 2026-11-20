@@ -2,10 +2,12 @@
 // sway, the same cover. What scales with ctx.botSkill is how fast it notices you, how long
 // its aim takes to settle and how well it judges lead and drop.
 //
-// The plan: hold a post (kneeling out of sight, rising to glass the square through the
-// scope every few seconds), then hop to the next post nearer the enemy's last known
-// position — sooner if it is aggressive, later if it is patient. See the enemy: stop, settle,
-// shoot, work the bolt behind cover. Hear a shell coming: run. Under fire in the open: smoke.
+// The plan: open from the barricade, trading a round or two down the centre lane; then hop
+// post to post (kneeling out of sight, rising to glass the square through the scope) towards
+// the enemy's last known position — sooner if it is aggressive, later if it is patient — and
+// from inside 55 m with a view of that position, lie in ambush. See the enemy: stop, settle,
+// shoot, work the bolt behind cover. Caught moving by incoming fire: run for the next cover.
+// Hear a shell coming: run. Under fire in the open: smoke.
 import { clamp, angDiff, gauss } from '../../kit.js';
 import { shapeOf, EYE_STAND, EYE_PEEK } from './soldier.js';
 
@@ -19,7 +21,7 @@ export function makeBot(ctx, map, G) {
       // The opening: glass the far barricade down the centre lane and trade a round or two before moving up.
       state: 'hold', post: null, prev: null, path: null, pi: 0, holdT: 0, holdMax: 3.6 + rnd() * 1.4, peekT: 3.5 + rnd() * 2, peeking: true,
       aggr: 0.3 + rnd() * 0.6, see: 0, knownX: 0, knownZ: 0, knownT: 0, pingSeen: -1, onT: 0, errY: 0, errP: 0, gY: 0, gP: 0, rollT: 0, leadErr: 0,
-      react: 0.5 + (1 - skill) * 0.8, underFire: 0, blindT: 0, stuckT: 0, stuckN: 0, lx: p.x, lz: p.z, sweep: rnd() * 6, stand: 0, decoyLook: [0, 0, 0, 0], afterDecoy: false, fooled: -1, init: false,
+      react: 0.5 + (1 - skill) * 0.8, underFire: 0, blindT: 0, stuckT: 0, stuckN: 0, lx: p.x, lz: p.z, sweep: rnd() * 6, stand: 0, decoyLook: [0, 0, 0, 0], afterDecoy: false, fooled: -1, init: false, shots: 0,
     };
   }
 
@@ -82,7 +84,7 @@ export function makeBot(ctx, map, G) {
   // Fill cmd for sniper p against enemy e.
   function think(p, e, dt, cmd) {
     const b = p.bot, time = G.time(), sudden = G.suddenT();
-    const grace = 2.5 + (1 - skill) * 1.1; // nobody is shot off the starting line: a moment first to get a head down
+    const grace = 2.3 + (1 - skill); // nobody is shot off the starting line: a moment first to get a head down
     if (!b.init) { b.init = true; b.knownX = e.x; b.knownZ = e.z; let bd = 1e9; for (const q of map.posts) { const d = Math.hypot(q.x - p.x, q.z - p.z); if (d < bd && q.dir === (e.z < p.z ? -1 : 1)) { bd = d; b.post = q; } } }
     cmd.fire = cmd.a1 = cmd.a2 = false;
     cmd.mx = cmd.my = 0;
@@ -145,7 +147,8 @@ export function makeBot(ctx, map, G) {
         const ambush = b.blindT === 0 && dist < 55 && b.knownT < 8 && b.underFire <= 0;
         b.holdT += dt * (ambush ? 0.3 : (time > 30 ? 2.2 : time > 14 ? 1.5 : 1) * (b.knownT > 9 ? 1.5 : 1) * (b.blindT > 1.2 ? 2.5 : 1));
         // (Trading shots the length of the square settles nothing: patience gone, the bot moves up even with the enemy in view.)
-        if (b.holdT > b.holdMax && (!target || closing || dist > 55) && p.bolt <= 0) {
+        // (From the opening post it wants to have had its shot first — within reason.)
+        if (b.holdT > b.holdMax + (b.prev || b.shots ? 0 : 3.5) && (!target || closing || dist > 55) && p.bolt <= 0) {
           if (!goTo(p, b, choosePost(p, b, sudden))) { b.holdT = b.holdMax - 1.5; b.aggr = Math.min(1, b.aggr + 0.15); }
         }
       }
@@ -177,8 +180,11 @@ export function makeBot(ctx, map, G) {
         const post = b.post, high = post.kind === 'high';
         // Glass the square for a few seconds, then get your head down for a couple.
         b.peekT -= dt;
-        if (b.peekT <= 0) { b.peeking = !b.peeking; b.peekT = b.peeking ? 2.4 + rnd() * 2.6 : 0.5 + rnd() * (1.2 - b.aggr); }
-        const up = (target || b.peeking) && p.bolt <= 0.5 && p.reload <= 0; // down for the first half of the bolt, back up as it closes
+        // The longer a round runs the less careful it gets: past a point it stops ducking to
+        // work the bolt and barely takes its eye off the glass — which is your opening as much as its own.
+        const bold = time > 7 + 5 * (1 - b.aggr);
+        if (b.peekT <= 0) { b.peeking = !b.peeking; b.peekT = b.peeking ? 2.4 + rnd() * 2.6 : bold ? 0.3 : 0.5 + rnd() * (1.2 - b.aggr); }
+        const up = (target || b.peeking) && (p.bolt <= 0.5 || bold) && p.reload <= 0; // down for the first half of the bolt, back up as it closes
         wantCrouch = post.kind === 'low' || (post.kind === 'pit' && !up) || (!post.kind && dist > 26);
         wantScope = up;
         // Behind tall cover: step out to the corner to look, back in to work the bolt.
@@ -218,6 +224,7 @@ export function makeBot(ctx, map, G) {
       // (On the move only at close quarters, or when the barrage leaves no time to stop.)
       if (aligned && b.onT > b.react && (!needScope || p.scope > 0.93 || moving) && p.bolt <= 0 && p.reload <= 0 && p.ammo > 0 && (!moving || d3 < 24 || sudden >= 0)) {
         cmd.fire = true;
+        b.shots++;
         // The next one waits for the sight picture to come back, not just for the bolt.
         b.onT = Math.min(b.onT, 0.5);
         b.react = b.onT + 1.1 + rnd() * 0.5 * (1.4 - skill);

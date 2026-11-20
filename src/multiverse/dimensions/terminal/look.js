@@ -50,7 +50,7 @@ export function fitLayout(L, w, h, touch) {
 
 /** Make (or resize) the canvas a layer draws into; returns true when it has to be redrawn. */
 export function sizeLayer(Y, L, rs) {
-  const sc = Math.min(rs * 1.3, 2400 / L.mw, 2);
+  const sc = Math.min(rs * 1.1, 2200 / L.mw, 2);
   const wpx = Math.max(1, Math.round(COLS * L.u * sc)), hpx = Math.max(1, Math.round(H * L.u * sc));
   Y.sc = sc;
   if (Y.canvas.width === wpx && Y.canvas.height === hpx) return false;

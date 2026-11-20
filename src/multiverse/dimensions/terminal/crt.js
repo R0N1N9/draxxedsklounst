@@ -4,9 +4,9 @@
 // flicker and tearing. No CanvasRenderingContext2D.filter anywhere (Safari has none).
 import { makeCanvas, clamp, noise2 } from '../../kit.js';
 
-const K = 0.032;            // barrel strength
+const K = 0.024;            // barrel strength
 const SCALE = 1 / (1 - K);  // grow the picture so the middle of each edge still touches the glass
-const GX = 22, GY = 13;     // distortion mesh
+const GX = 28, GY = 16;     // distortion mesh
 const PITCH = 3;            // scanline pitch in CSS px
 
 export function makeCrt(pal) {
@@ -21,7 +21,7 @@ export function makeCrt(pal) {
 
   const C = { canvas: scene.canvas, g: scene.g, rs: 1, w: 0, h: 0, ready: false };
   const px = new Float32Array((GX + 1) * (GY + 1)), py = new Float32Array((GX + 1) * (GY + 1));
-  let scanPat = null, grainPat = null, patG = null, last = '';
+  let scanPat = null, grainPat = null, barGrad = null, patG = null, last = '';
 
   const warp = (u, v, out) => {
     const f = (1 - K * (u * u + v * v)) * SCALE;
@@ -32,11 +32,11 @@ export function makeCrt(pal) {
 
   /** Resize to the stage; true when anything changed. */
   C.size = (w, h, dpr) => {
-    const rs = clamp(Math.min(dpr, Math.sqrt(3.2e6 / (w * h))), 1, 2);
+    const rs = clamp(Math.min(dpr, Math.sqrt(2.6e6 / (w * h))), 1, 2);
     const key = `${w}x${h}@${rs.toFixed(2)}`;
     if (key === last) return false;
     last = key;
-    C.w = w; C.h = h; C.rs = rs;
+    C.w = w; C.h = h; C.rs = rs; C.dpr = Math.max(1, dpr);
     scene.canvas.width = Math.round(w * rs); scene.canvas.height = Math.round(h * rs);
     b1.canvas.width = Math.max(2, Math.round(w * rs / 4)); b1.canvas.height = Math.max(2, Math.round(h * rs / 4));
     b2.canvas.width = Math.max(2, Math.round(w * rs / 12)); b2.canvas.height = Math.max(2, Math.round(h * rs / 12));
@@ -93,10 +93,11 @@ export function makeCrt(pal) {
     const n = 2 + Math.round(amount * 9);
     g.setTransform(1, 0, 0, 1, 0, 0);
     for (let i = 0; i < n; i++) {
-      const y = Math.floor((noise2(seed * 1.7 + i * 13.1, 4.2) * 0.5 + 0.5) * (Math.min(h, maxY || h) - 40) * rs);
+      const lim = Math.min(h, maxY || h);
       const bh = Math.floor((6 + (noise2(i * 7.3, seed) * 0.5 + 0.5) * 36 * amount) * rs);
+      const y = Math.floor((noise2(seed * 1.7 + i * 13.1, 4.2) * 0.5 + 0.5) * Math.max(1, lim * rs - bh));
       const dx = Math.round(noise2(seed + i * 5.9, 9.1) * amount * 70 * rs);
-      g.drawImage(C.canvas, 0, y, C.canvas.width, bh, dx, y, C.canvas.width, bh);
+      try { g.drawImage(C.canvas, 0, y, C.canvas.width, bh, dx, y, C.canvas.width, bh); } catch (e) { break; }
     }
     g.setTransform(rs, 0, 0, rs, 0, 0);
   };
@@ -132,8 +133,12 @@ export function makeCrt(pal) {
     for (let j = 0; j < GY; j++) {
       for (let i = 0; i < GX; i++) {
         const a = j * (GX + 1) + i, b = a + 1, c = a + GX + 1, d = c + 1;
-        const x0 = Math.min(px[a], px[c]), x1 = Math.max(px[b], px[d]), y0 = Math.min(py[a], py[b]), y1 = Math.max(py[c], py[d]);
-        g.drawImage(sc, (i / GX) * sw, (j / GY) * sh, sw / GX, sh / GY, x0, y0, x1 - x0 + 0.8, y1 - y0 + 0.8);
+        // the tile's mean rectangle: neighbours share their edges exactly, so nothing stretches or gaps
+        const x0 = (px[a] + px[c]) / 2, x1 = (px[b] + px[d]) / 2, y0 = (py[a] + py[b]) / 2, y1 = (py[c] + py[d]) / 2;
+        // Each tile reads a few extra source pixels on every side, or the seams smear the text.
+        const tw = sw / GX, th = sh / GY, sx = i * tw, sy = j * th, kx = (x1 - x0) / tw, ky = (y1 - y0) / th;
+        const l = i ? 1.5 : 0, t = j ? 1.5 : 0, r = i < GX - 1 ? 1.5 : 0, bt = j < GY - 1 ? 1.5 : 0;
+        g.drawImage(sc, sx - l, sy - t, tw + l + r, th + t + bt, x0 - l * kx, y0 - t * ky, (tw + l + r) * kx, (th + t + bt) * ky);
       }
     }
     // Bloom: two blurry copies added on top, scaled the way the glass magnifies on average.
@@ -145,16 +150,20 @@ export function makeCrt(pal) {
     g.drawImage(b2.canvas, bx, by, bw, bh);
     g.globalCompositeOperation = 'source-over';
     // scanlines, rolling refresh bar, grain, glass
-    if (patG !== g || !scanPat) { patG = g; scanPat = g.createPattern(scan.canvas, 'repeat'); grainPat = g.createPattern(grain.canvas, 'repeat'); }
+    if (patG !== g || !scanPat) { patG = g; barGrad = null; scanPat = g.createPattern(scan.canvas, 'repeat'); grainPat = g.createPattern(grain.canvas, 'repeat'); }
     g.globalAlpha = 1;
     if (scanPat) { g.fillStyle = scanPat; g.fillRect(0, 0, w, h); }
-    const by2 = rollY * (h + 120) - 60;
-    const bar = g.createLinearGradient(0, by2 - 60, 0, by2 + 60);
-    bar.addColorStop(0, 'rgba(255,255,255,0)');
-    bar.addColorStop(0.5, `rgba(${pal.amber ? '255,190,120' : '150,255,170'},0.045)`);
-    bar.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = bar;
-    g.fillRect(0, by2 - 60, w, 120);
+    if (!barGrad) {
+      barGrad = g.createLinearGradient(0, -60, 0, 60);
+      barGrad.addColorStop(0, 'rgba(255,255,255,0)');
+      barGrad.addColorStop(0.5, `rgba(${pal.amber ? '255,190,120' : '150,255,170'},0.045)`);
+      barGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    }
+    g.save();
+    g.translate(0, rollY * (h + 120) - 60);
+    g.fillStyle = barGrad;
+    g.fillRect(0, -60, w, 120);
+    g.restore();
     if (grainPat) {
       g.save();
       g.globalAlpha = 0.05;

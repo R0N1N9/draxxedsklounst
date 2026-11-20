@@ -8,7 +8,7 @@
 
 const SMOKE_VERT = `
 attribute vec3 iPos; attribute vec4 iParam; attribute vec3 iCol;
-uniform float uFogD; uniform vec3 uSunView;
+uniform float uFogD; uniform vec3 uSunView; uniform vec4 uClear;
 varying vec2 vUv, vL; varying vec3 vCol; varying float vAlpha, vHeat, vFog, vSunAmt, vLit;
 void main() {
   vec4 mv = viewMatrix * vec4(iPos, 1.0);
@@ -19,6 +19,7 @@ void main() {
   vUv = uv; vCol = iCol; vHeat = iParam.w;
   float depth = -mv.z;
   vAlpha = iParam.z * smoothstep(0.3, 2.2, depth); // never a hard quad in the lens
+  vAlpha *= 1.0 - uClear.w * (1.0 - smoothstep(5.0, 11.0, distance(iPos, uClear.xyz))); // the kill is never fought out behind a cloud
   vFog = 1.0 - exp(-uFogD * uFogD * depth * depth);
   vSunAmt = pow(max(dot(normalize(mv.xyz), uSunView), 0.0), 3.0);
   // The sun's direction in this quad's own (rotated) frame: one side of every billow is lit.
@@ -155,9 +156,10 @@ export function buildFx(THREE, tex, map, fogShared, fogColor, fogDensity, Q) {
   const sv = new Float32Array(SN * 8); // vx vy vz life max size growth alpha
   const sx = new Float32Array(SN * 4); // spin drag rise heatFade
   let sCount = 0;
+  const clearU = { value: new THREE.Vector4(0, 0, 0, 0) };
   mesh(sm.g, new THREE.ShaderMaterial({
     vertexShader: SMOKE_VERT, fragmentShader: SMOKE_FRAG, transparent: true, depthWrite: false,
-    uniforms: { uTex: { value: tex.puff }, uSunCol: { value: sunCol }, uAmb: { value: amb }, uFog: { value: fogColor }, uSunFog: fogShared.uSunFog, uSunView: fogShared.uSunView, uFogD: { value: fogDensity } },
+    uniforms: { uTex: { value: tex.puff }, uSunCol: { value: sunCol }, uAmb: { value: amb }, uFog: { value: fogColor }, uSunFog: fogShared.uSunFog, uSunView: fogShared.uSunView, uFogD: { value: fogDensity }, uClear: clearU },
   }), 5);
   // o: { x y z, vx vy vz, size, grow (m/s), life, alpha, r g b, heat, spin, drag, rise }
   function smoke(x, y, z, vx, vy, vz, size, grow, life, alpha, r, g, b, heat = 0, spin = 0.3, drag = 0.8, rise = 0.4) {
@@ -357,6 +359,8 @@ export function buildFx(THREE, tex, map, fogShared, fogColor, fogDensity, Q) {
   return {
     group, smoke, sparks, clods, tracer, marker, scorch, flash, flareLights,
     glow: glows.push, star: stars.push,
+    // Thin the smoke around (x, y, z) by `amount` (0..1): the shot that ends a round blows its own window in the cloud.
+    clear(x, y, z, amount) { clearU.value.set(x, y, z, amount); },
     // Start of a frame's worth of immediate sprites.
     begin() { glows.reset(); stars.reset(); trN = 0; mkN = 0; },
     // End of frame: advance the particles and upload everything.

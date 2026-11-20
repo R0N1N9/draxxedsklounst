@@ -1,6 +1,6 @@
 // TTY DUEL — everything you see: the fogged map, the machinery, rays, snipers, the console
 // and the kill, all drawn as flat text on the scene canvas, then handed to the CRT.
-import { clamp, damp, roundRect, noise2, makeCanvas, TAU } from '../../kit.js';
+import { clamp, roundRect, noise2, makeCanvas, TAU } from '../../kit.js';
 import { COLS, ROWS, CH, W, H } from './world.js';
 import { FONT, fitLayout, sizeLayer, renderLayer } from './look.js';
 import { RAY_CH, AIM_CH, rayChar } from './fx.js';
@@ -20,7 +20,6 @@ export function makeView(ctx, world, S, pal, term) {
   const halos = new Map();
   const tmp = { x: 0, y: 0 }, tmp2 = { x: 0, y: 0 };
   let sizeKey = '', frame = 0, fontCheck = 0, layerDirty = true;
-  const P0 = ctx.players[0], P1 = ctx.players[1];
   const myCol = ctx.players[ctx.me].color, foeCol = ctx.players[1 - ctx.me].color;
   const colOf = (i) => ctx.players[i].color;
   const V = { L, crt };
@@ -389,7 +388,6 @@ export function makeView(ctx, world, S, pal, term) {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     const pool = S.parts.pool;
-    let big = null;
     for (let pass = 0; pass < 2; pass++) {
       font(u * (pass ? 1.9 : 1.2), 700);
       for (let i = 0; i < pool.length; i++) {
@@ -401,7 +399,6 @@ export function makeView(ctx, world, S, pal, term) {
       }
     }
     g.globalAlpha = 1;
-    return big;
   }
 
   // Footprints of whoever was last seen, the lingering '?'.
@@ -429,7 +426,7 @@ export function makeView(ctx, world, S, pal, term) {
     const fork = me.forkCd > 0 ? `${Math.ceil(me.forkCd)}s` : 'rdy';
     const maxCh = Math.floor((L.cx1 - L.cx0) / (L.cf * 0.6)) - 16;
     if (maxCh >= 58) return `rifle ${bar(rl, 5)}  breath ${bar(br, 5)}  ping ${ping}  fork ${fork}`;
-    if (maxCh >= 30) return `rifle ${bar(rl, 4)} breath ${bar(br, 4)} p:${ping} f:${fork}`;
+    if (maxCh >= 44) return `rifle ${bar(rl, 4)} breath ${bar(br, 4)} p:${ping} f:${fork}`;
     return `${bar(rl, 3)} ${bar(br, 3)} ${ping}`;
   }
 
@@ -446,7 +443,7 @@ export function makeView(ctx, world, S, pal, term) {
   }
 
   function drawReticle() {
-    if (ctx.input.device !== 'kbm' || ctx.phase !== 'live') return;
+    if (ctx.input.device !== 'kbm' || ctx.phase !== 'live' || ctx.autopilot) return;
     const me = S.P[ctx.me];
     if (!me.alive) return;
     V.pointerUnits(tmp);
@@ -560,6 +557,23 @@ export function makeView(ctx, world, S, pal, term) {
     g.globalAlpha = 1;
   }
 
+  // The monitor's housekeeping: now and then a band of static crawls down the map (decoration only).
+  function drawStatic() {
+    const ph = (S.t % 19) / 1.8;
+    if (ph >= 1 || S.fog < 0.2) return;
+    const row = Math.floor(ph * (ROWS + 4)) - 2;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    font(u * 1.3, 700);
+    g.fillStyle = pal.hi;
+    for (let r = row; r < row + 2; r++) {
+      if (r < 0 || r >= ROWS) continue;
+      g.globalAlpha = r === row ? 0.45 : 0.18;
+      for (let c = 0; c < COLS; c += 1) if (((c * 7 + r * 13 + (S.t * 30 | 0)) % 5) < 2) cellText('▒░#:.'[(c + r + (S.t * 30 | 0)) % 5], c, r);
+    }
+    g.globalAlpha = 1;
+  }
+
   V.render = () => {
     if (!crt.ready) return;
     V.fit();
@@ -580,6 +594,7 @@ export function makeView(ctx, world, S, pal, term) {
     g.translate(-X(cam.x), -Yp(cam.y));
     drawMap();
     drawBits();
+    drawStatic();
     drawMachinery();
     drawShrink();
     drawGhost();

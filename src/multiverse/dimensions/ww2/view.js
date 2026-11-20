@@ -72,6 +72,7 @@ export function makeView(ctx, THREE, renderer, W) {
     shake(level) { trauma = Math.min(1, trauma + level); },
     kick(k) { kickV += 0.34 * k; trauma = Math.min(1, trauma + 0.18 * k); },
     beginIntro() { introT = 0; skipLeft = 0; drawAt = -1e9; },
+    poke() { skipLeft = 0; drawAt = -1e9; }, // whatever the pacing below says, the next frame is drawn
     // Direction from the eye to whatever the open-sight crosshair is on (false in the scope).
     aim(eye, out) { if (!aimOk) return false; out.subVectors(aimPt, eye).normalize(); return true; },
     killCam(v) {
@@ -279,9 +280,10 @@ export function makeView(ctx, THREE, renderer, W) {
       fresh = false;
       if (iv > worst) worst = iv;
       // A software rasteriser pays for a draw over the next several frames, not in one: add up
-      // everything it stalled since the last draw, and let no more than a sixth of the time go on drawing.
+      // everything it stalled since the last draw, and let no more than a seventh of the time
+      // go on drawing — a slide show, but one in which the duel itself runs true.
       if (!Q.rich && iv > 40) debt += iv - 17;
-      const wait = !Q.rich && frames > warm && (iv > 60 || now - drawAt < Math.min(4000, debt * 5));
+      const wait = !Q.rich && frames > warm && (iv > 60 || now - drawAt < Math.min(15000, debt * 6));
       if (api.force > 0) api.force--; // (test scripts: draw now)
       // A render with no update before it is the core photographing the world for a
       // transition: the canvas must hold a picture, so put the last graded frame back.

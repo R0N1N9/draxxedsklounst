@@ -140,7 +140,7 @@ export default {
       };
     });
     const me = P[ctx.me];
-    let T = 0, suddenAt = -1, flinch = 0, killInfo = null, tollT = -1, dustT = 0, emitAcc = 0, tick = 0;
+    let T = 0, suddenAt = -1, flinch = 0, killInfo = null, tollT = -1, dustT = 0, emitAcc = 0, tick = 0, clearA = -1;
     const E = new THREE.Vector3(), D = new THREE.Vector3(), A = new THREE.Vector3(), B = new THREE.Vector3();
     const sh = {}, hits = [], notes = { text: '', a: 0 };
     for (let i = 0; i < 4; i++) hits.push({ ang: 0, a: 0, near: false, x: 0, z: 0 });
@@ -499,6 +499,7 @@ export default {
       flinch = Math.min(flinch, 0.2);
       tollT = 0.09; // the bell answers, once
       dustT = 1.2;
+      clearA = 0;
       view.killCam(v);
     }
 
@@ -567,6 +568,7 @@ export default {
       }
       // The kill moment's extras.
       if (tollT > 0 && (tollT -= dt) <= 0) sfx.bell(1.1, 0.5);
+      if (clearA >= 0 && clearA < 1) { const v = P[ctx.result && ctx.result.victim >= 0 ? ctx.result.victim : 0]; clearA = Math.min(1, clearA + dt * 9); fx.clear(v.x, v.y + 1, v.z, clearA * 0.92); }
       if (dustT > 0) {
         dustT -= dt;
         const v = P[ctx.result && ctx.result.victim >= 0 ? ctx.result.victim : 0];
@@ -606,10 +608,11 @@ export default {
       // The core clamps a frame's step but the round clock keeps real time: a client that
       // draws slowly would play in slow motion and fall behind its own world (and its
       // opponent). So a live frame simulates however long the clock says has passed, in
-      // slices short enough for the collision code.
+      // slices short enough for the collision code. (A person gets at most a third of a second
+      // made up — nobody should run on blind through a long hitch — a bot all of it.)
       update(dt) {
         if (ctx.phase !== 'live') { frame(dt, ctx.phase === 'over' ? T + dt : ctx.time, true); return; }
-        const t0 = T, span = Math.max(0, ctx.time - t0), n = clamp(Math.ceil(span / 0.034), 1, 12);
+        const t0 = T, span = Math.max(0, ctx.time - t0), n = clamp(Math.ceil(span / 0.034), 1, me.bot ? 80 : 6);
         for (let i = 1; i <= n && (i === 1 || ctx.phase === 'live'); i++) frame(Math.min(span / n, 0.05), t0 + (span * i) / n, i === 1);
       },
 
@@ -618,7 +621,7 @@ export default {
 
       onPhase(phase) {
         if (phase === 'intro') view.beginIntro();
-        else if (phase === 'live') sfx.music();
+        else if (phase === 'live') { sfx.music(); view.poke(); }
         else if (phase === 'over') {
           const r = ctx.result;
           if (r && r.victim >= 0) fell(P[r.victim]);

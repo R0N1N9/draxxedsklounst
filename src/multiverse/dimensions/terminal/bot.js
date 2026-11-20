@@ -18,8 +18,8 @@ export function makeBot(ctx, world, S, p) {
   let wpN = 0, wpI = 0, t = 0;
   const goal = { x: p.x, y: p.y, kind: '' };
   let holdT = 1 + Math.random() * 2, replanT = 0, stuckT = 0, lastX = p.x, lastY = p.y, lastSeen = -99, err = 0, errT = 0;
-  let strafe = 1, strafeT = 0, retreatUntil = 0, dodgeUntil = 0, dodgeX = 0, dodgeY = 0, pingedAt = -99, shotAt = -99, forkWanted = 0, fireDelay = 0;
-  let aimX = 0, aimY = 0, hasAim = false, nextSup = 8 + Math.random() * 6, fooled = null, peek = 0;
+  let strafe = 1, strafeT = 0, retreatUntil = 0, dodgeUntil = 0, dodgeX = 0, dodgeY = 0, pingedAt = -99, fireDelay = 0;
+  let nextSup = 8 + Math.random() * 6, fooled = null;
 
   const react = lerp(0.85, 0.15, skill), aimSd = lerp(0.05, 0.005, skill), leadK = lerp(0.25, 0.95, skill);
   const turn = 5 + 14 * skill, dodgeP = skill * 0.85, patience = lerp(11, 5, skill);
@@ -28,7 +28,7 @@ export function makeBot(ctx, world, S, p) {
   const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
 
   // ---- picking where to be ----
-  function pickSpot(kind, tx, ty, ideal) {
+  function pickSpot(kind, tx, ty, ideal, aggr = 0) {
     let best = null, bs = -1e9;
     const spots = world.spots;
     for (let i = 0; i < spots.length; i++) {
@@ -45,7 +45,7 @@ export function makeBot(ctx, world, S, p) {
       } else {
         // vantage: see far, sit by a wall, lean toward where the enemy is likely to be
         const d = dist(s.x, s.y, tx, ty);
-        sc += s.sight * 0.22 + (s.wall < 3.2 ? 5 : 0) - Math.abs(d - ideal) * 0.3 - dme * 0.12;
+        sc += (1 - aggr) * (s.sight * 0.22 + (s.wall < 3.2 ? 5 : 0)) - Math.abs(d - ideal) * (0.3 + 0.9 * aggr) - dme * 0.1;
       }
       if (sc > bs) { bs = sc; best = s; }
     }
@@ -59,7 +59,7 @@ export function makeBot(ctx, world, S, p) {
   function plan() {
     wpN = world.path(p.x, p.y, goal.x, goal.y, wp);
     wpI = 0;
-    replanT = 3.5;
+    replanT = 9;
     return wpN > 0;
   }
 
@@ -112,7 +112,7 @@ export function makeBot(ctx, world, S, p) {
 
     // a decoy in plain sight is as good as a sniper, to a bot that has not learned better
     let tx = 0, ty = 0, tvx = 0, tvy = 0, contact = false, decoy = false;
-    if (k.vis && foe.alive) { tx = foe.x; ty = foe.y; tvx = foe.vx; tvy = foe.vy; contact = k.seenT > 0 || k.kind === 'ping'; }
+    if (k.vis && foe.alive && k.kind === 'seen') { tx = foe.x; ty = foe.y; tvx = foe.vx; tvy = foe.vy; contact = k.seenT > 0; }
     if (!contact) {
       for (const d of S.decoys) {
         if (d.owner === p.i || !d.alive) continue;
@@ -134,7 +134,6 @@ export function makeBot(ctx, world, S, p) {
       const d = dist(p.x, p.y, tx, ty);
       const pr = lead(tx, ty, tvx, tvy);
       const want = Math.atan2(pr.y - p.y, pr.x - p.x) + err * (1 + d / 50);
-      aimX = tx; aimY = ty; hasAim = true;
       cmd.a = angLerp(p.aim, want, 1 - Math.exp(-dt * turn));
       const scoped = skill > 0.3 && d > 26 && p.breath > 0.3 && p.winded <= 0 && t > retreatUntil;
       if (t < retreatUntil) {
@@ -151,63 +150,64 @@ export function makeBot(ctx, world, S, p) {
         cmd.mx = px * strafe + ax * adv; cmd.my = py * strafe + ay * adv;
         if (!world.free(p.x + cmd.mx * 2.2, p.y + cmd.my * 2.2, R_BODY + 0.1)) strafe = -strafe;
       }
-      const need = (k.seenT || (decoy ? 1 : 0)) >= react * (0.6 + d / 90) + fireDelay;
+      // the opening is a feeling-out: nobody pulls the trigger in the first few seconds unless it is close
+      const need = (k.seenT || (decoy ? 1 : 0)) >= react * (0.6 + d / 90) + fireDelay && (ctx.time > 6 + 3 * (1 - skill) || d < 12);
       const tol = d < 16 ? 1.5 : lerp(1.2, 0.8, skill);
       const off = Math.abs(angDiff(p.a, Math.atan2(pr.y - p.y, pr.x - p.x))) * d;
       const steady = !cmd.alt || p.sway < 0.012;
       if (need && p.reload <= 0 && off < tol && steady && t > retreatUntil) {
         cmd.fire = true;
-        shotAt = t;
         retreatUntil = t + RELOAD + 0.35;
         fireDelay = Math.random() * 0.25 * (1 - skill);
         if (decoy) fooled = null;
         // then get out of sight of where it was fired at
         const cv = pickSpot('cover', tx, ty);
-        if (cv) setGoal(cv, 'cover');
+        if (cv) { goal.arrived = false; setGoal(cv, 'cover'); }
       }
       // forking: when a duel is on and a decoy would help
       if (!decoy && p.forkCd <= 0 && Math.random() < dt * (0.15 + skill * 0.5) && d > 14) cmd.a2 = true;
     } else {
       // ---------------- blind ----------------
       fooled = null;
-      const since = S.t - k.t; // seconds since I last knew anything at all
-      const stale = since > 7;
-      if (hasAim && !stale) { cmd.a = angLerp(p.aim, Math.atan2(k.y - p.y, k.x - p.x), 1 - Math.exp(-dt * turn * 0.6)); }
+      const known = k.t > -90, since = S.t - k.t; // seconds since I last knew anything at all
+      const fresh = known && since < 6;
       holdT -= dt;
       replanT -= dt;
-      const aggr = clamp((ctx.time - 5) / 22, 0, 1);
-      const zx = lerp(W - (p.i ? W : 0) + (p.i ? 6 : -6), W / 2, 0.15 + aggr * 0.7), zy = H / 2;
-      if (t < retreatUntil && wpI < wpN) { moving = follow(); } else if (!stale && since < 6 && goal.kind !== 'hunt-hold') {
-        // I have a fresh idea where it is: find a place that sees it from a sniper's distance
-        if (goal.kind !== 'hunt' || replanT <= 0 || wpI >= wpN) {
-          const ideal = lerp(44, 20, aggr * (1 - skill * 0.4));
-          setGoal(pickSpot('hunt', k.x, k.y, ideal), 'hunt');
-        }
-        moving = follow();
-        if (!moving) { goal.kind = 'hunt-hold'; holdT = 1.5 + Math.random() * 2; }
+      const aggr = clamp((ctx.time - 6) / 18, 0, 1);
+      const fs = world.spawns[1 - p.i], hot = known && since < 30;
+      const zx = lerp(W / 2, hot ? k.x : fs.x, 0.3 + 0.7 * aggr), zy = lerp(H / 2, hot ? k.y : fs.y, 0.3 + 0.7 * aggr);
+      const kind = fresh ? 'hunt' : 'explore';
+      let walking = false;
+      if (t < retreatUntil && wpI < wpN) walking = follow();
+      else if (wpI < wpN && goal.kind === kind && replanT > 0) {
+        walking = follow();
+        if (!walking) { goal.arrived = true; holdT = 0.8 + Math.random() * (2.2 - skill * 1.2); }
+      }
+      if (walking) {
+        moving = true;
+        if (wpI < wpN) cmd.a = angLerp(p.aim, Math.atan2(wp[wpI * 2 + 1] - p.y, wp[wpI * 2] - p.x), 1 - Math.exp(-dt * 6));
+      } else if (goal.arrived && goal.kind === kind && holdT > 0) {
+        // holding a vantage: eyes on where the enemy was (or the way ahead), a slow sweep
+        moving = false;
+        const ax = fresh ? k.x : zx, ay = fresh ? k.y : zy;
+        cmd.a = angLerp(p.aim, Math.atan2(ay - p.y, ax - p.x) + Math.sin(t * 0.9) * 0.12, 1 - Math.exp(-dt * 3));
       } else {
-        if (goal.kind === 'hunt-hold' && holdT > 0) { moving = false; cmd.a = angLerp(p.aim, Math.atan2(k.y - p.y, k.x - p.x) + Math.sin(t * 1.3) * 0.08, 1 - Math.exp(-dt * 3)); } else {
-          if (!follow() || (replanT <= 0 && goal.kind === 'explore' && wpI >= wpN)) {
-            if (holdT > 0 && goal.kind === 'explore') { moving = false; cmd.a = angLerp(p.aim, Math.atan2(zy - p.y, zx - p.x) + Math.sin(t * 0.8) * 0.5, 1 - Math.exp(-dt * 2)); } else {
-              const ideal = lerp(60, 26, aggr);
-              setGoal(pickSpot('explore', zx, zy, ideal), 'explore');
-              holdT = 0.8 + Math.random() * (2.4 - skill);
-              peek = 0;
-            }
-          }
-        }
-        if (moving && wpI < wpN) { const nx = wp[wpI * 2], ny = wp[wpI * 2 + 1]; cmd.a = angLerp(p.aim, Math.atan2(ny - p.y, nx - p.x), 1 - Math.exp(-dt * 6)); }
+        let spot = null;
+        if (kind === 'hunt') spot = pickSpot('hunt', k.x, k.y, lerp(40, 16, aggr * (1 - skill * 0.4)));
+        if (!spot) spot = pickSpot('explore', zx, zy, lerp(46, 10, aggr), aggr);
+        goal.arrived = false;
+        goal.kind = kind;
+        if (spot) { goal.x = spot.x; goal.y = spot.y; plan(); replanT = 9; } else { wpN = wpI = 0; holdT = 0.5; goal.arrived = true; }
       }
       // blind for too long: ping, then do not stay where the ping found me
       if (t - Math.max(lastSeen, pingedAt) > patience && p.pingCd <= 0 && ctx.time > patience) {
         cmd.a1 = true;
         pingedAt = t;
-        retreatUntil = t + 1.2;
-        const cv = pickSpot('explore', zx, zy, 40);
-        if (cv) setGoal(cv, 'explore');
+        retreatUntil = t;
+        goal.kind = '';
       }
       // a suppressing round down the last known line keeps a hider honest (and gives me away)
-      if (hasAim && since < 3 && t > nextSup && p.reload <= 0 && skill > 0.4 && world.los(p.x, p.y, k.x, k.y) && dist(p.x, p.y, k.x, k.y) < 60) {
+      if (known && since < 3 && t > nextSup && p.reload <= 0 && skill > 0.4 && world.los(p.x, p.y, k.x, k.y) && dist(p.x, p.y, k.x, k.y) < 60) {
         nextSup = t + 7 + Math.random() * 5;
         if (Math.abs(angDiff(p.a, Math.atan2(k.y - p.y, k.x - p.x))) * dist(p.x, p.y, k.x, k.y) < 2) { cmd.fire = true; retreatUntil = t + RELOAD; }
       }
@@ -229,5 +229,5 @@ export function makeBot(ctx, world, S, p) {
     return false;
   }
 
-  return { think, skill };
+  return { think, skill, goal };
 }

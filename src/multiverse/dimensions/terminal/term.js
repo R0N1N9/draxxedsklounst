@@ -50,7 +50,7 @@ export function makeTerm(pal) {
   /** Draw the newest lines bottom-up inside [x0, x1] x [y0, y1]. */
   T.draw = (g, L, my, foe, over) => {
     const fs = L.cf, lh = L.lineH, x0 = L.cx0, y1 = L.cy1;
-    const maxCh = Math.max(12, Math.floor((L.cx1 - L.cx0) / (fs * 0.6)));
+    const maxCh = Math.max(12, Math.floor((L.cx1 - L.cx0) / (fs * 0.64)));
     g.font = `500 ${fs}px ${FONT}`;
     g.textAlign = 'left';
     g.textBaseline = 'middle';
