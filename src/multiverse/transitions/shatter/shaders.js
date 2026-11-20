@@ -55,6 +55,8 @@ varying vec4 vEFS;
 varying vec3 vVl;
 uniform vec2 uPar;
 uniform vec3 uRipple; // radius of the wave front, its strength, its wavelength
+uniform vec3 uSweep;  // a band of light crossing the sealed pane: position, strength, pane half-diagonal
+uniform vec2 uSweepDir;
 ${FINGER}
 void main() {
   vec3 N = normalize(vN);
@@ -125,12 +127,14 @@ void main() {
   float line = (1.0 - smoothstep(0.5, 1.7, px)) * lip + exp(-px * 0.28) * 0.3 * (0.35 + 0.65 * lip);
   // ...and the shaded lip darkens the picture, so a crack still reads on a white world.
   col *= 1.0 - 0.6 * (1.0 - smoothstep(0.4, 2.4, px)) * (1.0 - lip) * mask * min(glow, 1.0) * depth;
-  vec3 crack = uCrackCol * line * glow * mask * (rimFace ? 0.4 : 1.0) * (1.0 + band * 4.0);
-  col += crack + vec3(band * 0.05 * facet);
+  // The sweep: one slow stroke of light across the mended glass, catching every bevel and seam it passes.
+  float sb = exp(-pow((dot(vRest, uSweepDir) / uSweep.z - uSweep.x) * 4.0, 2.0)) * uSweep.y;
+  vec3 crack = uCrackCol * line * glow * mask * (rimFace ? 0.4 : 1.0) * (1.0 + band * 4.0 + sb * 3.0);
+  col += crack + vec3(band * 0.05 * facet) + vec3(1.0, 0.95, 0.86) * sb * (rimFace ? 0.95 : 0.12 + 0.2 * fres);
 
   // Off screen, alpha is not coverage: it carries the light that did not fit in eight bits, for
   // the bloom. Drawn straight to the screen (uDirect) it must be 1.
-  float over = max(max(spec.r, spec.g), spec.b) + max(max(crack.r, crack.g), crack.b) * 0.6;
+  float over = max(max(spec.r, spec.g), spec.b) + max(max(crack.r, crack.g), crack.b) * 0.6 + sb * (rimFace ? 0.8 : 0.1);
   gl_FragColor = vec4(col, max(uDirect, clamp((over - 0.55) * 0.5, 0.0, 1.0)));
 }`;
 

@@ -24,6 +24,7 @@ export function makeView(ctx, THREE, renderer, W) {
   for (let i = 0; i < 5; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: '', color: '#fff', hollow: false, text: '', ring: false });
   for (let i = 0; i < 4; i++) S.hits.push({ ang: 0, a: 0, near: false });
   let wt = 0, boom = 2.8, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, blocked = false, bellA = 0, raysK = 0;
+  const warm = Q.rich ? 3 : 1; // frames always drawn at the start
   let frames = 0, tPrev = 0, worst = 0, worstPrev = 0, cost = 0, skipLeft = 0, fresh = false, wasFallen = false, drawnScope = 0;
   const api = { camera, shot: null, force: 0, wt: 0, scopeAmount: 0, pointScale: 600 };
 
@@ -201,7 +202,6 @@ export function makeView(ctx, THREE, renderer, W) {
 
       // ---- HUD state ----
       S.t = wt;
-      S.scope = scopeAmt;
       S.live = phase === 'live';
       S.alive = me.alive;
       S.spreadPx = (G.hipSpread(me) * ctx.height) / (2 * Math.tan((camera.fov * Math.PI) / 360));
@@ -264,16 +264,19 @@ export function makeView(ctx, THREE, renderer, W) {
       if (api.force > 0) api.force--; // (test scripts: draw now)
       // A render with no update before it is the core photographing the world for a
       // transition: the canvas must hold a picture, so put the last graded frame back.
-      else if (!inBand && frames > 3) { draw = false; again = true; }
-      else if (++frames > 3 && skipLeft > 0) { skipLeft--; draw = false; }
+      else if (!inBand && frames > warm) { draw = false; again = true; }
+      else if (++frames > warm && skipLeft > 0) { skipLeft--; draw = false; }
       if (draw) {
         // The longest gap since the last real draw is what that draw cost. Two slow draws in
         // a row before anything is skipped: one hitch is not a slow machine.
-        cost = Math.min(worst, worstPrev || worst);
+        // (A software rasteriser needs no second opinion, and gets a breather after its first
+        // frame: that one compiles every shader, and the page must stay responsive behind it.)
+        cost = Q.rich ? Math.min(worst, worstPrev || worst) : worst;
         worstPrev = worst;
         worst = 0;
         // A little slow: drop the odd frame. Very slow: draw rarely and keep the duel in real time.
         skipLeft = cost < 75 ? 0 : cost < 150 ? Math.round((cost - 50) / 25) : Math.min(240, Math.round((cost - 50) / 5));
+        if (!Q.rich && frames === 1) skipLeft = 15;
         drawnScope = scopeAmt;
       }
       // The scope mask follows the picture that is actually on the glass.
@@ -285,7 +288,7 @@ export function makeView(ctx, THREE, renderer, W) {
       // Shadows: every frame on a GPU. In software the map is static — drawn at the start and
       // again once the wall is down — and the snipers do not cast into it.
       const fallen = G.time() > map.fallWall.t + 1.6;
-      renderer.shadowMap.needsUpdate = Q.rich || frames < 4 || fallen !== wasFallen;
+      renderer.shadowMap.needsUpdate = Q.rich || frames <= 1 || fallen !== wasFallen;
       wasFallen = fallen;
       post.render(scene, camera, raysK > 0.01);
       renderer.setRenderTarget(null);

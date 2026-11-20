@@ -78,7 +78,8 @@ import { makeArrival, TAIL } from './flashback/arrive.js';
 import { hash } from './flashback/scenes.js';
 
 const rgb01 = (hex) => { const c = hexToRgb(hex); return [c.r / 255, c.g / 255, c.b / 255]; };
-const FILM_MAX = 1440; // the film canvas is re-uploaded every frame: soft is in character, and cheap
+const FILM_MAX = 1280; // the film canvas is re-uploaded every frame (Safari/iPad: the costly part): soft is in character, and cheap
+const FILM_MIN_Q = 0.55; // ...and if frames still run long, the governor in update() thins it out to this fraction
 
 export default {
   id: 'flashback',
@@ -98,7 +99,7 @@ export default {
 
     // --- GPU ------------------------------------------------------------------------------------
     const film = makeCanvas(16, 16);
-    let fw = 0, fh = 0, fs = 1;
+    let fw = 0, fh = 0, fs = 1, fq = 1, dtAvg = 1 / 60;
     // srgb: false throughout — the shaders hand texels straight back, so frame 0 is the old world to the bit.
     const texFrom = canvasTexture(THREE, ctx.fromImage, { srgb: false });
     const texFilm = canvasTexture(THREE, film.canvas, { srgb: false });
@@ -127,7 +128,7 @@ export default {
     });
 
     function sizeFilm(w, h) {
-      const s = Math.min(Math.max(1, ctx.dpr), FILM_MAX / w, FILM_MAX / h);
+      const s = Math.min(Math.max(1, ctx.dpr), FILM_MAX / w, FILM_MAX / h) * fq;
       const W = Math.max(8, Math.round(w * s)), H = Math.max(8, Math.round(h * s));
       if (W === fw && H === fh) return;
       fw = film.canvas.width = W;
@@ -136,9 +137,12 @@ export default {
       texFilm.dispose(); // its storage was allocated for the old size
     }
 
-    // The slow things happen now, at the cut, not in the middle of the push-in.
+    // The slow things happen now, at the cut, not in the middle of the push-in: the eye is painted
+    // and both programs compiled (Safari takes its time over the big fragment shaders; the arrival
+    // one would otherwise hitch the swap).
     sizeFilm(ctx.width, ctx.height);
     eye.prepare(ctx.width, ctx.height);
+    try { renderer.compile(pFilm.scene, pFilm.camera); renderer.compile(pArr.scene, pArr.camera); } catch { /* compiled on first use instead */ }
 
     // --- the reel ---------------------------------------------------------------------------------
     const cardAt = (t) => { let i = 0; while (i + 1 < all.length && t >= all[i + 1].t0) i++; return i; };
@@ -321,6 +325,13 @@ export default {
     return {
       update(dt, t) {
         while (cueAt < cues.length && t >= cues[cueAt].t) cues[cueAt++].fn();
+        // Frame-time governor: the film is the one thing that scales with the screen. If frames
+        // keep running long, re-upload fewer pixels (steps down only, never back up: no flapping).
+        // The test lab steps at 1/60, so renders stay exactly reproducible there.
+        if (dt > 0.004 && dt < 0.1 && t < T.burn0) {
+          dtAvg += (dt - dtAvg) * 0.06;
+          if (dtAvg > 1 / 36 && fq > FILM_MIN_Q + 1e-3) { fq = Math.max(FILM_MIN_Q, fq * 0.8); dtAvg = 1 / 60; }
+        }
       },
 
       render(t) {
@@ -329,6 +340,7 @@ export default {
 
         // ===== ACT 3: the flashbulb, the table, the photo that develops ======================
         if (t >= T.white) {
+          if (fw > 1) { fw = fh = 0; film.canvas.width = film.canvas.height = 1; texFilm.dispose(); } // the reel is done: hand its pixels back before the table
           const to = ctx.toImage, u = pArr.uniforms;
           if (to && !texTo) {
             texTo = canvasTexture(THREE, to, { srgb: false });

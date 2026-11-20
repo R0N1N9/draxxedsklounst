@@ -255,7 +255,7 @@ export default {
         vertexShader: SH.SHARD_VERT, fragmentShader: SH.SHARD_FRAG,
         uniforms: {
           ...G, tPose: { value: tex }, tImg: { value: tImg }, uFocus: { value: new THREE.Vector2(0, 0) }, uFront: { value: 1e3 }, uSoft: { value: 0.05 }, uShimmer: { value: 0 },
-          uFinger: { value: new THREE.Vector4(2, 0, 5, 0) }, uKey: { value: 1.3 }, uBroad: { value: 1 }, uGain: { value: 1 }, uMirror: { value: 0 }, uFrost: { value: 0 }, uJolt: { value: 0 }, uEdge: { value: 1 }, uSheen: { value: 0 }, uPar: { value: new THREE.Vector2(0, 0) }, uRipple: { value: new THREE.Vector3(0, 0, 34) },
+          uFinger: { value: new THREE.Vector4(2, 0, 5, 0) }, uKey: { value: 1.3 }, uBroad: { value: 1 }, uGain: { value: 1 }, uMirror: { value: 0 }, uFrost: { value: 0 }, uJolt: { value: 0 }, uEdge: { value: 1 }, uSheen: { value: 0 }, uPar: { value: new THREE.Vector2(0, 0) }, uRipple: { value: new THREE.Vector3(0, 0, 34) }, uSweep: { value: new THREE.Vector3(0, 0, Math.hypot(A0, 1)) }, uSweepDir: { value: new THREE.Vector2(Math.cos(sweepA), Math.sin(sweepA)) },
           uTint: { value: new THREE.Vector3(0.9, 0.95, 1) }, uCrackCol: { value: new THREE.Vector3(1, 1, 1) }, uFrostCol: { value: V3(glowRgb.map((v) => lerp(0.97, v, 0.1))) }, ...own,
         },
       });
@@ -625,7 +625,7 @@ export default {
     cue(T.shatter + 1.25, () => A.sfx('blip', { gain: 0.35 }));
     cue(T.shatter + 1.3, () => A.sfx('swoosh', { gain: 0.3, pan: -0.6 * cam.side }));
     cue(T.shatter + 2.2, () => A.sfx('swoosh', { gain: 0.32, pan: 0.6 * cam.side, pitch: 1.2 }));
-    cue(T.pane0 - 0.4, () => A.sfx('riser', { gain: 0.85 }));
+    cue(T.white1 - 0.04 - 1.5, () => A.sfx('riser', { gain: 0.85 })); // 1.5 s long: it stops dead on the boom below
     cue(T.pane0 + 0.2, () => A.sfx('whoosh', { gain: 0.8 }));
     cue(T.white0 - 0.05, () => { A.tone({ freq: 4186, dur: 0.7, gain: 0.07, attack: 0.002 }); A.tone({ freq: 6272, dur: 0.5, gain: 0.04, attack: 0.002 }); });
     cue(T.white1 - 0.04, () => { A.sfx('boom', { gain: 1 }); A.sfx('shatter', { gain: 0.45, pitch: 0.7, delay: 0.04 }); A.tone({ freq: 2637, dur: 1.1, gain: 0.02, attack: 0.05 }); });
@@ -640,6 +640,7 @@ export default {
     }
     cue(T.mend + 0.12, () => A.sfx('click', { gain: 0.8 }));
     cue(T.land1, () => A.sfx('thud', { gain: 0.5, pitch: 1.3 }));
+    cue(T.land1 - 0.05, () => A.tone({ type: 'triangle', freq: 2960, freqEnd: 4700, dur: 1.0, gain: 0.03, attack: 0.3, pan: 0.2 })); // the stroke of light
     cue(T.heal0, () => {
       A.noise({ filter: 'bandpass', freq: 2400, freqEnd: 9000, q: 3, dur: 1.1, gain: 0.07, attack: 0.5 });
       [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => A.tone({ type: i < 2 ? 'triangle' : 'sine', freq: f, dur: 1.4 - i * 0.15, gain: 0.06, delay: i * 0.2, pan: (i - 1.5) * 0.3, attack: 0.02 }));
@@ -731,6 +732,9 @@ export default {
         const healed = ease.inOutSine(seg(t, T.heal0, T.heal1)), calm = 1 - seg(t, T.heal0, T.heal1 - 0.1);
         setB.u.uFront.value = frontB(t);
         setB.u.uShimmer.value = t >= T.heal0 ? 1 : 0;
+        // The mended pane takes one stroke of light, corner to corner, while the title leaves.
+        const sw = seg(t, T.land1 - 0.1, T.heal1 - 0.1);
+        setB.u.uSweep.value.set(lerp(-1.4, 1.4, ease.inOutSine(sw)), sw > 0 && sw < 1 ? 0.5 * Math.pow(Math.sin(Math.PI * sw), 0.8) : 0, Math.hypot(A0, 1));
         setB.u.uKey.value = 1.3 * calm;
         setB.u.uFrost.value = arrive === 'flip' ? 1 : 0;
         poseB(t);
