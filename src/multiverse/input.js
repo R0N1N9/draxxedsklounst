@@ -12,6 +12,8 @@ const GLYPH = { fire: '◉', alt: '⊕', a1: '◆', a2: '◇', jump: '⤒' };
 // place whatever the dimension shows, so thumbs learn the layout once.
 const ARC = { alt: 186, a1: 144, a2: 102, jump: 60 };
 const DEADZONE = 0.18;
+const COMPACT_H = 480;   // shorter than this (a phone held sideways) the controls shrink and hug the corners
+const STICK_D = 136;     // diameter of the stick ring at scale 1
 const STICK_R = 56;      // px of thumb travel for full deflection (× layout scale)
 const AIM_FIRE = 0.35;   // aim stick: released beyond this deflection = a shot
 const AIM_ZONE = 0.45;   // the aim stick may start anywhere right of this fraction of the width
@@ -72,6 +74,10 @@ export class MvInput {
     this._pauseId = null;
     this._live = new Set();
     this._geo = { w: 0, h: 0, s: 1, sx: 0, sy: 0, reach: 0, R: STICK_R, slop: 10 };
+    // Margins of the screen taken by the touch controls and the system insets, in CSS px
+    // (contract.js: ctx.safe). One live object, updated in place by _layout(); all zeros on
+    // devices without touch.
+    this.safe = { left: 0, right: 0, top: 0, bottom: 0 };
     this._pad = { mx: 0, my: 0, sx: 0, sy: 0, lx: 0, ly: 0, fire: false, alt: false, a1: false, a2: false, jump: false, pause: false };
     this._padLive = false;
     this._padScan = 0;
@@ -279,6 +285,7 @@ export class MvInput {
     for (const [target, type, fn, opts] of this._subs) target.removeEventListener(type, fn, opts);
     this._subs.length = 0;
     if (this.stageEl) this.stageEl.style.cursor = '';
+    for (const k of ['l', 'r', 't', 'b']) document.documentElement.style.removeProperty(`--mv-safe-${k}`);
     this.root.remove();
     this.onPause = null;
   }
@@ -381,6 +388,9 @@ export class MvInput {
       this._on(el, 'mousedown', (e) => this._mouseDown(e));
       this._on(el, 'contextmenu', (e) => e.preventDefault());
     }
+    // A long press on the transition layer must not open Android's context menu either.
+    const fxEl = d.getElementById('mv-fx');
+    if (fxEl) this._on(fxEl, 'contextmenu', (e) => e.preventDefault());
     this._on(window, 'mouseup', (e) => this._mouseUp(e));
     this._on(window, 'mousemove', (e) => this._mouseMove(e));
     this._on(d, 'pointerlockchange', () => this._lockChange());
@@ -637,21 +647,25 @@ export class MvInput {
   }
 
   // Controls sit on arcs around where each thumb rests, inset from the corners and clear of
-  // notches and the home bar (the valley's layout, with slots fixed on the arc).
+  // notches and the home bar (the valley's layout, with slots fixed on the arc). On short
+  // screens (a phone held sideways) everything is smaller and hugs the bottom corners, so the
+  // playfield stays free above it.
   _layout() {
     const root = this.root, g = this._geo;
     const probe = document.createElement('div');
     probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
     document.body.appendChild(probe);
     const cs = getComputedStyle(probe);
-    const safeR = parseFloat(cs.paddingRight) || 0, safeB = parseFloat(cs.paddingBottom) || 0, safeL = parseFloat(cs.paddingLeft) || 0;
+    const safeT = parseFloat(cs.paddingTop) || 0, safeR = parseFloat(cs.paddingRight) || 0, safeB = parseFloat(cs.paddingBottom) || 0, safeL = parseFloat(cs.paddingLeft) || 0;
     probe.remove();
     const W = root.clientWidth || innerWidth, H = root.clientHeight || innerHeight;
+    const compact = H < COMPACT_H;
     // Rings shrink a little on short or narrow screens and grow a little on tablets.
-    const s = clamp(Math.min(H / 390, W / 640), 0.6, 1.15);
+    const s = compact ? clamp(H / 480, 0.62, 0.86) : clamp(Math.min(H / 390, W / 640), 0.6, 1.15);
     // A tablet is held by its sides, not its bottom corners: raise both clusters.
-    const lift = clamp((H - 420) * 0.1, 0, 44);
+    const lift = compact ? 0 : clamp((H - 420) * 0.1, 0, 44);
     root.style.setProperty('--mv-s', s.toFixed(3));
+    root.classList.toggle('mv-tc-compact', compact);
     const place = (el, x, y) => {
       el.style.left = `${x.toFixed(1)}px`;
       el.style.top = `${y.toFixed(1)}px`;
@@ -666,26 +680,64 @@ export class MvInput {
     };
     const arc = (cx, cy, r, deg) => [cx + Math.cos((deg * Math.PI) / 180) * r * s, cy - Math.sin((deg * Math.PI) / 180) * r * s];
     const look = this._aim === 'look';
-    // Right thumb: FIRE at rest, the other actions fanned around it.
-    const fx = W - safeR - 128 * s, fy = H - safeB - 108 * s - lift;
+    // Right thumb: FIRE at rest, the other actions fanned around it. On a phone the fan is a
+    // little tighter and FIRE sits as deep in the corner as the farthest button (JUMP, up-right)
+    // allows, whatever the dimension shows: the thumbs still learn one layout.
+    const edge = compact ? 10 : 0, arcR = compact ? 96 : 102, rF = (this._ui.fire.btns[0].d * s) / 2;
+    const fx = compact ? W - safeR - edge - Math.max(rF, Math.cos((60 * Math.PI) / 180) * arcR * s + (this._ui.jump.btns[0].d * s) / 2) : W - safeR - 128 * s;
+    const fy = compact ? H - safeB - 8 - rF : H - safeB - 108 * s - lift;
     put(this._ui.fire.btns[0], true, fx, fy);
-    for (const slot in ARC) put(this._ui[slot].btns[0], this._ui[slot].on, ...arc(fx, fy, 102, ARC[slot]));
+    for (const slot in ARC) put(this._ui[slot].btns[0], this._ui[slot].on, ...arc(fx, fy, arcR, ARC[slot]));
     // Left thumb: the fixed stick; in 'look' dimensions a second FIRE above-right of it, so
     // either thumb can aim while the other shoots.
-    const sx = safeL + 120 * s, sy = H - safeB - 108 * s - lift;
+    const ringR = (STICK_D * s) / 2;
+    const sx = compact ? safeL + edge + ringR : safeL + 120 * s;
+    const sy = compact ? H - safeB - 8 - ringR : H - safeB - 108 * s - lift;
     place(this._moveEl, sx, sy);
-    put(this._fire2, look, ...arc(sx, sy, 132, 24));
+    put(this._fire2, look, ...arc(sx, sy, compact ? 120 : 132, 24));
     // Aim hint: tucked above whatever the right cluster shows, its right edge on FIRE's.
     let top = fy - 42 * s;
     for (const slot in ARC) {
       const b = this._ui[slot].btns[0];
       if (b.shown) top = Math.min(top, b.cy - b.r);
     }
-    place(this._hint, fx + 42 * s, top - 14 * s);
+    // On a phone it goes beside the cluster instead, in the free strip between the thumbs.
+    if (!compact) place(this._hint, fx + 42 * s, top - 14 * s);
     g.w = W; g.h = H; g.s = s; g.sx = sx; g.sy = sy;
     g.R = STICK_R * s;
     g.reach = 136 * s * (look ? 0.75 : 0.95); // nothing else wants the left side in 'pointer' dimensions
     g.slop = 10 * s;
+    this._publish(W, H, safeT, sx, sy, ringR);
+    if (compact) place(this._hint, W - this.safe.right - 8, fy + 4);
+  }
+
+  // ctx.safe: how far the left cluster (stick, plus the second FIRE in 'look' dimensions) reaches in
+  // from the left edge, how far the right cluster (FIRE and the actions this dimension shows)
+  // reaches in from the right, how high the taller of the two rises from the bottom, and the top
+  // system inset. The same four numbers go to the HUD as --mv-safe-l/-r/-t/-b.
+  _publish(W, H, safeT, sx, sy, ringR) {
+    const o = this.safe;
+    let left = 0, right = 0, bottom = 0, top = 0;
+    if (this.touch) {
+      let lx = sx + ringR, ty = sy - ringR;
+      if (this._fire2.shown) { lx = Math.max(lx, this._fire2.cx + this._fire2.r); ty = Math.min(ty, this._fire2.cy - this._fire2.r); }
+      let rx = W;
+      for (const b of this._btns) {
+        if (!b.shown || b === this._fire2) continue;
+        rx = Math.min(rx, b.cx - b.r);
+        ty = Math.min(ty, b.cy - b.r);
+      }
+      left = Math.max(0, Math.round(lx));
+      right = Math.max(0, Math.round(W - rx));
+      bottom = Math.max(0, Math.round(H - ty));
+      top = Math.round(safeT);
+    }
+    o.left = left; o.right = right; o.bottom = bottom; o.top = top;
+    const st = document.documentElement.style;
+    st.setProperty('--mv-safe-l', `${left}px`);
+    st.setProperty('--mv-safe-r', `${right}px`);
+    st.setProperty('--mv-safe-t', `${top}px`);
+    st.setProperty('--mv-safe-b', `${bottom}px`);
   }
 
   // The control under a touch: the element it landed on or, failing that, a near miss — a thumb

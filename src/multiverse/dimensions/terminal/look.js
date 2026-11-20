@@ -21,11 +21,11 @@ export function makePalette(amber, c0, c1) {
 }
 
 /** Where everything sits: the map in unit space (u CSS px per unit), the console under it, or over it on a phone. */
-export function fitLayout(L, w, h, touch) {
+export function fitLayout(L, w, h, touch, safeL = 0, safeR = 0) {
   const compact = h < 480;
   L.w = w; L.h = h; L.touch = touch; L.compact = compact;
   L.top = compact ? 46 : w < 900 ? 54 : 60;
-  L.cf = clamp(Math.round(Math.min(w, h) * 0.0185), 10, 15);
+  L.cf = clamp(Math.round(Math.min(w, h) * 0.0185), compact ? 11 : 10, 15);
   L.lineH = Math.round(L.cf * 1.4);
   const consMin = compact ? 0 : L.lineH * 4 + 12;
   L.u = Math.max(2, Math.min((w - 8) / COLS, (h - L.top - consMin - 4) / H));
@@ -36,7 +36,9 @@ export function fitLayout(L, w, h, touch) {
   L.fs = Math.max(6, L.u * 1.58);
   // The console: under the map, between the thumbs on touch and clear of the ability chips on desktop.
   if (compact) {
-    L.cx0 = Math.round(w * 0.27); L.cx1 = Math.round(w * 0.73);
+    // between the thumbs' clusters (ctx.safe), on the middle half of the screen at most
+    L.cx0 = Math.round(Math.max(w * 0.27, touch ? safeL + 12 : 0)); L.cx1 = Math.round(Math.min(w * 0.73, touch ? w - safeR - 12 : w));
+    if (L.cx1 - L.cx0 < 200) { L.cx0 = Math.round(w * 0.27); L.cx1 = Math.round(w * 0.73); }
     L.cy1 = h - 5; L.lines = 3; L.cy0 = L.cy1 - L.lines * L.lineH - 4;
   } else {
     L.cx0 = touch ? Math.min(230, w * 0.2) : Math.max(8, L.mx);

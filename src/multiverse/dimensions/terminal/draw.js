@@ -31,10 +31,11 @@ export function makeView(ctx, world, S, pal, term) {
 
   V.fit = () => {
     const w = ctx.width, h = ctx.height, touch = ctx.input.device === 'touch';
-    const key = `${w}x${h}|${ctx.dpr}|${touch}|${crt.q}`;
+    const sf = ctx.safe, sl = sf ? sf.left : 0, sr = sf ? sf.right : 0;
+    const key = `${w}x${h}|${ctx.dpr}|${touch}|${crt.q}|${sl}|${sr}`;
     if (key === sizeKey) return false;
     sizeKey = key;
-    fitLayout(L, w, h, touch);
+    fitLayout(L, w, h, touch, sl, sr);
     mx = L.mx; my = L.my; u = L.u;
     crt.size(w, h, ctx.dpr);
     sizeLayer(Y, L, crt.rs);

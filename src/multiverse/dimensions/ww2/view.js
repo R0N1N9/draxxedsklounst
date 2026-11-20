@@ -19,7 +19,7 @@ export function makeView(ctx, THREE, renderer, W) {
   const size = new THREE.Vector2();
   const S = { // HUD state, refilled every frame
     w: 1, h: 1, t: 0, scope: 0, live: false, alive: true, spreadPx: 8, blocked: false, ammo: 5, mag: 5, cycling: false, reloading: false, cycle: 0, crouch: false, bell: 0,
-    shell: 0, exposed: '', zone: '', zoneBad: false, note: '', noteA: 0, bars: 0, pad: 0, marks: [], hits: [],
+    shell: 0, exposed: '', zone: '', zoneBad: false, note: '', noteA: 0, bars: 0, pad: 0, sl: 0, sr: 0, sb: 0, marks: [], hits: [],
   };
   for (let i = 0; i < 5; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: '', color: '#fff', hollow: false, text: '', ring: false });
   for (let i = 0; i < 4; i++) S.hits.push({ ang: 0, a: 0, near: false });
@@ -307,6 +307,10 @@ export function makeView(ctx, THREE, renderer, W) {
       // The scope mask follows the picture that is actually on the glass.
       S.scope = drawnScope;
       S.w = ctx.width; S.h = ctx.height;
+      // A phone held sideways: lift the clip off the home bar and keep markers clear of the thumbs.
+      const sf = S.h < 480 && ctx.safe;
+      S.pad = sf ? 12 : 0;
+      S.sl = sf ? sf.left : 0; S.sr = sf ? sf.right : 0; S.sb = sf ? sf.bottom : 0;
       drawOverlay(ctx.g, S);
       if (again) post.present();
       if (!draw) return;

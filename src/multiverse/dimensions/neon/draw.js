@@ -128,7 +128,7 @@ export function makeRenderer(ctx, world, S) {
   }
   /** Text of a fixed size on screen, anchored in the world. */
   function label(text, x, y, px, col, alpha, align) {
-    const size = px / view.k;
+    const size = px * textBoost / view.k;
     if (alpha <= 0.01) return;
     const fs = Math.round(size * 2) / 2;
     let f = fonts.get(fs); // one string per size, not one per label per frame
@@ -145,10 +145,12 @@ export function makeRenderer(ctx, world, S) {
     g.globalAlpha = 1;
   }
 
+  let textBoost = 1; // small in-world labels grow on a phone, where 8-10 px is hard to read
   function fit() {
     // Once thumbs have been on the glass the layout stays put (a pad may take over later).
     if (ctx.input.device === 'touch') touched = true;
     const w = ctx.width, h = ctx.height, touch = touched;
+    textBoost = h < 480 ? 1.25 : 1;
     // Leave the floor clear of the thumbs (touch) or of the ability chips (desktop), and let
     // the score strip sit on the scoreboard housing rather than on the playfield.
     const below = touch ? clamp((h - 300) * 0.4, 12, 205) : 52;

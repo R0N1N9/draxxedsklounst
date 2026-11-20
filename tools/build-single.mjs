@@ -7,6 +7,14 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const r = (p) => resolve(root, p);
 
+// Worlds and transitions still flagged wip in the registry are left out of the bundle:
+// they may be half-written, and matches never visit them anyway.
+const wip = new Set();
+for (const line of readFileSync(r('src/multiverse/registry.js'), 'utf8').split('\n')) {
+  const m = /wip: true.*import\('([^']+)'\)/.exec(line);
+  if (m) wip.add(m[1]);
+}
+
 const result = await build({
   entryPoints: [r('src/main.js')],
   bundle: true,
@@ -23,7 +31,7 @@ const result = await build({
       // stub for those, so loading one fails cleanly instead of breaking the build.
       b.onResolve({ filter: /^\.\/(dimensions|transitions)\// }, (a) => {
         const file = resolve(a.resolveDir, a.path);
-        return existsSync(file) ? null : { path: file, namespace: 'missing-module' };
+        return existsSync(file) && !wip.has(a.path) ? null : { path: file, namespace: 'missing-module' };
       });
       b.onLoad({ filter: /.*/, namespace: 'missing-module' }, () => ({ contents: 'export default null;', loader: 'js' }));
     },

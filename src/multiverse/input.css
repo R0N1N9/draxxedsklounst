@@ -77,7 +77,7 @@
   backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); transform: translate(-50%, -50%); }
 #mv-touch .mv-tc-btn > * { position: relative; z-index: 1; pointer-events: none; }
 #mv-touch .mv-tc-btn i { font-style: normal; font-size: calc(var(--mv-d) * var(--mv-s) * 0.33px); line-height: 1; }
-#mv-touch .mv-tc-btn span { font-size: calc(var(--mv-fs) * var(--mv-s) * 1px); font-weight: 600; letter-spacing: 0.08em; margin-right: -0.08em; line-height: 1.12; text-align: center; white-space: pre; }
+#mv-touch .mv-tc-btn span { font-size: calc(var(--mv-fs) * var(--mv-s) * var(--mv-ts, 1) * 1px); font-weight: 600; letter-spacing: 0.08em; margin-right: -0.08em; line-height: 1.12; text-align: center; white-space: pre; }
 #mv-touch .mv-tc-btn.mv-tc-two i { font-size: calc(var(--mv-d) * var(--mv-s) * 0.25px); }
 #mv-touch .mv-tc-big { --mv-d: 84; }
 #mv-touch .mv-tc-fire2 { --mv-d: 68; }
@@ -120,3 +120,15 @@
 #mv-touch .mv-tc-hint.mv-tc-done { opacity: 0; }
 #mv-touch .mv-tc-hint::after { content: ''; flex: none; width: 26px; height: 26px; border-radius: 50%; border: 1.5px dashed var(--mv-tc-ring-hi);
   background: radial-gradient(circle at 68% 32%, var(--mv-tc-ac) 0, var(--mv-tc-ac) 4px, transparent 5px); }
+
+/* ---- phones held sideways (input.js adds .mv-tc-compact below 480 px of height) ----
+   Smaller, see-through controls hugging the bottom corners keep the playfield visible; labels
+   stay a touch larger than the discs' scale so they remain readable. */
+#mv-touch.mv-tc-compact { --mv-ts: 1.12; }
+#mv-touch.mv-tc-compact:not(.mv-tc-dim) .mv-tc-btn:not(.mv-tc-down), #mv-touch.mv-tc-compact:not(.mv-tc-dim) .mv-tc-move { opacity: 0.8; }
+#mv-touch.mv-tc-compact .mv-tc-btn { backdrop-filter: none; -webkit-backdrop-filter: none; border-width: 1.25px; }
+#mv-touch.mv-tc-compact .mv-tc-btn b { min-width: 16px; height: 16px; padding: 0 3px; border-radius: 8px; font-size: 9.5px; line-height: 16px; }
+#mv-touch.mv-tc-compact .mv-tc-big b { right: 1px; top: 1px; }
+#mv-touch.mv-tc-compact .mv-tc-pause { left: max(12px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top)); min-width: 50px; height: 26px; }
+#mv-touch.mv-tc-compact .mv-tc-hint { font-size: 8px; gap: 6px; letter-spacing: 0.12em; opacity: 0.7; }
+#mv-touch.mv-tc-compact .mv-tc-hint::after { width: 20px; height: 20px; }
