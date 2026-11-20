@@ -12,9 +12,9 @@ import { RIFLES } from './weapons.js';
 
 export const TOOLS = {
   drone: { slot: 'scout', name: 'Spotting drone', short: 'DRONE', charges: 1, desc: 'Fly a thermal quadcopter for 25 s, up to 500 m out. Loud, and it can be shot down. Your body stays put while you fly.' },
-  hunter: { slot: 'scout', name: 'Hunter drone', short: 'HUNTER', charges: 1, desc: 'Fixed-wing loitering drone. Flies where you aim (up to ~450 m), circles, and locks onto the enemy when it sees them — marking them for you every second. 40 s. Audible, visible, shootable; smoke and the thermal poncho break its lock.' },
+  hunter: { slot: 'scout', name: 'Hunter drone', short: 'HUNTER', charges: 1, desc: 'Fixed-wing loitering drone. Flies where you aim (up to ~450 m), circles, and locks onto the enemy when it sees them — marking them for you every second. 40 s. Audible, visible, shootable; smoke breaks its lock. Against a thermal poncho it has to get close and only gives rough marks every 3 s.' },
   dart: { slot: 'scout', name: 'Recon dart', short: 'DART', charges: 2, desc: 'Fire a sensor up to ~400 m. For 40 s it pings any enemy moving within 45 m. It blinks and beeps, and can be shot out.' },
-  poncho: { slot: 'stealth', name: 'Thermal poncho', short: 'PONCHO', desc: 'Invisible to thermal drones. You move 20% slower and can\'t sprint.' },
+  poncho: { slot: 'stealth', name: 'Thermal poncho', short: 'PONCHO', desc: 'Invisible to thermal drones; the hunter drone has to get close and only gets rough fixes. You move 20% slower and can\'t sprint.' },
   suppressor: { slot: 'stealth', name: 'Suppressor', short: 'SUPPRESSOR', desc: 'No muzzle flash or dust, much quieter report. Bullets 12% slower: more drop and wind drift.' },
   killflash: { slot: 'stealth', name: 'Anti-glint cover', short: 'ANTI-GLINT', desc: 'Your scope never glints. The scope view is narrower and darker.' },
   jammer: { slot: 'stealth', name: 'UAV jammer', short: 'JAMMER', desc: 'Hides you from the next UAV sweep (one use per round). The enemy sees "jammed".' },
@@ -165,6 +165,11 @@ export const SUPPRESSED_MUZZLE = Math.round(BALLISTICS.muzzle * 0.88);
 const DRONE = { battery: 25, range: 500, speed: 16, fast: 32 };
 const DART = { speed: 190, radius: 45, life: 40, pingEvery: 1.5 };
 const SMOKE = { life: 25, radius: 8.5 };
+// Hunter drone vs the thermal poncho: optics only, so it must be close and the fix is rough.
+export const HUNTER_PONCHO = { range: 70, rangeMoving: 110, markEvery: 3, jitter: 8 };
+export function hunterRange(poncho, moving) {
+  return poncho ? (moving ? HUNTER_PONCHO.rangeMoving : HUNTER_PONCHO.range) : 160;
+}
 
 const hotMat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(6, 5, 4) });
 export function setThermal(root, on) {
@@ -695,21 +700,35 @@ export class ToolSystem {
     if (this.hunter) {
       const h = this.hunter;
       const ev = h.update(dt, (pos) => {
-        if (!g.remoteAlive || !g.remoteHist.length || this.remote.tp) return null;
+        if (!g.remoteAlive || !g.remoteHist.length) return null;
         const s = sampleHist(g.remoteHist, g.now - 0.11);
-        if (Math.hypot(s.p.x - pos.x, s.p.z - pos.z) > 160) return null;
+        if (Math.hypot(s.p.x - pos.x, s.p.z - pos.z) > hunterRange(this.remote.tp, s.moving)) return null;
         const head = s.p.clone().add(new THREE.Vector3(0, 1, 0));
         if (g.world.raycast(pos, head, true) || this.smokeBlocks(pos, head)) return null;
         return s.p;
       });
-      if (ev === 'lock') { g.hud.message('HUNTER LOCKED', 'Enemy marked while it keeps eyes on them', 2.2); g.audio.ping(); }
+      if (ev === 'lock') {
+        if (this.remote.tp) g.hud.message('HUNTER — WEAK LOCK', 'Thermal poncho: optics only, rough marks every few seconds', 2.4);
+        else g.hud.message('HUNTER LOCKED', 'Enemy marked while it keeps eyes on them', 2.2);
+        g.audio.ping();
+      }
       if (ev === 'lost') g.hud.message('', 'Hunter lost the target — searching', 1.8);
       if (h.locked) {
         this.markT -= dt;
         if (this.markT <= 0 && g.remoteHist.length) {
-          this.markT = 1;
           const s = sampleHist(g.remoteHist, g.now - 0.11);
-          g.hud.addMarker(s.p.clone().add(new THREE.Vector3(0, 1.2, 0)), 'HUNTER', 'enemy', 1.3);
+          const mark = s.p.clone().add(new THREE.Vector3(0, 1.2, 0));
+          if (this.remote.tp) {
+            // Poncho: no thermal signature, so the optics only give a rough, slow fix.
+            this.markT = HUNTER_PONCHO.markEvery;
+            const a = Math.random() * Math.PI * 2, r = Math.random() * HUNTER_PONCHO.jitter;
+            mark.x += Math.cos(a) * r;
+            mark.z += Math.sin(a) * r;
+            g.hud.addMarker(mark, 'HUNTER ~', 'enemy', 2);
+          } else {
+            this.markT = 1;
+            g.hud.addMarker(mark, 'HUNTER', 'enemy', 1.3);
+          }
         }
       }
       this.hunterMesh.visible = true;

@@ -8,7 +8,7 @@ import { stepProjectile } from './ballistics.js';
 import { worldCapsules } from './avatar.js';
 import { segSegClosest, clamp } from './util.js';
 import { crestAt, DAM_X } from './terrain.js';
-import { randomLoadout, TOOLS, HunterFlight } from './tools.js';
+import { randomLoadout, TOOLS, HunterFlight, hunterRange } from './tools.js';
 import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
 import { RULES } from './rules.js';
 
@@ -541,13 +541,17 @@ export class BotPeer {
     if (this.hunter) {
       const h = this.hunter;
       h.update(dt, (pos) => {
-        if (!P || !P.al || P.tp) return null;
-        if (Math.hypot(P.p.x - pos.x, P.p.z - pos.z) > 160) return null;
+        if (!P || !P.al) return null;
+        if (Math.hypot(P.p.x - pos.x, P.p.z - pos.z) > hunterRange(P.tp, P.mv)) return null;
         const head = P.p.clone().add(new THREE.Vector3(0, 1, 0));
         if (this.g.world.raycast(pos, head, true) || T.smokeBlocks(pos, head)) return null;
         return P.p;
       });
-      if (h.locked && P) this._learn(P.p, 0.9 * dt * 3);
+      if (h.locked && P) {
+        // Poncho: rough, slow fix.
+        if (P.tp) this._learn(P.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 16, 0, (Math.random() - 0.5) * 16)), 0.25 * dt);
+        else this._learn(P.p, 0.9 * dt * 3);
+      }
       if (h.life <= 0) this.hunter = null;
     }
     this.toolT -= dt;
