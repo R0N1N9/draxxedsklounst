@@ -530,10 +530,11 @@ export default {
           g.beginPath(); g.rect(p.x - 90, p.y - 260, 180, 262); g.clip();
           g.translate(0, p.sink * 130);
         }
-        // a soft ink shadow on the ground
-        if (!p.lad && p.sink < 0.5) {
+        // a soft ink shadow on the ground, and a ring of tint under whoever is yours
+        if (!p.lad && p.sink < 0.5 && p.ground) {
           g.fillStyle = 'rgba(27,22,18,0.2)';
-          g.beginPath(); g.ellipse(p.x, p.y + 1, 26 * (1 - Math.min(1, (p.vy ? Math.abs(p.y - (p.ground ? p.y : p.y)) : 0))), 5, 0, 0, 6.283); g.fill();
+          g.beginPath(); g.ellipse(p.x, p.y + 1, 27, 5, 0, 0, 6.283); g.fill();
+          if (p.i === ctx.me) { g.strokeStyle = p.col; g.globalAlpha = 0.85; g.lineWidth = 3.4 * Math.max(1, V.u * 0.6); g.beginPath(); g.ellipse(p.x, p.y + 1, 31, 6.5, 0, 0, 6.283); g.stroke(); g.globalAlpha = 1; }
         }
         drawSniper(g, p, E, mood);
         if (p.dead && p.k > 0.55) {
