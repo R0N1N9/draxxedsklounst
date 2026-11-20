@@ -35,6 +35,7 @@ export const DIMENSIONS = [
   { id: 'petri', view: 'top', look: '2d', wip: true, load: () => import('./dimensions/petri/index.js') },
   { id: 'paper', view: 'fp', look: '2d', wip: true, load: () => import('./dimensions/paper/index.js') },
   { id: 'snow', view: 'top', look: '3d', wip: true, load: () => import('./dimensions/snow/index.js') },
+  { id: 'heli', view: 'tp', look: '3d', wip: true, load: () => import('./dimensions/heli/index.js') },
   { id: 'example-2d', dev: true, load: () => import('./dimensions/example-2d/index.js') },
   { id: 'example-3d', dev: true, load: () => import('./dimensions/example-3d/index.js') },
 ];
@@ -54,6 +55,7 @@ export const TRANSITIONS = [
   { id: 'evolution', wip: true, load: () => import('./transitions/evolution.js') },
   { id: 'elevator', wip: true, load: () => import('./transitions/elevator.js') },
   { id: 'continue', load: () => import('./transitions/continue.js') },
+  { id: 'radar', wip: true, load: () => import('./transitions/radar.js') },
   { id: 'plunge', link: true, wip: true, load: () => import('./transitions/plunge.js') },
   { id: 'example', dev: true, load: () => import('./transitions/example.js') },
 ];
