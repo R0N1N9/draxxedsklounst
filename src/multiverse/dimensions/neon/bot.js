@@ -30,7 +30,7 @@ export function makeBot(ctx, world, S, self) {
   let painted = 0, dodgeT = 0, dodgeX = 0, dodgeY = 0, laserT = 0, frozen = 0;
   let stuck = 0, wait = 0, holdFocus = false, patrolI = -1;
   let decoyT = 3 + Math.random() * 5, blinkT = 3 + Math.random() * 3;
-  const patience = 3.5 + Math.random() * 2.5; // nobody duels at range before they have found their feet
+  const patience = 3.2 + Math.random() * 1.8; // nobody duels at range before they have found their feet
 
   // Nerve rises with the clock, and steeply in the last third: a round should be settled
   // by a rail, not by the walls.
@@ -247,7 +247,7 @@ export function makeBot(ctx, world, S, self) {
       const had = hasGoal;
       follow(dt);
       // In position: go dark and hold the angle for a while. Patience is the job.
-      if (had && !hasGoal) { wait = (1.2 + Math.random() * 3) * (1 - 0.5 * aggression()); holdFocus = Math.random() < 0.5; }
+      if (had && !hasGoal) { wait = (0.9 + Math.random() * 2.2) * (1 - 0.5 * aggression()); holdFocus = Math.random() < 0.5; }
       lookAt(bel.x, bel.y, 5, dt);
     } else {
       if (!hasGoal) patrolNext();

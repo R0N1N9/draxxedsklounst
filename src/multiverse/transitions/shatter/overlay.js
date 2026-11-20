@@ -220,7 +220,7 @@ export function drawVoid(g, w, h, t, S) {
     }
     if (S.flag) {
       g.textAlign = 'center';
-      const sF = Math.max(9, u * 0.0145);
+      const sF = Math.max(11, u * 0.019);
       g.font = `700 ${sF}px ${MONO}`;
       inked(g, S.flag, w / 2, y + sS * 0.82, S.warnCol, a2 * (0.65 + 0.35 * Math.sin(t * 9)), sF * 0.4);
     }
