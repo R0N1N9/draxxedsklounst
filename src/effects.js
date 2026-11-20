@@ -136,9 +136,10 @@ export class Effects {
       const base = tr.faint ? 0.35 : 1.0;
       if (tr.dead) tr.fade -= dt * 2.5;
       const f = Math.max(tr.fade, 0) * base;
+      const rgb = tr.rgb || [1.0, 0.75, 0.5];
       for (let j = 0; j < tr.N; j++) {
         const a = (1 - j / tr.N) * f;
-        tr.col[j * 3] = 1.0 * a; tr.col[j * 3 + 1] = 0.75 * a; tr.col[j * 3 + 2] = 0.5 * a;
+        tr.col[j * 3] = rgb[0] * a; tr.col[j * 3 + 1] = rgb[1] * a; tr.col[j * 3 + 2] = rgb[2] * a;
       }
       tr.line.geometry.attributes.color.needsUpdate = true;
       if (tr.fade <= 0) {

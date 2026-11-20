@@ -36,39 +36,70 @@ export class Input {
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
     addEventListener('blur', () => this.keys.clear());
-    this.canvas.addEventListener('mousedown', (e) => {
-      if (!this.enabled) return;
-      if (!this.locked && !this.touch) {
+    // A real mouse on a touch device (iPad + MX Master, Magic Mouse/Trackpad, Android +
+    // mouse) switches on mouse mode: mouse aims and fires, touch controls keep working.
+    this.mouseMode = !this.touch;
+    // Clicks count when they land on the game view (the canvas, or the touch-control layer
+    // that covers it on tablets), not on menus or a touch button.
+    const onGame = (e) => e.target === this.canvas || (e.target.closest && e.target.closest('#touch') && !e.target.closest('[data-act], .pill'));
+    addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && this.touch && !this.mouseMode && this.enabled && onGame(e)) this.setMouseMode(true);
+    });
+    addEventListener('mousedown', (e) => {
+      if (!this.enabled || !onGame(e)) return;
+      if (!this.locked && this.mouseMode) {
         this.requestLock();
-        return;
+        if (!this.touch) return; // desktop: first click only grabs the mouse
       }
       if (e.button === 0) { this.mouseFire = true; this.pressedSet.add('Fire'); }
       if (e.button === 2) {
         this.mouseScope = true;
         this.pressedSet.add('Scope');
       }
+      // Extra buttons (MX Master and friends): middle = rangefinder, back = reload, forward = swap.
+      if (e.button === 1) { this.pressedSet.add('range'); e.preventDefault(); }
+      if (e.button === 3) { this.pressedSet.add('reload'); e.preventDefault(); }
+      if (e.button === 4) { this.pressedSet.add('swap'); e.preventDefault(); }
     });
     addEventListener('mouseup', (e) => {
       if (e.button === 0) this.mouseFire = false;
       if (e.button === 2) this.mouseScope = false;
+      if (e.button === 3 || e.button === 4) e.preventDefault(); // don't navigate back/forward
     });
+    this.canvas.addEventListener('auxclick', (e) => e.preventDefault());
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     addEventListener('mousemove', (e) => {
-      if (!this.enabled || !this.locked) return;
+      // Locked pointer, or (iPad without pointer lock) relative motion of the cursor.
+      if (!this.enabled || !(this.locked || (this.mouseMode && this.touch && e.pointerType !== 'touch'))) return;
       this.look.x += e.movementX;
       this.look.y += e.movementY;
     });
     addEventListener('wheel', (e) => {
       if (!this.enabled) return;
-      this.pressedSet.add(e.deltaY < 0 ? 'ZoomIn' : 'ZoomOut');
+      // Horizontal scroll (the MX Master thumb wheel) dials the zero; vertical zooms.
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        this.zeroAcc = (this.zeroAcc || 0) + e.deltaX;
+        if (Math.abs(this.zeroAcc) >= 40) {
+          this.pressedSet.add(this.zeroAcc > 0 ? 'zeroup' : 'zerodown');
+          this.zeroAcc = 0;
+        }
+        return;
+      }
+      if (e.deltaY !== 0) this.pressedSet.add(e.deltaY < 0 ? 'ZoomIn' : 'ZoomOut');
     }, { passive: true });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.canvas;
     });
   }
 
+  setMouseMode(on) {
+    this.mouseMode = on;
+    document.body.classList.toggle('mouse-mode', on && this.touch);
+    if (on && this.enabled) this.requestLock();
+  }
+
   requestLock() {
-    if (this.touch) return;
+    if (!this.mouseMode) return;
     try {
       const p = this.canvas.requestPointerLock({ unadjustedMovement: true });
       if (p && p.catch) p.catch(() => this.canvas.requestPointerLock());
@@ -269,7 +300,14 @@ export class Input {
     const len = Math.hypot(mx, my);
     if (len > 1) { mx /= len; my /= len; }
     let scopeHeld;
-    if (this.touch) {
+    if (this.touch && p('Scope')) {
+      // Mouse right-click on a touch device: toggle like the SCOPE button, or hold.
+      if (this.scopeToggle) this.scopeLatched = !this.scopeLatched;
+    }
+    if (this.touch && this.mouseMode && !this.scopeToggle && this.mouseScope) {
+      scopeHeld = true;
+      if (p('scope')) this.scopeLatched = !this.scopeLatched;
+    } else if (this.touch) {
       if (p('scope')) this.scopeLatched = !this.scopeLatched;
       scopeHeld = this.scopeLatched;
     } else if (this.scopeToggle) {

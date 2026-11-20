@@ -419,3 +419,6 @@ body.reckoning .tag { color: #f2c81e; }
 .seg-style button i { font-style: normal; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-transform: none; }
 .seg-style button.on { border-color: var(--amber) !important; background: rgba(242, 179, 91, 0.14) !important; color: var(--amber) !important; }
 .seg-desc { margin: 0 0 4px; min-height: 2.4em; }
+/* iPad / tablet with a mouse: the touch aim-and-fire buttons step back; stick and pills stay. */
+body.mouse-mode #touch .tb.big, body.mouse-mode #touch .tb.mid.scope { opacity: 0.25; }
+body.mouse-mode #touch { cursor: crosshair; }

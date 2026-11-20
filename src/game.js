@@ -12,6 +12,7 @@ import { Wind, stepProjectile } from './ballistics.js';
 import { LocalPlayer } from './player.js';
 import { Avatar, worldCapsules, scopePoint } from './avatar.js';
 import { Effects } from './effects.js';
+import { glowTexture } from './textures.js';
 import { Hud } from './hud.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
@@ -204,7 +205,6 @@ export class Game {
     this.supply = new Supply(this);
     this.chickens = new Chickens(this);
     this.reckoning = new Reckoning(this);
-    if (this.player.pollo) setTimeout(() => this.onReckoning(), 5000);
     this.loadoutPanel = new LoadoutPanel(this, settings.saveLoadout);
     if (this.offline) this.net = new BotPeer(this, { difficulty: this.difficulty, behaviour: this.offline === 'sandbox' ? 'passive' : 'hostile' });
     if (mode === 'practice') this._setupPractice();
@@ -645,15 +645,6 @@ export class Game {
     }
   }
 
-  // Easter egg: someone in the match is wearing the Pollo Hermano suit.
-  onReckoning() {
-    if (this._reckon) return;
-    this._reckon = true;
-    if (window.__reckoning) window.__reckoning();
-    this.hud.message('DRAXXED SKLOUNST: THE RECKONING', 'One pollo. Two hermanos. Eight hundred sauce packets.', 4.5);
-    this.audio.chicken(null, 'squawk');
-  }
-
   _sandboxRespawn() {
     this._spawnFree();
     this.hud.message('RESPAWNED', '', 1.5);
@@ -764,14 +755,20 @@ export class Game {
     const tracer = this.effects.addTracer(o, v, !local);
     let chickMesh = null;
     if (chick) {
-      // The "bullet" is a yellow chicken, wings out, beak first.
+      // The "bullet" is a yellow chicken, wings out, beak first, with a bright yellow trail
+      // and glow so it reads at range like a tracer.
       tracer.mesh.visible = false;
+      tracer.faint = false;
+      tracer.rgb = [1.6, 1.25, 0.2];
       chickMesh = new THREE.Group();
       const c = buildChicken();
       c.rotation.y = Math.PI; // its beak (-Z) along the group's +Z, which lookAt points forward
       c.position.y = -0.27;
       chickMesh.add(c);
       chickMesh.userData.c = c;
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffd23a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+      glow.scale.setScalar(1.3);
+      chickMesh.add(glow);
       chickMesh.position.copy(o);
       this.scene.add(chickMesh);
     }
@@ -870,6 +867,9 @@ export class Game {
       if (b.chick) {
         b.chick.position.copy(b.p);
         b.chick.lookAt(b.p.x + b.v.x, b.p.y + b.v.y, b.p.z + b.v.z);
+        // Keep it a readable size on screen at any range (real size up close or in a big scope).
+        const dcam = b.p.distanceTo(this.camera.position);
+        b.chick.scale.setScalar(Math.max(1, dcam * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * 0.06));
         animateChicken(b.chick.userData.c, this.now * 1.7 + b.id, { flap: 1 });
       }
       if (this.sandbox && b.local) this.sandbox.trace(b, dead);

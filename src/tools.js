@@ -312,7 +312,6 @@ export class ToolSystem {
     if (typeof m.hw === 'string') this.remote.hw = m.hw;
     if (typeof m.vs === 'string') this.remote.vs = m.vs;
     this.remote.sk = m.sk | 0;
-    if (this.remote.sk) this.g.onReckoning && this.g.onReckoning();
     if (typeof m.ew === 'string') this.remote.ew = m.ew;
     if (typeof m.ko === 'string') {
       const [scout, stealth, tactical] = m.ko.split(',');

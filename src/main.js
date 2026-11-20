@@ -103,12 +103,11 @@ function primeGyro() {
 }
 settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); updateTitle(); };
 
-// Easter egg: when either player wears the Pollo Hermano suit, the game becomes The Reckoning.
+// Easter egg: with the Pollo Hermano skin selected, the main menu becomes The Reckoning.
+// (Main menu only, and only for your own Pollo Hermano skin.)
 function polloOn() {
   const lo = settings.loadout || {};
-  let seen = false;
-  try { seen = sessionStorage.getItem('draxxed.reckoning') === '1'; } catch {}
-  return (lo.stealth || 'poncho') === 'poncho' && lo.skin === 'pollo' || seen;
+  return (lo.stealth || 'poncho') === 'poncho' && lo.skin === 'pollo';
 }
 function updateTitle() {
   const on = polloOn();
@@ -117,10 +116,7 @@ function updateTitle() {
   document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Draxxed Sklounst';
   document.body.classList.toggle('reckoning', on);
 }
-window.__reckoning = () => {
-  try { sessionStorage.setItem('draxxed.reckoning', '1'); } catch {}
-  updateTitle();
-};
+
 // Long range is the default distance; move old "auto" settings over once.
 {
   const saved = store.get('rules', { preset: 'bf' });
@@ -263,7 +259,7 @@ function wirePause() {
     game.paused = on;
   };
   document.addEventListener('pointerlockchange', () => {
-    if (touch) return;
+    if (touch && !game.input.mouseMode) return;
     const locked = document.pointerLockElement === game.renderer.domElement;
     const cardOpen = $('h-card').classList.contains('on') && $('h-card').querySelector('button');
     show(!locked && !cardOpen && !game.toolsOpen);

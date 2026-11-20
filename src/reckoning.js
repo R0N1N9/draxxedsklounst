@@ -252,7 +252,7 @@ export class Reckoning {
     if (t >= 7.05 && !this.fly) {
       this.fly = { p: vp.clone(), v: away.clone().multiplyScalar(160).add(new THREE.Vector3((Math.random() - 0.5) * 30, 120, 0)), spin: 0 };
       g.audio.flick && g.audio.flick();
-      g.hud.message('FLICKED', 'Off the map', 2);
+      g.hud.message('FLICKED OFF THE MAP', 'The AI Overlords have deemed this one unworthy.', 2.4);
     }
     if (this.fly) {
       const F = this.fly;
