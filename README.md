@@ -247,11 +247,18 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
   - **X** lures.
   - **T** Mark & Execute.
   - **E** knife takedown.
-  - A **lock-pick set**: fast on the mechanical door, and it can pick the electronic exterior doors.
+  - The shooter can't unlock doors, only walk through ones that are already open.
 
 **Spotter** (default callsign **Rōnin**):
 
-- P-9 pistol with a removable suppressor.
+- P-9 pistol (2 magazines) with a removable suppressor.
+- **TAB:**
+  - **Tap** for the tablet. Tap again for the ISR view, and again to return to first person.
+  - **Hold** for **quickhacks**: your left hand brings up your phone and the HUD switches to scan mode (time slows in solo). Everything hackable in view gets tagged.
+  - Look at a target, pick a hack (mouse wheel or 1/2) and click or press E. Your thumb taps the screen and the hack uploads.
+  - Hacks: loop a camera, short-circuit a drone, open an electronic door, cut a light, set off an IoT device, or jam a guard's comms / reboot his optics (blind for 6 s).
+  - Quickhacks still work when ICE knocks the console offline.
+- **Lock-pick set:** mechanical locks (maintenance and side doors) can't be hacked; the spotter picks them in person. Electronic locks (front, dock) open over the network, from the console or a quickhack.
 - **CYBER OPS tablet** (TAB), with ground and upper floors.
 - **Recon quad (Q):**
   - **Neurolink:** every enemy the quad can see within 45 m is marked for the team, with a lock-on animation and a red silhouette through walls. The mark stays as long as the quad keeps line of sight.
@@ -261,9 +268,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 - **ISR Predator** (I): a high-altitude drone orbiting the map. Slew its sensor with the mouse; it has IR (white-hot) and EO modes. Tag, ping and request from it.
   - **P (SWEEP)** runs a ping sweep: a circle on the ground that marks every unit inside it, people and machines, for 15 s, with red silhouettes through walls.
   - The tablet's pulse scan only hears electronics (drones, cameras, devices).
-- **Phone hacks (hold H):** look at a camera, drone, door, light, IoT device or guard within 45 m and hack it by line of sight.
-  - Hacks: loop a camera, short out a drone, pop a door, kill a light, set off a device, or jam an earpiece.
-  - These still work when ICE knocks the CYBER OPS console offline. Under ICE the tablet is all static and its network payloads are blocked.
+- **Under ICE** the tablet is all static and its network payloads are blocked; use quickhacks.
 - **SNIPER POS** on the ping wheel asks the shooter to set up at a spot. It works from first person, the ISR cross or the tablet map. An AI shooter relocates there.
 - The HUD shows both interfaces as small live squares; tap one to open it.
 
@@ -321,7 +326,7 @@ The code is in `src/cell/`:
 | `neuro.js` | The recon quad's neurolink marking |
 | `nvg.js` | The night-vision gesture and warm-up |
 | `spatial.js` | Positional audio cues |
-| `phone.js` | Line-of-sight phone hacks |
+| `phone.js` | Quickhacks (TAB hold) |
 | `van.js`, `wheel.js`, `sfx.js` | The van, the ping wheel and synthesized sounds |
 | `cell.js` | Game loop, roles, netcode, objectives and HUD |
 

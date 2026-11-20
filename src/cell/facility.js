@@ -403,7 +403,7 @@ export class Facility {
     // ---- Doors ----
     this.door('front', 'elec', 1, -2, -0.15, 2, 0.15);
     this.door('maint', 'mech', 0, x0 - 0.15, -11, x0 + 0.15, -9);
-    this.door('side', 'elec', 1, x1 - 0.15, -11, x1 + 0.15, -9);
+    this.door('side', 'mech', 0, x1 - 0.15, -11, x1 + 0.15, -9);
     this.door('dock', 'dock', 1, x1 - 0.2, -22, x1 + 0.2, -18, '#59544a', 4);
     // Keycard doors on every rack room, both floors.
     const rk = [['dha', -22, -19.5, 0], ['noc', 1.8, 4.2, 0], ['vault', 23.5, 26, 0], ['dhb', -22, -19.5, f1], ['srv', 1.8, 4.2, f1], ['arch', 23.5, 26, f1]];

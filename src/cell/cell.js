@@ -741,6 +741,7 @@ export class CellGame {
       // ISR ping sweep: a circle on the ground; everything inside, flesh or machine, gets marked.
       case 'qmark': this._neuroMark(target.ids || []); break;
       case 'pdrone': { const d = S.byId(target.id); if (d && d.state !== 'dead') { d.empT = 8; this._toast('Drone shorted out for 8 s.', 'cyan'); } break; }
+      case 'blind': { const e = S.byId(target.id); if (e && e.state !== 'dead') { e.blindT = 6; e.aw = 0; if (e.state === 'alert' || e.state === 'berserk') { e.state = 'search'; e.searchT = 6; e.target = null; } this._toast('Optics rebooted: he\u2019s blind for 6 s.', 'cyan'); } break; }
       case 'plight': this.fac.lightsOff((L) => L.id === target.id, 20); this._toast('Light cut for 20 s.', 'dim'); break;
       case 'isrsweep': {
         let n = 0;
@@ -791,7 +792,8 @@ export class CellGame {
         const d = this.fac.doors[target.id];
         if (!d) break;
         if (d.kind === 'dock' && ob.drive) { d.perm = true; d.sealed = false; this._toast('Loading dock forced open. Get to the LZ!', 'cyan'); }
-        else if (!d.sealed) { d.hackOpen = HACK.doorOpen; this._toast(`Door hacked open for ${HACK.doorOpen} s.`, 'cyan'); }
+        else if (d.kind === 'mech') this._toast('That one\u2019s a mechanical lock \u2014 it has to be picked.', 'red');
+        else if (!d.sealed) { d.unlocked = true; d.hackOpen = 2; this._toast('Door lock hacked \u2014 it\u2019s open to both of you.', 'cyan'); }
         break;
       }
       case 'cam': {
@@ -920,7 +922,8 @@ export class CellGame {
     this.chat.update();
     if (!this.ended) {
       this._updateLocal(dt, a);
-      if (this.isHost) this._hostTick(dt);
+      // Quickhack scan slows the world when you play solo.
+      if (this.isHost) this._hostTick(this.solo && this.qh && this.qh.on ? dt * 0.3 : dt);
       this._netTick(dt);
     } else this.input.endFrame();
     this._updatePartner(dt);
@@ -974,10 +977,30 @@ export class CellGame {
     const tab = this.tablet.visible;
     const quad = this.quad && this.quad.active;
     // Keys for this mode.
-    if (I.pressed('Tab') || I.pressed('cell-tab')) this.tablet.toggle();
+    // TAB: the spotter taps it for the tablet (tap again: ISR, again: back to first person)
+    // and holds it for quickhacks (phone out). The shooter's TAB is just the map.
+    if (this.role === 'spotter' || this.operative) {
+      const cycle = () => {
+        if (this.tablet.visible) { this.tablet.close(); this.isr.enter(); }
+        else if (this.isr.active) this.isr.exit();
+        else this.tablet.open();
+      };
+      if (!I.held('Tab')) this._tabBlock = false;
+      if (this.tablet.visible || this.isr.active) { if (I.pressed('Tab') || I.pressed('cell-tab')) { cycle(); this._tabBlock = true; } this._tabT = 0; }
+      else if (this._tabBlock) this._tabT = 0;
+      else if (I.held('Tab') && !this.downed) {
+        this._tabT = (this._tabT || 0) + dt;
+        if (this._tabT > 0.22 && !this.qh.on) this._qhEnter();
+      } else {
+        if (this._tabT > 0 && this._tabT <= 0.22) cycle();
+        else if (this._tabT > 0.22) this._qhExit();
+        this._tabT = 0;
+        if (I.pressed('cell-tab')) cycle();
+      }
+      if (I.pressed('cell-hack')) { if (this.qh.on) this._qhExit(); else this._qhEnter(); }
+    } else if (I.pressed('Tab') || I.pressed('cell-tab')) this.tablet.toggle();
     if ((I.pressed('KeyL') || I.pressed('cell-light')) && !tab) this._wlToggle();
     if (I.pressed('KeyN') || I.pressed('cell-nv')) this._nvgToggle();
-    this._phoneTick(dt, I);
     // Objective board: O shows / hides it, P expands / compacts it (P is the sweep in the ISR view).
     if (I.pressed('KeyO')) this.hud.objToggle();
     if (I.pressed('KeyP') && !this.isr.active) this.hud.objExpand();
@@ -1045,6 +1068,8 @@ export class CellGame {
 
     const live = !this.downed && !this.kia;
     const act = { ...a };
+    this._qhTick(dt, I, act);
+    if (this.qh.on) this._eHeld = false;
     this._kitKeys(dt, I, tab, quad, live, act);
     const seat = this._seat();
     if (!live || tab || quad) {
@@ -1832,15 +1857,20 @@ export class CellGame {
     }
     const rl = SPOTS.relay;
     if (!ob.relay && Math.hypot(rl.x - p.x, rl.z - p.z) < 2.4 && p.y < 2) opt('relay', 'Hold E — plant network relay', 2.2, () => { ob.relay = true; ob.access = Math.max(ob.access, 2); this.fac.relayPlanted = true; this._toast('Relay planted. The building is on the console: cameras, doors, devices, contacts.', 'cyan'); });
-    const md = this.fac.doors.maint;
-    // The shooter carries a lock-pick set: faster on the mechanical door, and it can pick the
-    // electronic exterior doors too (slow and a little noisy). Keycard doors still need the badge.
-    const picker = role === 'shooter' || this.operative;
-    if (!md.unlocked && !md.sealed && Math.hypot(md.x - p.x, md.z - p.z) < 2.6) opt('pick', `Hold E \u2014 pick the maintenance door${picker ? ' (lock-pick set)' : ''}`, picker ? 1.8 : 3, () => { md.unlocked = true; this._toast('Maintenance door picked.', 'dim'); });
-    if (picker) for (const id of ['front', 'side']) {
-      const d = this.fac.doors[id];
-      if (d.unlocked || d.sealed || d.open || Math.hypot(d.x - p.x, d.z - p.z) > 2.6) continue;
-      opt('pick', 'Hold E \u2014 pick the lock (lock-pick set)', 6, () => { d.unlocked = true; this._toast('Lock picked. The door\u2019s yours.', 'dim'); });
+    // Exterior doors. Mechanical locks (maintenance, side) can't be hacked: the spotter has
+    // to pick them in person. Electronic locks (front, dock) open over the network: the
+    // console, a quickhack, or the AI spotter. The shooter can't unlock anything; he only
+    // uses doors that are already open to him.
+    const picker = role === 'spotter' || this.operative;
+    for (const d of Object.values(this.fac.doors)) {
+      if (d.kind !== 'mech' && d.kind !== 'elec') continue;
+      if (d.unlocked || d.sealed || d.open || !sameFloor(d.y || 0) || Math.hypot(d.x - p.x, d.z - p.z) > 2.6) continue;
+      const who = role === this.role ? this.partnerName : this.name;
+      if (d.kind === 'mech') {
+        if (picker) opt('pick', 'Hold E \u2014 pick the lock (lock-pick set)', 3, () => { d.unlocked = true; this._toast('Lock picked. The door\u2019s open to both of you.', 'dim'); });
+        else opt('pickx', `Mechanical lock \u2014 ${this.solo ? 'can\u2019t be hacked; use the front door' : who + ' has to pick it'}`, 0, null);
+      } else if (!picker) opt('elecx', `Electronic lock \u2014 ${this.solo ? 'Rōnin will hack it' : who + ' can open it over the network'}`, 0, null);
+      else opt('elecx', 'Electronic lock \u2014 hack it: hold TAB and look at it, or use the console', 0, null);
       break;
     }
     // Keycard doors on the rack rooms.
@@ -2388,8 +2418,8 @@ class CellHud {
     this.ctx = this.el.overlay.getContext('2d');
     this.el.camoBox.style.display = game.role === 'shooter' ? '' : 'none';
     const K = (k, l) => `<b>${k}</b> ${l}`;
-    const shooterKeys = [K('G', 'camo'), K('H', 'deadeye'), K('X', 'lure'), K('T', 'execute'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('1/2', 'rifle/pistol'), K('B', 'suppressor'), K('N', 'NV'), K('TAB', game.operative ? 'CYBER OPS' : 'map')];
-    const spotterKeys = [K('TAB', 'CYBER OPS'), K('Q', 'quad'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('Y/U', 'approve/deny'), K('B', 'suppressor'), K('N', 'NV')];
+    const shooterKeys = [K('G', 'camo'), K('H', 'deadeye'), K('X', 'lure'), K('T', 'execute'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('1/2', 'rifle/pistol'), K('B', 'suppressor'), K('N', 'NV'), K('TAB', game.operative ? 'tablet (hold: quickhack)' : 'map')];
+    const spotterKeys = [K('TAB', 'tablet · ISR (hold: quickhack)'), K('Q', 'quad'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('Y/U', 'approve/deny'), K('B', 'suppressor'), K('N', 'NV')];
     shooterKeys.push(K('L', 'light'), K('\u21B5', 'chat'));
     spotterKeys.push(K('L', 'light'), K('I', 'ISR'));
     spotterKeys.push(K('\u21B5', 'chat'));
@@ -2730,7 +2760,7 @@ class CellHud {
     // Scope (Halo-style ring with a range readout) or a small crosshair.
     g._neuroHud(c, proj, W, H);
     g._syncHud(c, proj);
-    g._phoneHud(c, proj, W, H);
+    g._qhHud(c, proj, W, H);
     g._nvgHud(c, W, H);
     if (g.isr.active) this._isrHud(c, W, H);
     else if (scoped) this._scope(c, W, H);

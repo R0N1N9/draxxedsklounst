@@ -1136,8 +1136,9 @@ export class Sentinel {
     for (const j of this.jams) if (Math.hypot(j.x - g.x, j.z - g.z) < j.r) { if (g.jamT <= 0) g.radioT = 0; g.jamT = Math.max(g.jamT, 0.5); }
     g.moving = false;
     const agents = (this.agents || []).filter((a) => a.alive && !a.downed);
-    // Vision.
-    if (sense && g.state !== 'flee') {
+    g.blindT = Math.max(0, (g.blindT || 0) - dt);
+    // Vision (not while a quickhack has his optics rebooting).
+    if (sense && g.state !== 'flee' && !(g.blindT > 0)) {
       let best = null, bv = 0;
       for (const a of agents) {
         const v = this._canSee(g, a);

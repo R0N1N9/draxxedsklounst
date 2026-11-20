@@ -19,7 +19,7 @@ export const MAGNUM = {
 };
 export const P9 = {
   key: 'm18', name: 'P-9', short: 'P-9', caliber: '9 mm', slot: 'pistol', kind: 'semi',
-  mag: 12, spareMags: 2, muzzle: 380, damage: { head: 150, torso: 50, legs: 35 }, cycle: 0.24, reload: 1.4, reloadEmpty: 1.8,
+  mag: 12, spareMags: 1, muzzle: 380, damage: { head: 150, torso: 50, legs: 35 }, cycle: 0.24, reload: 1.4, reloadEmpty: 1.8,
   zooms: [1], scope: false, adsFov: 46, fixedZero: 25, glint: 0, recoil: 0.03, sway: 0, spread: 0.03,
 };
 

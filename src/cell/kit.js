@@ -73,7 +73,7 @@ export const KitMethods = {
   _kitKeys(dt, I, tab, quad, live, act) {
     const shooterKit = this.role === 'shooter';
     if (live && !tab && !quad && shooterKit) {
-      if ((I.pressed('KeyH') && !(this.operative && this.phone && this.phone.target)) || I.pressed('cell-deadeye')) this._deadeye();
+      if (I.pressed('KeyH') || I.pressed('cell-deadeye')) this._deadeye();
       if (I.pressed('KeyX') || I.pressed('cell-lure')) this._throwLure();
       if (I.pressed('KeyT') || I.pressed('cell-exec')) this._execute();
     }

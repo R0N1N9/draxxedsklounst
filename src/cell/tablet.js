@@ -421,7 +421,7 @@ export class Tablet {
       c.fillText('UPLINK LOST \u2014 SENTINEL ICE', W / 2, H / 2 - (this.mini ? 4 : 10));
       c.fillStyle = 'rgba(200,240,235,0.85)';
       c.font = `600 ${this.mini ? 8 : 13}px JetBrains Mono, monospace`;
-      c.fillText(this.mini ? 'PHONE HACK (H)' : 'Console offline \u2014 phone-hack by sight: hold H', W / 2, H / 2 + (this.mini ? 9 : 16));
+      c.fillText(this.mini ? 'QUICKHACK (HOLD TAB)' : 'Console offline \u2014 quickhack by sight: hold TAB', W / 2, H / 2 + (this.mini ? 9 : 16));
     }
     c.restore();
   }

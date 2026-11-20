@@ -308,3 +308,6 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 #cell-vote button[data-v="loud"] b { color: #ff5060; }
 #cell-vote button.sel { background: rgba(255, 255, 255, 0.14); border-color: #fff; }
 #cell-vote .cv-votes { margin-top: 10px; font-size: 12px; letter-spacing: 0.08em; opacity: 0.9; }
+
+/* Quickhack scan mode */
+#cell-hud.qh .c-obj, #cell-hud.qh .c-ammo, #cell-hud.qh .c-keys, #cell-hud.qh .c-kit, #cell-hud.qh .c-pip, #cell-hud.qh .c-vis { opacity: 0.25; transition: opacity 0.2s; }

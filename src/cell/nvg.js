@@ -7,7 +7,7 @@ import * as THREE from 'three';
 const DUR = 0.8; // whole gesture
 const SWITCH = 0.42; // when the goggles land and the tubes switch
 
-function glove(color = '#1c1e22') {
+export function glove(color = '#1c1e22') {
   const g = new THREE.Group();
   const m = new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.25 });
   const palm = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.03, 0.09), m);

@@ -49,7 +49,7 @@ export class Ops {
   use(k, target) {
     const p = PAYLOAD[k], G = this.game;
     if (!p) return 'unknown';
-    if (G.obj.ice && ICE_BLOCKED.has(k)) return 'CONSOLE OFFLINE (ICE) \u2014 PHONE-HACK BY SIGHT (H)';
+    if (G.obj.ice && ICE_BLOCKED.has(k)) return 'CONSOLE OFFLINE (ICE) \u2014 QUICKHACK BY SIGHT (HOLD TAB)';
     if ((this.cd[k] || 0) > 0) return 'COOLING DOWN';
     if (this.bw < p.bw) return 'NOT ENOUGH BANDWIDTH';
     if (k === 'supply' && G.obj.drops <= 0) return 'NO DROPS LEFT';
@@ -70,11 +70,11 @@ export class Ops {
 
   hack(kind, id) {
     const G = this.game;
-    if (G.obj.ice) return 'CONSOLE OFFLINE (ICE) \u2014 PHONE-HACK BY SIGHT (H)';
+    if (G.obj.ice) return 'CONSOLE OFFLINE (ICE) \u2014 QUICKHACK BY SIGHT (HOLD TAB)';
     if (kind === 'door') {
       const d = G.fac.doors[id];
       if (!d) return 'NO DOOR';
-      if (d.kind === 'mech') return 'MECHANICAL — AGENT MUST PICK IT';
+      if (d.kind === 'mech') return 'MECHANICAL LOCK \u2014 THE SPOTTER HAS TO PICK IT';
       if (d.kind === 'vault') return 'VAULT — BADGE IN, THEN HOLD CRACK';
       if (d.sealed && !(d.kind === 'dock' && G.obj.drive)) return 'SEALED BY SENTINEL';
       if (d.tier > G.obj.access) return 'NO ACCESS — TAP THE NETWORK FIRST';
@@ -163,7 +163,7 @@ export class AiSpotter {
     // Electronic door next to the agent.
     for (const d of Object.values(G.fac.doors)) {
       if (d.kind !== 'elec' && !(d.kind === 'dock' && ob.drive)) continue;
-      if (d.open || d.tier > ob.access || (d.sealed && d.kind !== 'dock')) continue;
+      if (d.open || d.unlocked || d.tier > ob.access || (d.sealed && d.kind !== 'dock')) continue;
       if (Math.hypot(d.x - p.x, d.z - p.z) < 6 && !O.casts.some((c) => c.k === 'door') && O.bw > 20) { O.hack('door', d.id); this.say(d.kind === 'dock' ? 'Opening the dock. Go, go!' : 'Got the door.'); return; }
     }
     // Cameras the agent is walking into.
