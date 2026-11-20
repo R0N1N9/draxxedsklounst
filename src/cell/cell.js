@@ -28,7 +28,7 @@ import { Input } from '../input.js';
 import { WEAPON, PLAYER } from '../config.js';
 import { RULES, applyRules } from '../rules.js';
 import { clamp, segSegClosest } from '../util.js';
-import { Facility, SPOTS, FENCE, BUILDING, ROOMS, terrainHeight, lam, glowMat } from './facility.js';
+import { Facility, SPOTS, FENCE, BUILDING, ROOMS, CARDS, terrainHeight, lam, glowMat } from './facility.js';
 import { Sentinel, DIFFS, guardCapsules, buildDrone, angDiff } from './sentinel.js';
 import { Ops, AiSpotter, PAYLOAD, HACK } from './ops.js';
 import { Tablet } from './tablet.js';
@@ -66,10 +66,10 @@ const KR50 = {
 export const OBJECTIVES = [
   { k: 'perimeter', title: 'BREACH THE PERIMETER', hint: 'Get inside the fence — the cut on the west side or the south gate.' },
   { k: 'relay', title: 'TAP THE NETWORK', hint: 'Plant a relay in the Electrical Room (SE corner). Opens the data floor to Overwatch.' },
-  { k: 'badge', title: 'LIFT THE SITE CHIEF’S BADGE', hint: 'Drop the Site Chief (violet visor) and take the badge off him.' },
+  { k: 'card', title: 'FIND A KEYCARD', hint: 'Search the office desk drawers (E). Each rack-room door takes its own colour-tagged keycard. The Site Chief carries a master badge.' },
   { k: 'find', title: 'FIND THE ARCHIVE SERVER', hint: 'Swipe into the rack rooms on both floors. Look for the cabinet with the slow amber beacon.' },
   { k: 'upload', title: 'UPLOAD THE MALWARE', hint: 'Spotter: jack in at the lit rack (E), lock the signal, then hold the rack while it uploads. Shooter: cover them.' },
-  { k: 'drive', title: 'EXTRACT THE DRIVE', hint: 'Release the drive at the rack (E). The whole facility locks down.' },
+  { k: 'drive', title: 'EXTRACT THE DRIVE', hint: 'Release the drive at the rack (E). A clean upload means SENTINEL never knows.' },
   { k: 'exfil', title: 'EXFILTRATE', hint: 'Get the drive out the loading dock to the van east of the fence. Spotter drives, shooter rides shotgun.' },
 ];
 
@@ -292,7 +292,7 @@ export class CellGame {
     this.paused = false;
     this.ended = null;
 
-    if (this.mission === 'nightwatch') Object.assign(OBJECTIVES[2], { title: 'LIFT THE OVERSEER\u2019S BADGE', hint: 'Drop the Overseer (violet, shielded juggernaut) and take its badge. Headshots ignore shells.' });
+    if (this.mission === 'nightwatch') Object.assign(OBJECTIVES[2], { hint: 'Search the office desk drawers (E). Each rack-room door takes its own colour-tagged keycard. The Overseer (violet juggernaut) carries a master badge.' });
     // Halo-style ballistics for this mode: instant, straight, no sway.
     applyRules({ preset: 'halo' });
     RULES.zooms = null;
@@ -316,7 +316,7 @@ export class CellGame {
     for (const k of ['touchSensR', 'touchSensL', 'gyroMode', 'gyroSens', 'gyroInvertY']) if (this.settings[k] !== undefined) this.input[k] = this.settings[k];
 
     // Mission state (host-authoritative; mirrored on the guest).
-    this.obj = { perimeter: false, relay: false, badge: false, found: false, aligned: false, upload: 0, uploading: false, trace: 0, traced: false, drive: null, driveAt: null, exfil: false, access: 1, drops: this.D.drops, canCrack: false, crack: 0, step: 0 };
+    this.obj = { perimeter: false, relay: false, badge: false, found: false, aligned: false, upload: 0, uploading: false, trace: 0, traced: false, drive: null, driveAt: null, exfil: false, access: 1, drops: this.D.drops, canCrack: false, crack: 0, step: 0, cards: [], searched: [], used: {}, commsDown: false, cctv: false, quiet: null, ice: false };
     this.crates = [];
     this.crateId = 1;
     this.prompts = {}; // role -> { label, p }
@@ -618,6 +618,9 @@ export class CellGame {
       case 'kill': this._onKillEvent(m); break;
       case 'takedown': if (m.role === this.role) this._knife(); break;
       case 'lockdown': this._lockdownFx(); break;
+      case 'ice': this.hud.flash('ICE ALERT', 'red'); break;
+      case 'heal': if (m.role === this.role) this._heal(m.hp); break;
+      case 'ammo': if (m.role === this.role) this._ammo(); break;
       case 'trace': this.hud.flash('TRACED', 'red'); break;
       case 'decoy': this.audio.beep(new THREE.Vector3(m.x, 1, m.z), true); break;
       case 'quadhit': if (this.quad && this.quad.active) this._quadDamage(m.dmg); break;
@@ -859,9 +862,9 @@ export class CellGame {
   _afterIntro() {
     this.comms('Weapons free on your call. Stay in the dark.', 'dim');
     const chief = this.mission === 'nightwatch' ? 'the Overseer' : 'the Site Chief';
-    const brief = `Overwatch to Sniper Cell, ISR is on station. Your objective is the archive server inside the Kestrel Ridge data center. Two floors, six rack rooms behind keycard doors, and we don't know which one. Plant the relay in the electrical room, lift ${chief}'s badge, find the rack with the amber beacon, upload, pull the drive, and get to the van. ${this.mission === 'nightwatch' ? 'SENTINEL\'s night shift is augmented. Watch the towers.' : ''} Good hunting.`;
+    const brief = `Overwatch to Sniper Cell, ISR is on station. Your objective is the archive server inside the Kestrel Ridge data center. Two floors, six rack rooms behind keycard doors, and we don't know which one. Plant the relay in the electrical room. Each rack room takes its own colour-tagged keycard: search the office drawers, or take ${chief}'s master badge. Find the rack with the amber beacon and upload. A clean upload and nobody ever knows. Botch it and SENTINEL's ICE puts the garrison on the walls. Then pull the drive and get to the van. The comms room and the CCTV desk can be hacked in person, and there's food and ammo upstairs. ${this.mission === 'nightwatch' ? 'SENTINEL\'s night shift is augmented. Watch the towers.' : ''} Good hunting.`;
     this._voice('isr', brief);
-    this.comms('ISR: objective \u2014 archive server, one of six rack rooms (both floors). Relay \u2192 badge \u2192 find the amber beacon \u2192 upload \u2192 drive \u2192 van.', 'cyan', 'ISR');
+    this.comms('ISR: objective \u2014 archive server, one of six rack rooms (both floors). Relay \u2192 keycards (office drawers) \u2192 find the amber beacon \u2192 upload \u2192 drive \u2192 van.', 'cyan', 'ISR');
     this.input.requestLock();
   }
 
@@ -1287,6 +1290,17 @@ export class CellGame {
     this.comms(`${this.name} is back up.`, 'cyan');
   }
 
+  _heal(n) {
+    this.hp = Math.min(this.maxHp, this.hp + n);
+    this.audio.click();
+    this.hud.flash(`+${n} HP`, 'cyan');
+  }
+  _ammo() {
+    this.player.refill();
+    this.audio.click();
+    this.hud.flash('AMMO RESTOCKED', 'cyan');
+  }
+
   _resupply() {
     this.player.refill();
     this.hp = Math.min(this.maxHp, this.hp + 35);
@@ -1546,7 +1560,7 @@ export class CellGame {
     if (!ob.perimeter && agents.some((a) => a.alive && inFence(a.pos))) { ob.perimeter = true; this._toast('Perimeter breached. Inside the wire.', 'cyan'); }
     // Finding the archive server: eyes on the cabinet with the amber beacon.
     const near = (a, r) => Math.hypot(a.pos.x - T.x, a.pos.z - T.z) < r && this.fac.floorOf(a.pos.y + 0.5) === T.floor;
-    if (!ob.found && ob.badge) for (const a of agents) {
+    if (!ob.found && (ob.badge || ob.cards.length)) for (const a of agents) {
       if (!a.alive || !near(a, 7)) continue;
       if (!this.fac.los({ x: a.pos.x, y: a.pos.y + 1.5, z: a.pos.z }, { x: T.x, y: T.y + 0.4, z: T.z + 0.2 })) continue;
       ob.found = true;
@@ -1561,8 +1575,8 @@ export class CellGame {
     ob.uploading = atRack;
     if (atRack) {
       ob.upload = Math.min(1, ob.upload + 0.1 * dt);
-      if (!ob.traced) ob.trace = Math.min(1, ob.trace + 0.05 * dt);
-      if (ob.upload >= 1) { this._toast('Malware uploaded. Evidence copied. Extract the drive.', 'cyan'); this._voice('isr', 'Upload complete. Pull the drive.'); }
+      if (!ob.traced && !ob.quiet) ob.trace = Math.min(1, ob.trace + 0.05 * dt);
+      if (ob.upload >= 1) { this._toast(ob.quiet ? 'Malware uploaded clean. Pull the drive — SENTINEL is none the wiser.' : 'Malware uploaded. Evidence copied. Extract the drive.', 'cyan'); this._voice('isr', 'Upload complete. Pull the drive.'); }
       if (ob.trace >= 1 && !ob.traced) {
         ob.traced = true;
         S.raise(1, null);
@@ -1587,7 +1601,7 @@ export class CellGame {
     const ob = this.obj;
     if (!ob.perimeter) return 0;
     if (!ob.relay) return 1;
-    if (!ob.badge) return 2;
+    if (!ob.badge && !ob.cards.length) return 2;
     if (!ob.found) return 3;
     if (ob.upload < 1) return 4;
     if (!ob.drive) return 5;
@@ -1637,7 +1651,7 @@ export class CellGame {
     // Loot the badge (the team shares it; in co-op only the spotter can swipe it).
     if (!ob.badge) {
       const chief = S.guards.find((g) => g.chief && g.state === 'dead' && g.badge);
-      if (chief && Math.hypot(chief.x - p.x, chief.z - p.z) < 2.4 && sameFloor(chief.y)) opt('badge', 'Hold E — take the badge', 1, () => { ob.badge = true; chief.badge = false; this._toast(`Badge cloned to the team${this.solo ? '' : ' — the spotter swipes the rack-room doors'}. Find the server with the amber beacon.`, 'cyan'); });
+      if (chief && Math.hypot(chief.x - p.x, chief.z - p.z) < 2.4 && sameFloor(chief.y)) opt('badge', 'Hold E — take the master badge', 1, () => { ob.badge = true; chief.badge = false; this._toast('Master badge cloned to the team — it opens every rack room. Find the server with the amber beacon.', 'cyan'); });
     }
     const rl = SPOTS.relay;
     if (!ob.relay && Math.hypot(rl.x - p.x, rl.z - p.z) < 2.4 && p.y < 2) opt('relay', 'Hold E — plant network relay', 2.2, () => { ob.relay = true; ob.access = Math.max(ob.access, 2); this.fac.relayPlanted = true; this._toast('Relay planted. The building is on the console: cameras, doors, devices, contacts.', 'cyan'); });
@@ -1655,11 +1669,13 @@ export class CellGame {
     // Keycard doors on the rack rooms.
     for (const d of Object.values(this.fac.doors)) {
       if (d.kind !== 'badge' || d.unlocked || !sameFloor(d.y) || Math.hypot(d.x - p.x, d.z - p.z) > 2.4) continue;
-      if (!ob.badge) opt('badgex', `Keycard door — needs the ${this.mission === 'nightwatch' ? 'Overseer' : 'Site Chief'}’s badge`, 0, null);
-      else if (!this._techRole(role)) opt('badgex', 'Keycard door — the spotter has to swipe it', 0, null);
-      else opt('swipe', 'Hold E — swipe the badge', 0.8, () => { d.unlocked = true; this._toast('Keycard accepted.', 'dim'); });
+      const cd = CARDS[d.room], rn = (ROOMS.find((r) => r.id === d.room) || {}).name || 'RACK ROOM';
+      if (ob.cards.includes(d.room)) opt('swipe', `Hold E — swipe the ${cd.name} keycard (${rn})`, 0.8, () => { d.unlocked = true; this._toast(`${cd.name} keycard accepted — ${rn}.`, 'dim'); });
+      else if (ob.badge) opt('swipe', `Hold E — swipe the master badge (${rn})`, 0.8, () => { d.unlocked = true; this._toast(`Master badge accepted — ${rn}.`, 'dim'); });
+      else opt('badgex', `${rn} — needs the ${cd.name} keycard (search the office drawers)`, 0, null);
       break;
     }
+    this._stationOpt(a, opt);
     // The archive server: jack in (signal lock), then extract (drive release). Minigames run
     // on the operator's own screen; the host just offers the prompt.
     if (ob.found && Math.hypot(T.x - p.x, T.z - p.z) < 2.2 && this.fac.floorOf(p.y + 0.5) === T.floor) {
@@ -1683,17 +1699,70 @@ export class CellGame {
     if (held && best.key === 'pick' && Math.random() < dt * 2) this.sentinel.noise(p, 6, false);
   }
 
+  // Room stations: drawers (keycards), storage shelves (ammo), the break-room fridge (HP),
+  // the comms rack (no more radio calls) and the CCTV desk (cameras stop reporting you).
+  _stationOpt(a, opt) {
+    const ob = this.obj, role = a.role, p = a.pos;
+    const q = this.fac.stationNear(p.x, p.z, p.y);
+    if (!q) return;
+    const who = role === this.role ? this.name : this.partnerName;
+    const fast = this._techRole(role) || this.operative;
+    const used = ob.used[q.id] || 0;
+    const give = (k, extra) => { if (role === this.role) this[k](extra); else this._broadcast({ k: k === '_heal' ? 'heal' : 'ammo', role, hp: extra }); };
+    switch (q.kind) {
+      case 'drawer':
+        if (ob.searched.includes(q.id)) return;
+        opt('search', 'Hold E — search the desk drawer', 1.2, () => {
+          ob.searched.push(q.id);
+          this.sentinel.noise({ x: q.x, y: q.y + 1, z: q.z }, 5, false);
+          if (q.card && !ob.cards.includes(q.card)) {
+            ob.cards.push(q.card);
+            const cd = CARDS[q.card], rn = (ROOMS.find((r) => r.id === q.card) || {}).name;
+            this._toast(`${who} found the ${cd.name} keycard — ${rn}${/^(dhb|srv|arch)$/.test(q.card) ? ' (upper floor)' : ''}.`, 'amber');
+            this._voice(role, `Got a keycard. ${cd.name.toLowerCase()} tag, ${rn.toLowerCase()}.`);
+          } else this._toast(['Drawer: pens, a stale protein bar.', 'Drawer: cable ties and a dead vape.', 'Drawer: shift rota. No card.', 'Drawer: empty.'][ob.searched.length % 4], 'dim');
+        });
+        return;
+      case 'shelf':
+        if (used >= q.uses) return opt('shelfx', 'Storage shelf — already cleared', 0, null);
+        opt('shelf', 'Hold E — grab ammo and kit off the shelf', 1.4, () => { ob.used[q.id] = used + 1; give('_ammo'); this._toast(`${who} restocked from storage.`, 'dim'); });
+        return;
+      case 'fridge':
+        if (used >= q.uses) return opt('fridgex', 'Fridge — nothing left but a lemon', 0, null);
+        opt('fridge', `Hold E — eat something from the fridge (+40 HP, ${q.uses - used} left)`, 1.6, () => { ob.used[q.id] = used + 1; give('_heal', 40); this._toast(`${who} raided the break-room fridge.`, 'dim'); });
+        return;
+      case 'comms':
+        if (ob.commsDown) return opt('commsx', 'Comms rack — radio net is down', 0, null);
+        opt('comms', `Hold E — hack the comms rack in person${fast ? '' : ' (slow without the tablet)'}`, fast ? 3 : 5, () => {
+          ob.commsDown = true;
+          this.sentinel.cutComms();
+          this._toast('Comms rack hacked: SENTINEL\u2019s radio net is down. Guards can\u2019t call for backup.', 'cyan');
+          this._voice(role, 'Their radios are dead. Nobody\'s calling for help now.');
+        });
+        return;
+      case 'cctv':
+        if (ob.cctv) return opt('cctvx', 'CCTV desk — the feeds are yours', 0, null);
+        opt('cctv', `Hold E — hack the CCTV desk in person${fast ? '' : ' (slow without the tablet)'}`, fast ? 3 : 5, () => {
+          ob.cctv = true;
+          this.sentinel.cutCctv();
+          this._toast('CCTV hacked: every camera is looped for SENTINEL and feeding the console.', 'cyan');
+          this._voice(role, 'Cameras are ours. They can see us all day and nobody will hear about it.');
+        });
+        return;
+    }
+  }
+
   // Client: E on a jack/extract prompt opens the minigame; the result goes to the host.
   _serverMinigame(key) {
     if (this.mini.open) return;
     const kind = key === 'jack' ? 'upload' : 'extract';
     this.input.keys.clear();
     document.exitPointerLock && document.exitPointerLock();
-    this._voice(this.role, kind === 'upload' ? 'Jacking in. Cover me.' : 'Pulling the drive. This’ll wake the whole building.');
+    this._voice(this.role, kind === 'upload' ? 'Jacking in. Cover me.' : this.obj.quiet ? 'Pulling the drive. Nice and quiet.' : 'Pulling the drive. Watch the doors.');
     this.mini.start(kind, (ok) => {
       this.input.requestLock();
       if (!ok) return;
-      const ev = { k: kind === 'upload' ? 'aligned' : 'extracted', role: this.role };
+      const ev = { k: kind === 'upload' ? 'aligned' : 'extracted', role: this.role, fail: ok === 'fail' };
       if (this.isHost) this._serverResult(ev); else this._broadcast(ev);
     }, () => {
       // A fumble spikes the trace (host-side).
@@ -1702,8 +1771,31 @@ export class CellGame {
   }
   _serverResult(m) {
     const ob = this.obj;
-    if (m.k === 'aligned' && !ob.aligned) { ob.aligned = true; this._toast('Signal locked. Upload running — hold the rack.', 'cyan'); }
-    if (m.k === 'extracted' && ob.upload >= 1 && !ob.drive) { ob.drive = m.role; this.fac.driveMesh.visible = false; this._lockdown(); }
+    if (m.k === 'aligned' && !ob.aligned) {
+      ob.aligned = true;
+      if (!m.fail) {
+        // Clean lock: SENTINEL never sees the upload. No trace, no lockdown.
+        ob.quiet = true;
+        ob.trace = 0;
+        this._toast('Signal locked clean. Upload running silent — hold the rack.', 'cyan');
+        this._voice('isr', 'Clean lock. You\'re invisible to SENTINEL. Hold the rack.');
+      } else {
+        // Botched: ICE. The upload still forces through, but the garrison rings the building.
+        ob.quiet = false;
+        ob.ice = true;
+        this.sentinel.iceAlert(BUILDING);
+        this.hud.flash('ICE ALERT', 'red');
+        this._broadcast({ k: 'ice' });
+        this._toast('Upload forced through, but SENTINEL\u2019s ICE tripped. Guards are ringing the building — sneak out or go loud.', 'red');
+        this._voice('isr', 'ICE alert. They\'re putting guards on the walls. Finish the upload, then pick your way out, or fight it.');
+      }
+    }
+    if (m.k === 'extracted' && ob.upload >= 1 && !ob.drive) {
+      ob.drive = m.role;
+      this.fac.driveMesh.visible = false;
+      if (ob.quiet) { this._toast('Drive out. Nobody knows you were here — walk it to the van.', 'cyan'); this._voice('isr', 'Intel is out, quiet as you like. Get to the van.'); }
+      else this._toast('Drive out. The ring is still on the walls — slip through it or punch a hole. Van on the east track.', 'amber');
+    }
   }
 
   _lockdown() {
@@ -1795,6 +1887,7 @@ export class CellGame {
   }
 
   _visuals(dt) {
+    this.fac.syncStations(this.obj, this.t);
     this._vanVisual(dt);
     this._lasersTick();
     this.cloakMat.uniforms.uTime.value = this.t;
@@ -2357,7 +2450,7 @@ class CellHud {
     switch (ob.step) {
       case 0: return { x: -80, y: 2, z: 11, label: 'FENCE GAP' };
       case 1: return { x: SPOTS.relay.x, y: 1.5, z: SPOTS.relay.z, label: 'RELAY' };
-      case 2: { const c = g.sentinel.guards.find((q) => q.chief); return c ? { x: c.x, y: c.y + 2.6, z: c.z, label: c.state === 'dead' ? 'BADGE' : g.mission === 'nightwatch' ? 'OVERSEER' : 'CHIEF', hide: c.state !== 'dead' && !(c.tagT > 0 || c.rev) } : null; }
+      case 2: { const c = g.sentinel.guards.find((q) => q.chief && q.state === 'dead' && q.badge); return c ? { x: c.x, y: c.y + 2.6, z: c.z, label: 'MASTER BADGE' } : null; }
       case 3: return null; // search: no marker until someone finds the beacon
       case 4: case 5: { const T = g.fac.target; return { x: T.x, y: T.y + 1.2, z: T.z + 0.4, label: ob.step === 4 ? 'UPLOAD' : 'DRIVE' }; }
       case 6: {

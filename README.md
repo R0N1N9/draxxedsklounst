@@ -120,7 +120,7 @@ Pick **SNIPER CELL** on the main menu, then a mission, the **staging area** load
   - **Juggernauts:** a recharging energy shell. When it breaks, they berserk with an energy blade.
   - **Bulwarks:** behind a hard-light wall. Snipe through its sight-port, or catch them when they lower it to fire. Tower bulwarks carry beam rifles and you see a red laser before they fire.
   - **Titans:** heavy armour. Body hits do half damage, and a helmet eats the first headshot; the follow-up kills.
-  - **The Overseer:** a shielded, helmeted officer carrying the badge.
+  - **The Overseer:** a shielded, helmeted officer carrying a master badge that opens every rack room.
 - **Infiltration:** the same op against human guards.
 
 Headshots kill anything except a helmet's first hit.
@@ -135,7 +135,13 @@ Headshots kill anything except a helmet's first hit.
 
 The data center has **two storeys** with two stairwells. Guards, cameras and patrols are on both floors.
 
-- **Rack rooms:** six of them, behind **keycard doors**. In co-op only the spotter can swipe the badge.
+- **Rack rooms:** six of them, behind **keycard doors**. Each door takes its own keycard, shown by a coloured tag on the reader and above the door (red, orange, yellow, green, blue, violet). Either player can swipe.
+- **Office drawers:** eleven desk drawers on both floors. Six of them hide the keycards; the rest hold junk. Searching takes a second and makes a little noise.
+- **Rooms you can use:**
+  - Storage shelves (upstairs): ammo for both weapons, one haul per shelf.
+  - The break-room fridge: +40 HP, three servings.
+  - The comms rack: hack it in person and guards can no longer radio for backup.
+  - The CCTV desk (Security / CCTV, ground floor): hack it in person and every camera is looped for SENTINEL and feeds your console. The cameras still see you, but nobody hears about it.
 - **The archive server:** in a random rack room. Find the cabinet with the slow amber beacon.
 - **Lights:** every lamp and ceiling panel can be **shot out**.
 - **IoT devices:** vending machines, printers, coffee machines, speakers, a TV and server fans. Hack them from the tablet to make a distracting noise.
@@ -150,10 +156,12 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 1. Breach the fence.
 2. Plant the relay in the Electrical Room.
-3. Take the badge.
+3. Find a keycard in the office drawers, or take the Overseer's master badge.
 4. Find the server.
-5. **Upload:** the spotter jacks in with the signal-lock minigame, then holds the rack while SENTINEL traces it.
-6. **Extract:** the drive-release minigame. The facility locks down.
+5. **Upload:** the spotter jacks in with the signal-lock minigame, then holds the rack.
+   - A clean lock means a silent upload: no trace and no alarm, so you can walk the drive out.
+   - Three misses trips SENTINEL's **ICE**. The upload still forces through, but the outside guards and a fireteam take posts around the building walls, and the guards inside search their floors. Sneak out between them, or go loud.
+6. **Extract:** the drive-release minigame.
 7. Carry the drive (it shows on the carrier; drop it with **J** for your partner to pick up) to the **extraction van**. The spotter drives and the shooter rides shotgun.
 
 ### Stealth
@@ -175,7 +183,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 **Shooter** (default callsign **Ra**):
 
 - KR-50 Nightjar: bolt-action, integrally suppressed, with Halo-style hitscan and a night-vision scope.
-- Secondary: the **K9 HUSH SMG** (full / burst / semi) or the **M50 Magnum**. Its suppressor is fitted by default and removable.
+- Secondary: the **K9 HUSH SMG** (40-round magazine; full / burst / semi) or the **M50 Magnum** (7 rounds and a heavy hit, like Halo's magnum). Its suppressor is fitted by default and removable.
 - **Stealth kit:**
   - **G** active camo. **Firing breaks it.**
   - **H** Deadeye.
@@ -201,7 +209,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 - **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
 - **Cut-scenes:**
   - Opening: drive in, gear up, walk out.
-  - Ending: a retro-future sunrise on an open road.
+  - Ending: a sunrise on an open road under a striped, retro sun.
   - The title reads SNIPER in white, CELL in red and NIGHTWATCH in cyan.
 
 ### Atmosphere
@@ -214,7 +222,7 @@ The code is in `src/cell/`:
 
 | File | Contents |
 | --- | --- |
-| `facility.js` | Two-storey map, navigation and lights |
+| `facility.js` | Two-storey map, navigation, lights, keycards and room stations |
 | `sentinel.js` | Enemy roster, AI, backup and hunt |
 | `kit.js`, `kit2.js` | Stealth kit, pings, van, IR, sync shots, weapon lights |
 | `isr.js` | The ISR drone |

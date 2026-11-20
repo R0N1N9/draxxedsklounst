@@ -4,7 +4,8 @@
 //                          Outer ring first. A miss spikes SENTINEL's trace and speeds the ring up.
 //   EXTRACT · DRIVE RELEASE  a marker sweeps across three latches; release each (click / tap /
 //                          SPACE) while the marker is inside its green window. Windows shrink.
-// Esc or ✕ backs out (you can come back to it).
+// Esc or ✕ backs out (you can come back to it). Three misses on the upload FAILS it:
+// the upload forces through, but SENTINEL's ICE trips (cb('fail')).
 export class Minigame {
   constructor() {
     const el = (this.el = document.createElement('div'));
@@ -35,13 +36,14 @@ export class Minigame {
     this.t = 0;
     this.step = 0;
     this.flash = 0;
+    this.misses = 0;
     this.el.classList.add('on');
     const k = Math.min(devicePixelRatio, 2);
     this.cv.width = 340 * k;
     this.cv.height = 240 * k;
     if (kind === 'upload') {
       this.title.textContent = 'UPLOAD · SIGNAL LOCK';
-      this.hint.textContent = 'Lock each ring when its gap passes the notch (SPACE / click / tap). Outer ring first.';
+      this.hint.textContent = 'Lock each ring when its gap passes the notch (SPACE / click / tap). Outer ring first. Clean = silent upload; three misses trips ICE.';
       this.btn.textContent = 'LOCK';
       this.rings = [0, 1, 2].map((i) => ({ a: Math.random() * Math.PI * 2, v: (1.3 + i * 0.5) * (i % 2 ? -1 : 1), locked: false, r: 92 - i * 26, gap: 0.5 - i * 0.07 }));
     } else {
@@ -87,7 +89,7 @@ export class Minigame {
   }
 
   _act() {
-    if (!this.open) return;
+    if (!this.open || this.step >= 3) return;
     if (this.kind === 'upload') {
       const R = this.rings[this.step];
       // Gap centre vs. the notch at the top (-90°).
@@ -105,7 +107,12 @@ export class Minigame {
     this.flash = 1;
     fn();
     this._beep(false);
+    this.misses++;
     if (this.onMiss) this.onMiss();
+    if (this.kind === 'upload') {
+      this.hint.textContent = `MISS ${this.misses} / 3 — ${this.misses >= 3 ? 'ICE TRIPPED' : 'steady…'}`;
+      if (this.misses >= 3) { this.step = 99; setTimeout(() => this.close('fail'), 600); }
+    }
   }
   _beep(ok) {
     try {

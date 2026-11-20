@@ -670,8 +670,57 @@ export class Sentinel {
       if (g.type === 'jugg' || g.type === 'overseer') { this.emit({ t: 'bark', k: 'jugg', id: g.id }); this.noise({ x: g.x, y: g.y, z: g.z }, 30, true); }
       else if (g.type === 'bulwark') this.emit({ t: 'bark', k: 'bulwark', id: g.id });
       else if (g.type === 'scav') { this.emit({ t: 'bark', k: 'scav', id: g.id }); this.noise({ x: g.x, y: g.y, z: g.z }, 22, true); }
-      if (g.jamT <= 0 && g.type !== 'scav') g.radioT = 1.5;
+      if (g.jamT <= 0 && g.type !== 'scav' && !this.commsDown) g.radioT = 1.5;
     }
+  }
+
+  // In-person hacks from the building's rooms.
+  cutComms() {
+    this.commsDown = true;
+    for (const g of this.guards) g.radioT = 0;
+  }
+  cutCctv() {
+    this.cctvDown = true;
+    for (const c of this.cams) { c.hacked = true; c.aw = 0; c.confirmed = false; }
+  }
+
+  // ICE: a botched upload. SENTINEL doesn't know who or where, so it rings the building:
+  // guards take posts around the outside walls and sweep, a fireteam joins them, and the
+  // ones already inside search their floors. Sneak out between them, or fight through.
+  iceAlert(B) {
+    this.ice = true;
+    this.raise(0.6, null);
+    this.emit({ t: 'toast', m: 'SENTINEL ICE: intrusion countermeasure. Guards are ringing the building.', c: 'red' });
+    const m = 7;
+    const ring = [];
+    for (let i = 0; i < 4; i++) {
+      const f = (i + 0.5) / 4;
+      ring.push({ x: B.x0 + (B.x1 - B.x0) * f, z: B.z1 + m }, { x: B.x0 + (B.x1 - B.x0) * f, z: B.z0 - m });
+    }
+    for (let i = 0; i < 3; i++) { const f = (i + 0.5) / 3; ring.push({ x: B.x0 - m, z: B.z0 + (B.z1 - B.z0) * f }, { x: B.x1 + m, z: B.z0 + (B.z1 - B.z0) * f }); }
+    const outside = this.guards.filter((g) => g.state !== 'dead' && !g.tower && !this.fac.insideBuilding(g.x, g.z, g.y));
+    const inside = this.guards.filter((g) => g.state !== 'dead' && !g.tower && this.fac.insideBuilding(g.x, g.z, g.y));
+    outside.sort((a, b) => Math.hypot(a.x, a.z + 20) - Math.hypot(b.x, b.z + 20));
+    ring.forEach((p, i) => {
+      const g = outside[i];
+      if (g) this._icePost(g, p);
+    });
+    for (const g of inside) if (g.state !== 'alert' && g.state !== 'berserk') { g.state = 'search'; g.aw = Math.max(g.aw, 0.5); g.lkp = { x: g.x, z: g.z, y: g.y }; g.searchT = 40; g.path = null; }
+    // A fireteam from the barracks fills the gaps in the ring.
+    const s = SPOTS.barracks;
+    for (let i = 0; i < 3; i++) {
+      const p = ring[(outside.length + i) % ring.length];
+      const g = this.spawnGuard({ type: this.mission === 'nightwatch' ? (i ? 'scav' : 'jugg') : 'guard', x: s.x + i - 1, z: s.z });
+      this._icePost(g, p);
+    }
+  }
+  _icePost(g, p) {
+    g.state = 'search';
+    g.aw = Math.max(g.aw, 0.55);
+    g.lkp = { x: p.x, z: p.z, y: 0 };
+    g.icePost = { x: p.x, z: p.z };
+    g.searchT = 70;
+    g.path = null;
   }
 
   _investigate(g, pos, dur) {
@@ -990,7 +1039,7 @@ export class Sentinel {
     // Radio call: the alarm only goes up if it gets the call off.
     if (g.radioT > 0) {
       g.radioT -= dt;
-      if (g.radioT <= 0 && g.jamT <= 0) {
+      if (g.radioT <= 0 && g.jamT <= 0 && !this.commsDown) {
         this.raise(0.5, 'SENTINEL: a contact has been radioed in.');
         this._backup(g.lkp || { x: g.x, z: g.z, y: g.y });
         for (const o of this.guards) if (o !== g && o.state !== 'dead' && o.state !== 'alert' && o.state !== 'berserk' && o.state !== 'flee' && Math.hypot(o.x - g.x, o.z - g.z) < 34) { o.convergeT = 0.4 + this.rng() * 0.7; o.convergeAt = { ...(g.lkp || { x: g.x, z: g.z }) }; }
@@ -1061,7 +1110,8 @@ export class Sentinel {
       if (g.lkp && this._moveTo(g, g.lkp.x, g.lkp.z, dt, this._guardSpeed(g), g.lkp.y)) {
         g.look = Math.sin(this.t * 1.6 + g.id) * 1.2;
         if (g.state === 'search' && g.searchT > 2) {
-          if (!g.sweepAt || Math.hypot(g.sweepAt.x - g.x, g.sweepAt.z - g.z) < 1) g.sweepAt = { x: g.lkp.x + (this.rng() - 0.5) * 12, z: g.lkp.z + (this.rng() - 0.5) * 12, y: g.lkp.y };
+          const c0 = g.icePost || g.lkp, sw = g.icePost ? 7 : 12;
+          if (!g.sweepAt || Math.hypot(g.sweepAt.x - g.x, g.sweepAt.z - g.z) < 1) g.sweepAt = { x: c0.x + (this.rng() - 0.5) * sw, z: c0.z + (this.rng() - 0.5) * sw, y: g.lkp.y };
           g.lkp = g.sweepAt;
         }
       }
@@ -1211,7 +1261,7 @@ export class Sentinel {
     c.loopT = Math.max(0, c.loopT - dt);
     c.empT = Math.max(0, c.empT - dt);
     c.yaw = c.base + Math.sin(this.t * 0.4 + c.phase) * c.sweep;
-    const blind = c.loopT > 0 || c.empT > 0 || this.spoofT > 0;
+    const blind = c.loopT > 0 || c.empT > 0 || this.spoofT > 0 || this.cctvDown;
     if (!sense || blind) { if (blind) c.aw = Math.max(0, c.aw - 0.05); return; }
     let seen = null;
     for (const a of (this.agents || [])) {

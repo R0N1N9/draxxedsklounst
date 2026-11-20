@@ -7,7 +7,7 @@
 // hacked camera) is rendered straight into the console.
 // The shooter gets the same map read-only, with a REQUEST panel.
 import * as THREE from 'three';
-import { ROOMS, FENCE, BUILDING, SPOTS } from './facility.js';
+import { ROOMS, FENCE, BUILDING, SPOTS, CARDS } from './facility.js';
 import { PAYLOADS, PAYLOAD } from './ops.js';
 import { OBJECTIVES } from './cell.js';
 
@@ -364,7 +364,8 @@ export class Tablet {
     P.obj.innerHTML = `<div class="ct-h">OBJ ${ob.step + 1}/${OBJECTIVES.length}</div><b>${o ? o.title : ''}</b><p>${o ? o.hint : ''}</p>
       <div class="ct-row"><span>SEC</span><em class="sec-${sec.toLowerCase()}">${sec}</em><span>NET</span><em>${net}</em></div>
       ${ob.found ? `<div class="ct-row"><span>EVIDENCE COPY</span><em>${Math.round(ob.upload * 100)}%</em><span>SENTINEL SWEEP</span><em class="${ob.trace > 0.6 ? 'sec-alarm' : ''}">${Math.round(ob.trace * 100)}%</em></div>` : ''}
-      <div class="ct-row"><span>DROPS</span><em>${ob.drops}</em><span>BADGE</span><em>${ob.badge ? 'CLONED' : 'ON THE CHIEF'}</em></div>
+      <div class="ct-row"><span>DROPS</span><em>${ob.drops}</em><span>UPLOAD</span><em class="${ob.ice ? 'sec-alarm' : ''}">${ob.quiet ? 'SILENT' : ob.ice ? 'ICE ALERT' : '\u2014'}</em></div>
+      <div class="ct-row"><span>KEYCARDS</span><em>${ob.badge ? 'MASTER' : ''}${(ob.cards || []).map((k) => `<i style="display:inline-block;width:9px;height:9px;margin-left:3px;background:${CARDS[k].color}"></i>`).join('') || (ob.badge ? '' : 'NONE')}</em><span>COMMS / CCTV</span><em>${ob.commsDown ? 'CUT' : 'LIVE'} / ${ob.cctv ? 'OURS' : 'LIVE'}</em></div>
       <div class="ct-row"><span>SERVER</span><em>${ob.found ? (ROOMS.find((r) => r.id === g.fac.target.room) || {}).name || '?' : 'UNKNOWN'}</em><span>DRIVE</span><em>${ob.drive ? (ob.drive === 'ground' ? 'ON FLOOR' : ob.drive === g.role ? 'YOU' : g.partnerName) : '\u2014'}</em></div>`;
     if (spot) {
       const O = g.ops;
@@ -456,9 +457,25 @@ export class Tablet {
     for (const d of Object.values(fac.doors)) {
       if (!this._onFloor((d.y || 0) + 0.5)) continue;
       const a = T(d.x, d.z);
-      c.fillStyle = d.sealed ? '#ff2a6d' : d.open ? '#30ff90' : d.unlocked ? '#30c0ff' : d.hackT > 0 ? '#ffb020' : d.kind === 'badge' ? '#ffd040' : '#ff5070';
+      c.fillStyle = d.sealed ? '#ff2a6d' : d.open ? '#30ff90' : d.unlocked ? '#30c0ff' : d.hackT > 0 ? '#ffb020' : d.kind === 'badge' ? CARDS[d.room].color : '#ff5070';
       c.fillRect(a.x - 4, a.y - 4, 8, 8);
+      if (d.kind === 'badge') { c.strokeStyle = CARDS[d.room].color; c.strokeRect(a.x - 6, a.y - 6, 12, 12); }
       if (s > 3 && !this.mini) { c.fillStyle = 'rgba(255,255,255,0.6)'; c.fillText(d.kind === 'mech' ? 'MECH' : d.kind === 'badge' ? 'KEYCARD' : d.kind === 'dock' ? 'DOCK' : 'ELEC', a.x, a.y - 7); }
+    }
+    // Room stations.
+    const ob2 = this.g.obj;
+    for (const q of fac.stations || []) {
+      if (!this._onFloor(q.y + 0.5)) continue;
+      const a = T(q.x, q.z);
+      if (q.kind === 'drawer') {
+        c.fillStyle = (ob2.searched || []).includes(q.id) ? 'rgba(160,170,180,0.35)' : 'rgba(255,208,64,0.85)';
+        c.fillRect(a.x - 2, a.y - 2, 4, 4);
+        continue;
+      }
+      const lab = { shelf: 'AMMO', fridge: 'FOOD', comms: ob2.commsDown ? 'COMMS \u2715' : 'COMMS', cctv: ob2.cctv ? 'CCTV \u2713' : 'CCTV' }[q.kind];
+      c.fillStyle = q.kind === 'comms' || q.kind === 'cctv' ? '#30ffd0' : '#80ff90';
+      c.beginPath(); c.arc(a.x, a.y, 3, 0, Math.PI * 2); c.fill();
+      if (s > 2.5 && !this.mini) c.fillText(lab, a.x, a.y + 11);
     }
     // IoT devices (hackable distractions) and dark / shot-out lights.
     for (const D of fac.devices) {

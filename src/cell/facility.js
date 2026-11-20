@@ -29,11 +29,21 @@ export const SPOTS = {
   dronePad: { x: 58, z: 22, y: 8.2 },
 };
 
+// Rack-room keycards: one per door, each with a coloured tag that matches the door's reader.
+export const CARDS = {
+  dha: { name: 'RED', color: '#ff3a3a' },
+  noc: { name: 'ORANGE', color: '#ff9a20' },
+  vault: { name: 'YELLOW', color: '#ffe040' },
+  dhb: { name: 'GREEN', color: '#40ff70' },
+  srv: { name: 'BLUE', color: '#40a0ff' },
+  arch: { name: 'VIOLET', color: '#c060ff' },
+};
+
 export const ROOMS = [
   // Ground floor
   { id: 'staging', name: 'STAGING / STAIRS', x0: -36, z0: -18, x1: -8, z1: 0, tier: 1, floor: 0, y0: 0 },
   { id: 'lobby', name: 'ENTRY LOBBY', x0: -8, z0: -18, x1: 8, z1: 0, tier: 1, floor: 0, y0: 0 },
-  { id: 'security', name: 'SECURITY OFFICE', x0: 8, z0: -18, x1: 22, z1: 0, tier: 1, floor: 0, y0: 0 },
+  { id: 'security', name: 'SECURITY / CCTV', x0: 8, z0: -18, x1: 22, z1: 0, tier: 1, floor: 0, y0: 0 },
   { id: 'electrical', name: 'ELECTRICAL / STAIRS', x0: 22, z0: -18, x1: 36, z1: 0, tier: 1, floor: 0, y0: 0 },
   { id: 'corridor', name: 'MAIN CORRIDOR', x0: -36, z0: -22, x1: 36, z1: -18, tier: 1, floor: 0, y0: 0 },
   { id: 'dha', name: 'DATA HALL A', x0: -36, z0: -40, x1: -6, z1: -22, tier: 2, floor: 0, y0: 0, racks: true },
@@ -399,6 +409,13 @@ export class Facility {
     for (const [room, a, b, y] of rk) {
       const d = this.door('badge-' + room, 'badge', 2, a, -22.25, b, -21.75, '#6a5a3a', 2.6, y);
       d.room = room;
+      // Card reader with the room's coloured tag, on the corridor side.
+      const tag = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.04), new THREE.MeshBasicMaterial({ color: CARDS[room].color }));
+      tag.position.set(b + 0.45, y + 1.45, -21.7);
+      this.root.add(tag);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(b - a, 0.12, 0.04), new THREE.MeshBasicMaterial({ color: CARDS[room].color }));
+      stripe.position.set((a + b) / 2, y + 2.72, -21.7);
+      this.root.add(stripe);
     }
     // ---- Furnishing ----
     // Lobby, security, electrical (relay), staging — ground floor.
@@ -469,6 +486,58 @@ export class Facility {
     dev('speaker', 0, -21.4, 0, 0.6, 0.6, 0.3, '#2a2c30', '#ff8040');
     dev('fan', -15, -39.2, 0, 1.4, 1.4, 0.6, '#3a3f44', '#60ff90');
     dev('fan', 3, -39.2, 1, 1.4, 1.4, 0.6, '#3a3f44', '#60ff90');
+    // ---- Room stations (things you use in person) ----
+    //   drawer  office desk drawers: some hold a rack-room keycard (one per rack room)
+    //   shelf   storage shelving: ammo and kit, one haul each
+    //   fridge  break-room fridge: food, +HP, a few servings
+    //   comms   comms-room radio rack: hack it in person and SENTINEL's guards can't radio
+    //   cctv    security-office CCTV desk: hack it and the cameras stop reporting you
+    this.stations = [];
+    const st = (kind, x, z, floor, extra = {}) => { const o = { id: kind + this.stations.length, kind, x, z, y: floor ? f1 : 0, floor, ...extra }; this.stations.push(o); return o; };
+    const drawerMat = lam('#555a62');
+    for (const [x, z, floor] of [[-30, -6, 1], [-24, -6, 1], [-18, -6, 1], [-30, -11, 1], [-18, -11, 1], [11.8, -13.4, 0], [18.2, -13.4, 0], [-2.5, -8.4, 0], [2.5, -8.4, 0], [11.5, -5.4, 1], [18.5, -5.4, 1]]) {
+      const y = floor ? f1 : 0;
+      // Drawer front on the desk's south (+z) face; slides out when searched.
+      const dz = z === -13.4 ? -12.8 : z === -8.4 ? -7.8 : z === -5.4 ? -4.8 : z + 0.6;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.22, 0.5), drawerMat);
+      m.position.set(x, y + 0.55, dz - 0.2);
+      this.root.add(m);
+      st('drawer', x, dz + 0.6, floor, { mesh: m, home: m.position.clone(), card: null });
+    }
+    // Keycards: one per rack room, hidden in random drawers (the rest hold junk).
+    const drawers = this.stations.filter((q) => q.kind === 'drawer');
+    const pool = drawers.slice();
+    for (const room of ['dha', 'noc', 'vault', 'dhb', 'srv', 'arch']) { const i = Math.floor(this.rng() * pool.length); pool.splice(i, 1)[0].card = room; }
+    // Storage shelving: ammo cans and kit on each shelf (upstairs storage).
+    for (const [x, z] of [[26, -12], [31, -8], [27, -5]]) {
+      const g = new THREE.Group();
+      for (let k = 0; k < 4; k++) { const c = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.26, 0.3), lam(k % 2 ? '#4a5a34' : '#3f4d2c')); c.position.set(-0.8 + k * 0.52, 0, 0); g.add(c); }
+      g.position.set(x, f1 + 1.73, z + 0.6);
+      this.root.add(g);
+      st('shelf', x, z + 1.7, 1, { mesh: g, uses: 1 });
+    }
+    // The break-room fridge.
+    this.box(6.2, f1, -17.6, 7.6, f1 + 2.0, -16.6, '#c9ccd0');
+    this.deco(new THREE.BoxGeometry(0.04, 0.6, 0.04), 7.3, f1 + 1.3, -16.56, '#8a8e94');
+    const fl = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.02), new THREE.MeshBasicMaterial({ color: '#40c8ff' }));
+    fl.position.set(6.6, f1 + 1.75, -16.58);
+    this.root.add(fl);
+    st('fridge', 6.9, -15.8, 1, { uses: 3, mesh: fl });
+    // Comms room: a radio rack with a repeater, against the east wall.
+    this.box(20.6, f1, -13, 21.8, f1 + 2.3, -9, '#20242a');
+    const commsLeds = [];
+    for (let i = 0; i < 5; i++) { const m = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.12, 0.5), new THREE.MeshBasicMaterial({ color: '#ff9a20' })); m.position.set(20.58, f1 + 0.6 + i * 0.35, -11); this.root.add(m); commsLeds.push(m); }
+    st('comms', 19.6, -11, 1, { leds: commsLeds });
+    // Security office: the CCTV desk in front of the monitor wall.
+    // Live-looking feed tiles over the monitor wall (they flicker; teal once you own them).
+    this.cctvScreens = [];
+    for (let i = 0; i < 6; i++) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.82), new THREE.MeshBasicMaterial({ color: '#3a6ea0' }));
+      m.position.set(10.2 + i * 1.9, 1.7, -17.08);
+      this.root.add(m);
+      this.cctvScreens.push(m);
+    }
+    st('cctv', 15, -12.2, 0);
     // ---- Ceiling panel lights: one light source per panel, per room ----
     const rooms = ROOMS.filter((r) => r.y0 !== undefined && !r.solid);
     for (const r of rooms) {
@@ -896,6 +965,33 @@ export class Facility {
     if (!d || d.open === open) return;
     d.open = open;
     d.box.solid = d.box.sight = d.box.shot = !open;
+  }
+
+  // Station visuals from the shared objective state (host and guest alike).
+  syncStations(ob, t) {
+    const searched = ob.searched || [], used = ob.used || {};
+    for (const q of this.stations) {
+      if (q.kind === 'drawer') q.mesh.position.z = q.home.z + (searched.includes(q.id) ? 0.38 : 0);
+      else if (q.kind === 'shelf') q.mesh.visible = (used[q.id] || 0) < q.uses;
+      else if (q.kind === 'fridge') q.mesh.material.color.set((used[q.id] || 0) < q.uses ? '#40c8ff' : '#ff4040');
+      else if (q.kind === 'comms') q.leds.forEach((m, i) => m.material.color.set(ob.commsDown ? ((t * 2 + i * 0.3) % 1 < 0.5 ? '#ff2030' : '#300808') : Math.sin(t * 9 + i * 2.1) > 0 ? '#ff9a20' : '#5a3008'));
+    }
+    for (let i = 0; i < this.cctvScreens.length; i++) {
+      const m = this.cctvScreens[i].material;
+      if (ob.cctv) m.color.set(Math.sin(t * 3 + i) > -0.9 ? '#30ffd0' : '#0a3a30');
+      else { const k = 0.75 + 0.25 * Math.sin(t * 11 + i * 4.7) * Math.sin(t * 2.3 + i); m.color.setRGB(0.23 * k, 0.43 * k, 0.63 * k); }
+    }
+  }
+
+  // Nearest station of any kind within reach on this floor.
+  stationNear(x, z, y, r = 1.8) {
+    let best = null, bd = r;
+    for (const q of this.stations) {
+      if (Math.abs(q.y - y) > 1.6) continue;
+      const d = Math.hypot(q.x - x, q.z - z);
+      if (d < bd) { bd = d; best = q; }
+    }
+    return best;
   }
 
   update(dt) {

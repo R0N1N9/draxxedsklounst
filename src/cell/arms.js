@@ -9,12 +9,12 @@ import * as THREE from 'three';
 
 export const SMG = {
   key: 'smg', name: 'K9 HUSH SMG', short: 'K9', caliber: '5 mm caseless', slot: 'pistol', kind: 'semi', modes: ['full', 'burst', 'semi'],
-  mag: 48, spareMags: 3, muzzle: 420, damage: { head: 150, torso: 30, legs: 22 }, cycle: 0.066, reload: 2.1, reloadEmpty: 2.5,
+  mag: 40, spareMags: 4, muzzle: 420, damage: { head: 150, torso: 30, legs: 22 }, cycle: 0.066, reload: 2.1, reloadEmpty: 2.5,
   zooms: [1], scope: false, adsFov: 48, fixedZero: 25, glint: 0, recoil: 0.011, sway: 0, spread: 0.022,
 };
 export const MAGNUM = {
   key: 'mag50', name: 'M50 MAGNUM', short: 'M50', caliber: '12.7 mm', slot: 'pistol', kind: 'semi',
-  mag: 8, spareMags: 3, muzzle: 460, damage: { head: 300, torso: 95, legs: 55 }, cycle: 0.32, reload: 1.8, reloadEmpty: 2.2,
+  mag: 7, spareMags: 4, muzzle: 460, damage: { head: 300, torso: 115, legs: 65 }, cycle: 0.36, reload: 1.8, reloadEmpty: 2.2,
   zooms: [1], scope: false, adsFov: 42, fixedZero: 25, glint: 0, recoil: 0.065, sway: 0, spread: 0.012,
 };
 export const P9 = {
