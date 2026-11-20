@@ -656,7 +656,7 @@ export default {
       render() { view.render(); },
       resize(w, h) { view.resize(w, h); },
       onPhase(phase) {
-        if (phase === 'intro') view.beginIntro();
+        if (phase === 'intro') { introT = 0; view.beginIntro(); }
         else if (phase === 'live') { sfx.music(false); view.goLive(); }
         else if (phase === 'over') {
           const r = ctx.result;
