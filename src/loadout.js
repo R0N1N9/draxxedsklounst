@@ -1,7 +1,7 @@
 // Loadout picker: one tool per slot. Used inline in the main menu and as an in-game overlay.
 import { TOOLS, SLOTS, validLoadout } from './tools.js';
 import { WEAPONS, RIFLES } from './weapons.js';
-import { OUTFITS, LENS_COLORS, THEMES, themeOf } from './avatar.js';
+import { OUTFITS, LENS_COLORS, THEMES, themeOf, HATS, EYEWEAR, DEFAULT_GEAR } from './avatar.js';
 import { showPreview } from './preview.js';
 
 // Little fabric swatch for a camo theme (solid, multicam blotches or digital squares).
@@ -18,12 +18,16 @@ export function renderLoadout(el, loadout, onChange) {
     <label class="lo-sw lo-custom" title="Any colour"><input type="color" data-key="${key}" /></label></div>`;
   el.innerHTML = `<div class="lo-op"><div class="lo-prev"><div class="lo-cap"></div></div><div class="lo-side"><div class="lo-slot lo-outfits"></div>
     <div class="lo-slot"><div class="lo-head"><span>Camo</span><em class="lo-theme-name"></em></div><div class="lo-lens" data-row="theme">${Object.entries(THEMES).map(([k, t]) => `<button class="lo-sw lo-camo" data-key="theme" data-c="${k}" style="${swatchBg(t)}" title="${t.name}"></button>`).join('')}</div></div>
+    <div class="lo-slot"><div class="lo-head"><span>Headwear</span><em>hood replaces it with the poncho</em></div><div class="lo-chips" data-row="hat">${Object.entries(HATS).map(([k, n]) => `<button class="lo-chip" data-key="hat" data-v="${k}">${n}</button>`).join('')}</div></div>
+    <div class="lo-slot"><div class="lo-head"><span>Eyewear</span></div><div class="lo-chips" data-row="eyes">${Object.entries(EYEWEAR).map(([k, n]) => `<button class="lo-chip" data-key="eyes" data-v="${k}">${n}</button>`).join('')}</div></div>
     <div class="lo-slot"><div class="lo-head"><span>Lenses</span><em>goggles &amp; glasses</em></div>${swatches('lens', LENS_COLORS)}</div></div></div><div class="lo-list"></div>`;
   const list = el.querySelector('.lo-list'), prev = el.querySelector('.lo-prev'), outfits = el.querySelector('.lo-outfits');
-  const look = () => ({ outfit: lo.outfit, poncho: lo.stealth === 'poncho', lens: lo.lens, theme: lo.theme, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } });
+  const look = () => ({ outfit: lo.outfit, poncho: lo.stealth === 'poncho', lens: lo.lens, theme: lo.theme, hat: lo.hat, eyes: lo.eyes, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } });
   const current = (key) => (key === 'theme' ? themeOf(lo.theme, lo.outfit) : lo.lens);
   const markSwatches = () => {
     el.querySelector('.lo-theme-name').textContent = THEMES[themeOf(lo.theme, lo.outfit)].name;
+    const gear = { hat: lo.hat || DEFAULT_GEAR[lo.outfit].hat, eyes: lo.eyes || DEFAULT_GEAR[lo.outfit].eyes };
+    el.querySelectorAll('.lo-chip').forEach((b) => b.classList.toggle('on', gear[b.dataset.key] === b.dataset.v));
     for (const key of ['theme', 'lens']) {
       const row = el.querySelector(`[data-row="${key}"]`), val = current(key);
       let preset = false;
@@ -65,6 +69,13 @@ export function renderLoadout(el, loadout, onChange) {
     }).join('');
   };
   el.onclick = (e) => {
+    const chip = e.target.closest('.lo-chip');
+    if (chip) {
+      lo = { ...lo, [chip.dataset.key]: chip.dataset.v };
+      draw();
+      onChange(lo);
+      return;
+    }
     const sw = e.target.closest('.lo-sw[data-c]');
     if (sw) {
       lo = { ...lo, [sw.dataset.key]: sw.dataset.c };

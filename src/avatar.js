@@ -174,10 +174,13 @@ function seeded(seed) {
 // Any outfit can wear the thermal poncho; the wraith wears a cloth one anyway.
 // ---------------------------------------------------------------------------
 export const DEFAULT_LENS = '#e0283a';
+export const HATS = { boonie: 'Boonie', helmet: 'Helmet', cap: 'Cap', capback: 'Cap (back)', beanie: 'Beanie', none: 'None' };
+export const EYEWEAR = { glasses: 'Glasses', goggles: 'Goggles', visor: 'Visor', none: 'None' };
+export const DEFAULT_GEAR = { ghillie: { hat: 'boonie', eyes: 'glasses' }, wraith: { hat: 'helmet', eyes: 'goggles' } };
 export const LENS_COLORS = ['#e0283a', '#ff8a1f', '#f2d23c', '#3cf28a', '#38d6f2', '#8a5cff', '#f23ca8', '#1b1d22'];
 export const OUTFITS = {
-  ghillie: { name: 'Ghillie', desc: 'Jute ghillie, boonie hat, painted face. Melts into grass and scrub.' },
-  wraith: { name: 'Wraith', desc: 'Balaclava, goggles and a high-cut helmet. Dark urban kit; with the thermal poncho the hood goes up.' },
+  ghillie: { name: 'Ghillie', desc: 'Jute ghillie and painted face. Boonie and glasses by default.' },
+  wraith: { name: 'Wraith', desc: 'Balaclava and respirator. Helmet and goggles by default.' },
 };
 const WRAITH_MAP = {
   [PAL.glove]: '#1d1e20',
@@ -721,7 +724,47 @@ export class Avatar {
     head.add(crown);
     const veil = new THREE.Mesh(strands(rng, 60, [0, 0.07, 0.05, 0.32, 0.02, 0.26], [0.1, 0.22], [0.12, 0]), ghillieMaterial());
     head.add(veil);
-    this.hatParts = [brim, crown, veil];
+    this.veil = veil;
+    // Headwear options (boonie / helmet / cap / backwards cap / beanie / none) and eyewear
+    // (glasses / goggles / visor / none). The helmet is built below with the wraith kit.
+    this.hats = { boonie: new THREE.Group() };
+    this.hats.boonie.add(brim, crown, veil);
+    head.add(this.hats.boonie);
+    const cap = new THREE.Group();
+    const capCrown = mesh(new THREE.SphereGeometry(0.114, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.42).scale(0.95, 0.95, 1.03), P.hat);
+    capCrown.position.y = 0.035;
+    cap.add(capCrown);
+    const capBill = mesh(new THREE.CylinderGeometry(0.085, 0.085, 0.008, 18, 1, false, Math.PI / 2, Math.PI).scale(0.95, 1, 1.05), P.hat);
+    capBill.position.set(0, 0.058, -0.075);
+    capBill.rotation.x = -0.12;
+    cap.add(capBill);
+    const capButton = mesh(new THREE.SphereGeometry(0.01, 6, 4), P.web);
+    capButton.position.y = 0.143;
+    cap.add(capButton);
+    const capPatch = mesh(slab(0.04, 0.025, 0.006, 0.003), P.web);
+    capPatch.position.set(0, 0.085, -0.106);
+    capPatch.rotation.x = 0.35;
+    cap.add(capPatch);
+    head.add(cap);
+    this.hats.cap = cap;
+    const capBack = cap.clone();
+    capBack.rotation.y = Math.PI;
+    capBack.children.forEach((c) => { if (c.position.z < -0.09) c.visible = false; });
+    head.add(capBack);
+    this.hats.capback = capBack;
+    const beanie = new THREE.Group();
+    const knit = mesh(new THREE.SphereGeometry(0.115, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.47).scale(0.95, 1.08, 1.03), P.web);
+    knit.position.y = 0.03;
+    beanie.add(knit);
+    const cuff = mesh(new THREE.TorusGeometry(0.108, 0.014, 6, 22).rotateX(Math.PI / 2).scale(0.94, 1, 1.02), P.web);
+    cuff.position.y = 0.05;
+    beanie.add(cuff);
+    head.add(beanie);
+    this.hats.beanie = beanie;
+    // Short hair, for a bare-headed ghillie.
+    this.hair = new THREE.Mesh(new THREE.SphereGeometry(0.109, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.4).scale(0.94, 1.08, 1.03), mat('#26211d'));
+    this.hair.position.set(0, 0.004, 0.006);
+    head.add(this.hair);
     // Ghillie: wraparound shooting glasses.
     const glasses = new THREE.Group();
     // Ballistic glasses: two rounded lenses with thin rims, a bridge and arms back to the ears.
@@ -744,22 +787,34 @@ export class Avatar {
     glasses.add(bridge);
     glasses.position.set(0, 0.02, 0.0);
     head.add(glasses);
-    this.glasses = glasses;
+    this.eyewear = { glasses };
+    // Wraparound visor.
+    const visor = new THREE.Group();
+    visor.add(new THREE.Mesh(new THREE.CylinderGeometry(0.103, 0.1, 0.03, 18, 1, true, Math.PI * 0.62, Math.PI * 0.76).scale(0.95, 1, 1.02), this.lensMat));
+    const vFrame = mesh(new THREE.CylinderGeometry(0.106, 0.106, 0.007, 18, 1, true, Math.PI * 0.6, Math.PI * 0.8).scale(0.95, 1, 1.02), '#151517');
+    vFrame.position.y = 0.019;
+    visor.add(vFrame);
+    visor.position.set(0, 0.018, -0.004);
+    head.add(visor);
+    this.eyewear.visor = visor;
     this.faceParts = [paint, nose];
     // Wraith: goggles, respirator half-mask (the balaclava is the head recoloured).
     const mask = new THREE.Group();
-    const band = mesh(new THREE.TorusGeometry(0.103, 0.011, 6, 22).rotateX(Math.PI / 2).scale(0.93, 1, 1), '#141516');
+    const goggles = new THREE.Group();
+    const band = mesh(new THREE.TorusGeometry(0.106, 0.011, 6, 22).rotateX(Math.PI / 2).scale(0.93, 1, 1), '#141516');
     band.position.y = 0.02;
-    mask.add(band);
+    goggles.add(band);
+    head.add(goggles);
+    this.eyewear.goggles = goggles;
     for (const sx of [-1, 1]) {
       const cup = mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.035, 12).rotateX(Math.PI / 2), '#161718');
       cup.position.set(sx * 0.04, 0.02, -0.098);
       cup.rotation.y = sx * 0.22;
-      mask.add(cup);
+      goggles.add(cup);
       const lens = new THREE.Mesh(new THREE.CircleGeometry(0.025, 14), this.lensMat);
       lens.position.set(sx * 0.043, 0.02, -0.117);
       lens.rotation.y = Math.PI + sx * 0.22;
-      mask.add(lens);
+      goggles.add(lens);
     }
     const resp = mesh(new THREE.SphereGeometry(0.06, 12, 8).scale(1.05, 0.75, 0.7), '#28292b');
     resp.position.set(0, -0.055, -0.075);
@@ -792,7 +847,7 @@ export class Avatar {
     strobe.position.set(0, 0.135, 0.07);
     helmet.add(strobe);
     head.add(helmet);
-    this.helmet = helmet;
+    this.hats.helmet = helmet;
     this.mask = mask;
     this.head = head;
     this.neck.add(head);
@@ -885,17 +940,21 @@ export class Avatar {
     const themeId = themeOf(look.theme, outfit);
     const T = THEMES[themeId], theme = T.base;
     const kit = look.kit || {};
-    const key = [outfit, thermal, lens, themeId, kit.scout, kit.stealth, kit.tactical].join('|');
+    const hat = HATS[look.hat] ? look.hat : DEFAULT_GEAR[outfit].hat;
+    const eyes = EYEWEAR[look.eyes] ? look.eyes : DEFAULT_GEAR[outfit].eyes;
+    const key = [outfit, thermal, lens, themeId, hat, eyes, kit.scout, kit.stealth, kit.tactical].join('|');
     if (this.look === key) return;
     this.look = key;
     const wraith = outfit === 'wraith';
     this.poncho.visible = this.hood.visible = thermal;
     this.ghilliePart.visible = !wraith && !thermal;
-    for (const o of this.hatParts) o.visible = !wraith && !thermal;
     for (const o of this.faceParts) o.visible = !wraith;
     this.mask.visible = wraith;
-    this.helmet.visible = wraith && !thermal;
-    this.glasses.visible = !wraith;
+    // The poncho hood replaces any hat; the boonie keeps its jute veil only on the ghillie.
+    for (const [k, g] of Object.entries(this.hats)) g.visible = !thermal && k === hat;
+    this.veil.visible = !wraith;
+    this.hair.visible = !wraith && !thermal && hat === 'none';
+    for (const [k, g] of Object.entries(this.eyewear)) g.visible = k === eyes;
     this.lensMat.color.set(lens);
     this.lensMat.emissive.set(lens);
     for (const [k, g] of Object.entries(this.kit)) {

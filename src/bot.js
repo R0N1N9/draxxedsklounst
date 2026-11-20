@@ -764,6 +764,8 @@ export class BotPeer {
       lk: this.loadout && this.loadout.outfit === 'wraith' ? 1 : 0,
       lc: (this.loadout && this.loadout.lens) || '#e0283a',
       th: (this.loadout && this.loadout.theme) || '',
+      hw: (this.loadout && this.loadout.hat) || '',
+      ew: (this.loadout && this.loadout.eyes) || '',
       ko: this.loadout ? `${this.loadout.scout},${this.loadout.stealth},${this.loadout.tactical}` : '',
       jm: this.jammer ? 1 : 0,
       dr: this.drone && this.alive ? this.drone.pos.toArray() : 0,

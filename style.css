@@ -400,3 +400,7 @@ body.touch #h-hint { bottom: 30%; }
 .lo-custom.on { background: radial-gradient(circle at 35% 35%, rgba(255,255,255,.45), transparent 45%), var(--c) !important; }
 .lo-custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; border: 0; padding: 0; }
 .lo-camo { border-radius: 6px !important; }
+.lo-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lo-chip { appearance: none; min-height: 0 !important; padding: 6px 11px !important; font-family: var(--mono) !important; font-size: 11px !important; letter-spacing: 0.12em !important; text-transform: uppercase; border: 1px solid var(--line) !important; background: rgba(232, 230, 240, 0.04) !important; color: var(--ink-dim) !important; cursor: pointer; border-radius: 2px; }
+.lo-chip::after { content: none !important; }
+.lo-chip.on { border-color: var(--amber) !important; color: var(--amber) !important; background: rgba(242, 179, 91, 0.12) !important; }
