@@ -127,6 +127,13 @@ async function runDim() {
   if (st.round <= rounds) fail(`only ${points.length} of ${rounds} rounds finished within ${limit / 1000}s (phase ${st.phase}, round ${st.round})`);
   const draws = points.filter((e) => e.winner < 0).length;
   if (draws) fail(`${draws} round(s) ended without a kill (${points.filter((e) => e.winner < 0).map((e) => e.how).join(', ')}): the bots could not finish the duel`);
+  // GPU resources are counted at every mount; after the first round they must stop growing.
+  const mem = st.log.filter((e) => e.ev === 'mount' && e.geo !== undefined);
+  if (mem.length >= 3) {
+    report.gpu = mem.map((e) => `${e.geo}g/${e.tex}t`);
+    const a = mem[1], b = mem[mem.length - 1];
+    if (b.geo > a.geo + 2 || b.tex > a.tex + 2) fail(`GPU resources grow between rounds (geometries/textures at each mount: ${report.gpu.join(' → ')}): dispose() is leaking`);
+  }
   const slow = points.filter((e) => e.time > 60);
   if (slow.length) report.warnings.push(`${slow.length} round(s) ran past 60 s into sudden death`);
   const quick = points.filter((e) => e.winner >= 0 && e.time < 2.5);

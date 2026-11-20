@@ -72,7 +72,7 @@ export class MvHud {
     this.el.score.textContent = `${score[0]} – ${score[1]}`;
     score.forEach((n, i) => {
       let h = '';
-      for (let k = 0; k < target; k++) h += `<i class="${k < n ? 'on' : ''}"></i>`;
+      if (target <= 12) for (let k = 0; k < target; k++) h += `<i class="${k < n ? 'on' : ''}"></i>`; // long (test) matches: number only
       this.el.pips[i].innerHTML = h;
     });
   }

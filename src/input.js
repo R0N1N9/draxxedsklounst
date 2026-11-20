@@ -69,11 +69,14 @@ export class Input {
 
   requestLock() {
     if (this.touch) return;
+    // A refused lock (no user gesture yet) must not surface as an unhandled rejection:
+    // the next click on the canvas asks again.
+    const quiet = (p) => { if (p && p.catch) p.catch(() => {}); };
     try {
       const p = this.canvas.requestPointerLock({ unadjustedMovement: true });
-      if (p && p.catch) p.catch(() => this.canvas.requestPointerLock());
+      if (p && p.catch) p.catch(() => quiet(this.canvas.requestPointerLock()));
     } catch {
-      this.canvas.requestPointerLock();
+      try { quiet(this.canvas.requestPointerLock()); } catch {}
     }
   }
 

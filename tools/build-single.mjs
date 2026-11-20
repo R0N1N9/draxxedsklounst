@@ -25,7 +25,7 @@ const result = await build({
 });
 const js = result.outputFiles[0].text;
 const esc = (s) => s.replace(/<\/script/gi, '<\\/script');
-const css = readFileSync(r('style.css'), 'utf8');
+const css = ['style.css', 'src/multiverse/multiverse.css', 'src/multiverse/input.css'].map((f) => readFileSync(r(f), 'utf8')).join('\n');
 const peer = readFileSync(r('vendor/peerjs.min.js'), 'utf8');
 const icon = 'data:image/svg+xml;base64,' + Buffer.from(readFileSync(r('icon.svg'))).toString('base64');
 let html = readFileSync(r('index.html'), 'utf8');
@@ -34,6 +34,7 @@ html = html
   .replace(/<link rel="icon"[^>]*>/, `<link rel="icon" href="${icon}" type="image/svg+xml" />`)
   .replace(/\s*<link rel="apple-touch-icon"[^>]*>/, '')
   .replace('<link rel="stylesheet" href="style.css" />', () => `<style>\n${css}\n</style>`)
+  .replace(/\s*<link rel="stylesheet" href="src\/multiverse\/[^"]+" \/>/g, '')
   .replace(/\s*<script type="importmap">[\s\S]*?<\/script>/, '')
   .replace('<script src="vendor/peerjs.min.js"></script>', () => `<script>${esc(peer)}</script>`)
   .replace('<script type="module" src="src/main.js"></script>', () => `<script>${esc(js)}</script>`);

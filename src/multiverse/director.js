@@ -370,7 +370,9 @@ export class Director {
       this.inst = mod.create(this._ctx(mod, round, next.seed));
       if (!this.inst || typeof this.inst.update !== 'function' || typeof this.inst.render !== 'function') throw new Error('create() must return { update, render, dispose }');
     }
-    this._log('mount', { dim: mod.id, round });
+    // GPU resource counts at each mount: a dimension that leaks shows up as steady growth.
+    const info = this.stage.renderer && this.stage.renderer.info.memory;
+    this._log('mount', { dim: mod.id, round, ...(info ? { geo: info.geometries, tex: info.textures } : {}) });
   }
 
   // Mount, falling back to another dimension if this one cannot even start. The fallback
@@ -707,7 +709,8 @@ export class Director {
     if (!fx.inst) this._endTransition();
   }
 
-  _fxFrame(dt) {
+  // quiet = advance without drawing (the lab steps to a requested frame this way).
+  _fxFrame(dt, quiet) {
     const fx = this.fx;
     // Keep the world under the overlay alive: the old one before the swap, the new one after.
     if (this.inst && !fx.swapping && !this.mod.native) {
@@ -715,7 +718,7 @@ export class Director {
       if (!this.instDead) {
         try { this.inst.update(fx.swapped ? dt : dt * OVER_SLOWMO); } catch (e) { this._fault('update', e); }
       }
-      this._render();
+      if (!quiet) this._render();
     }
     if (!fx.inst) return;
     if (!fx.swapping) {
@@ -724,8 +727,10 @@ export class Director {
     }
     try {
       fx.inst.update(dt, fx.t);
-      this.stage.beginFx();
-      fx.inst.render(fx.t);
+      if (!quiet) {
+        this.stage.beginFx();
+        fx.inst.render(fx.t);
+      }
     } catch (e) {
       return this._fxFault(e);
     }
@@ -861,6 +866,11 @@ export class Director {
     const leg = () => ({ dim: n % 2 ? a : b, fx: fxId, seed: mixSeed(this.matchSeed, 100 + n) });
     this.dev.auto = true;
     await this._mountSafe({ dim: a, seed: mixSeed(this.matchSeed, 1) });
+    const x = document.createElement('button');
+    x.id = 'mv-lab-exit';
+    x.textContent = '✕ EXIT LAB';
+    x.onclick = () => this.exit();
+    document.body.appendChild(x);
     this.lab = {
       frozen: false,
       wait: 0,
@@ -879,6 +889,7 @@ export class Director {
       // Deterministic frame: restart this leg from the same seeds and step to time t.
       async renderAt(t, probe) {
         this.frozen = true;
+        x.style.display = 'none';
         if (d.fx) {
           if (d.fx.inst) { try { d.fx.inst.dispose(); } catch {} }
           d.fx = null;
@@ -896,7 +907,7 @@ export class Director {
         const end = Math.min(t, fx.mod.duration - 1e-3);
         while (d.fx === fx && fx.t < end - 1e-6) {
           if (fx.swapping) { await new Promise((r) => setTimeout(r, 0)); continue; }
-          d._fxFrame(Math.min(step, end - fx.t));
+          d._fxFrame(Math.min(step, end - fx.t), true);
         }
         if (d.fx === fx && fx.inst) {
           while (fx.swapping) await new Promise((r) => setTimeout(r, 0));
@@ -906,11 +917,6 @@ export class Director {
         return probe && out.ok ? Object.assign(out, d._probe()) : out;
       },
     };
-    const x = document.createElement('button');
-    x.id = 'mv-lab-exit';
-    x.textContent = '✕ EXIT LAB';
-    x.onclick = () => this.exit();
-    document.body.appendChild(x);
     this.phase = 'intro';
     this.dimPhase = 'intro';
     this.last = performance.now();

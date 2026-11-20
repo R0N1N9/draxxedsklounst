@@ -315,6 +315,11 @@
 // ctx.rng for randomness (never Math.random()) and never read the wall clock.
 // Both online clients then see the same film, and the test tool can render any
 // frame on demand.
+//
+// Sound: score the film. Fire each cue once as t passes its time (keep a cue
+// index; never trigger sounds from render()). Anything that loops or sustains
+// (ctx.audio.music, your own nodes) must be stopped in dispose() — the next
+// dimension starts in silence.
 /**
  * @typedef {Object} TransitionModule
  * @property {string} id         kebab-case, equals the file name
@@ -401,7 +406,10 @@
 //   node tools/mv-test.mjs dim <id> [--online] [--rounds N] [--shots DIR] [--speed N] [--time S]
 //   node tools/mv-test.mjs fx <id> [--from A --to B] [--frames N] [--shots DIR]
 //   node tools/mv-test.mjs match [--rounds N] [--shots DIR]
-// Prints a JSON report (errors, rounds played, timings) and writes PNG screenshots to DIR.
+// Prints a JSON report and writes PNG screenshots to DIR. `dim` fails on any exception,
+// on rounds the bots cannot finish, on GPU resources that grow from round to round and,
+// with --online, on the two clients disagreeing. `fx` fails if the first frame is not the
+// old world, the overlay is not opaque at the swap, or the last frame is not the new world.
 
 export const PLAYER_COLORS = ['#f2b35b', '#40d8e8'];
 export const DEFAULTS = { roundTime: 60, suddenTime: 40, overTime: 2.4, target: 7, introTime: 3.6 };

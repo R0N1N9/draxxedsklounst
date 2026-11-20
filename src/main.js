@@ -478,10 +478,7 @@ if (params.get('join')) {
 }
 
 // ---- Dev / test entry points (no clicks needed) ----
-if (DEV.dim || DEV.fxlab || params.get('mv') === 'ai') {
-  audio.unlock();
-  startMultiverse('ai', { difficulty: aiDiff });
-} else if (DEV.autohost) {
+if (DEV.autohost) {
   audio.unlock();
   net = new Net();
   hostCode = DEV.autohost;
@@ -490,4 +487,7 @@ if (DEV.dim || DEV.fxlab || params.get('mv') === 'ai') {
   audio.unlock();
   $('in-code').value = DEV.autojoin;
   $('btn-join').click();
+} else if (DEV.dim || DEV.fxlab || params.get('mv') === 'ai') {
+  audio.unlock();
+  startMultiverse('ai', { difficulty: aiDiff });
 }
