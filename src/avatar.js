@@ -16,9 +16,10 @@ const CAPS = [
     legs: [[0, 0.12, -0.35], [0, 0.55, 0.05], 0.2],
   },
   {
-    head: [[0, 0.3, -0.82], [0, 0.3, -0.82], 0.15],
-    torso: [[0, 0.22, -0.6], [0, 0.22, 0.05], 0.23],
-    legs: [[0, 0.16, 0.1], [0, 0.14, 1.0], 0.17],
+    // Up on the elbows: head raised behind the scope, chest off the ground.
+    head: [[0, 0.5, -0.5], [0, 0.5, -0.5], 0.15],
+    torso: [[0, 0.21, 0.12], [0, 0.34, -0.3], 0.23],
+    legs: [[0, 0.16, 0.22], [0, 0.15, 1.0], 0.17],
   },
 ];
 
@@ -185,8 +186,70 @@ const WRAITH_MAP = {
 };
 // Operator theme: these parts take the theme colour, keeping their light/dark relationships.
 const THEMED = new Set([PAL.fatigue, PAL.fatigueDark, PAL.vest, PAL.pouch, PAL.rig, PAL.web, PAL.hat, PAL.can]);
-export const THEME_DEFAULT = { ghillie: '#4b4e3a', wraith: '#37393c' };
-export const THEME_COLORS = ['#4b4e3a', '#6e5f45', '#7a7466', '#37393c', '#1f2023', '#3a4250', '#4e3f5c', '#5a3a30'];
+// Tactical colour schemes only. Patterned ones (multicam, digital) are drawn by a camo shader.
+export const THEMES = {
+  ranger: { name: 'Ranger green', base: '#4b4e3a' },
+  fde: { name: 'Flat dark earth', base: '#6b5d47' },
+  gray: { name: 'Dark gray', base: '#37393c' },
+  black: { name: 'Black', base: '#202124' },
+  mcblack: { name: 'Multicam black', base: '#2b2c2e', pattern: 0, colors: ['#2b2c2e', '#1a1b1c', '#3c3d3d', '#4b4c49', '#121314'] },
+  ocp: { name: 'Multicam OCP', base: '#5c5644', pattern: 0, colors: ['#5c5644', '#454b3b', '#4f4335', '#6c6752', '#29281f'] },
+  urban: { name: 'Urban digital', base: '#45484b', pattern: 1, colors: ['#4a4d50', '#303336', '#606366', '#777a7c', '#1f2124'] },
+};
+export const THEME_DEFAULT = { ghillie: 'ranger', wraith: 'gray' };
+export function themeOf(id, outfit = 'ghillie') {
+  return THEMES[id] ? id : THEME_DEFAULT[outfit === 'wraith' ? 'wraith' : 'ghillie'];
+}
+// Parts that carry the camo print when the theme is patterned (the rest take its base colour).
+const PRINTED = new Map([[PAL.fatigue, 1], [PAL.fatigueDark, 0.85], [PAL.vest, 1.05], [PAL.rig, 1.08], [PAL.hat, 1.1]]);
+
+const CAMO_GLSL = /* glsl */ `
+varying vec3 vCamo;
+uniform vec3 uCamo0; uniform vec3 uCamo1; uniform vec3 uCamo2; uniform vec3 uCamo3; uniform vec3 uCamo4;
+uniform float uCamoDigital; uniform float uCamoShade;
+float camoH(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float camoN(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(camoH(i), camoH(i + vec3(1, 0, 0)), f.x), mix(camoH(i + vec3(0, 1, 0)), camoH(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(camoH(i + vec3(0, 0, 1)), camoH(i + vec3(1, 0, 1)), f.x), mix(camoH(i + vec3(0, 1, 1)), camoH(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+float camoE(float n, float t) { return uCamoDigital > 0.5 ? step(t, n) : smoothstep(t - 0.025, t + 0.025, n); }
+vec3 camoColor(vec3 p) {
+  if (uCamoDigital > 0.5) p = floor(p * 30.0) / 30.0;
+  vec3 c = uCamo0;
+  c = mix(c, uCamo1, camoE(camoN(p * 6.0 + 3.1), 0.55));
+  c = mix(c, uCamo2, camoE(camoN(p * 10.0 + 7.7), 0.6));
+  c = mix(c, uCamo3, camoE(camoN(p * 15.0 + 1.3), 0.66));
+  c = mix(c, uCamo4, camoE(camoN(p * 22.0 + 5.9), 0.72));
+  return c * uCamoShade;
+}
+`;
+const camoCache = new Map();
+// Lambert material printed with a theme's camo (object-space, so it rides with the body).
+export function camoMaterial(id, shade = 1, emissive = 0) {
+  const key = id + shade + ':' + emissive;
+  if (camoCache.has(key)) return camoCache.get(key);
+  const T = THEMES[id];
+  const uniforms = { uCamoDigital: { value: T.pattern }, uCamoShade: { value: shade } };
+  T.colors.forEach((c, i) => (uniforms['uCamo' + i] = { value: new THREE.Color(c) }));
+  const m = withHaze(new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: emissive ? '#ffffff' : '#000000', emissiveIntensity: emissive }), {
+    key: 'camo' + key,
+    uniforms,
+    parsVertex: 'varying vec3 vCamo;',
+    vertex: 'vCamo = position * vec3(length(modelMatrix[0].xyz), length(modelMatrix[1].xyz), length(modelMatrix[2].xyz));',
+  });
+  const hz = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    hz(sh, r);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('void main() {', CAMO_GLSL + '\nvoid main() {')
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= camoColor(vCamo);')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= camoColor(vCamo);');
+  };
+  camoCache.set(key, m);
+  return m;
+}
 const _h1 = {}, _h2 = {}, _h3 = {}, _rc = new THREE.Color();
 // Recolour `hex` as if `ref` had been `theme` (hue shift, saturation and lightness scale).
 export function retint(hex, theme, ref = PAL.fatigue) {
@@ -449,6 +512,28 @@ function buildRifle() {
   return r;
 }
 
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3();
+const _v5 = new THREE.Vector3(), _v6 = new THREE.Vector3(), _v7 = new THREE.Vector3(), _v8 = new THREE.Vector3();
+function placeSeg(g, a, b) {
+  _v7.subVectors(b, a);
+  const L = Math.max(0.001, _v7.length());
+  g.m.position.copy(a);
+  g.m.quaternion.setFromUnitVectors(UP, _v7.multiplyScalar(1 / L));
+  g.m.scale.set(1, L, 1);
+  g.ca.position.copy(a);
+  g.cb.position.copy(b);
+}
+// Two-bone IK: elbow from shoulder, hand, bone lengths and a pole direction.
+function solveElbow(sh, hand, a, b, pole, out) {
+  _v7.subVectors(hand, sh);
+  const L = Math.min(a + b - 1e-3, Math.max(Math.abs(a - b) + 1e-3, _v7.length()));
+  const dir = _v7.normalize();
+  const cosA = (a * a + L * L - b * b) / (2 * a * L);
+  const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  _v8.copy(pole).addScaledVector(dir, -pole.dot(dir)).normalize();
+  return out.copy(sh).addScaledVector(dir, a * cosA).addScaledVector(_v8, a * sinA);
+}
+
 export class Avatar {
   constructor(accent = '#d89a3a', seed = 7) {
     const rng = seeded(seed);
@@ -639,11 +724,25 @@ export class Avatar {
     this.hatParts = [brim, crown, veil];
     // Ghillie: wraparound shooting glasses.
     const glasses = new THREE.Group();
-    glasses.add(new THREE.Mesh(new THREE.CylinderGeometry(0.103, 0.1, 0.026, 18, 1, true, Math.PI * 0.62, Math.PI * 0.76).scale(0.95, 1, 1.02), this.lensMat));
-    const frame = mesh(new THREE.CylinderGeometry(0.106, 0.106, 0.007, 18, 1, true, Math.PI * 0.62, Math.PI * 0.76).scale(0.95, 1, 1.02), '#151517');
-    frame.position.y = 0.018;
-    glasses.add(frame);
-    glasses.position.set(0, 0.018, -0.005);
+    // Ballistic glasses: two rounded lenses with thin rims, a bridge and arms back to the ears.
+    for (const sx of [-1, 1]) {
+      const lensG = new THREE.Mesh(new THREE.CircleGeometry(0.021, 18).scale(1.25, 0.8, 1), this.lensMat);
+      lensG.position.set(sx * 0.037, 0, -0.107);
+      lensG.rotation.y = Math.PI - sx * 0.32;
+      glasses.add(lensG);
+      const rim = mesh(new THREE.TorusGeometry(0.021, 0.003, 4, 18).scale(1.25, 0.8, 1), '#141416');
+      rim.position.copy(lensG.position);
+      rim.rotation.copy(lensG.rotation);
+      glasses.add(rim);
+      const armG = mesh(new THREE.BoxGeometry(0.004, 0.005, 0.095), '#141416');
+      armG.position.set(sx * 0.083, 0.008, -0.055);
+      armG.rotation.y = sx * 0.12;
+      glasses.add(armG);
+    }
+    const bridge = mesh(new THREE.BoxGeometry(0.018, 0.005, 0.005), '#141416');
+    bridge.position.set(0, 0.012, -0.113);
+    glasses.add(bridge);
+    glasses.position.set(0, 0.02, 0.0);
     head.add(glasses);
     this.glasses = glasses;
     this.faceParts = [paint, nose];
@@ -729,19 +828,30 @@ export class Avatar {
     rifle.position.set(0.06, 0.1, 0.06);
     this.rifle = rifle;
     this.aim.add(rifle);
-    const arm = (sh, el, ha, side) => {
-      this.aim.add(limb(el, sh, 0.052, P.fatigue, 0.062));
-      this.aim.add(limb(ha, el, 0.04, P.fatigue, 0.05));
-      const glove = mesh(new THREE.SphereGeometry(0.045, 8, 6).scale(1, 0.8, 1.3), P.glove);
-      glove.position.set(...ha);
-      this.aim.add(glove);
-      if (side < 0) {
-        const lerpP = (k) => sh.map((v, i) => v + (el[i] - v) * k);
-        this.aim.add(limb(lerpP(0.3), lerpP(0.5), 0.066, accent));
-      }
+    // Arms: hands fixed on the weapon, shoulders follow the body; elbows by two-bone IK
+    // each frame, so every stance (prone up on the elbows included) stays connected.
+    const seg = (r0, r1, hex) => {
+      const m = mesh(new THREE.CylinderGeometry(r1, r0, 1, 10, 1, true).translate(0, 0.5, 0), hex);
+      const ca = mesh(new THREE.SphereGeometry(r0, 10, 6), hex);
+      const cb = mesh(new THREE.SphereGeometry(r1, 10, 6), hex);
+      this.aim.add(m, ca, cb);
+      return { m, ca, cb };
     };
-    arm([0.19, -0.03, 0.12], [0.27, -0.12, -0.02], [0.07, 0.02, 0.0], 1);
-    arm([-0.19, -0.03, 0.12], [-0.17, -0.14, -0.22], [0.05, 0.05, -0.36], -1);
+    this.arms = [1, -1].map((side) => {
+      const glove = mesh(new THREE.SphereGeometry(0.045, 8, 6).scale(1, 0.8, 1.3), P.glove);
+      this.aim.add(glove);
+      return {
+        side,
+        upper: seg(0.062, 0.052, P.fatigue),
+        fore: seg(0.05, 0.04, P.fatigue),
+        band: side < 0 ? seg(0.066, 0.066, accent) : null,
+        glove,
+        rifleHand: side > 0 ? new THREE.Vector3(0.07, 0.02, 0.0) : new THREE.Vector3(0.05, 0.05, -0.36),
+        pistolHand: side > 0 ? new THREE.Vector3(0.04, -0.03, -0.3) : new THREE.Vector3(0.0, -0.04, -0.32),
+        proneHand: side > 0 ? new THREE.Vector3(0.07, 0.02, 0.0) : new THREE.Vector3(0.04, -0.07, 0.13),
+        shoulderLocal: new THREE.Vector3(side * 0.2, 0.455, 0.02),
+      };
+    });
     this.root.add(this.aim);
     // Sidearm, shown instead of the rifle when drawn.
     const pistol = new THREE.Group();
@@ -772,9 +882,10 @@ export class Avatar {
     const thermal = !!look.poncho;
     const hexOk = (h) => /^#[0-9a-f]{6}$/i.test(h || '');
     const lens = hexOk(look.lens) ? look.lens : DEFAULT_LENS;
-    const theme = hexOk(look.theme) ? look.theme : THEME_DEFAULT[outfit];
+    const themeId = themeOf(look.theme, outfit);
+    const T = THEMES[themeId], theme = T.base;
     const kit = look.kit || {};
-    const key = [outfit, thermal, lens, theme, kit.scout, kit.stealth, kit.tactical].join('|');
+    const key = [outfit, thermal, lens, themeId, kit.scout, kit.stealth, kit.tactical].join('|');
     if (this.look === key) return;
     this.look = key;
     const wraith = outfit === 'wraith';
@@ -803,12 +914,13 @@ export class Avatar {
     this.root.traverse((o) => {
       if (!o.isMesh || !o.userData.hex) return;
       let hex = o.userData.hex;
+      if (T.colors && PRINTED.has(hex)) return setMat(o, camoMaterial(themeId, PRINTED.get(hex)));
       if (THEMED.has(hex)) hex = retint(hex, theme);
       else if (wraith && WRAITH_MAP[hex]) hex = WRAITH_MAP[hex];
       setMat(o, mat(hex, o.userData.flat));
     });
     // Poncho camo follows the theme: woodland tones for the ghillie, high-contrast urban for the wraith.
-    const pal = (wraith ? CAMO.urban : CAMO.olive).map((h) => retint(h, theme, THEME_DEFAULT[outfit]));
+    const pal = T.colors ? [T.colors[4], T.colors[1], T.colors[0], T.colors[2], T.colors[3]] : (wraith ? CAMO.urban : CAMO.olive).map((h) => retint(h, theme, THEMES[THEME_DEFAULT[outfit]].base));
     for (const o of this.ponchoMeshes) {
       if (o.userData.lining) setMat(o, ponchoLining(thermal ? 'foil' : 'dark'));
       else {
@@ -829,6 +941,8 @@ export class Avatar {
     const ap = AIM_POS[st];
     this.aim.position.set(ap[0], ap[1], ap[2]);
     this.aim.rotation.x = s.pitch;
+    this._pistolOut = !!s.w;
+    this._prone = (s.st | 0) === 2;
     this.rifle.visible = !s.w;
     this.pistol.visible = !!s.w;
     this.holsterPistol.visible = !s.w;
@@ -859,16 +973,41 @@ export class Avatar {
     } else {
       // Prone: body flat, legs spread, head raised to the scope.
       this.body.rotation.x = -Math.PI / 2;
-      this.body.position.set(0, 0.17, 0.05);
+      this.body.position.set(0, 0.17, 0.15);
       this.hips.position.set(0, 0, 0);
       this.legL.rotation.x = sw * 0.12;
       this.legR.rotation.x = -sw * 0.12;
       this.legL.rotation.z = -0.18;
       this.legR.rotation.z = 0.18;
       kL.rotation.x = kR.rotation.x = -0.08;
-      this.spine.rotation.x = 0;
-      this.neck.rotation.x = 1.25 + s.pitch * 0.4;
+      // Up on the elbows: chest raised so the eye sits right behind the scope.
+      this.spine.rotation.x = 0.475;
+      this.neck.rotation.x = 0.3 + s.pitch * 0.6;
       this.poncho.scale.set(1.05, 1, 0.62); // lies flatter over the back when prone
+    }
+    this._poseArms();
+  }
+
+  _poseArms() {
+    this.root.updateMatrixWorld(true);
+    const sh = _v1, el = _v2, hand = _v3, pole = _v4;
+    for (const A of this.arms) {
+      sh.copy(A.shoulderLocal);
+      this.spine.localToWorld(sh);
+      this.aim.worldToLocal(sh);
+      // Prone: support hand back under the buttstock (rear-bag grip), elbows down on the ground.
+      hand.copy(this._pistolOut ? A.pistolHand : this._prone ? A.proneHand : A.rifleHand);
+      if (this._prone) pole.set(A.side * 0.5, -1, 0.4).normalize();
+      else pole.set(A.side * 0.8, -1, 0.2).normalize();
+      solveElbow(sh, hand, 0.3, 0.29, pole, el);
+      placeSeg(A.upper, sh, el);
+      placeSeg(A.fore, el, hand);
+      if (A.band) {
+        _v5.copy(sh).lerp(el, 0.3);
+        _v6.copy(sh).lerp(el, 0.5);
+        placeSeg(A.band, _v5, _v6);
+      }
+      A.glove.position.copy(hand);
     }
   }
 }

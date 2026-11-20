@@ -1,25 +1,35 @@
 // Loadout picker: one tool per slot. Used inline in the main menu and as an in-game overlay.
 import { TOOLS, SLOTS, validLoadout } from './tools.js';
 import { WEAPONS, RIFLES } from './weapons.js';
-import { OUTFITS, LENS_COLORS, THEME_COLORS, THEME_DEFAULT } from './avatar.js';
+import { OUTFITS, LENS_COLORS, THEMES, themeOf } from './avatar.js';
 import { showPreview } from './preview.js';
+
+// Little fabric swatch for a camo theme (solid, multicam blotches or digital squares).
+function swatchBg(t) {
+  if (!t.colors) return `--c:${t.base}`;
+  const [a, b, c, d, e] = t.colors;
+  if (t.pattern === 1) return `--c:${a};background:linear-gradient(90deg, transparent 50%, ${c} 0) 0 0/8px 8px, linear-gradient(${b} 50%, transparent 0) 0 0/12px 12px, linear-gradient(90deg, ${d} 25%, transparent 0) 0 0/16px 16px, ${a} !important`;
+  return `--c:${a};background:radial-gradient(circle at 28% 30%, ${b} 0 20%, transparent 22%), radial-gradient(ellipse at 70% 62%, ${c} 0 24%, transparent 26%), radial-gradient(circle at 40% 78%, ${d} 0 14%, transparent 16%), radial-gradient(circle at 76% 24%, ${e} 0 10%, transparent 12%), ${a} !important`;
+}
 
 export function renderLoadout(el, loadout, onChange) {
   let lo = validLoadout(loadout);
   const swatches = (key, colors) => `<div class="lo-lens" data-row="${key}">${colors.map((c) => `<button class="lo-sw" data-key="${key}" data-c="${c}" style="--c:${c}" title="${c}"></button>`).join('')}
     <label class="lo-sw lo-custom" title="Any colour"><input type="color" data-key="${key}" /></label></div>`;
   el.innerHTML = `<div class="lo-op"><div class="lo-prev"><div class="lo-cap"></div></div><div class="lo-side"><div class="lo-slot lo-outfits"></div>
-    <div class="lo-slot"><div class="lo-head"><span>Operator colour</span><em>uniform, kit &amp; poncho</em></div>${swatches('theme', THEME_COLORS)}</div>
+    <div class="lo-slot"><div class="lo-head"><span>Camo</span><em class="lo-theme-name"></em></div><div class="lo-lens" data-row="theme">${Object.entries(THEMES).map(([k, t]) => `<button class="lo-sw lo-camo" data-key="theme" data-c="${k}" style="${swatchBg(t)}" title="${t.name}"></button>`).join('')}</div></div>
     <div class="lo-slot"><div class="lo-head"><span>Lenses</span><em>goggles &amp; glasses</em></div>${swatches('lens', LENS_COLORS)}</div></div></div><div class="lo-list"></div>`;
   const list = el.querySelector('.lo-list'), prev = el.querySelector('.lo-prev'), outfits = el.querySelector('.lo-outfits');
   const look = () => ({ outfit: lo.outfit, poncho: lo.stealth === 'poncho', lens: lo.lens, theme: lo.theme, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } });
-  const current = (key) => (key === 'theme' ? lo.theme || THEME_DEFAULT[lo.outfit] : lo.lens);
+  const current = (key) => (key === 'theme' ? themeOf(lo.theme, lo.outfit) : lo.lens);
   const markSwatches = () => {
+    el.querySelector('.lo-theme-name').textContent = THEMES[themeOf(lo.theme, lo.outfit)].name;
     for (const key of ['theme', 'lens']) {
       const row = el.querySelector(`[data-row="${key}"]`), val = current(key);
       let preset = false;
       row.querySelectorAll('.lo-sw[data-c]').forEach((b) => { const on = b.dataset.c === val; b.classList.toggle('on', on); preset ||= on; });
       const custom = row.querySelector('.lo-custom');
+      if (!custom) continue;
       custom.classList.toggle('on', !preset);
       custom.style.setProperty('--c', val);
       custom.querySelector('input').value = val;

@@ -30,7 +30,7 @@ export const PLAYER = {
   radius: 0.35,
   eyeStand: 1.62,
   eyeCrouch: 1.1,
-  eyeProne: 0.38,
+  eyeProne: 0.45,
   walk: 4.3,
   sprint: 6.8,
   crouch: 2.3,

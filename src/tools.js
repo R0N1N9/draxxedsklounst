@@ -3,7 +3,7 @@
 // players; objects are tagged `mine` so the same code renders both sides.
 import * as THREE from 'three';
 import { BALLISTICS, PLAYER, WEAPON } from './config.js';
-import { Avatar, worldCapsules, scopePoint, LENS_COLORS, DEFAULT_LENS, THEME_COLORS } from './avatar.js';
+import { Avatar, worldCapsules, scopePoint, LENS_COLORS, DEFAULT_LENS, THEMES } from './avatar.js';
 import { puffTexture, glowTexture, glintTexture } from './textures.js';
 import { screenSprite } from './effects.js';
 import { clamp, smoothstep, segSegClosest } from './util.js';
@@ -34,7 +34,7 @@ export function validLoadout(lo) {
   out.bolt = lo && lo.bolt === 'straight' ? 'straight' : 'standard';
   out.outfit = lo && lo.outfit === 'wraith' ? 'wraith' : 'ghillie';
   out.lens = lo && /^#[0-9a-f]{6}$/i.test(lo.lens || '') ? lo.lens.toLowerCase() : DEFAULT_LENS;
-  out.theme = lo && /^#[0-9a-f]{6}$/i.test(lo.theme || '') ? lo.theme.toLowerCase() : '';
+  out.theme = lo && THEMES[lo.theme] ? lo.theme : '';
   if (lo) for (const s of SLOTS) if (TOOLS[lo[s.key]] && TOOLS[lo[s.key]].slot === s.key) out[s.key] = lo[s.key];
   return out;
 }
@@ -44,7 +44,7 @@ export function randomLoadout() {
     const keys = Object.keys(TOOLS).filter((k) => TOOLS[k].slot === slot);
     return keys[Math.floor(Math.random() * keys.length)];
   };
-  return { theme: Math.random() < 0.5 ? '' : THEME_COLORS[Math.floor(Math.random() * THEME_COLORS.length)], lens: LENS_COLORS[Math.floor(Math.random() * (LENS_COLORS.length - 1))], outfit: Math.random() < 0.5 ? 'wraith' : 'ghillie', rifle: RIFLES[Math.floor(Math.random() * RIFLES.length)], scout: pick('scout'), stealth: pick('stealth'), tactical: pick('tactical') };
+  return { theme: Math.random() < 0.4 ? '' : Object.keys(THEMES)[Math.floor(Math.random() * Object.keys(THEMES).length)], lens: LENS_COLORS[Math.floor(Math.random() * (LENS_COLORS.length - 1))], outfit: Math.random() < 0.5 ? 'wraith' : 'ghillie', rifle: RIFLES[Math.floor(Math.random() * RIFLES.length)], scout: pick('scout'), stealth: pick('stealth'), tactical: pick('tactical') };
 }
 
 // Fixed-wing loitering drone flight + search, shared by players and the AI.

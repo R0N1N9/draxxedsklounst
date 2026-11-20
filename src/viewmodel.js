@@ -2,7 +2,7 @@
 // Units are metres; the camera looks down -Z.
 import * as THREE from 'three';
 import { clamp, smoothstep } from './util.js';
-import { retint, THEME_DEFAULT } from './avatar.js';
+import { retint, THEMES, themeOf, camoMaterial } from './avatar.js';
 
 const C = {
   fde: '#7d6c52',
@@ -299,13 +299,14 @@ class Arm {
     }
   }
 
-  setLook(wraith, poncho, theme) {
-    const sl = mat(retint(C.sleeve, theme)), gl = mat(wraith ? '#1b1c1e' : C.glove);
+  setLook(wraith, poncho, themeId) {
+    const T = THEMES[themeId], theme = T.base;
+    const sl = T.colors ? camoMaterial(themeId, 0.85, 0.14) : mat(retint(C.sleeve, theme)), gl = mat(wraith ? '#1b1c1e' : C.glove);
     for (const o of this.sleeves) o.material = sl;
     this.cuff.material = mat(retint(C.sleeveDark, theme));
     this.hand.traverse((o) => { if (o.isMesh && o.material !== mat(C.glovePad)) o.material = gl; });
     if (this.drape) {
-      const dm = mat(retint('#4d5338', theme));
+      const dm = T.colors ? camoMaterial(themeId, 1, 0.14) : mat(retint('#4d5338', theme));
       this.drape.mesh.material = this.drape.capB.material = dm;
       this.drape.mesh.visible = this.drape.capB.visible = poncho;
     }
@@ -359,7 +360,7 @@ export class ViewModel {
   // look: { outfit, poncho } — sleeves/gloves follow the outfit, poncho drapes the left arm.
   setLook(look) {
     const wraith = look.outfit === 'wraith', poncho = !!look.poncho;
-    const theme = /^#[0-9a-f]{6}$/i.test(look.theme || '') ? look.theme : THEME_DEFAULT[wraith ? 'wraith' : 'ghillie'];
+    const theme = themeOf(look.theme, look.outfit);
     const key = wraith + ':' + poncho + ':' + theme;
     if (this._look === key) return;
     this._look = key;

@@ -399,3 +399,4 @@ body.touch #h-hint { bottom: 30%; }
 .lo-custom { display: inline-block; background: conic-gradient(#e0283a, #f2d23c, #3cf28a, #38d6f2, #8a5cff, #f23ca8, #e0283a) !important; }
 .lo-custom.on { background: radial-gradient(circle at 35% 35%, rgba(255,255,255,.45), transparent 45%), var(--c) !important; }
 .lo-custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; border: 0; padding: 0; }
+.lo-camo { border-radius: 6px !important; }
