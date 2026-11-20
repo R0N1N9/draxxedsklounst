@@ -302,6 +302,7 @@ export function makeView(ctx, THREE, renderer, S) {
       if (api.freeze || Q.soft && !api.always && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < Math.min(6000, Math.max(1000, cost * 5, worst * 5))) draw = false;
       fresh = false;
       if (!draw) {
+        if (drawn > 0) post.present();
         HUD.w = ctx.width; HUD.h = ctx.height;
         drawOverlay(ctx, HUD, api, S, camera, project);
         return;

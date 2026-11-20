@@ -334,8 +334,9 @@ export function makeView(ctx, THREE, renderer, X) {
       // A machine with no GPU cannot draw this page sixty times a second. It draws one, waits
       // for the rasteriser to really finish it (left to queue, a software GPU falls further
       // behind with every page and the whole browser stalls), rests seven times as long as the
-      // page took (and never less than about half a second), and keeps the duel and the 2D layer running true in between. A render with no
-      // update before it is the core photographing the world for a transition: always drawn.
+      // page took (half a second at least), and keeps the duel and the 2D layer running true in
+      // between. A render with no update before it is the core photographing the world for a
+      // transition: always drawn.
       const inBand = fresh;
       fresh = false;
       const draw = Q.rich || !inBand || !held;

@@ -294,6 +294,13 @@ export function makePost(THREE, renderer, U, q) {
       pass(mPresent, ldr, null, w, h);
       renderer.autoClear = auto;
     },
+    // the last graded frame again, with fresh grain: all a skipped frame costs (the canvas does
+    // not keep its picture between frames)
+    present() {
+      if (!ldr.width || ldr.width < 8) return;
+      pass(mPresent, ldr, null, ldr.width, ldr.height);
+      renderer.setRenderTarget(null);
+    },
     dispose() {
       renderer.setRenderTarget(null);
       for (const t of [scene, ldr, qa, qb, ea, eb, vol, volB]) t.dispose();
