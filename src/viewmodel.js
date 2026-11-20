@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { clamp, smoothstep } from './util.js';
 import { retint, THEMES, themeOf, camoMaterial } from './avatar.js';
+import { buildChicken, animateChicken } from './chicken.js';
 
 const C = {
   fde: '#7d6c52',
@@ -329,11 +330,27 @@ class Arm {
   }
 }
 
+// Pollo Hermano: a chicken held by the beak (left hand) and pulled back by the feet (right).
+function buildPolloSling() {
+  const g = new THREE.Group();
+  const c = buildChicken({ plain: true });
+  c.scale.setScalar(0.55);
+  c.position.set(0, -0.255, -0.29);
+  c.userData.legs.forEach((L) => (L.rotation.x = -1.7));
+  g.add(c);
+  const beak = anchor(0, -0.01, -0.1);
+  c.userData.head.add(beak);
+  const feet = anchor(0, -0.15, 0);
+  c.userData.legs[0].add(feet);
+  g.userData = { gripL: beak, gripR: feet, muzzle: beak, sight: 0.085, chick: c };
+  return g;
+}
+
 export class ViewModel {
   constructor(camera) {
     this.root = new THREE.Group();
     camera.add(this.root);
-    this.models = { mk22: buildMk22(), dmr: buildDmr(), m18: buildPistol() };
+    this.models = { mk22: buildMk22(), dmr: buildDmr(), m18: buildPistol(), pollo: buildPolloSling() };
     this.holder = new THREE.Group();
     this.holder.scale.setScalar(0.82);
     this.root.add(this.holder);
@@ -382,12 +399,13 @@ export class ViewModel {
   update(dt, st) {
     this.t += dt;
     const def = st.def;
-    if (this.current !== def.key) {
+    const key = st.pollo && def.slot === 'rifle' ? 'pollo' : def.key;
+    if (this.current !== key) {
       if (this.current) this.models[this.current].visible = false;
-      this.current = def.key;
-      this.models[def.key].visible = true;
+      this.current = key;
+      this.models[key].visible = true;
     }
-    const g = this.models[def.key];
+    const g = this.models[key];
     const U = g.userData;
     const pistol = def.slot === 'pistol';
     this.kick = Math.max(0, this.kick - dt * (pistol ? 9 : 5));
@@ -472,6 +490,19 @@ export class ViewModel {
       U.bolt.position.z = -0.02 + pull * 0.1;
       boltReach = smoothstep(0.02, 0.15, u) * (1 - smoothstep(0.85, 0.98, u));
       if (u > 0) rot.z -= 0.08 * boltReach;
+    }
+    // Pollo: stretch the chicken as you draw; it's gone once flung until you grab the next one.
+    if (U.chick) {
+      const C = U.chick.userData;
+      const draw = 0.15 + 0.85 * smoothstep(0, 1, st.scopeT);
+      animateChicken(U.chick, this.t, { flap: draw > 0.5 ? 0.5 : 0.15 });
+      C.body.scale.z = 1 + 0.45 * draw;
+      U.chick.userData.legs.forEach((L) => (L.rotation.x = -1.5 - 0.35 * draw));
+      let grab = 1;
+      if (st.boltPending || st.empty) grab = 0;
+      else if (st.cycleT > 0) grab = smoothstep(0.55, 0.95, 1 - st.cycleT / def.cycle);
+      U.chick.visible = grab > 0.02;
+      U.chick.scale.setScalar(0.55 * (0.2 + 0.8 * grab));
     }
     // Pistol slide: recoil cycle and empty-reload rack.
     if (U.slide) {

@@ -149,7 +149,7 @@ export class Hud {
         : player.reloadT > 0
         ? `<em>${player.reloadEmpty ? 'RELOAD · CHAMBERING' : 'RELOADING'}</em>`
         : `<span class="pips${player.boltT > 0 ? ' cyc' : ''}">${chamber}<span class="sep"></span>${mag}</span><span class="res">${String(W.reserve).padStart(2, '0')}</span>`;
-      document.getElementById('h-wname').textContent = `${D.name} · ${D.caliber}`.toUpperCase();
+      document.getElementById('h-wname').textContent = (player.pollo && D.slot === 'rifle' ? '🐔 POLLO HERMANO · YELLOW CHICKENS' : `${D.name} · ${D.caliber}`).toUpperCase();
     }
     this.el.zero.textContent = D.scope ? `ZERO ${player.zero} M · ${player.zoom}×` : 'IRON SIGHTS · 1 / 2 SWAP';
     this.el.stance.textContent = ['STANDING', 'CROUCHED', 'PRONE'][player.stance] + (player.bipod ? ' · BIPOD DOWN' : '') + (player.wounded ? ' · WOUNDED' : '');

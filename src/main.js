@@ -101,7 +101,26 @@ function primeGyro() {
   const DM = window.DeviceMotionEvent;
   if (settings.gyroMode !== 'off' && DM && typeof DM.requestPermission === 'function') DM.requestPermission().catch(() => {});
 }
-settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); };
+settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); updateTitle(); };
+
+// Easter egg: when either player wears the Pollo Hermano suit, the game becomes The Reckoning.
+function polloOn() {
+  const lo = settings.loadout || {};
+  let seen = false;
+  try { seen = sessionStorage.getItem('draxxed.reckoning') === '1'; } catch {}
+  return (lo.stealth || 'poncho') === 'poncho' && lo.skin === 'pollo' || seen;
+}
+function updateTitle() {
+  const on = polloOn();
+  $('title').innerHTML = on ? 'DRAXXED<br />SKLOUNST<span class="reckon">: THE RECKONING</span>' : 'DRAXXED<br />SKLOUNST';
+  $('tagline').textContent = on ? 'One pollo. Two hermanos. Eight hundred sauce packets.' : 'One valley. Two rifles. Eight hundred metres.';
+  document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Draxxed Sklounst';
+  document.body.classList.toggle('reckoning', on);
+}
+window.__reckoning = () => {
+  try { sessionStorage.setItem('draxxed.reckoning', '1'); } catch {}
+  updateTitle();
+};
 settings.rules = normalizeRules(store.get('rules', { preset: 'bf' }));
 applyRules(settings.rules);
 
@@ -115,9 +134,12 @@ function saveRules(r) {
 function renderStyle() {
   const r = settings.rules;
   $('style-cur').textContent = rulesLabel(r);
-  const opts = Object.entries(PRESETS).map(([k, p]) => `<button class="lo-opt${r.preset === k ? ' on' : ''}" data-preset="${k}"><b>${p.name} <i>like ${p.feel}</i></b><span>${p.desc}</span></button>`);
-  opts.push(`<button class="lo-opt${r.preset === 'custom' ? ' on' : ''}" data-preset="custom"><b>Custom</b><span>Set drop, bullet speed, wind, drag, sway and hitbox size yourself.</span></button>`);
-  $('style-presets').innerHTML = opts.join('');
+  // Shooting style bar.
+  const SUB = { sim: 'realistic', bf: 'default', cod: 'arcade', halo: 'hitscan' };
+  const styleBtns = Object.entries(PRESETS).map(([k, p]) => `<button class="${r.preset === k ? 'on' : ''}" data-preset="${k}" title="Like ${p.feel}"><b>${p.short}</b><i>${SUB[k] || ''}</i></button>`);
+  styleBtns.push(`<button class="${r.preset === 'custom' ? 'on' : ''}" data-preset="custom"><b>CUSTOM</b><i>your mix</i></button>`);
+  $('style-presets').innerHTML = styleBtns.join('');
+  $('style-desc').textContent = PRESETS[r.preset] ? `Like ${PRESETS[r.preset].feel}. ${PRESETS[r.preset].desc}` : 'Set drop, bullet speed, wind, drag, sway and hitbox size yourself.';
   $('style-custom').style.display = r.preset === 'custom' ? '' : 'none';
   document.querySelectorAll('[data-sr]').forEach((el) => { el.value = String(r[el.dataset.sr]); });
   document.querySelectorAll('[data-sv]').forEach((el) => { el.textContent = `${Math.round(r[el.dataset.sv] * 100)}%`; });
@@ -126,8 +148,12 @@ function renderStyle() {
   const cur = RANGES[r.range] ? r.range : def;
   if ($('brief-range')) $('brief-range').textContent = RANGES[cur].dist.toUpperCase();
   if ($('brief-range-l')) $('brief-range-l').textContent = `${RANGES[cur].name.toLowerCase()} range`;
-  $('style-range').innerHTML = [['auto', `Auto · ${RANGES[def].name}`, `What ${PRESETS[r.preset] ? PRESETS[r.preset].name : 'this style'} usually plays at (${RANGES[def].dist}).`], ...Object.entries(RANGES).map(([k, g]) => [k, `${g.name} ${g.dist}`, g.desc])]
-    .map(([k, n, d]) => `<button class="lo-opt${(r.range || 'auto') === k ? ' on' : ''}" data-range="${k}"><b>${n}</b><span>${d}</span></button>`).join('');
+  // Shooting distance bar: each range labelled with the game it plays like.
+  const sel = RANGES[r.range] ? r.range : 'auto';
+  const GAME = { close: 'Halo', medium: 'Call of Duty', long: 'Battlefield', extreme: 'ARMA / Sniper Elite' };
+  $('style-range').innerHTML = [`<button class="${sel === 'auto' ? 'on' : ''}" data-range="auto"><b>AUTO</b><i>${RANGES[def].name}</i></button>`,
+    ...Object.entries(RANGES).map(([k, g]) => `<button class="${sel === k ? 'on' : ''}" data-range="${k}"><b>${g.name.toUpperCase()}</b><i>${g.dist}</i></button>`)].join('');
+  $('range-desc').textContent = sel === 'auto' ? `Follows the style: ${RANGES[def].name} (${RANGES[def].dist}, like ${GAME[def]}). ${RANGES[def].desc}` : `Like ${GAME[sel]} (${RANGES[sel].dist}). ${RANGES[sel].desc}`;
 }
 $('style-presets').onclick = (e) => {
   const b = e.target.closest('[data-preset]');
@@ -147,6 +173,7 @@ $('btn-style').onclick = () => { renderStyle(); showPanel('panel-style'); };
 renderStyle();
 
 // ---- Menu wiring ----
+updateTitle();
 $('in-name').value = settings.name;
 $('in-pal').value = settings.pal;
 $('in-quality').value = settings.quality;
@@ -273,7 +300,7 @@ function wirePause() {
 // Loadout (menu)
 $('btn-loadout').onclick = () => {
   showPanel('panel-loadout');
-  renderLoadout($('menu-loadout'), settings.loadout, (lo) => settings.saveLoadout(lo));
+  renderLoadout($('menu-loadout'), settings.loadout, (lo) => settings.saveLoadout(lo), () => updateTitle());
 };
 
 // Vs AI

@@ -19,6 +19,7 @@ import { Replay, sampleHist, pushHist } from './killcam.js';
 import { segSegClosest, clamp, mulberry32 } from './util.js';
 import { crestAt } from './terrain.js';
 import { spawnPoint } from './range.js';
+import { Chickens, buildChicken, animateChicken } from './chicken.js';
 import { BotPeer } from './bot.js';
 import { Sandbox } from './sandbox.js';
 import { ToolSystem, setThermal } from './tools.js';
@@ -200,6 +201,8 @@ export class Game {
     this.targets = [];
     this.tools = new ToolSystem(this);
     this.supply = new Supply(this);
+    this.chickens = new Chickens(this);
+    if (this.player.pollo) setTimeout(() => this.onReckoning(), 5000);
     this.loadoutPanel = new LoadoutPanel(this, settings.saveLoadout);
     if (this.offline) this.net = new BotPeer(this, { difficulty: this.difficulty, behaviour: this.offline === 'sandbox' ? 'passive' : 'hostile' });
     if (mode === 'practice') this._setupPractice();
@@ -317,6 +320,7 @@ export class Game {
     this.tools.bindNet(n);
     n.on('supply', (m) => this.supply.onRemote(m));
     n.on('supplytaken', (m) => this.supply.onRemoteTaken(m));
+    n.on('chickhit', (m) => this.chickens.onRemoteHit(m));
     n.on('open', () => {
       n.send({ t: 'hello', name: this.name, pal: this.paletteKey, rules: { ...RULES } });
       if (this.offline === 'sandbox') {
@@ -489,13 +493,14 @@ export class Game {
     this.input.resetScope();
     this.uplinkState.forEach((u) => { u.progress = 0; u.enemyHacking = false; });
     this.hacking = -1;
-    this.bullets.forEach((b) => b.tracer && this.effects.killTracer(b.tracer));
+    this.bullets.forEach((b) => { if (b.tracer) this.effects.killTracer(b.tracer); if (b.chick) this.scene.remove(b.chick); });
     this.bullets.length = 0;
     this.pings.length = 0;
     this.hud.clearMarkers();
     this.hud.card('');
     this.tools.reset();
     this.supply.reset();
+    this.chickens.reset();
     this.remoteHp = 100;
     this.remoteAlive = true;
     this.remoteDeadLock = false;
@@ -562,15 +567,22 @@ export class Game {
     this.remoteWpn = m.w | 0;
     this.remoteRifle = m.rt || 'mk22';
     this.tools.onRemoteState(m);
+    this.chickens.onRemote(m.ck);
   }
 
   _onRemoteShot(m) {
     const o = new THREE.Vector3(...m.o), v = new THREE.Vector3(...m.v);
-    this.remoteShots.set(m.id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: m.wt });
-    this._spawnBullet(o, v, false, m.id, m.wt);
+    this.remoteShots.set(m.id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: m.wt, ch: !!m.ch });
+    this._spawnBullet(o, v, false, m.id, m.wt, !!m.ch);
     const dir = v.clone().normalize();
-    if (!m.sup) this.effects.muzzle(o, dir);
     const d = o.distanceTo(this.camera.position);
+    if (m.ch) {
+      // Pollo Hermano: a chicken, flung.
+      this.effects.puff(o.clone().addScaledVector(dir, 1), 'feather', 1.2, 0.8);
+      this.audio.chicken(o, 'squawk', d / 343);
+      return;
+    }
+    if (!m.sup) this.effects.muzzle(o, dir);
     this.audio.shotDistant(o, d / 343, !!m.sup || m.wk === 'm18');
     // Prone shots kick up a dust cloud: another tell (not with a suppressor).
     const last = this.remoteHist[this.remoteHist.length - 1];
@@ -581,6 +593,14 @@ export class Game {
     const P = this.player;
     if (!P.alive) return;
     if (!(this.sandbox && this.sandbox.god)) P.hp -= m.dmg;
+    if (m.peck) {
+      this.audio.chicken(null, 'peck');
+      if (this.now - (this._peckMsgT || -9) > 3) {
+        this._peckMsgT = this.now;
+        this.hud.message('PECKED', 'An enemy chicken is on you: shoot it (the pistol is quickest)', 2.2);
+      }
+      this.hud.damage(0);
+    }
     const shot = this.remoteShots.get(m.id);
     if (shot) {
       const dx = shot.o.x - P.pos.x, dz = shot.o.z - P.pos.z;
@@ -607,10 +627,19 @@ export class Game {
         });
         this._replayLabel(`KILLED BY ${this.oppName.toUpperCase()}`, `${PART_NAMES[m.part]} · ${Math.round(m.dist)} m`);
       }
-    } else {
+    } else if (!m.peck) {
       P.wounded = true;
       this.hud.message('HIT', `${PART_NAMES[m.part] || ''} — you're wounded. Move!`, 2);
     }
+  }
+
+  // Easter egg: someone in the match is wearing the Pollo Hermano suit.
+  onReckoning() {
+    if (this._reckon) return;
+    this._reckon = true;
+    if (window.__reckoning) window.__reckoning();
+    this.hud.message('DRAXXED SKLOUNST: THE RECKONING', 'One pollo. Two hermanos. Eight hundred sauce packets.', 4.5);
+    this.audio.chicken(null, 'squawk');
   }
 
   _sandboxRespawn() {
@@ -696,15 +725,29 @@ export class Game {
       w: P.slot,
       rt: P.rifleKey,
       ...this.tools.stateFields(),
+      ck: this.chickens.stateField(),
     });
   }
 
   // -------------------------------------------------------------------------
   // Shooting
   // -------------------------------------------------------------------------
-  _spawnBullet(o, v, local, id, windT0) {
+  _spawnBullet(o, v, local, id, windT0, chick = false) {
     const tracer = this.effects.addTracer(o, v, !local);
-    this.bullets.push({ p: o.clone(), v: v.clone(), prev: o.clone(), age: 0, local, id, windT0, tracer, crackDone: false });
+    let chickMesh = null;
+    if (chick) {
+      // The "bullet" is a yellow chicken, wings out, beak first.
+      tracer.mesh.visible = false;
+      chickMesh = new THREE.Group();
+      const c = buildChicken();
+      c.rotation.y = Math.PI; // its beak (-Z) along the group's +Z, which lookAt points forward
+      c.position.y = -0.27;
+      chickMesh.add(c);
+      chickMesh.userData.c = c;
+      chickMesh.position.copy(o);
+      this.scene.add(chickMesh);
+    }
+    this.bullets.push({ p: o.clone(), v: v.clone(), prev: o.clone(), age: 0, local, id, windT0, tracer, crackDone: false, chick: chickMesh });
   }
 
   _fire() {
@@ -712,18 +755,20 @@ export class Game {
     const o = P.eyePos(new THREE.Vector3());
     const dir = P.muzzleDir(new THREE.Vector3());
     const def = P.def;
-    const sup = this.tools.has('suppressor') && def.slot === 'rifle';
+    const chick = !!P.pollo && def.slot === 'rifle';
+    const sup = (this.tools.has('suppressor') && def.slot === 'rifle') || chick;
     const v = dir.clone().multiplyScalar(P.muzzle);
     const id = ++this.shotId * 2 + this.me;
-    this.myShots.set(id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: this.roundTime, wk: def.key });
+    this.myShots.set(id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: this.roundTime, wk: def.key, ch: chick });
     // Start the visible bullet slightly ahead so it doesn't spawn inside the camera.
-    this._spawnBullet(o, v, true, id, this.roundTime);
+    this._spawnBullet(o, v, true, id, this.roundTime, chick);
     P.fireKick();
-    this.audio.shotLocal(sup, def.slot === 'pistol');
+    if (chick) this.audio.chicken(null, 'squawk');
+    else this.audio.shotLocal(sup, def.slot === 'pistol');
     // (the bolt sound plays when the bolt is actually worked — see boltEvent)
     if ((P.scopeT < 0.5 || !def.scope) && !sup) this.effects.muzzle(this.viewmodel.muzzleWorld(), dir);
     this.viewmodel.fired();
-    if (this.net && this.net.open) this.net.send({ t: 'shot', id, wk: def.key, sup: sup ? 1 : 0, o: o.toArray().map((x) => Math.round(x * 1000) / 1000), v: v.toArray().map((x) => Math.round(x * 100) / 100), wt: this.roundTime });
+    if (this.net && this.net.open) this.net.send({ t: 'shot', id, wk: def.key, ch: chick ? 1 : 0, sup: sup ? 1 : 0, o: o.toArray().map((x) => Math.round(x * 1000) / 1000), v: v.toArray().map((x) => Math.round(x * 100) / 100), wt: this.roundTime });
   }
 
   _targetsForHit() {
@@ -734,6 +779,7 @@ export class Game {
       worldCapsules(t.pos, t.yaw, 0).forEach((c) => { c.owner = t; list.push(c); });
     }
     if (this.mode !== 'practice') this.tools.hitCapsules(list);
+    if (this.mode !== 'practice') this.chickens.hitCapsules(list);
     if (this.mode !== 'practice' && this.remoteAlive && this.remoteHist.length) {
       const s = sampleHist(this.remoteHist, this.now - NET.interpDelay);
       if (s) worldCapsules(s.p, s.yaw, s.st).forEach((c) => { c.owner = 'remote'; list.push(c); });
@@ -768,9 +814,15 @@ export class Game {
           this._onLocalHit(b, hit.cap, ip);
           dead = true;
         } else if (wh) {
-          this.effects.impact(wh.point, wh.normal, wh.mat);
           const d = wh.point.distanceTo(listener);
-          this.audio.impact(wh.point, wh.mat, d / 343);
+          if (b.chick) {
+            // Chicken down... and back up. Ours gets up and goes hunting.
+            this.effects.puff(wh.point.clone().add(new THREE.Vector3(0, 0.3, 0)), 'feather', 1.6, 1.2);
+            if (b.local) this.chickens.spawn(wh.point.clone());
+          } else {
+            this.effects.impact(wh.point, wh.normal, wh.mat);
+            this.audio.impact(wh.point, wh.mat, d / 343);
+          }
           dead = true;
         }
         // Supersonic crack for enemy rounds passing near you.
@@ -779,16 +831,23 @@ export class Game {
           if (r.d2 < 30 * 30 && r.s < 0.999) {
             b.crackDone = true;
             const d = Math.sqrt(r.d2);
-            this.audio.crack(b.prev.clone().lerp(b.p, r.s), d / 343, clamp(1 - d / 30, 0, 1));
-            if (d < 6) this.hud.message('', 'Rounds incoming!', 1.2);
+            if (b.chick) this.audio.chicken(b.prev.clone().lerp(b.p, r.s), 'squawk', d / 343);
+            else this.audio.crack(b.prev.clone().lerp(b.p, r.s), d / 343, clamp(1 - d / 30, 0, 1));
+            if (d < 6) this.hud.message('', b.chick ? 'Incoming chicken!' : 'Rounds incoming!', 1.2);
           }
         }
         if (b.age > BALLISTICS.maxLife || b.p.y < -200) dead = true;
       }
       this.effects.moveTracer(b.tracer, b.p, b.v);
+      if (b.chick) {
+        b.chick.position.copy(b.p);
+        b.chick.lookAt(b.p.x + b.v.x, b.p.y + b.v.y, b.p.z + b.v.z);
+        animateChicken(b.chick.userData.c, this.now * 1.7 + b.id, { flap: 1 });
+      }
       if (this.sandbox && b.local) this.sandbox.trace(b, dead);
       if (dead) {
         this.effects.killTracer(b.tracer);
+        if (b.chick) this.scene.remove(b.chick);
         this.bullets.splice(i, 1);
       }
     }
@@ -798,6 +857,13 @@ export class Game {
     const shot = this.myShots.get(b.id);
     const dist = shot ? shot.o.distanceTo(ip) : 0;
     const head = cap.part === 'head';
+    if (cap.owner === 'chicken') {
+      this.chickens.shot(cap.ref);
+      this.effects.puff(ip, 'feather', 1.4, 1.2);
+      this.hud.hitMarker(false);
+      this.hud.message('', 'Chicken down', 1);
+      return;
+    }
     if (cap.owner === 'decoy' || cap.owner === 'dart' || cap.owner === 'drone' || cap.owner === 'hunter') {
       this.tools.onToolHit(cap, shot ? shot.o : ip);
       return;
@@ -947,6 +1013,7 @@ export class Game {
     this._updateBullets(dt);
     this.tools.update(dt);
     this.supply.update(dt);
+    this.chickens.update(dt);
     this._updatePractice(dt);
     this._updateRemote(dt);
     this._updatePings();
@@ -1041,7 +1108,9 @@ export class Game {
       bipodT: P.def.slot === 'rifle' ? P.bipodT || 0 : 0,
       bipodState: P.bipodState,
       bipodU: P.bipodU || 0,
-      empty: P.w.chamber === 0 && P.def.kind === 'semi',
+      empty: (P.w.chamber === 0 && P.def.kind === 'semi') || (P.pollo && P.w.chamber === 0 && P.w.mag === 0),
+      pollo: !!P.pollo,
+      boltPending: !!P.boltPending,
     });
   }
 

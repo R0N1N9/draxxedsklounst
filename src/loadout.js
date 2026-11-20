@@ -12,7 +12,7 @@ function swatchBg(t) {
   return `--c:${a};background:radial-gradient(circle at 28% 30%, ${b} 0 20%, transparent 22%), radial-gradient(ellipse at 70% 62%, ${c} 0 24%, transparent 26%), radial-gradient(circle at 40% 78%, ${d} 0 14%, transparent 16%), radial-gradient(circle at 76% 24%, ${e} 0 10%, transparent 12%), ${a} !important`;
 }
 
-export function renderLoadout(el, loadout, onChange) {
+export function renderLoadout(el, loadout, onChange, onLook) {
   let lo = validLoadout(loadout);
   const swatches = (key, colors) => `<div class="lo-lens" data-row="${key}">${colors.map((c) => `<button class="lo-sw" data-key="${key}" data-c="${c}" style="--c:${c}" title="${c}"></button>`).join('')}
     <label class="lo-sw lo-custom" title="Any colour"><input type="color" data-key="${key}" /></label></div>`;
@@ -22,7 +22,7 @@ export function renderLoadout(el, loadout, onChange) {
     <div class="lo-slot"><div class="lo-head"><span>Eyewear</span></div><div class="lo-chips" data-row="eyes">${Object.entries(EYEWEAR).map(([k, n]) => `<button class="lo-chip" data-key="eyes" data-v="${k}">${n}</button>`).join('')}</div></div>
     <div class="lo-slot"><div class="lo-head"><span>Lenses</span><em>goggles &amp; glasses</em></div>${swatches('lens', LENS_COLORS)}</div></div></div><div class="lo-list"></div>`;
   const list = el.querySelector('.lo-list'), prev = el.querySelector('.lo-prev'), outfits = el.querySelector('.lo-outfits');
-  const look = () => ({ outfit: lo.outfit, poncho: lo.stealth === 'poncho', lens: lo.lens, theme: lo.theme, hat: lo.hat, eyes: lo.eyes, vest: lo.vest, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } });
+  const look = () => ({ outfit: lo.outfit, poncho: lo.stealth === 'poncho', pollo: lo.stealth === 'poncho' && lo.skin === 'pollo', lens: lo.lens, theme: lo.theme, hat: lo.hat, eyes: lo.eyes, vest: lo.vest, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } });
   const current = (key) => (key === 'theme' ? themeOf(lo.theme, lo.outfit) : lo.lens);
   const markSwatches = () => {
     el.querySelector('.lo-theme-name').textContent = THEMES[themeOf(lo.theme, lo.outfit)].name;
@@ -51,7 +51,7 @@ export function renderLoadout(el, loadout, onChange) {
     const poncho = lo.stealth === 'poncho';
     markSwatches();
     outfits.innerHTML = `<div class="lo-head"><span>Operator</span><em>drag to turn</em></div><div class="lo-opts">${Object.entries(OUTFITS).map(([k, o]) => `<button class="lo-opt${lo.outfit === k ? ' on' : ''}" data-slot="outfit" data-tool="${k}"><b>${o.name}</b><span>${o.desc}</span></button>`).join('')}</div>`;
-    prev.querySelector('.lo-cap').innerHTML = `${OUTFITS[lo.outfit].name.toUpperCase()}${poncho ? ' <i>+ THERMAL PONCHO</i>' : ''}`;
+    prev.querySelector('.lo-cap').innerHTML = lo.skin === 'pollo' && poncho ? 'POLLO HERMANO <i>🐔</i>' : `${OUTFITS[lo.outfit].name.toUpperCase()}${poncho ? ' <i>+ THERMAL PONCHO</i>' : ''}`;
     showPreview(prev, look());
     const rifles = `<div class="lo-slot"><div class="lo-head"><span>Rifle</span><em>+ M18 pistol (key 2)</em></div>
       <div class="lo-opts">${RIFLES.map((k) => { const w = WEAPONS[k]; return `<button class="lo-opt${lo.rifle === k ? ' on' : ''}" data-slot="rifle" data-tool="${k}">
@@ -70,12 +70,17 @@ export function renderLoadout(el, loadout, onChange) {
       <button class="lo-opt${lo.vest !== 'rig' ? ' on' : ''}" data-slot="vest" data-tool="plate"><b>Plate carrier</b><span>Plates take a third off torso hits: you survive one Mk22 body shot (it takes 2). Headshots still kill.</span></button>
       <button class="lo-opt${lo.vest === 'rig' ? ' on' : ''}" data-slot="vest" data-tool="rig"><b>Chest rig</b><span>No plates (an Mk22 body shot kills), more magazines: +2 rifle mags and +1 pistol mag.</span></button>
     </div></div>`;
+    const skin = lo.stealth === 'poncho' ? `<div class="lo-slot"><div class="lo-head"><span>Poncho skin</span><em>thermal poncho</em></div><div class="lo-opts">
+      <button class="lo-opt${lo.skin !== 'pollo' ? ' on' : ''}" data-slot="skin" data-tool="std"><b>Standard</b><span>Foil-lined hooded poncho, flap over the left shoulder.</span></button>
+      <button class="lo-opt pollo${lo.skin === 'pollo' ? ' on' : ''}" data-slot="skin" data-tool="pollo"><b>Pollo Hermano 🐔</b><span>Yellow chicken suit. Your rifle flings chickens instead (same speed and drop). Ones that land go after the enemy.</span></button>
+    </div></div>` : '';
     list.innerHTML = rifles + vest + SLOTS.map((s) => {
       const opts = Object.entries(TOOLS).filter(([, t]) => t.slot === s.key);
       return `<div class="lo-slot"><div class="lo-head"><span>${s.label}</span><em>${s.keyHint === 'passive' ? 'always on' : 'key ' + s.keyHint}</em></div>
         <div class="lo-opts">${opts.map(([k, t]) => `<button class="lo-opt${lo[s.key] === k ? ' on' : ''}" data-slot="${s.key}" data-tool="${k}">
-          <b>${t.name}${t.charges ? ` <i>×${t.charges}</i>` : ''}</b><span>${t.desc}</span></button>`).join('')}</div></div>`;
+          <b>${t.name}${t.charges ? ` <i>×${t.charges}</i>` : ''}</b><span>${t.desc}</span></button>`).join('')}</div></div>${s.key === 'stealth' ? skin : ''}`;
     }).join('');
+    onLook && onLook(lo);
   };
   el.onclick = (e) => {
     const chip = e.target.closest('.lo-chip');

@@ -38,7 +38,8 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 - Both players start on opposite ridgelines, about 800 m apart. Spawns are random among three points per ridge, and sides swap every round.
 - You get one life per round. First to 4 rounds wins.
 - **Predator UAV**: a drone circles high over the valley. Every 60 s of live play it pings both players in red on each other's HUD. For 8 s afterwards you can press **U** to tune into its live thermal feed of the enemy. A UAV jammer blocks the ping and the feed.
-- **Sniping style** (main menu, host's choice applies to both players):
+- **Pollo Hermano** (easter egg): pick the Thermal poncho, then the *Pollo Hermano* poncho skin. You wear a yellow chicken suit and your rifle flings yellow chickens instead of bullets: held by the beak, pulled back by the feet, slingshot style. They fly exactly like the rifle's bullets under the current sniping style and do the same damage on a direct hit. A chicken that lands gets up and runs at the enemy (5 m/s) and pecks them (4 damage every 0.6 s) until it's shot: the pistol is ideal. Fling yours at the ground near enemy chickens and they brawl. Up to 8 live chickens each; they wander off after 45 s. The AI shoots chickens near it with its pistol. When either player wears the suit, the game becomes *Draxxed Sklounst: The Reckoning*.
+- **Sniping style** (main menu, host's choice applies to both players). Two bars: the shooting style (bullet physics) and, underneath, the shooting distance:
   - **Simulation** (like Sniper Elite / ARMA): heavier drag and strong wind. Plays at Extreme range.
   - **Battlefield** (the default): real drop and travel time, moderate wind. Plays at Long range.
   - **Call of Duty**: fast bullets, light drop, no wind, slightly bigger hitboxes. Plays at Medium range.

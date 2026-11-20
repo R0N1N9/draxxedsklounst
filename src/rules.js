@@ -10,24 +10,28 @@ const BASE = { gravity: BALLISTICS.gravity, drag: BALLISTICS.drag, windScale: BA
 export const PRESETS = {
   sim: {
     name: 'Simulation',
+    short: 'SIM',
     feel: 'Sniper Elite / ARMA',
     desc: 'Heavier drag and strong wind. Every long shot needs a range and a wind call.',
     gravity: 1, drag: 1.35, wind: 1.6, speed: 1, sway: 1.2, hitbox: 1, zooms: null, range: 'extreme',
   },
   bf: {
     name: 'Battlefield',
+    short: 'BF',
     feel: 'Battlefield',
     desc: 'The default: real bullet drop and travel time, moderate wind.',
     gravity: 1, drag: 1, wind: 1, speed: 1, sway: 1, hitbox: 1, zooms: null, range: 'long',
   },
   cod: {
     name: 'Call of Duty',
+    short: 'COD',
     feel: 'Call of Duty',
     desc: 'Fast bullets with light drop and no wind. Lead a little, hold over a little.',
     gravity: 0.35, drag: 0.5, wind: 0, speed: 1.6, sway: 1, hitbox: 1.15, zooms: null, range: 'medium',
   },
   halo: {
     name: 'Halo',
+    short: 'HALO',
     feel: 'Halo',
     desc: 'Instant hit, dead straight, no wind and no scope sway. 5× / 10× / 20× zoom. Pure reflex.',
     gravity: 0, drag: 0, wind: 0, speed: 40, sway: 0, hitbox: 1.25, zooms: [5, 10, 20], range: 'close',

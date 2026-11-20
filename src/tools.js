@@ -38,6 +38,7 @@ export function validLoadout(lo) {
   out.hat = lo && HATS[lo.hat] ? lo.hat : '';
   out.vest = lo && lo.vest === 'rig' ? 'rig' : 'plate';
   out.scope = lo && lo.scope === '40' ? '40' : 'std';
+  out.skin = lo && lo.skin === 'pollo' ? 'pollo' : 'std';
   out.eyes = lo && EYEWEAR[lo.eyes] ? lo.eyes : '';
   if (lo) for (const s of SLOTS) if (TOOLS[lo[s.key]] && TOOLS[lo[s.key]].slot === s.key) out[s.key] = lo[s.key];
   return out;
@@ -205,6 +206,7 @@ export class ToolSystem {
     game.player.rifleKey = this.loadout.rifle;
     game.player.vest = this.loadout.vest;
     game.player.scope40 = this.loadout.scope === '40';
+    game.player.pollo = this.loadout.stealth === 'poncho' && this.loadout.skin === 'pollo';
     game.player.equip();
     game.player.straightPull = this.loadout.bolt === 'straight';
     this._buildRemoteDrone();
@@ -224,6 +226,7 @@ export class ToolSystem {
     this.g.player.rifleKey = this.loadout.rifle;
     this.g.player.vest = this.loadout.vest;
     this.g.player.scope40 = this.loadout.scope === '40';
+    this.g.player.pollo = this.loadout.stealth === 'poncho' && this.loadout.skin === 'pollo';
     this.g.player.equip();
     this.g.player.straightPull = this.loadout.bolt === 'straight';
     this.resetMine();
@@ -232,12 +235,12 @@ export class ToolSystem {
   // Outfit + poncho, as Avatar.setLook wants them.
   myLook() {
     const lo = this.loadout;
-    return { outfit: lo.outfit, poncho: this.has('poncho'), lens: lo.lens, theme: lo.theme, hat: lo.hat, eyes: lo.eyes, vest: lo.vest, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } };
+    return { outfit: lo.outfit, poncho: this.has('poncho'), lens: lo.lens, theme: lo.theme, hat: lo.hat, eyes: lo.eyes, vest: lo.vest, pollo: this.has('poncho') && lo.skin === 'pollo', kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } };
   }
 
   remoteLook() {
     const r = this.remote;
-    return { outfit: r.lk ? 'wraith' : 'ghillie', poncho: !!r.tp, lens: r.lc, theme: r.th, hat: r.hw, eyes: r.ew, vest: r.vs, kit: r.kit || { stealth: r.tp ? 'poncho' : '' } };
+    return { outfit: r.lk ? 'wraith' : 'ghillie', poncho: !!r.tp, lens: r.lc, theme: r.th, hat: r.hw, eyes: r.ew, vest: r.vs, pollo: !!r.sk, kit: r.kit || { stealth: r.tp ? 'poncho' : '' } };
   }
 
   has(tool) {
@@ -291,6 +294,7 @@ export class ToolSystem {
       th: this.loadout.theme,
       hw: this.loadout.hat,
       vs: this.loadout.vest,
+      sk: this.loadout.stealth === 'poncho' && this.loadout.skin === 'pollo' ? 1 : 0,
       ew: this.loadout.eyes,
       ko: `${this.loadout.scout},${this.loadout.stealth},${this.loadout.tactical}`,
       jm: this.jammer ? 1 : 0,
@@ -307,6 +311,8 @@ export class ToolSystem {
     if (typeof m.th === 'string') this.remote.th = m.th;
     if (typeof m.hw === 'string') this.remote.hw = m.hw;
     if (typeof m.vs === 'string') this.remote.vs = m.vs;
+    this.remote.sk = m.sk | 0;
+    if (this.remote.sk) this.g.onReckoning && this.g.onReckoning();
     if (typeof m.ew === 'string') this.remote.ew = m.ew;
     if (typeof m.ko === 'string') {
       const [scout, stealth, tactical] = m.ko.split(',');

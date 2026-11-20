@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { stepProjectile } from './ballistics.js';
 import { WEAPON, PLAYER } from './config.js';
 import { clamp } from './util.js';
+import { buildChicken, animateChicken } from './chicken.js';
 
 const EYE = [PLAYER.eyeStand, PLAYER.eyeCrouch, PLAYER.eyeProne];
 
@@ -46,6 +47,8 @@ export class Replay {
     this.bullet = new THREE.Mesh(bgeo, new THREE.MeshStandardMaterial({ color: 0xd8a35a, metalness: 0.35, roughness: 0.25, emissive: 0x4a2c12 }));
     this.bullet.visible = false;
     scene.add(this.bullet);
+    this.scene = scene;
+    this.chick = null; // Pollo Hermano: built on first use
     const N = 90;
     this.trailPos = new Float32Array(N * 3);
     const col = new Float32Array(N * 3);
@@ -66,6 +69,16 @@ export class Replay {
   // opts: { mode: 'victim'|'killer'|'practice', shooterHist, victimHist, shot:{o,v,t0,windT0}, impact:Vector3, label, onDone, victimObject }
   start(opts) {
     this.o = opts;
+    if (opts.shot.ch && !this.chick) {
+      this.chick = new THREE.Group();
+      const c = buildChicken();
+      c.rotation.y = Math.PI;
+      c.position.y = -0.27;
+      this.chick.add(c);
+      this.chick.userData.c = c;
+      this.chick.visible = false;
+      this.scene.add(this.chick);
+    }
     this.active = true;
     this.t = 0;
     // Precompute the bullet path up to the impact point.
@@ -97,6 +110,7 @@ export class Replay {
   stop() {
     this.active = false;
     this.bullet.visible = false;
+    if (this.chick) this.chick.visible = false;
     this.trail.visible = false;
     this.ghostShooter.setVisible(false);
     this.ghostVictim.setVisible(false);
@@ -152,9 +166,12 @@ export class Replay {
       const dir = ahead.sub(bp);
       if (dir.lengthSq() < 1e-8) dir.copy(o.shot.v);
       dir.normalize();
-      this.bullet.visible = true;
-      this.bullet.position.copy(bp);
-      this.bullet.lookAt(bp.clone().add(dir));
+      const proj = o.shot.ch ? this.chick : this.bullet;
+      this.bullet.visible = !o.shot.ch;
+      proj.visible = true;
+      proj.position.copy(bp);
+      proj.lookAt(bp.clone().add(dir));
+      if (o.shot.ch) animateChicken(this.chick.userData.c, this.t * 0.6, { flap: 1 });
       // Trail
       for (let i = 0; i < this.N; i++) {
         const tt = Math.max(0, ft - i * 0.004);
@@ -175,9 +192,10 @@ export class Replay {
       // Phase 3: impact, slow orbit.
       const u = (this.t - this.kDur - this.bDur) / this.iDur;
       this.bullet.visible = false;
+      if (this.chick) this.chick.visible = false;
       if (!this.impactDone) {
         this.impactDone = true;
-        this.effects.puff(o.impact.clone(), o.mode === 'practice' ? 'metal' : 'body', 0.8, 0.9);
+        this.effects.puff(o.impact.clone(), o.shot.ch ? 'feather' : o.mode === 'practice' ? 'metal' : 'body', o.shot.ch ? 1.6 : 0.8, 0.9);
         this.effects.puff(o.impact.clone(), 'dust', 1.2, 1.4);
         if (o.onImpact) o.onImpact();
       }

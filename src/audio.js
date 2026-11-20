@@ -267,6 +267,43 @@ export class Audio {
     }
   }
 
+  // Chicken noises (Pollo Hermano). kind: 'squawk' (launch / hurt), 'cluck' (idle), 'peck'.
+  chicken(pos, kind = 'squawk', delay = 0) {
+    if (!this.ctx) return;
+    const t = this.now + delay;
+    const dest = pos ? this._panner(pos, kind === 'peck' ? 4 : 10) : this.master;
+    if (kind === 'peck') {
+      this._noiseBurst(dest, t, 0.04, 'bandpass', 2600, 4, 0.6, 0.03);
+      return;
+    }
+    const n = kind === 'cluck' ? 3 : 1;
+    for (let i = 0; i < n; i++) {
+      const t0 = t + i * 0.11;
+      const len = kind === 'cluck' ? 0.07 : 0.32;
+      const o = this.ctx.createOscillator();
+      o.type = 'sawtooth';
+      const f0 = kind === 'cluck' ? 380 + Math.random() * 60 : 620 + Math.random() * 120;
+      o.frequency.setValueAtTime(f0, t0);
+      if (kind === 'squawk') {
+        o.frequency.linearRampToValueAtTime(f0 * 1.9, t0 + 0.05);
+        o.frequency.linearRampToValueAtTime(f0 * 1.4, t0 + 0.14);
+        o.frequency.linearRampToValueAtTime(f0 * 2.1, t0 + 0.2);
+        o.frequency.exponentialRampToValueAtTime(f0 * 0.8, t0 + len);
+      } else o.frequency.exponentialRampToValueAtTime(f0 * 0.7, t0 + len);
+      const bp = this.ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = kind === 'cluck' ? 900 : 1500;
+      bp.Q.value = 1.6;
+      const g = this.ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(kind === 'cluck' ? 0.35 : 0.5, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + len);
+      o.connect(bp).connect(g).connect(dest);
+      o.start(t0);
+      o.stop(t0 + len + 0.02);
+    }
+  }
+
   footstep(pos) {
     if (!this.ctx) return;
     const p = this._panner(pos, 3);

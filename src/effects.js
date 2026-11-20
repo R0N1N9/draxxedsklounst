@@ -3,6 +3,7 @@ import { puffTexture, glowTexture, glintTexture } from './textures.js';
 
 const PUFF_COLORS = {
   dirt: new THREE.Color('#a48b72'),
+  feather: new THREE.Color('#f6dc6a'),
   rock: new THREE.Color('#a9a2aa'),
   concrete: new THREE.Color('#c4bcbc'),
   wood: new THREE.Color('#9a7d62'),

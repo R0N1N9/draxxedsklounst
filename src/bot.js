@@ -224,7 +224,7 @@ export class BotPeer {
       const dtp = Math.max(this.t - this.player.t, 1e-3);
       this.playerVel.lerp(p.clone().sub(this.player.p).divideScalar(dtp), 0.3);
     }
-    this.player = { p, yaw: m.y, pitch: m.pi, st: m.st, sc: m.sc, z: m.z, al: m.al, mv: m.mv, t: this.t, kf: m.kf, tp: m.tp, jm: m.jm, vs: m.vs };
+    this.player = { p, yaw: m.y, pitch: m.pi, st: m.st, sc: m.sc, z: m.z, al: m.al, mv: m.mv, t: this.t, kf: m.kf, tp: m.tp, jm: m.jm, vs: m.vs, ck: Array.isArray(m.ck) ? m.ck : [] };
   }
 
   _onPlayerShot(m) {
@@ -246,9 +246,35 @@ export class BotPeer {
     }
   }
 
+  // Pollo Hermano: enemy chickens near the bot get shot with the pistol.
+  _fightChickens(dt) {
+    this.chickT = (this.chickT || 0) - dt;
+    if (!this.alive || this.chickT > 0 || !this.player || !this.player.ck.length) return;
+    const eye = this._eye();
+    let best = null, bd = 30;
+    for (const c of this.player.ck) {
+      if ((this.shotChicks ||= new Set()).has(c[0])) continue;
+      const d = Math.hypot(c[1] - eye.x, c[3] - eye.z);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (!best) { this.chickSeen = null; return; }
+    // Takes a moment to notice, then pistol shots every second or so (not every one hits).
+    if (!this.chickSeen) { this.chickSeen = this.t; this.chickT = 1.4 + Math.random() * 1.4; return; }
+    this.chickT = 0.9 + Math.random() * 0.7;
+    const tgt = new THREE.Vector3(best[1], best[2] + 0.3, best[3]);
+    const v = tgt.clone().sub(eye).normalize().multiplyScalar(WEAPONS.m18.muzzle);
+    const id = ++this.shotId * 2 + 1;
+    this._emit({ t: 'shot', id, wk: 'm18', sup: 0, o: eye.toArray(), v: v.toArray(), wt: this.g.roundTime });
+    if (Math.random() < 0.55) {
+      this.shotChicks.add(best[0]);
+      this._emit({ t: 'chickhit', id: best[0] });
+    }
+  }
+
   _onHit(m) {
     if (!this.alive) return;
     this.hp -= m.dmg;
+    if (m.peck && this.hp > 0) return; // pecked: it deals with the chicken instead of running
     if (this.hp <= 0) {
       this.hp = 0;
       this.alive = false;
@@ -593,6 +619,7 @@ export class BotPeer {
       if (this.behaviour !== 'off') this.sandboxSpawn(this.side);
     }
     this._updateBullets(dt);
+    this._fightChickens(dt);
     this.boltT = Math.max(0, this.boltT - dt);
     if (!this.alive) { this.moving = false; return; }
     const live = this.phase === 'live' || this.phase === 'sandbox';

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { withHaze } from './atmosphere.js';
 import { RULES } from './rules.js';
+import { buildChicken } from './chicken.js';
 
 // Stance: 0 stand, 1 crouch (kneeling), 2 prone.
 // Local space: feet at origin, facing -Z.
@@ -946,6 +947,23 @@ export class Avatar {
     pistol.visible = false;
     this.pistol = pistol;
     this.aim.add(pistol);
+    // Pollo Hermano: a chicken held by the beak (left hand) and pulled back by the feet (right).
+    const held = buildChicken();
+    held.position.set(0.05, -0.2, -0.16);
+    held.userData.body.scale.z = 1.25;
+    held.userData.legs.forEach((L) => (L.rotation.x = -1.35));
+    const beakA = new THREE.Object3D();
+    beakA.position.set(0, -0.01, -0.1);
+    held.userData.head.add(beakA);
+    const feetA = new THREE.Object3D();
+    feetA.position.set(0, -0.15, 0);
+    held.userData.legs[0].add(feetA);
+    held.userData.beakA = beakA;
+    held.userData.feetA = feetA;
+    held.visible = false;
+    this.aim.add(held);
+    this.heldChick = held;
+    this._buildChickenSuit();
 
     this.walkPhase = 0;
     this.look = null;
@@ -956,6 +974,44 @@ export class Avatar {
     this.root.visible = v;
   }
 
+  // Yellow chicken suit: mascot head, tail fan and big orange feet (the rest of the suit is
+  // the uniform recoloured yellow).
+  _buildChickenSuit() {
+    const Y = '#e9c11d', R = '#d8282a', O = '#f08a1c';
+    const put = (parent, geo, hex, x, y, z) => { const m = mesh(geo, hex); m.position.set(x, y, z); parent.add(m); return m; };
+    const head = new THREE.Group();
+    put(head, new THREE.SphereGeometry(0.155, 18, 14).scale(0.95, 1.05, 1.05), Y, 0, 0.025, 0.005);
+    const beak = put(head, new THREE.ConeGeometry(0.045, 0.12, 10).rotateX(-Math.PI / 2), O, 0, 0.005, -0.2);
+    beak.scale.y = 0.75;
+    put(head, new THREE.ConeGeometry(0.03, 0.07, 8).rotateX(-Math.PI / 2), '#d27414', 0, -0.03, -0.175);
+    for (const [y, z, r] of [[0.175, -0.07, 0.035], [0.195, -0.01, 0.042], [0.185, 0.055, 0.036]]) put(head, new THREE.SphereGeometry(r, 10, 8).scale(0.6, 1, 1), R, 0, y, z);
+    put(head, new THREE.SphereGeometry(0.03, 10, 8).scale(0.8, 1.5, 0.8), R, 0, -0.08, -0.15);
+    for (const sx of [-1, 1]) {
+      put(head, new THREE.SphereGeometry(0.032, 10, 8), '#f4f1e8', sx * 0.07, 0.07, -0.125);
+      put(head, new THREE.SphereGeometry(0.017, 8, 6), '#121212', sx * 0.076, 0.075, -0.15);
+    }
+    this.head.add(head);
+    const tail = new THREE.Group();
+    for (let i = -2; i <= 2; i++) {
+      const f = put(tail, new THREE.ConeGeometry(0.035, 0.26, 8), i % 2 ? '#f7e27a' : Y, i * 0.05, 0.12, 0);
+      f.rotation.set(0.75, 0, i * 0.3);
+    }
+    tail.position.set(0, 0.12, 0.27);
+    this.spine.add(tail);
+    const feet = [];
+    for (const leg of [this.legL, this.legR]) {
+      const f = new THREE.Group();
+      for (const a of [-0.45, 0, 0.45]) {
+        const toe = put(f, new THREE.BoxGeometry(0.035, 0.03, 0.16), O, Math.sin(a) * 0.06, 0, -Math.cos(a) * 0.08);
+        toe.rotation.y = a;
+      }
+      f.position.set(0, -0.46, -0.06);
+      leg.userData.knee.add(f);
+      feet.push(f);
+    }
+    this.chickenSuit = [head, tail, ...feet];
+  }
+
   // look: { outfit: 'ghillie' | 'wraith', poncho: thermal poncho equipped, lens: '#rrggbb',
   //         theme: '#rrggbb' (operator colour; outfit default if empty),
   //         kit: { scout, stealth, tactical } — shows the matching gear on the body }
@@ -964,12 +1020,13 @@ export class Avatar {
     const thermal = !!look.poncho;
     const hexOk = (h) => /^#[0-9a-f]{6}$/i.test(h || '');
     const lens = hexOk(look.lens) ? look.lens : DEFAULT_LENS;
+    const pollo = !!look.pollo && thermal;
     const themeId = themeOf(look.theme, outfit);
-    const T = THEMES[themeId], theme = T.base;
+    const T = pollo ? { base: '#d9b21c' } : THEMES[themeId], theme = T.base;
     const kit = look.kit || {};
     const hat = HATS[look.hat] ? look.hat : DEFAULT_GEAR[outfit].hat;
     const eyes = EYEWEAR[look.eyes] ? look.eyes : DEFAULT_GEAR[outfit].eyes;
-    const key = [outfit, thermal, lens, themeId, hat, eyes, look.vest, kit.scout, kit.stealth, kit.tactical].join('|');
+    const key = [outfit, thermal, pollo, lens, themeId, hat, eyes, look.vest, kit.scout, kit.stealth, kit.tactical].join('|');
     if (this.look === key) return;
     this.look = key;
     const wraith = outfit === 'wraith';
@@ -981,6 +1038,15 @@ export class Avatar {
     for (const [k, g] of Object.entries(this.hats)) g.visible = !thermal && k === hat;
     this.veil.visible = !wraith;
     this.hair.visible = !wraith && !thermal && hat === 'none';
+    // Pollo Hermano: the chicken suit replaces the poncho, hood, hat and eyewear.
+    this._pollo = pollo;
+    for (const o of this.chickenSuit) o.visible = pollo;
+    if (pollo) {
+      this.poncho.visible = this.hood.visible = false;
+      for (const g of Object.values(this.hats)) g.visible = false;
+      for (const g of Object.values(this.eyewear)) g.visible = false;
+      this.mask.visible = false;
+    }
     for (const [k, g] of Object.entries(this.eyewear)) g.visible = k === eyes;
     this.lensMat.color.set(lens);
     this.lensMat.emissive.set(lens);
@@ -1032,7 +1098,8 @@ export class Avatar {
     this.aim.rotation.x = s.pitch;
     this._pistolOut = !!s.w;
     this._prone = (s.st | 0) === 2;
-    this.rifle.visible = !s.w;
+    this.rifle.visible = !s.w && !this._pollo;
+    this.heldChick.visible = !s.w && !!this._pollo;
     this.pistol.visible = !!s.w;
     this.holsterPistol.visible = !s.w;
     const kL = this.legL.userData.knee, kR = this.legR.userData.knee;
@@ -1086,6 +1153,10 @@ export class Avatar {
       this.aim.worldToLocal(sh);
       // Prone: support hand back under the buttstock (rear-bag grip), elbows down on the ground.
       hand.copy(this._pistolOut ? A.pistolHand : this._prone ? A.proneHand : A.rifleHand);
+      if (this._pollo && !this._pistolOut) {
+        const anchor = A.side > 0 ? this.heldChick.userData.feetA : this.heldChick.userData.beakA;
+        this.aim.worldToLocal(anchor.getWorldPosition(hand));
+      }
       if (this._prone) pole.set(A.side * 0.5, -1, 0.4).normalize();
       else pole.set(A.side * 0.8, -1, 0.2).normalize();
       solveElbow(sh, hand, 0.3, 0.29, pole, el);
