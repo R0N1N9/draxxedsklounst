@@ -154,6 +154,7 @@ export function makeArrival(ctx, plan) {
           g.scale(nk, nk);
           const npx = fitText(g, A.note, pwr * 0.6, Math.max(12, h * 0.046), PEN);
           const tw = g.measureText(A.note).width, sw2 = tw + npx * 2.6, sh2 = npx * 1.9;
+          g.translate(0, -(npx * 0.45 + pwr * 0.26 * Math.abs(Math.sin(A.rot)))); // keep the writing clear of the print's tilted top edge
           g.fillStyle = 'rgba(0,0,0,0.3)';
           g.fillRect(-sw2 / 2 + npx * 0.12, -sh2 / 2 + npx * 0.16, sw2, sh2);
           g.fillStyle = '#efe6cf';
