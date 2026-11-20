@@ -24,7 +24,7 @@ export class MvHud {
       <div class="mv-center"><div class="mv-msg"></div><div class="mv-sub"></div></div>
       <div class="mv-kill"></div>
       <div class="mv-chips"></div>
-      <div class="mv-title"><div class="mv-t-kicker"></div><div class="mv-t-name"></div><div class="mv-t-tag"></div><div class="mv-t-keys"></div></div>
+      <div class="mv-title"><div class="mv-t-kicker"></div><div class="mv-t-name"></div><div class="mv-t-tag"></div><div class="mv-t-keys"></div><div class="mv-t-hint"></div></div>
       <div class="mv-count"></div>
       <div class="mv-lock">CLICK TO AIM</div>`;
     document.body.appendChild(root);
@@ -35,7 +35,7 @@ export class MvHud {
       score: q('.mv-score'), clock: q('.mv-clock'), dim: q('.mv-dim'), sudden: q('.mv-sudden'),
       center: q('.mv-center'), msg: q('.mv-msg'), sub: q('.mv-sub'), kill: q('.mv-kill'),
       chips: q('.mv-chips'), title: q('.mv-title'), tKicker: q('.mv-t-kicker'), tName: q('.mv-t-name'),
-      tTag: q('.mv-t-tag'), tKeys: q('.mv-t-keys'), count: q('.mv-count'), lock: q('.mv-lock'),
+      tTag: q('.mv-t-tag'), tKeys: q('.mv-t-keys'), tHint: q('.mv-t-hint'), count: q('.mv-count'), lock: q('.mv-lock'),
     };
     this.modal = document.createElement('div');
     this.modal.id = 'mv-modal';
@@ -141,15 +141,22 @@ export class MvHud {
     this.el.tKicker.textContent = `DIMENSION ${String(round).padStart(2, '0')} · ${mod.perspective || ''}`;
     this.el.tName.textContent = mod.name;
     this.el.tTag.textContent = mod.tagline || '';
+    // The whole control scheme, in this world's own words, for the device in hand.
     const dev = this.input ? this.input.state.device : 'kbm';
+    const c = mod.controls || {};
+    const key = (k, label) => `<span><kbd>${k}</kbd>${esc(label)}</span>`;
+    const move = c.move || 'MOVE', aim = c.aim || 'AIM';
     let keys = '';
-    if (dev !== 'touch') {
+    if (dev === 'touch') {
+      keys += key('LEFT STICK', move);
+      keys += mod.aim === 'look' ? key('DRAG', aim) : key('RIGHT THUMB', `${aim} · RELEASE TO FIRE`);
+    } else {
       const map = dev === 'gamepad' ? PAD : KEYS;
-      for (const slot of SLOTS) {
-        const label = mod.controls && mod.controls[slot];
-        if (label) keys += `<span><kbd>${map[slot]}</kbd>${esc(label)}</span>`;
-      }
+      keys += key(dev === 'gamepad' ? 'L STICK' : 'WASD', move) + key(dev === 'gamepad' ? 'R STICK' : 'MOUSE', aim);
+      keys += key(map.fire, c.fire || 'FIRE');
+      for (const slot of SLOTS) if (slot !== 'fire' && c[slot]) keys += key(slot === 'alt' && dev === 'kbm' ? 'RMB / C' : map[slot], c[slot]);
     }
+    this.el.tHint.textContent = mod.hint || '';
     this.el.tKeys.innerHTML = keys;
     this.el.title.classList.remove('on');
     void this.el.title.offsetWidth; // restart the entrance animation

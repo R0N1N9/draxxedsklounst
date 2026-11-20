@@ -69,7 +69,7 @@ export class Batch {
       else if (ax > az) uv.push(z * k, y * k);
       else uv.push(x * k, y * k);
       let t = this.tint ? this.tint(x, y, z) : 1;
-      if (soot) t *= 1 - soot * clamp(0.25 + noise2(x * 0.4 + z * 0.4, y * 0.3 + 9) * 0.9, 0, 1);
+      if (soot) t *= 1 - soot * clamp(0.3 + noise2(x * 0.16 + z * 0.16, y * 0.12 + 9) * 0.55, 0, 0.75);
       col.push(c.r * t, c.g * t, c.b * t);
     }
     if (I) for (let i = 0; i < I.count; i++) idx.push(base + I.getX(i));

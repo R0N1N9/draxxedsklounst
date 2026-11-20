@@ -119,14 +119,14 @@ export function makeTextures(THREE, renderer, seed, maxAniso = 8, normals = true
   const bw = 64, bh = 32;
   masH.g.fillStyle = '#585858';
   masH.g.fillRect(0, 0, S, S);
-  masA.g.fillStyle = '#4a4038';
+  masA.g.fillStyle = '#6a5c50';
   masA.g.fillRect(0, 0, S, S);
   for (let r = 0; r < S / bh; r++) for (let c = -1; c < S / bw; c++) {
     const x = c * bw + (r & 1 ? bw / 2 : 0) + 2, y = r * bh + 2, t = 0.75 + rnd() * 0.45, hh = 120 + rnd() * 40;
     for (const ox of [0, S]) {
       masH.g.fillStyle = `rgb(${hh},${hh},${hh})`;
       masH.g.fillRect(x + ox, y, bw - 4, bh - 4);
-      masA.g.fillStyle = `rgb(${116 * t},${74 * t},${58 * t})`;
+      masA.g.fillStyle = `rgb(${128 * t},${88 * t},${70 * t})`;
       masA.g.fillRect(x + ox, y, bw - 4, bh - 4);
     }
   }
@@ -135,7 +135,7 @@ export function makeTextures(THREE, renderer, seed, maxAniso = 8, normals = true
   const mask = noiseCanvas(128, 4, 23, 4).getContext('2d').getImageData(0, 0, 128, 128).data;
   const pl = makeCanvas(128, 128), plImg = pl.g.createImageData(128, 128);
   for (let i = 0; i < 128 * 128; i++) {
-    const on = mask[i * 4] > 108 ? 255 : 0;
+    const on = mask[i * 4] > 96 ? 255 : 0;
     plImg.data[i * 4] = plImg.data[i * 4 + 1] = plImg.data[i * 4 + 2] = 255;
     plImg.data[i * 4 + 3] = on;
   }

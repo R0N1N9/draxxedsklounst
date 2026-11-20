@@ -23,6 +23,7 @@ export default {
   dev: true,
   palette: { bg: '#10131c', fg: '#dfe6f5', accent: '#7cf0c0' },
   controls: { fire: 'FIRE', a1: 'DASH' },
+  hint: 'Walls stop bullets. One hit wins.',
   angleFields: ['a'],
 
   create(ctx) {

@@ -27,17 +27,17 @@ function tracked(g, text, x, y, track, align = 'left') {
   return total;
 }
 
-// Draw something as two halves of a broken pane: split along a slanted line through
-// (x + off, y), each half slid and turned away from the other by `amt`.
-function broken(g, x, y, amt, br, draw) {
+// Draw something as two halves of a broken pane: split along a slanted line near (x, y),
+// each half slid and turned away from the other by `amt`. br is in units of `unit` pixels.
+function broken(g, x, y, amt, br, unit, draw) {
   if (amt < 0.004) { draw(); return; }
   const nx = Math.cos(br.ang), ny = Math.sin(br.ang), tx = -ny, ty = nx, L = 6000;
   for (const side of [-1, 1]) {
     g.save();
-    g.translate(x + side * br.dx * amt, y + side * br.dy * amt);
+    g.translate(x + side * br.dx * unit * amt, y + side * br.dy * unit * amt);
     g.rotate(side * br.rot * amt);
     g.translate(-x, -y);
-    const px = x + br.off, py = y;
+    const px = x + br.off * unit, py = y;
     g.beginPath();
     g.moveTo(px - tx * L, py - ty * L);
     g.lineTo(px + tx * L, py + ty * L);
@@ -190,7 +190,7 @@ export function drawVoid(g, w, h, t, S) {
     const sQ = fitText(g, S.quip, w * 0.88, Math.max(18, u * 0.066), SANS);
     g.font = '700 ' + g.font;
     // The line leaves the way the world did.
-    broken(g, w / 2, y, kout, S.breakQ, () => inked(g, S.quip, w / 2, y, '#ffffff', a1));
+    broken(g, w / 2, y, kout, S.breakQ, u, () => inked(g, S.quip, w / 2, y, '#ffffff', a1));
     g.fillStyle = rgba(S.accentLight, 0.9 * a1);
     const rw = u * 0.09 * kin;
     g.fillRect(w / 2 - rw, y + sQ * 0.62, rw * 2, Math.max(1, u * 0.002));
@@ -249,7 +249,7 @@ export function drawTitle(g, w, h, t, S) {
   g.textBaseline = 'middle';
   const sName = fitText(g, S.title, w * 0.84, Math.min(u * 0.125, h * 0.24), SANS);
   const sO = Math.max(9, u * 0.0145);
-  broken(g, w / 2, cy, mend, S.breakT, () => {
+  broken(g, w / 2, cy, mend, S.breakT, u, () => {
     g.font = `700 ${sName}px ${SANS}`;
     const o = Math.max(1.5, sName * 0.035);
     g.fillStyle = rgba(S.accentDark, 0.95 * a);

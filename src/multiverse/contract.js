@@ -46,10 +46,20 @@
  *   'pointer' — absolute aiming (2D). Desktop shows a cursor; touch / gamepad use an aim stick.
  * @property {{bg:string, fg:string, accent:string}} palette   CSS colours; used by the HUD,
  *             the title card and by transitions to theme themselves around your world.
- * @property {{fire?:string, alt?:string, a1?:string, a2?:string, jump?:string}} controls
+ * @property {{move?:string, aim?:string, fire?:string, alt?:string, a1?:string, a2?:string, jump?:string}} controls
  *             Labels for the actions you actually use (omit the rest). `fire` is always the
  *             rifle. `alt` is a held modifier (SCOPE / FOCUS / STEADY). `a1` and `a2` are
  *             abilities — your take on the loadout (dash, decoy, smoke, ping, grapple...).
+ *             `move` and `aim` name what the stick / mouse do in THIS world when it is not
+ *             plainly "MOVE" and "AIM" ('CARVE', 'SWIM', 'WALK THE RIM', 'PAN THE SCOPE').
+ *             Every world plays differently, so the controls must be learnable in the
+ *             three seconds of the title card: one or two words per label, verbs a
+ *             newcomer understands, and nothing that needs a manual. The core shows the
+ *             whole scheme on arrival for the device in hand, keeps the action chips on
+ *             screen (desktop) and labels the touch buttons.
+ * @property {string} [hint]        one short sentence shown on the title card that tells a
+ *             first-time player the single thing they must know to play this world
+ *             ('Shots bounce once.', 'Bullets bend around planets.', 'Wave crests block your shot.')
  * @property {boolean} [altToggle]  on touch, make `alt` a latching toggle instead of a hold
  * @property {number}  [roundTime]  seconds of live play before SUDDEN DEATH (default 60)
  * @property {number}  [overTime]   seconds the kill moment lasts before the transition (default 2.4)

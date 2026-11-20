@@ -35,7 +35,7 @@ export default {
         secret: () => cur.secret(),
         roundOver(winner, r) {
           const how = r.reason === 'kill' ? `${PART[r.part] || 'KILL'}${r.dist ? ` · ${Math.round(r.dist)} M` : ''}` : r.reason === 'time' && winner >= 0 ? 'UPLINKS' : '';
-          return cur.roundOver(winner, { how });
+          return cur.roundOver(winner, { how, kill: r.reason === 'kill' });
         },
       },
     });

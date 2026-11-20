@@ -244,7 +244,7 @@ export function makeView(ctx, THREE, renderer, W) {
       if (m2.a > 0) { project(me.x, me.y + headY(me.k) + 0.3, me.z, m2); m2.kind = 'me'; m2.color = me.color; m2.hollow = false; m2.ring = false; m2.text = 'YOU'; }
       for (let i = 0; i < 4; i++) {
         const src = G.hits[i], dst = S.hits[i];
-        dst.a = Math.min(1, src.a); dst.near = src.near;
+        dst.a = phase === 'live' ? Math.min(1, src.a) : 0; dst.near = src.near;
         if (src.a > 0) { tmp.set(src.x, me.y + 1, src.z).applyMatrix4(camera.matrixWorldInverse); dst.ang = Math.atan2(tmp.x, -tmp.z); }
       }
     },

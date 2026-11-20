@@ -104,8 +104,7 @@ export function person(g, x, y, s, o = {}) {
   g.fill();
   g.stroke();
   if (o.sash) limb(g, sx - bw * 0.36, top + r, x + bwB * 0.7, bot - r, lw * 0.5, o.sash);
-  if (face === 0 || o.bothArms) arm(-backSide, backSide < 0 ? aR : aL, true);
-  else arm(-backSide, backSide < 0 ? aR : aL, true);
+  arm(-backSide, backSide < 0 ? aR : aL, true);
   // head
   const hx = sx + face * hr * 0.18, hy = top - hr * 0.72;
   const hair = o.hair || HAIRS[0], hs = o.hairStyle || 0;
@@ -230,8 +229,7 @@ function steps(g, W, H, u, tt, m) {
   box(g, W * 0.5 - U * 0.5, H * 0.14, U * 0.26, U * 0.2, CREAM, U * 0.012);
   box(g, W * 0.5 - U * 0.48, H * 0.16, U * 0.22, U * 0.16, '#a9c7c0');
   circ(g, W * 0.5 - U * 0.4, H * 0.22, U * 0.03, MUSTARD);
-  hills(g, W * 0.5 - U * 0.26, H * 0.32, H * 0.3, U * 0.05, OLIVE, 1);
-  g.clearRect(0, 0, 0, 0);
+  box(g, W * 0.5 - U * 0.48, H * 0.27, U * 0.22, U * 0.05, OLIVE);
   // armchair and lamp
   box(g, W * 0.5 - U * 0.72, H * 0.4, U * 0.3, U * 0.34, BRICK, U * 0.06);
   box(g, W * 0.5 - U * 0.76, H * 0.52, U * 0.4, U * 0.22, TERRA, U * 0.05);
@@ -515,7 +513,7 @@ function fair(g, W, H, u, tt, m) {
   for (let i = 0; i < 8; i++) { const a = tt * 0.4 + (i * TAU) / 8; limb(g, cx - U * 0.55, H * 0.42, cx - U * 0.55 + Math.cos(a) * U * 0.24, H * 0.42 + Math.sin(a) * U * 0.24, U * 0.005, '#8b5a8a'); circ(g, cx - U * 0.55 + Math.cos(a) * U * 0.24, H * 0.42 + Math.sin(a) * U * 0.24, U * 0.022, i % 2 ? MUSTARD : PINK); }
   box(g, 0, H * 0.86, W, H * 0.14, '#3a2b45');
   // the stall
-  const sx0 = cx - U * 0.05, sx1 = cx + U * 0.78;
+  const sx0 = cx - U * 0.2, sx1 = cx + U * 0.78;
   box(g, sx0, H * 0.24, sx1 - sx0, H * 0.5, '#20424a');
   box(g, sx0, H * 0.7, sx1 - sx0, H * 0.18, WOOD);
   box(g, sx0 - U * 0.02, H * 0.685, sx1 - sx0 + U * 0.04, H * 0.035, '#b88558', U * 0.01);
@@ -527,7 +525,7 @@ function fair(g, W, H, u, tt, m) {
   poly(g, [sx0 - U * 0.04, H * 0.12, sx1 + U * 0.04, H * 0.12, sx1 - U * 0.04, H * 0.05, sx0 + U * 0.04, H * 0.05], BRICK);
   for (let i = 0; i < 10; i++) circ(g, sx0 + ((i + 0.5) * (sx1 - sx0)) / 10, H * 0.3, U * 0.014, Math.sin(tt * 6 + i * 1.7) > 0 ? '#ffe9a0' : '#c98f3a');
   // the bear nobody was meant to win
-  const bx = sx1 - U * 0.15, byy = H * 0.5 + Math.sin(tt * 2) * U * 0.006;
+  const bx = cx + U * 0.56, byy = H * 0.5 + Math.sin(tt * 2) * U * 0.006;
   circ(g, bx - U * 0.07, byy - U * 0.14, U * 0.035, '#a06a3c'); circ(g, bx + U * 0.07, byy - U * 0.14, U * 0.035, '#a06a3c');
   ell(g, bx, byy + U * 0.06, U * 0.1, U * 0.12, '#a06a3c');
   circ(g, bx, byy - U * 0.08, U * 0.085, '#b57a48');
@@ -535,9 +533,9 @@ function fair(g, W, H, u, tt, m) {
   circ(g, bx - U * 0.03, byy - U * 0.1, U * 0.01, INK); circ(g, bx + U * 0.03, byy - U * 0.1, U * 0.01, INK); circ(g, bx, byy - U * 0.065, U * 0.012, INK);
   poly(g, [bx - U * 0.05, byy + U * 0.0, bx + U * 0.05, byy + U * 0.0, bx + U * 0.07, byy + U * 0.03, bx - U * 0.07, byy + U * 0.03], TERRA);
   // paper targets on a rack
-  const hitU = 0.48, tx = cx + U * 0.36, tyy = H * 0.47;
+  const hitU = 0.48, tx = cx + U * 0.4, tyy = H * 0.47; // the middle target is the one that gets it
   for (let i = 0; i < 3; i++) {
-    const x = tx + (i - 1) * U * 0.17 - U * 0.1, y = tyy + (i - 1) * U * 0.02;
+    const x = tx + (i - 1) * U * 0.15 - U * 0.1, y = tyy + (i - 1) * U * 0.02;
     const sw = i === 1 ? Math.sin(seg(u, hitU, hitU + 0.35) * Math.PI * 3) * (1 - seg(u, hitU, hitU + 0.35)) * 0.5 : 0;
     g.save(); g.translate(x, y - U * 0.1); g.rotate(sw);
     limb(g, 0, -U * 0.04, 0, 0, U * 0.006, CREAM);
@@ -547,14 +545,14 @@ function fair(g, W, H, u, tt, m) {
     g.restore();
   }
   // the stallholder's face says it all
-  person(g, cx + U * 0.1, H * 0.74, U * 0.5, extraPerson(5, { col: CREAM, sash: TERRA, armL: 0.3, armR: u > hitU ? 2.6 : 0.5, mouth: u > hitU ? 'o' : 'flat', noLegs: true, hairStyle: 3, look: 1 }));
+  person(g, cx - U * 0.07, H * 0.74, U * 0.5, extraPerson(5, { col: CREAM, sash: TERRA, armL: 0.3, armR: u > hitU ? 2.6 : 0.5, mouth: u > hitU ? 'o' : 'flat', noLegs: true, hairStyle: 3, look: 1 }));
   box(g, sx0, H * 0.7, U * 0.3, H * 0.05, WOOD);
   // the hero on a crate, cork rifle up
   box(g, cx - U * 0.62, H * 0.82, U * 0.24, U * 0.1, '#b88558', U * 0.008);
   limb(g, cx - U * 0.62, H * 0.87, cx - U * 0.38, H * 0.87, U * 0.008, WOOD);
   const rec = Math.sin(seg(u, hitU - 0.1, hitU + 0.05) * Math.PI) * 0.03;
   const p = person(g, cx - U * 0.5, H * 0.82, U * 0.46, hero(m, { kid: 0.5, face: 1, armL: 1.52, armR: 1.4, lean: -rec, mouth: u > hitU + 0.1 ? 'grin' : 'flat' }));
-  const gy = p.hands[1].y - U * 0.012, gx = p.hands[0].x - U * 0.1;
+  const gy = p.hands[1].y + U * 0.012, gx = p.hands[0].x - U * 0.06;
   limb(g, gx, gy, gx + U * 0.3, gy, U * 0.02, '#6b4630');
   limb(g, gx + U * 0.12, gy - U * 0.004, gx + U * 0.34, gy - U * 0.004, U * 0.011, '#30303a');
   const fly = seg(u, hitU - 0.1, hitU);
@@ -720,7 +718,7 @@ function fish(g, W, H, u, tt, m) {
   const pull = ease.outBack(seg(u, 0.52, 0.72));
   limb(g, jx - U * 0.03, jy - U * 0.01, jx + U * 0.0, jy + U * 0.12 + Math.sin(tt * 3) * U * 0.01, U * 0.04, '#3b3550');
   limb(g, jx + U * 0.03, jy - U * 0.01, jx + U * 0.06, jy + U * 0.12 - Math.sin(tt * 3) * U * 0.01, U * 0.04, '#2c2740');
-  const p = person(g, jx, jy + U * 0.0, U * 0.44 * 0.75, hero(m, { kid: 0.45, face: 1, armL: 1.55 + pull * 0.5, armR: 1.35 + pull * 0.5, noLegs: true, mouth: pull > 0.5 ? 'flat' : 'smile', lean: -pull * 0.04 }));
+  const p = person(g, jx, jy + U * 0.105, U * 0.33, hero(m, { kid: 0.45, face: 1, armL: 1.55 + pull * 0.5, armR: 1.35 + pull * 0.5, noLegs: true, mouth: pull > 0.5 ? 'flat' : 'smile', lean: -pull * 0.04 }));
   const hx = p.hands[1].x, hy = p.hands[1].y;
   const tipx = hx + U * lerp(0.42, 0.3, pull), tipy = hy - U * lerp(0.26, 0.42, pull);
   g.strokeStyle = '#3a2a22'; g.lineWidth = U * 0.009; g.lineCap = 'round';
@@ -742,18 +740,23 @@ function fish(g, W, H, u, tt, m) {
 function car(g, W, H, u, tt, m) {
   const U = H, cx = W * 0.5, sk = skyFor(m);
   sky(g, W, H, sk[0], sk[1]);
+  sun(g, cx - U * 0.4, H * 0.2, U * 0.07, '#fff3c9');
+  for (let i = 0; i < 3; i++) { const x = cx + [-0.05, 0.42, -0.7][i] * U + tt * U * 0.01, y = H * [0.16, 0.3, 0.34][i]; ell(g, x, y, U * 0.13, U * 0.035, 'rgba(255,255,255,0.75)'); ell(g, x + U * 0.06, y - U * 0.025, U * 0.07, U * 0.035, 'rgba(255,255,255,0.75)'); }
   for (let i = 0; i * U * 0.22 < W + U; i++) circ(g, i * U * 0.22, H * 0.62, U * 0.14, '#5b7d49');
   box(g, 0, H * 0.6, W, H * 0.1, '#5b7d49');
+  box(g, cx + U * 0.3, H * 0.36, U * 0.02, H * 0.34, '#6b4630');
+  box(g, cx + U * 0.14, H * 0.3, U * 0.34, U * 0.13, CREAM, U * 0.012);
+  g.fillStyle = INK; g.font = `700 ${U * 0.05}px 'Rajdhani', 'Futura', sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('TEST  TODAY', cx + U * 0.31, H * 0.3 + U * 0.07);
   box(g, 0, H * 0.68, W, H * 0.32, '#6f5d58');
   g.fillStyle = 'rgba(245,230,200,0.6)';
   for (let i = 0; i * U * 0.32 < W + U; i++) g.fillRect(i * U * 0.32, H * 0.7, U * 0.012, H * 0.12);
   const carX = lerp(-U * 0.5, W * 0.5 + U * 0.5, ease.inOutSine(u)), gy = H * 0.9;
   for (let i = 0; i < 6; i++) {
     const x = cx - U * 0.62 + i * U * 0.24, f = clamp01((carX + U * 0.22 - x) / (U * 0.42));
-    if (f >= 1) continue;
     g.save();
     g.translate(x + f * U * 0.22, gy - Math.sin(f * Math.PI) * U * (0.3 + 0.06 * (i % 3)));
-    g.rotate(f * (5 + i * 0.7));
+    g.rotate(f < 1 ? f * (5 + i * 0.7) : Math.PI / 2 * (i % 2 ? 1 : -1));
     poly(g, [-U * 0.035, 0, U * 0.035, 0, U * 0.008, -U * 0.11, -U * 0.008, -U * 0.11], '#f0752e');
     box(g, -U * 0.022, -U * 0.06, U * 0.044, U * 0.02, CREAM);
     box(g, -U * 0.05, -U * 0.008, U * 0.1, U * 0.016, '#c95a1f', U * 0.004);
@@ -828,7 +831,7 @@ function range(g, W, H, u, tt, m) {
   box(g, 0, H * 0.58, W, H * 0.42, GRASS);
   poly(g, [0, H * 0.74, W, H * 0.66, W, H, 0, H], shade(GRASS, 0.08));
   // targets marching off into the distance
-  const T3 = [[0.2, 0.71, 0.085, '100'], [0.5, 0.66, 0.06, '200'], [0.76, 0.615, 0.04, '400']];
+  const T3 = [[0.12, 0.71, 0.085, '100'], [0.36, 0.66, 0.06, '200'], [0.56, 0.615, 0.042, '400']];
   const shot = 0.46, hit = seg(u, shot + 0.02, shot + 0.3);
   for (let i = 0; i < 3; i++) {
     const x = cx + T3[i][0] * U, y = H * T3[i][1], r = U * T3[i][2] * (i === 2 ? 1 + Math.sin(hit * Math.PI) * 0.35 : 1);
@@ -838,11 +841,11 @@ function range(g, W, H, u, tt, m) {
     g.fillStyle = INK; g.font = `700 ${r * 0.6}px 'Rajdhani', 'Futura', sans-serif`; g.textAlign = 'center'; g.textBaseline = 'middle';
     g.fillText(T3[i][3], x + r * 1.85, y + r * 1.38);
   }
-  const fxp = cx - U * 0.02, fyp = H * 0.4;
+  const fxp = cx - U * 0.08, fyp = H * 0.38;
   limb(g, fxp, H * 0.72, fxp, fyp, U * 0.01, '#6b4630');
   poly(g, [fxp, fyp, fxp + U * 0.14, fyp + U * 0.03 + Math.sin(tt * 7) * U * 0.012, fxp, fyp + U * 0.07], TERRA);
   // the spotter and the shooter
-  const sp = person(g, cx - U * 0.82, H * 0.93, U * 0.6, extraPerson(4, { col: '#6f7b52', face: 1, armL: 2.2, armR: 2.1, hairStyle: 3, mouth: hit > 0.2 ? 'o' : 'flat' }));
+  const sp = person(g, cx - U * 0.6, H * 0.86, U * 0.5, extraPerson(4, { col: '#6f7b52', face: 1, armL: 2.2, armR: 2.1, hairStyle: 3, mouth: hit > 0.2 ? 'o' : 'flat' }));
   box(g, sp.hx + sp.hr * 0.5, sp.hy - sp.hr * 0.3, sp.hr * 1.2, sp.hr * 0.6, '#30303a', sp.hr * 0.15);
   const hx0 = cx - U * 0.56, hy0 = H * 0.9, rec = Math.sin(seg(u, shot, shot + 0.12) * Math.PI) * U * 0.012;
   box(g, hx0 - U * 0.1, hy0 - U * 0.012, U * 0.52, U * 0.03, '#d9c79f', U * 0.01);
@@ -934,21 +937,24 @@ function shake(g, W, H, u, tt, m) {
     person(g, x, H * 0.95, U * 0.68, { col: c.col, skin: c.skin, hair: c.hair, hat: 'beanie', face: -s, armL: s < 0 ? 0.2 : reach + sh, armR: s < 0 ? reach + sh : 0.2, mouth });
   }
   // who is who, in a helpful hand
-  g.font = `${U * 0.075}px 'Marker Felt', 'Bradley Hand', 'Comic Sans MS', cursive`; g.textBaseline = 'middle';
   const lab = [[-1, m.name, m.col], [1, a.name, a.col]];
+  g.textBaseline = 'middle';
   for (const [s, name, col] of lab) {
     if (!name) continue;
     const k = seg(u, 0.1 + (s > 0 ? 0.12 : 0), 0.3 + (s > 0 ? 0.12 : 0));
     if (k <= 0) continue;
+    let px = U * 0.085;
+    const font = (v) => { g.font = `${v}px 'Marker Felt', 'Bradley Hand', 'Comic Sans MS', cursive`; };
+    font(px);
+    while (px > U * 0.035 && g.measureText(name).width > W * 0.5 - U * 0.1) font((px *= 0.93));
     g.textAlign = s < 0 ? 'right' : 'left';
-    let px = U * 0.075;
-    while (px > U * 0.03 && g.measureText(name).width > W * 0.5 - U * 0.36) { px *= 0.92; g.font = `${px}px 'Marker Felt', 'Bradley Hand', 'Comic Sans MS', cursive`; }
-    const tx = cx + s * U * 0.34, ty = H * 0.14 + (s > 0 ? U * 0.04 : 0);
-    g.fillStyle = rgba(mixHex(col, '#ffffff', 0.25), k);
+    const tx = cx + s * U * 0.07, ty = H * (s < 0 ? 0.09 : 0.18), c2 = rgba(mixHex(col, '#ffffff', 0.25), k);
+    g.fillStyle = c2;
     g.fillText(name, tx, ty);
-    g.strokeStyle = rgba(mixHex(col, '#ffffff', 0.25), k); g.lineWidth = U * 0.008; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(tx - s * U * 0.03, ty + U * 0.05); g.quadraticCurveTo(cx + s * U * 0.26, H * 0.24, cx + s * U * 0.22, H * 0.29); g.stroke();
-    g.beginPath(); g.moveTo(cx + s * U * 0.22, H * 0.29); g.lineTo(cx + s * U * 0.215 + U * 0.03, H * 0.27); g.moveTo(cx + s * U * 0.22, H * 0.29); g.lineTo(cx + s * U * 0.225 - U * 0.03, H * 0.265); g.stroke();
+    const ax = cx + s * U * 0.2, ay = H * 0.3;
+    g.strokeStyle = c2; g.lineWidth = U * 0.008; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(tx + s * U * 0.1, ty + U * 0.045); g.quadraticCurveTo(ax + s * U * 0.03, lerp(ty, ay, 0.5), ax, ay);
+    g.moveTo(ax, ay); g.lineTo(ax + U * 0.03, ay - U * 0.025); g.moveTo(ax, ay); g.lineTo(ax - U * 0.025, ay - U * 0.03); g.stroke();
   }
 }
 

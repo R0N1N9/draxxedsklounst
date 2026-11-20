@@ -21,6 +21,7 @@ export default {
   dev: true,
   palette: { bg: '#1a1626', fg: '#f1ecff', accent: '#ff9d5c' },
   controls: { fire: 'FIRE', alt: 'SCOPE', jump: 'JUMP' },
+  hint: 'Low crates hide you; tall ones stop bullets.',
   altToggle: true,
   angleFields: ['yaw', 'pitch'],
 

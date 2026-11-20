@@ -163,7 +163,7 @@ export default {
         if (local(far)) { fx.flash(far.x, far.y + 1, far.z, 1, 0.6, 0.3, 9, 0.25); sfx.shell(far.x, far.y, far.z); G.env(far, 'THE LAST SHELL', far.x + 0.5, far.y, far.z + 0.5); }
       },
     };
-    const events = makeEvents(ctx, map, fx, sfx, town, props.afterMesh, atmos, G, Q);
+    const events = makeEvents(ctx, map, fx, sfx, town, props.afterMesh, atmos, G);
     const brain = makeBot(ctx, map, G);
     for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = brain.create(p);
 
@@ -463,6 +463,11 @@ export default {
       p.recoil = Math.max(0, p.recoil - dt * 5);
     }
 
+    // The renderer's own depth material is shared with every other dimension and keeps a
+    // reference to the last map it saw; ours is private, so nothing of this world outlives it.
+    const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    scene.traverse((o) => { if (o.isMesh && o.castShadow) o.customDepthMaterial = depthMat; });
+
     const view = makeView(ctx, THREE, renderer, { scene, map, fx, post, atmos, fog, P, G, events, decoys, sfx, Q });
     const pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, k: 0, aim: 0, speed: 0, mvx: 0, mvz: 0, bolt: -1, recoil: 0, dead: -1, fx: 0, fz: 1 };
 
@@ -477,6 +482,7 @@ export default {
       flyHelmet(v.i, v.x, hy, v.z, dx, 0, dz);
       sfx.ring(v.x, hy, v.z, ki && ki.env ? 2.2 : 3);
       for (let i = 0; i < 5; i++) fx.smoke(v.x, hy - 0.3 * i, v.z, v.fx * 2 + (Math.random() - 0.5), 0.5, v.fz * 2 + (Math.random() - 0.5), 0.3, 0.9, 1.2, 0.4, 0.55, 0.52, 0.47, 0, 0.5, 1.6, 0.2);
+      flinch = Math.min(flinch, 0.2);
       tollT = 0.09; // the bell answers, once
       dustT = 1.2;
       view.killCam(v);
@@ -619,6 +625,8 @@ export default {
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.shadowMap.enabled = false;
         post.dispose();
+        depthMat.map = depthMat.alphaMap = null;
+        depthMat.dispose();
         fx.dispose();
         kit.dispose();
         canGeo.dispose();

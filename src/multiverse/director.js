@@ -601,9 +601,15 @@ export class Director {
   _nativeOver(round, winner, info) {
     if (!this.authority || round !== this.round || this.phase !== 'live') return true;
     winner = winner === 0 || winner === 1 ? winner : -1;
-    // The mode keeps its secret until somebody actually scores: a drawn opening round
-    // is followed by another ordinary round in the valley, exactly as in the classic game.
-    if (winner < 0 && this.settled === 0) return false;
+    // The mode keeps its secret until one sniper actually SHOOTS the other. A valley round
+    // that runs out the clock before that (drawn, or taken on uplinks) is followed by another
+    // ordinary valley round, exactly as in the classic game; an uplink win still counts.
+    if (this.settled === 0 && !(info && info.kill)) {
+      if (winner < 0 || this.score[winner] + 1 < this.target) {
+        if (winner >= 0) this.score[winner]++;
+        return false;
+      }
+    }
     this._point(winner, winner < 0 ? -1 : 1 - winner, label(info && info.how));
     return true;
   }
