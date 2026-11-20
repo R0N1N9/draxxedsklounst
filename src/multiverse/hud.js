@@ -224,7 +224,8 @@ export class MvHud {
       return `<li><em>${String(i + 1).padStart(2, '0')}</em><span>${esc(h.name)}</span><b style="color:${w ? w.color : 'inherit'}">${w ? esc(w.name) : 'draw'}</b></li>`;
     }).join('');
     this.card(
-      `<h2 class="${won ? 'win' : 'lose'}">${won ? 'MULTIVERSE CONQUERED' : 'ERASED FROM EVERY TIMELINE'}</h2>
+      `<h2 class="${won ? 'win' : 'lose'}">So do you want to develop an app?</h2>
+       <p class="mv-final-result">${won ? 'You won' : 'You lost'}</p>
        <div class="mv-final-score"><b style="color:${players[0].color}">${esc(players[0].name)} ${score[0]}</b><i>—</i><b style="color:${players[1].color}">${score[1]} ${esc(players[1].name)}</b></div>
        <ol class="mv-history">${rows}</ol>`,
       [{ label: canRematch ? 'Rematch' : 'Ask for a rematch', primary: true, id: 'mv-rematch', onClick: onRematch }, { label: 'Leave', onClick: onExit }],
