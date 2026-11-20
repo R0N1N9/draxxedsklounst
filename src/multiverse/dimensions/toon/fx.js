@@ -97,7 +97,7 @@ export function makeFx(max = 240) {
             const pop = u < 0.14 ? u / 0.14 : 1;
             const sc = 0.4 + 0.6 * (1 + 2.2 * Math.pow(pop - 1, 3) + 1.2 * Math.pow(pop - 1, 2)) + (u > 0.75 ? (u - 0.75) * 0.8 : 0);
             g.globalAlpha = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
-            letters(g, p.txt, p.x, p.y, s * sc, p.rot + Math.sin(p.age * 30) * 0.03, p.col);
+            letters(g, p.txt, p.x, p.y, s * sc, p.rot + Math.sin(p.age * 30) * 0.03, p.col, 0.2, 0.7, p.age + p.id);
             g.globalAlpha = 1;
             break;
           }

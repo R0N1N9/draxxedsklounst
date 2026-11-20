@@ -33,7 +33,7 @@ void main() {
   vec2 c = vUv - 0.5;
   // Tilt-shift: sharp across the rug, melting towards the top and bottom of the frame.
   float f = clamp((abs(vUv.y - uFocus.x) - uFocus.y) / max(0.5 - uFocus.y, 0.05), 0.0, 1.0);
-  f = f * f * (3.0 - 2.0 * f) * uTilt;
+  f = pow(f, 1.6) * uTilt; // (slow to start: whoever stands at the rug's edge stays crisp)
   // A breath of lateral colour at the edges; a real kick of it when someone is hit.
   vec2 ca = c * dot(c, c) * (0.006 + 0.012 * uPunch);
   vec3 sharp = vec3(texture2D(tSrc, vUv + ca).r, texture2D(tSrc, vUv).g, texture2D(tSrc, vUv - ca).b);

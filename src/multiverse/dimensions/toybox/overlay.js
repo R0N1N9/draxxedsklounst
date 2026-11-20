@@ -3,10 +3,11 @@
 import { clamp, roundRect, TAU } from '../../kit.js';
 
 const PAPER = '#f4ecd8', INK = '#211c17';
+let dim = null; // the title card's backdrop, kept while the size holds
 const FONT = '"Arial Rounded MT Bold", Futura, "Trebuchet MS", Rajdhani, sans-serif';
 export const PROMPTS = {
   kbm: [['CLICK', 'to shoot'], ['hold RIGHT MOUSE', 'to brace: steady aim']],
-  touch: [['DRAG here to aim', 'let go to shoot'], ['BRACE', 'kneel: steady aim']],
+  touch: [['DRAG here to aim', 'let go to shoot'], ['TAP BRACE', 'kneel: steady aim']],
   gamepad: [['RIGHT STICK aims', 'RT shoots'], ['hold LT', 'to brace: steady aim']],
 };
 
@@ -51,6 +52,21 @@ export function drawOverlay(g, S) {
   const t = S.t, me = S.me, foe = S.foe, px = clamp(S.w / 78, 11, 17), small = px * 0.82;
   g.lineCap = 'round';
 
+  // While the title card is up, the room dims behind it so its words read over the busy rug.
+  if (S.intro > 0.01) {
+    const cx = S.w / 2, cy = S.h * (S.h < 480 ? 0.36 : 0.4), r = Math.max(S.w * 0.42, 200);
+    g.save();
+    g.translate(cx, cy); g.scale(1, 0.42);
+    if (!dim || dim.g !== g || dim.r !== r) {
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      grad.addColorStop(0, 'rgba(10,8,16,0.62)'); grad.addColorStop(0.6, 'rgba(10,8,16,0.42)'); grad.addColorStop(1, 'rgba(10,8,16,0)');
+      dim = { g, r, grad };
+    }
+    g.globalAlpha = S.intro; g.fillStyle = dim.grad;
+    g.fillRect(-r, -r, r * 2, r * 2);
+    g.restore();
+  }
+
   // ---- reticle (mouse): the ring is how far the barrel wanders at that range, the pip is where it points right now ----
   const c = S.cursor;
   if (c.on) {
@@ -89,8 +105,12 @@ export function drawOverlay(g, S) {
   // ---- the first shots are taught on the rug itself ----
   if (S.prompt > 0.01 && me.alive) {
     const lines = PROMPTS[S.device] || PROMPTS.kbm, first = S.step === 0, L = first ? lines[0] : lines[1];
-    let x = me.hx, y = me.hy - px * (2.6 + 2.2 * S.intro);
-    if (S.device === 'touch' && first) { x = S.w * 0.74; y = Math.min(S.h * 0.42, S.h - S.safe.bottom - px * 3); } // where the thumb should go
+    let x = me.hx, y = me.hy - px * (2.6 + 2.2 * S.intro + (S.sudden ? 1.8 : 0));
+    if (S.device === 'touch' && first) {
+      // where the thumb should go — but never over a soldier
+      x = S.w * 0.74; y = Math.min(S.h * 0.42, S.h - S.safe.bottom - px * 3);
+      for (const p of [foe, me]) if (Math.abs(p.x - x) < S.w * 0.2 && y > p.hy - px * 1.6 && y < p.y + px * 1.4) y = p.y - p.hy > 0 && p.hy - px * 1.8 > S.top + px ? p.hy - px * 1.8 : p.y + px * 1.8;
+    }
     if (y < S.top + px * 2) y = me.y + px * 2.4;
     g.font = `800 ${px}px ${FONT}`;
     const w = g.measureText(L[0] + L[1]).width + px * 2.4;
@@ -118,7 +138,7 @@ export function drawOverlay(g, S) {
     g.fillRect(clear(S, foe.hx, y, 90) - w / 2 + 4, y + small * 0.62, (w - 8) * clamp(S.foeLit, 0, 1), 2);
     g.globalAlpha = 1;
   }
-  if (S.note.a > 0.01) { const y = S.note.y - px * 2.2; tape(g, clear(S, S.note.x, y, 150), y, S.note.bold, S.note.rest, S.note.color, small, Math.min(1, S.note.a * 2.5)); }
+  if (S.note.a > 0.01) { const y = S.note.y - px * 2.2; tape(g, clear(S, S.note.x, y, 150), y, S.note.bold, S.note.rest, S.note.color, small, Math.min(1, S.note.a * 2.5), INK); }
 
   // ---- sudden death: nobody can be missed ----
   if (S.sudden && S.live) {
@@ -126,7 +146,7 @@ export function drawOverlay(g, S) {
       if (!p.alive) continue;
       const y = p.hy - px * 1.6 - Math.abs(Math.sin(t * 6)) * 6;
       g.fillStyle = p.color; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(p.hx - 9, y - 12); g.lineTo(p.hx + 9, y - 12); g.lineTo(p.hx, y); g.closePath(); g.stroke(); g.fill();
+      g.beginPath(); g.moveTo(p.hx - 13, y - 17); g.lineTo(p.hx + 13, y - 17); g.lineTo(p.hx, y); g.closePath(); g.stroke(); g.fill();
     }
   }
 }

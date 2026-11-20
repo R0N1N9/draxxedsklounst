@@ -40,7 +40,7 @@ export function buildWorld(ctx, THREE, mats) {
   const tex = (draw, w, h, mip = true) => {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
-    draw(c.getContext('2d'), w, h);
+    draw(c.getContext('2d', { willReadFrequently: true }), w, h);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
@@ -81,7 +81,7 @@ export function buildWorld(ctx, THREE, mats) {
       box(x0, y0, z0, x1, y1, z1, col, { noTop: lv < levels - 1, noBottom: lv > 0 });
       // darker foot band on every face and ribs on the long sides
       const faces = along === 'x' ? [[z1, 1], [z0, -1]] : [[x1, 1], [x0, -1]];
-      const nrib = Math.floor(len / 0.62);
+      const nrib = Math.floor(len / 1.3);
       for (const [pos, s] of faces) {
         const tone = darker(faceTone(col, along === 'x' ? 0 : s, 0, along === 'x' ? s : 0), 0.2);
         for (let k = 1; k < nrib; k++) {
@@ -99,7 +99,7 @@ export function buildWorld(ctx, THREE, mats) {
       const ends = along === 'x' ? [[x1, 1], [x0, -1]] : [[z1, 1], [z0, -1]];
       for (const [pos, s] of ends) {
         const tone = darker(col, 0.34);
-        for (const o of [-0.7, -0.35, 0.35, 0.7]) {
+        for (const o of [-0.6, 0.6]) {
           if (along === 'x') L.add(pos, y0 + 0.12, cz + o, pos, y1 - 0.12, cz + o, tone, 0.45);
           else L.add(cx + o, y0 + 0.12, pos, cx + o, y1 - 0.12, pos, tone, 0.45);
         }
@@ -236,11 +236,12 @@ export function buildWorld(ctx, THREE, mats) {
   let pid = 0;
   const mascotTex = tex((g) => { drawMascot(g); dieCut(g, 256, 512, 7, '#fffdf5'); }, 256, 512);
   function panel(kind, cx, cz, w, h, y0, yaw, idCol) {
-    const key = `${kind}|${w}|${h}|${idCol || ''}`;
+    const band = kind === 'up' ? idCol : ''; // only the spawn barricades wear a sniper's colour: every other sheet is shared by both halves
+    const key = `${kind}|${w}|${h}|${band}`;
     let t = texCache.get(key);
     if (!t) {
-      const px = Math.min(1024, Math.round(w * 150)), py = Math.min(1024, Math.round(h * 150));
-      t = kind === 'mascot' ? mascotTex : tex((g, W, H) => drawSheet(g, W, H, kind, idCol), px, py);
+      const px = Math.min(768, Math.round(w * 120)), py = Math.min(768, Math.round(h * 120));
+      t = kind === 'mascot' ? mascotTex : tex((g, W, H) => drawSheet(g, W, H, kind, band), px, py);
       texCache.set(key, t);
     }
     const uniforms = { uMap: { value: t }, uSize: { value: new THREE.Vector2(w, h) }, uHoles: { value: Array.from({ length: HOLES }, () => new THREE.Vector3(0, 0, 0)) } };
@@ -326,7 +327,7 @@ export function buildWorld(ctx, THREE, mats) {
       F.quad([x0, h, z0], [x1, h, z0], [x1, h, z1], [x0, h, z1], lighter(col, 0.2));
       for (const [ax, az, bx, bz] of [[x0, z0, x1, z0], [x1, z0, x1, z1], [x1, z1, x0, z1], [x0, z1, x0, z0]]) L.add(ax, h, az, bx, h, bz, FAR_INK, lw);
       for (const [px, pz] of [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]) L.add(px, 0, pz, px, h, pz, FAR_INK, lw);
-      if (rng() < 0.4) { const wy = h * 0.8; for (let u = 1; u < 4; u++) L.add(x0 + (u * w) / 4, 1, z1, x0 + (u * w) / 4, wy, z1, darker(col, 0.25), 0.3); }
+      rng(); // (keeps the seeded sequence the same as before the window lines were dropped)
     }
   }
   for (const [ang, R, sc] of [[0.55, 175, 1.0], [2.4, 190, 1.15], [3.7, 168, 0.9], [5.3, 200, 1.2]]) { // ship-to-shore cranes: a lattice drawn as pure line
@@ -345,53 +346,70 @@ export function buildWorld(ctx, THREE, mats) {
 
   // ---- freeze the static pieces into meshes ----
   const fillMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
-  const layer = (buf, f, u, order) => {
-    const m = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: f, polygonOffsetUnits: u });
-    const mesh = buf.mesh(THREE, m);
+  // the ground is three flat layers stacked a few millimetres apart (no polygon offset: it is cheap and steady); the
+  // fill material is shared with everything else, so these are plain meshes sitting just under y = 0
+  const layer = (buf, y, order) => {
+    const mesh = buf.mesh(THREE, fillMat);
+    mesh.position.y = y;
     mesh.renderOrder = order;
     return mesh;
   };
-  root.add(layer(GB, 6, 6, -3), layer(GS, 4, 4, -2), layer(GM, 2, 2, -1), F.mesh(THREE, fillMat));
+  root.add(layer(GB, -0.03, -3), layer(GS, -0.02, -2), layer(GM, -0.01, -1), F.mesh(THREE, fillMat));
   const lines = L.set(THREE, mats.ink);
   root.add(lines.mesh);
 
-  // ---- sky: three flat bands, a hard-edged sun and nothing else ----
-  const skyMat = new THREE.ShaderMaterial({
-    side: THREE.BackSide, depthWrite: false, fog: false,
-    uniforms: { a: { value: new THREE.Color(SKY[0]) }, b: { value: new THREE.Color(SKY[1]) }, c: { value: new THREE.Color(SKY[2]) }, sun: { value: new THREE.Vector3(0.45, 0.58, -0.2).normalize() } },
-    vertexShader: 'varying vec3 vD; void main() { vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }',
-    fragmentShader: `precision highp float; uniform vec3 a, b, c, sun; varying vec3 vD;
-      void main() {
-        float y = vD.y;
-        vec3 col = y < 0.07 ? c : y < 0.24 ? b : a;
-        float d = dot(normalize(vD), sun);
-        col = d > 0.99645 ? vec3(1.0, 0.95, 0.72) : (d > 0.9958 ? vec3(0.09, 0.08, 0.11) : col);
-        gl_FragColor = vec4(col, 1.0);
-        #include <colorspace_fragment>
-      }`,
-  });
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(600, 24, 12), skyMat);
-  dome.renderOrder = -10;
+  // ---- sky: three flat bands (vertex colours, no shader), a hard-edged sun, and flat clouds ----
+  const SKY_R = 600, RINGS = 28;
+  const SF = new FillBuf();
+  const ringPt = (y, k) => { const r = Math.sqrt(Math.max(0, 1 - y * y)), a = (k / RINGS) * Math.PI * 2; return [Math.cos(a) * r * SKY_R, y * SKY_R, Math.sin(a) * r * SKY_R]; };
+  for (const [y0, y1, col] of [[-0.35, 0.07, SKY[2]], [0.07, 0.24, SKY[1]], [0.24, 1, SKY[0]]]) {
+    for (let k = 0; k < RINGS; k++) SF.quad(ringPt(y0, k), ringPt(y0, k + 1), ringPt(y1, k + 1), ringPt(y1, k), col);
+  }
+  const skyMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, depthWrite: false, fog: false });
+  const dome = SF.mesh(THREE, skyMat);
+  dome.renderOrder = 100; // drawn after everything opaque, with the depth test on: it only fills the pixels nothing else covered
   dome.frustumCulled = false;
   root.add(dome);
-  // clouds: flat cut-outs on a slow carousel
+  const sunDir = new THREE.Vector3(0.45, 0.58, -0.2).normalize();
+  const sunMats = [new THREE.MeshBasicMaterial({ color: INK, side: THREE.DoubleSide }), new THREE.MeshBasicMaterial({ color: '#fff3b8', side: THREE.DoubleSide })];
+  const sunGeos = [new THREE.CircleGeometry(40, 28), new THREE.CircleGeometry(32, 28)];
+  sunGeos.forEach((geo, k) => {
+    const m = new THREE.Mesh(geo, sunMats[k]);
+    m.position.copy(sunDir).multiplyScalar(560 - k * 2);
+    m.lookAt(0, 0, 0);
+    m.renderOrder = k; // the sun is nearer than the dome: drawn first, the dome never covers it
+    m.frustumCulled = false;
+    root.add(m);
+  });
+  // clouds: flat cut-outs on a slow carousel, merged into one mesh
   const cloudTex = tex((g, W, H) => drawCloud(g, W, H), 512, 256, true);
-  const clouds = new THREE.Group();
-  const cm = new THREE.MeshBasicMaterial({ map: cloudTex, transparent: false, alphaTest: 0.5, side: THREE.DoubleSide });
-  const cg = new THREE.PlaneGeometry(1, 0.5);
-  for (let k = 0; k < 9; k++) {
-    const a = (k / 9) * Math.PI * 2 + rng() * 0.5, R = 380 + rng() * 60, s = 70 + rng() * 70;
-    const m = new THREE.Mesh(cg, cm);
-    m.position.set(Math.sin(a) * R, 70 + rng() * 80, -Math.cos(a) * R);
-    m.scale.set(s, s, 1);
-    m.lookAt(0, m.position.y, 0);
-    clouds.add(m);
+  const cm = new THREE.MeshBasicMaterial({ map: cloudTex, alphaTest: 0.5, side: THREE.DoubleSide });
+  const NC = 9, cpos = new Float32Array(NC * 12), cuv = new Float32Array(NC * 8), cidx = [];
+  const tmpM = new THREE.Object3D(), tmpV = new THREE.Vector3();
+  for (let k = 0; k < NC; k++) {
+    const a = (k / NC) * Math.PI * 2 + rng() * 0.5, R = 380 + rng() * 60, sz = 70 + rng() * 70;
+    tmpM.position.set(Math.sin(a) * R, 70 + rng() * 80, -Math.cos(a) * R);
+    tmpM.scale.set(sz, sz, 1);
+    tmpM.lookAt(0, tmpM.position.y, 0);
+    tmpM.updateMatrix();
+    [[-0.5, -0.25], [0.5, -0.25], [-0.5, 0.25], [0.5, 0.25]].forEach(([x, y], v) => {
+      tmpV.set(x, y, 0).applyMatrix4(tmpM.matrix);
+      cpos.set([tmpV.x, tmpV.y, tmpV.z], k * 12 + v * 3);
+      cuv.set([x + 0.5, y * 2 + 0.5], k * 8 + v * 2);
+    });
+    cidx.push(k * 4, k * 4 + 1, k * 4 + 2, k * 4 + 2, k * 4 + 1, k * 4 + 3);
   }
+  const cg = new THREE.BufferGeometry();
+  cg.setAttribute('position', new THREE.BufferAttribute(cpos, 3));
+  cg.setAttribute('uv', new THREE.BufferAttribute(cuv, 2));
+  cg.setIndex(cidx);
+  const clouds = new THREE.Mesh(cg, cm);
+  clouds.frustumCulled = false;
   root.add(clouds);
 
   const nav = makeNav(rects);
   return {
     root, boxes, rects, panels, nav, clouds, windSeed: rng() * 6, tex, texs,
-    dispose() { for (const t of texs) t.dispose(); skyMat.dispose(); cg.dispose(); cm.dispose(); fillMat.dispose(); },
+    dispose() { for (const t of texs) t.dispose(); skyMat.dispose(); cg.dispose(); cm.dispose(); fillMat.dispose(); sunGeos.forEach((g) => g.dispose()); sunMats.forEach((m) => m.dispose()); },
   };
 }

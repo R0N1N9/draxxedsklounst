@@ -26,7 +26,7 @@ export const DIMENSIONS = [
   { id: 'abyss', view: 'fp', look: '3d', wip: true, load: () => import('./dimensions/abyss/index.js') },
   { id: 'orbit', view: 'side', look: '2d', wip: true, load: () => import('./dimensions/orbit/index.js') },
   { id: 'arcade', view: 'fp', look: '3d', wip: true, load: () => import('./dimensions/arcade/index.js') },
-  { id: 'toon', view: 'side', look: '2d', wip: true, load: () => import('./dimensions/toon/index.js') },
+  { id: 'toon', view: 'side', look: '2d', load: () => import('./dimensions/toon/index.js') },
   { id: 'manga', view: 'side', look: '2d', load: () => import('./dimensions/manga/index.js') },
   { id: 'noir', view: 'fp', look: '2d', wip: true, load: () => import('./dimensions/noir/index.js') },
   { id: 'terminal', view: 'top', look: '2d', load: () => import('./dimensions/terminal/index.js') },
@@ -35,6 +35,8 @@ export const DIMENSIONS = [
   { id: 'petri', view: 'top', look: '2d', wip: true, load: () => import('./dimensions/petri/index.js') },
   { id: 'paper', view: 'fp', look: '2d', wip: true, load: () => import('./dimensions/paper/index.js') },
   { id: 'snow', view: 'top', look: '3d', wip: true, load: () => import('./dimensions/snow/index.js') },
+  { id: 'heli', view: 'tp', look: '3d', wip: true, load: () => import('./dimensions/heli/index.js') },
+  { id: 'worm', view: 'side', look: '3d', wip: true, load: () => import('./dimensions/worm/index.js') },
   { id: 'example-2d', dev: true, load: () => import('./dimensions/example-2d/index.js') },
   { id: 'example-3d', dev: true, load: () => import('./dimensions/example-3d/index.js') },
 ];
@@ -54,6 +56,8 @@ export const TRANSITIONS = [
   { id: 'evolution', wip: true, load: () => import('./transitions/evolution.js') },
   { id: 'elevator', wip: true, load: () => import('./transitions/elevator.js') },
   { id: 'continue', load: () => import('./transitions/continue.js') },
+  { id: 'radar', wip: true, load: () => import('./transitions/radar.js') },
+  { id: 'telescope', wip: true, load: () => import('./transitions/telescope.js') },
   { id: 'plunge', link: true, wip: true, load: () => import('./transitions/plunge.js') },
   { id: 'example', dev: true, load: () => import('./transitions/example.js') },
 ];

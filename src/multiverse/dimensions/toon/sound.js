@@ -48,6 +48,7 @@ function build(bpm, trans, hot) {
     { type: 'square', gain: 0.058, decay: 0.2, cutoff: 3000, notes: mel },
     { type: 'triangle', gain: 0.075, decay: 0.3, notes: mel2 },
     { type: 'triangle', gain: 0.23, decay: 0.26, notes: bass },
+    { type: 'sawtooth', gain: 0.06, decay: 0.2, cutoff: 650, notes: bass }, // the tuba's overtones, for small speakers
     { type: 'triangle', gain: 0.06, decay: 0.15, notes: chord(0) },
     { type: 'triangle', gain: 0.055, decay: 0.15, notes: chord(1) },
     { type: 'triangle', gain: 0.05, decay: 0.15, notes: chord(2) },
@@ -141,6 +142,7 @@ export function makeSound(ctx) {
       n({ filter: 'lowpass', freq: 380, freqEnd: 140, dur: 0.16, gain: 0.7, pan: P(x) });
       n({ filter: 'bandpass', freq: 1400, freqEnd: 700, q: 0.8, dur: 0.07, gain: 0.25, pan: P(x) });
     },
+    weedWarn(x) { n({ filter: 'bandpass', freq: 500, freqEnd: 1500, q: 2.5, dur: 1.2, gain: 0.22, attack: 0.5, pan: P(x) }); t({ type: 'sine', freq: 620, freqEnd: 880, dur: 1.0, gain: 0.03, attack: 0.4, pan: P(x) }); },
     weed(x) { n({ filter: 'bandpass', freq: 900, freqEnd: 1700, q: 1.5, dur: 0.9, gain: 0.18, attack: 0.3, pan: P(x) }); },
     rattle(dt, x) { tickT -= dt; if (tickT > 0) return; tickT = 0.11; n({ filter: 'bandpass', freq: 2600 + Math.random() * 700, q: 2, dur: 0.04, gain: 0.07, pan: P(x) }); },
     squawk(x) { for (let i = 0; i < 2; i++) { t({ type: 'sawtooth', freq: 760, freqEnd: 300, dur: 0.22, gain: 0.07, attack: 0.01, delay: i * 0.26, pan: P(x) }); n({ filter: 'bandpass', freq: 1800, freqEnd: 900, q: 2, dur: 0.2, gain: 0.12, delay: i * 0.26, pan: P(x) }); } },

@@ -79,13 +79,13 @@ export default {
   angleFields: ['hd', 'yaw', 'pitch'],
 
   create(ctx) {
-    const { THREE, renderer } = ctx.three, tC0 = performance.now(), LOG = [];
+    const { THREE, renderer } = ctx.three;
     // Two builds of one picture: a software rasteriser draws the same sea at a lower
     // resolution, without multisampling or lens colour, under full-resolution grain.
     const Q = { soft: false, scale: 1 };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.62; }
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.52; }
     } catch { /* masked: assume a real GPU */ }
     if (globalThis.__surfRich) { Q.soft = false; Q.scale = 1; } // test scripts: the full build, whatever draws it
 
@@ -96,7 +96,7 @@ export default {
     const ocean = makeOcean(THREE, sea, sky, ctx.seed, tints, Q);
     const fx = makeFx(THREE, sky, ocean.uniforms.tDetail.value, SUN_COLOR, Q);
     scene.add(sky.dome, ocean.mesh, fx.group);
-    scene.add(new THREE.HemisphereLight(new THREE.Color(0.42, 0.5, 0.86), new THREE.Color(0.2, 0.3, 0.3), 1.7));
+    scene.add(new THREE.HemisphereLight(new THREE.Color(0.46, 0.55, 0.74), new THREE.Color(0.24, 0.3, 0.26), 1.7));
     const sun = new THREE.DirectionalLight(new THREE.Color(...SUN_COLOR), 5.5);
     sun.position.set(SUN.x * 400, SUN.y * 400, SUN.z * 400);
     scene.add(sun, sun.target);
@@ -183,7 +183,7 @@ export default {
         for (let i = 0; i < 60; i++) { const a = Math.random() * 6.28, s = 2 + Math.random() * 7; fx.drop(x, y + 0.3, z, Math.cos(a) * s, 7 + Math.random() * 15, Math.sin(a) * s, 1 + Math.random() * 1.2, 0.08 + Math.random() * 0.1); }
         for (let i = 0; i < 3; i++) fx.ring(x, y, z, 1 + i, 9 + i * 4, 1.4 + i * 0.3, 0.9);
         for (let i = 0; i < 24; i++) fx.mist(x + rnd(8) + k.ux * 5, y + 1 + Math.random() * 7, z + rnd(8) + k.uz * 5, rnd(0.6), 0.6 + Math.random(), rnd(0.6), 3, 3, 7, 0.15, 0.2, 0.5); // a veil for the bow to hang in
-        fx.rainbow(x + k.ux * 9, y - 2, z + k.uz * 9);
+        fx.rainbow(x + k.ux * 7, y + 1.5, z + k.uz * 7);
       },
       // The winner leaves their board...
       spring(w) { fx.splash(w.x, w.y, w.z, 0.9, 4, 3); ctx.audio.sfx('whoosh', { gain: 0.5 }); },
@@ -200,9 +200,12 @@ export default {
     const brain = makeBot(ctx, sea, world, game);
     for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = brain.create(p);
     const post = makePost(THREE, renderer, { msaa: !Q.soft, scale: Q.scale, lens: !Q.soft });
+    // A software rasteriser builds its shaders as it first draws with them: the cast and the
+    // spray join the picture one draw after the sea, the riders and the shore.
+    const stage = (draws) => { life.group.visible = fx.group.visible = !Q.soft || draws > 0; };
     // If the clock ran ahead of the frames (a hitch), run the hand-off out before the round's last picture is taken.
     const settle = () => { for (let i = 0; i < 200 && ctx.phase === 'over' && game.kill.on && game.kill.t < KILL.end - 0.02; i++) frame(0.05 * SLOW, T + 0.05 * SLOW, true); };
-    view = makeView(ctx, THREE, renderer, { scene, sea, world, game, post, ocean, haze, Q, sfx, settle });
+    view = makeView(ctx, THREE, renderer, { scene, sea, world, game, post, ocean, haze, Q, sfx, settle, stage });
 
     let T = -4.6, introRate = 1, introOn = false, suddenSeen = false, sprayAcc = [0, 0], wallAcc = 0, driftAcc = 0, wasTurn = 0, boilAcc = 0;
     const bp = game.bullets.map(() => ({ on: false, x: 0, y: 0, z: 0 }));
@@ -233,13 +236,15 @@ export default {
         }
       }
       if (!me.bot && live) { const tr = Math.abs(me.turn); carveT -= dt; if (tr > 1.5 && wasTurn <= 1.5 && carveT <= 0) { sfx.carve(1); carveT = 0.5; } wasTurn = tr; }
-      // the walls of spray: kept standing while they last
-      wallAcc += dt * 46;
+      // the walls of spray: a curtain kept standing as tall and as wide as what it hides
+      wallAcc += dt * 110;
       for (; wallAcc >= 1; wallAcc -= 1) for (const w of game.walls) {
         if (!w.on) continue;
-        const left = w.t1 - game.T, k = clamp(left / 1.5, 0, 1), u = rnd(R.sprayHW), tx = -w.nz, tz = w.nx, x = w.x + tx * u, z = w.z + tz * u;
+        const left = w.t1 - game.T, k = clamp(left / 1.5, 0, 1), u = rnd(R.sprayHW * 1.05), tx = -w.nz, tz = w.nx, x = w.x + tx * u, z = w.z + tz * u;
         if (Math.random() > k) continue;
-        fx.mist(x + rnd(0.6), sea.height(x, z) + Math.random() * 2.5, z + rnd(0.6), rnd(0.5), 2.2 + Math.random() * 2.6, rnd(0.5), 1.5 + Math.random() * 0.7, 2.2, 4.6, 0.5, 1.1, 0.6);
+        const up = Math.random(), edge = 1 - Math.abs(u) / (R.sprayHW * 1.05);
+        fx.mist(x + rnd(0.8), sea.height(x, z) + up * up * R.sprayH * (0.6 + 0.4 * edge), z + rnd(0.8), rnd(0.6) + w.nx * 0.4, 1.4 + Math.random() * 2.2, rnd(0.6) + w.nz * 0.4, 1.6 + Math.random() * 0.8, 2.6, 5.4, 0.42 + 0.2 * edge, 0.9, 0.7);
+        if (Math.random() < 0.35) fx.drop(x, sea.height(x, z) + 0.2 + up * 4, z, rnd(1.5), 2 + Math.random() * 4, rnd(1.5), 0.7 + Math.random() * 0.5, 0.08);
       }
       // spindrift: the wind takes the tops off the crests (and a plume off the set wave)
       driftAcc += dt * 26;
@@ -299,7 +304,7 @@ export default {
       const m = me;
       ctx.net.sendState({
         x: +m.x.toFixed(2), z: +m.z.toFixed(2), y: +m.y.toFixed(2), hd: +m.hd.toFixed(3), yaw: +m.yaw.toFixed(3), pitch: +m.pitch.toFixed(3), v: +m.v.toFixed(1), ln: +m.lean.toFixed(2),
-        br: m.braced ? 1 : 0, dv: m.dive > 0 ? 1 : 0, ai: m.air ? 1 : 0, am: m.ammo, rl: m.reload > 0 ? 1 : 0,
+        br: m.braced ? 1 : 0, dv: m.dive > 0 ? 1 : 0, ai: m.air ? 1 : 0, am: m.ammo, rl: m.reload > 0 ? 1 : 0, wh: +m.white.toFixed(2),
       });
       ctx.hud.cooldown('fire', m.reload > 0 ? m.reload / R.reload : Math.max(0, m.bolt) / R.bolt);
       ctx.hud.charges('fire', m.ammo);
@@ -356,13 +361,7 @@ export default {
         disposeTree(scene);
       },
     };
-    inst.dbg = { game, view, sea, world, fx, Q, SET, LOG }; // test scripts only
-    LOG.push(`create ${Math.round(performance.now() - tC0)}ms`);
-    view.log = (m) => { if (LOG.length < 80) LOG.push(`${Math.round(performance.now() - tC0)} ${m} js${Math.round(jsMs)} g${renderer.info.memory.geometries} t${renderer.info.memory.textures} p${renderer.info.programs.length}`); jsMs = 0; };
-    let jsMs = 0;
-    const up0 = inst.update, rn0 = inst.render;
-    inst.update = (dt) => { const a = performance.now(); up0(dt); jsMs += performance.now() - a; };
-    inst.render = () => { const a = performance.now(); rn0(); jsMs += performance.now() - a; };
+    inst.dbg = { game, view, sea, world, fx, Q, SET }; // test scripts only
     post.resize();
     return inst;
   },

@@ -8,7 +8,7 @@ import { TAU, mulberry32 } from '../../kit.js';
 import { SEA_GLSL, SHORE_Z } from './sea.js';
 import { SKY_GLSL, HAZE_GLSL, SUN_COLOR } from './sky.js';
 
-const RINGS = 216, SEGS = 256, R_MAX = 5200, GROW = 5.4;
+const RINGS_HI = 216, SEGS_HI = 256, R_MAX = 5200, GROW = 5.4;
 const SHORE = `float shoreDepth(vec2 p) { return (p.y - (${SHORE_Z.toFixed(1)} + 0.00105 * p.x * p.x)) * 0.055; }`;
 
 const VERT = `
@@ -31,7 +31,7 @@ void main() {
 }`;
 
 const FRAG = (soft) => `precision highp float;
-#define SKY_LOD ${soft ? '2.0' : '3.0'}
+#define SKY_LOD ${soft ? '4.5' : '5.5'}
 uniform vec3 uCam, uSunDir, uSunCol;
 uniform sampler2D tDetail;
 uniform vec4 uCast[2];  // each rider: feet (xyz), height (0 = none)
@@ -73,7 +73,7 @@ void main() {
   float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
   vec3 R = reflect(-V, N);
   R.y = abs(R.y);
-  vec3 refl = skyTex(normalize(R + vec3(0.0, 0.03, 0.0)), mix(SKY_LOD, SKY_LOD - 1.5, far));
+  vec3 refl = skyTex(normalize(R + vec3(0.0, 0.03, 0.0)), mix(SKY_LOD, 1.0, smoothstep(4.0, 140.0, dist))) * 0.9; // (close water mirrors a blur: no hard cloud edges at your feet)
   float sd = max(dot(R, uSunDir), 0.0);
   // glitter: the broad road, the hot core, and sparks where a ripple happens to face the sun
   float spark = smoothstep(0.82, 1.0, d3.z + d1.w * 0.5) * (1.0 - far * 0.5);
@@ -97,9 +97,9 @@ void main() {
 
   // foam: where the surface folds, in streaks on the high water, and along the sand
   float lace = d3.z * 0.6 + texture2D(tDetail, vP0 * 0.071 + rip * 0.05 - t * vec2(0.013, 0.006)).z * 0.75 * (0.5 + d1.w);
-  float foam = smoothstep(0.72, 0.3, J) * (0.35 + lace) + smoothstep(1.0, 2.8, h) * smoothstep(0.95, 1.3, lace + d2.w * 0.7) * 0.5;
+  float foam = smoothstep(0.3, 0.72, (1.0 - smoothstep(0.44, 0.8, J)) * (0.72 + lace * 0.7)) + smoothstep(1.2, 3.0, h) * smoothstep(1.0, 1.35, lace + d2.w * 0.7) * 0.35;
   float band = sin(depth * 2.6 + t * 1.25 + d2.w * 3.0 + vP0.x * 0.02);
-  foam += (smoothstep(0.55, 1.0, band) * (0.35 + lace) * smoothstep(4.5, 0.6, depth) + smoothstep(0.55, 0.05, depth) * (0.6 + lace)) * step(-0.3, depth);
+  foam += (smoothstep(0.55, 1.0, band) * (0.35 + lace) * (1.0 - smoothstep(0.6, 4.5, depth)) + (1.0 - smoothstep(0.05, 0.55, depth)) * (0.6 + lace)) * step(-0.3, depth);
   foam = clamp(foam, 0.0, 1.0);
   vec3 foamCol = vec3(0.92, 0.9, 0.88) * (uSunCol * (0.25 + sunN * 1.9) * sh + vec3(0.1, 0.13, 0.2));
   col = mix(col, foamCol, foam);
@@ -159,6 +159,8 @@ function detailTexture(THREE, seed, Q) {
 }
 
 export function makeOcean(THREE, sea, sky, seed, tints, Q) {
+  // (a software rasteriser pays for every triangle: it gets a coarser sheet, drawn smaller anyway)
+  const RINGS = Q.soft ? 132 : RINGS_HI, SEGS = Q.soft ? 168 : SEGS_HI;
   const n = (RINGS + 1) * SEGS, pos = new Float32Array(n * 3), idx = new Uint32Array(RINGS * SEGS * 6);
   const e = Math.exp(GROW) - 1;
   for (let i = 0; i <= RINGS; i++) {

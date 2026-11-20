@@ -16,7 +16,7 @@ void main() {
   vec4 s = min((a + b + c + d) * 0.25, vec4(30.0));
   float lum = dot(s.rgb, vec3(0.2126, 0.7152, 0.0722));
   float sky = 1.0 - clamp(s.a, 0.0, 1.0);
-  gl_FragColor = vec4(s.rgb * (max(lum - 1.0, 0.0) / max(lum, 1e-3)), sky * min(max(lum - 0.6, 0.0), 5.0));
+  gl_FragColor = vec4(s.rgb * (max(lum - 1.8, 0.0) / max(lum, 1e-3)), sky * min(max(lum - 0.6, 0.0), 5.0)); // (only what burns: sun, glitter, lamps — never a sunlit hillside)
 }`;
 const BLUR = HEAD + `
 uniform vec2 uDir;
@@ -47,18 +47,26 @@ uniform float uTime, uExposure, uRays, uFlinch, uFlash, uFade, uBrace, uDive, uA
 uniform vec3 uWater; // the lens going under: waterline height (0 bottom .. 1 top, < 0 = dry), tilt, froth
 float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
-// Three sizes of bubble, each in its own rising lattice: a disc, a rim and a glint.
-float bubbles(vec2 p, float t) {
+// Three sizes of bubble, each in its own rising lattice: a disc, a rim and a glint. Most of
+// them are in the plume the diver left (the middle of the frame, just under the line): a cell
+// keeps or drops its bubble by where its centre is, so none is ever cut in half.
+float bubbles(vec2 p, float t, float aspect, float line) {
   float acc = 0.0;
   for (int L = 0; L < 3; L++) {
-    float fl = float(L), s = 6.0 + fl * 8.0;
-    vec2 q = p * s + vec2(fl * 3.7 + sin(t * 1.3 + p.y * 5.0 + fl) * 0.12, -t * (1.0 + fl * 0.8));
+    float fl = float(L), s = 5.0 + fl * 7.0;
+    vec2 off = vec2(fl * 3.7 + sin(t * 1.3 + p.y * 5.0 + fl) * 0.12, -t * (1.1 + fl * 0.7));
+    vec2 q = p * s + off;
     vec2 c = floor(q), f = fract(q) - 0.5 - (vec2(h21(c), h21(c + 3.1)) - 0.5) * 0.5;
-    float r = h21(c + 7.0), rad = 0.1 + 0.26 * r * r, d = length(f);
-    acc += step(0.42, h21(c + 11.0)) * ((1.0 - smoothstep(rad * 0.7, rad, d)) * 0.3 + (1.0 - smoothstep(0.0, 0.035, abs(d - rad * 0.88))) * 0.55 + (1.0 - smoothstep(0.0, rad * 0.3, length(f - vec2(-0.32, 0.32) * rad))) * 0.7);
+    vec2 cc = (c + 0.5 - off) / s; // the cell's centre, back in screen space
+    float plume = exp(-pow((cc.x / aspect - 0.5) * 3.4, 2.0)), depth = max(line - cc.y, 0.0);
+    float dens = clamp(0.12 + 0.78 * plume * exp(-depth * 1.2) + 0.3 * exp(-depth * 7.0), 0.0, 0.9);
+    float r = h21(c + 7.0), rad = (0.08 + 0.24 * r * r) * (0.75 + 0.45 * plume), d = length(f);
+    acc += step(1.0 - dens, h21(c + 11.0)) * ((1.0 - smoothstep(rad * 0.7, rad, d)) * 0.22 + (1.0 - smoothstep(0.0, 0.03, abs(d - rad * 0.88))) * 0.6 + (1.0 - smoothstep(0.0, rad * 0.3, length(f - vec2(-0.32, 0.32) * rad))) * 0.75);
   }
   return acc;
 }
+// Value noise on a rotated lattice (no grid-aligned blocks in the froth).
+float rvn(vec2 p) { return vn(mat2(0.8, -0.6, 0.6, 0.8) * p) * 0.6 + vn(mat2(0.28, 0.96, -0.96, 0.28) * p * 1.7 + 5.3) * 0.4; }
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main() {
   vec2 c = vUv - 0.5, uv = vUv;
@@ -88,12 +96,12 @@ void main() {
     float d = line - vUv.y, under = smoothstep(-0.006, 0.006, d); // d > 0: this pixel is under water
     vec3 uw = mix(vec3(0.0, 0.33, 0.52), vec3(0.01, 0.1, 0.27), smoothstep(0.0, 0.75, d));              // blue below
     uw = mix(uw, vec3(0.45, 0.93, 0.88), exp(-max(d, 0.0) * 6.5) * 0.9);                                 // the bright surface just overhead
-    uw += vec3(0.2, 0.42, 0.4) * pow(vn(vec2(vUv.x * 11.0 - d * 3.0, uTime * 0.5)), 3.0) * exp(-max(d, 0.0) * 2.5); // shafts of light
+    float ang = atan((vUv.x - 0.5) * uAspect, 1.4 - vUv.y);                                              // shafts of light, fanning down from above
+    uw += vec3(0.16, 0.38, 0.36) * pow(rvn(vec2(ang * 7.0, uTime * 0.35)), 2.5) * exp(-max(d, 0.0) * 2.2) * smoothstep(0.0, 0.08, d);
     uw = mix(uw, col * vec3(0.35, 0.8, 0.9), 0.18 * exp(-max(d, 0.0) * 4.0));                            // a ghost of the world above
-    float trail = exp(-pow((vUv.x - 0.5) * 3.2, 2.0));                                                   // thickest where the diver went
-    uw = mix(uw, vec3(0.9, 1.0, 1.0), clamp(bubbles(p, uTime) * (0.3 + 0.7 * trail + exp(-max(d, 0.0) * 5.0) * 0.6), 0.0, 1.0) * 0.85);
-    float froth = smoothstep(0.5, 0.82, vn(p * 6.0 + vec2(0.0, uTime * 0.8)) * 0.45 + vn(p * 15.0 - vec2(uTime * 0.5, 0.0)) * 0.35 + vn(p * 37.0 + uTime) * 0.3) * exp(-max(d, 0.0) * 5.0) * uWater.z;
-    uw = mix(uw, vec3(0.95, 1.0, 0.98), froth);                                                          // churned white under the line
+    uw = mix(uw, vec3(0.9, 1.0, 1.0), clamp(bubbles(p, uTime, uAspect, line), 0.0, 1.0) * 0.8);
+    float froth = smoothstep(0.48, 0.8, rvn(p * 6.0 + vec2(0.0, uTime * 0.8)) * 0.45 + rvn(p * 15.0 - vec2(uTime * 0.5, 0.0)) * 0.35 + rvn(p * 37.0 + uTime) * 0.3) * exp(-max(d, 0.0) * 6.0) * uWater.z;
+    uw = mix(uw, vec3(0.95, 1.0, 0.98), froth * 0.9);                                                    // churned white under the line
     col = mix(col, uw, under);
     col = mix(col, vec3(0.8, 0.95, 0.95), 0.4 * (1.0 - smoothstep(0.0, 0.16, -d)) * (1.0 - under) * uWater.z); // water sheeting off the glass
     col = mix(col, vec3(1.0), exp(-abs(d) * 90.0) * 0.9);                                                // the seam itself
@@ -145,7 +153,8 @@ export function makePost(THREE, renderer, q) {
     u: fu,
     sun: mRays.uniforms.uSun.value,
     get scale() { return scale; },
-    get height() { return scene.height; },
+    // A software rasteriser trades sharpness for time: the view moves this with what a draw is costing.
+    setScale(k) { k = Math.max(0.42, Math.min(1, k)); if (Math.abs(k - scale) > 0.02) { scale = k; api.resize(); } },
     resize() {
       renderer.getDrawingBufferSize(size);
       const w = Math.max(8, Math.round(size.x * scale)), h = Math.max(8, Math.round(size.y * scale));

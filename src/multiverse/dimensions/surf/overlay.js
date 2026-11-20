@@ -44,7 +44,7 @@ export function drawOverlay(g, S) {
       if (m.sub) label(g, m.sub, m.x, m.y - 39 * u, 9.5 * u, CREAM, m.a * 0.85, 'center', FONT, 600);
     } else if (m.kind === 'foe') {
       // off screen: an arrow on an ellipse that keeps clear of the corners' controls
-      const rx = w * 0.3, ry = h * 0.33, ax = cx + Math.sin(m.ang) * rx, ay = cy - Math.cos(m.ang) * ry;
+      const rx = S.touch ? Math.min(w * 0.16, h * 0.3) : w * 0.3, ry = S.touch ? rx : h * 0.33, ax = cx + Math.sin(m.ang) * rx, ay = Math.min(cy - Math.cos(m.ang) * ry, S.touch ? h * 0.6 : h);
       g.save();
       g.translate(ax, ay);
       g.rotate(m.ang);
@@ -104,7 +104,12 @@ export function drawOverlay(g, S) {
 
   // ---- bottom centre: the sea between you, and what is in the rifle ----
   if (S.gauge && S.bars < 0.6) {
-    const a = 1 - S.bars / 0.6, gw = clamp(w * 0.15, 104, 200), gh = 34 * u, gx = w * 0.565 - gw / 2, gy = h - S.pad - gh - 6, gc = gx + gw / 2;
+    // between the touch clusters if there is room for it (and the rounds and speed to its
+    // left), otherwise lifted clear above them
+    const sf = S.safe, a = 1 - S.bars / 0.6, gw = clamp(w * 0.15, 104, 200), gh = 34 * u, need = gw + 120 * u;
+    const l0 = sf.left + 8, r0 = w - sf.right - 8, fits = r0 - l0 >= need;
+    const gx = fits ? clamp(w * 0.565 - gw / 2, l0 + need - gw, r0 - gw) : clamp(w * 0.5 - gw / 2 + 50 * u, l0, r0 - gw);
+    const gy = (fits ? h - S.pad - 6 : h - sf.bottom - 14) - gh, gc = gx + gw / 2;
     g.globalAlpha = a;
     roundRect(g, gx - 6, gy - 6, gw + 12, gh + 12, 8);
     g.fillStyle = rgba(INK, 0.62); g.fill();

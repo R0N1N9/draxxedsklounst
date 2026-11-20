@@ -24,7 +24,7 @@
 //           of ctx.time.
 // KILL      The victim crumples into a paper ball, bounces once and unfolds flat on the ground in a flutter of
 //           scraps while the camera slowly pushes in (the victim's own view: the page folds up around them).
-// SUDDEN    Beacons on both snipers, edge-on and standees off, and two paper curtains slide in from the ends until
+// SUDDEN    Beacons on both snipers, edge-on and standees off, and two paper curtains slide in from the ends in about 16 s until
 //           the yard is a short stage: the ending is forced well inside 40 s.
 //
 // FILES     layout.js (yard plan, timetables, nav grid) · world.js (static yard) · set.js (everything that moves) ·
@@ -47,7 +47,7 @@ import { EYE, RADIUS, SPAWN_Z, YARD_X, windAt, craneAt, yardLimit } from './layo
 const LOOK = 0.0022, RUN = 5.4, SCOPE_RUN = 2.2, EDGE_RUN = 3.6;
 const MAG = 4, CYCLE = 1.05, CYCLE_SD = 0.7, RELOAD = 2.0;
 const EDGE_MAX = 1.8, EDGE_CD = 5.0, STAND_LIFE = 16, STAND_RE = 13, WIND_K = 5.5;
-const ROUND = 42, FOV_SCOPE = 15, OVER_SLOW = 0.35;
+const ROUND = 32, FOV_SCOPE = 15, OVER_SLOW = 0.35;
 const TH0 = (G * ZERO) / (2 * V0 * V0); // the rifle is zeroed at ZERO metres: it points this far above the sight line
 const ease = (u) => u * u * (3 - 2 * u);
 
@@ -70,7 +70,7 @@ export default {
   hint: 'Edge-on, you are a paper-thin line: hard to hit, but you cannot shoot.',
   altToggle: true,
   roundTime: ROUND,
-  overTime: 2.6,
+  overTime: 2.4,
   angleFields: ['yaw', 'pitch'],
 
   create(ctx) {
@@ -86,7 +86,7 @@ export default {
     const kit = makeFigureKit(THREE, mats);
     const flashCanvas = document.createElement('canvas');
     flashCanvas.width = flashCanvas.height = 128;
-    drawFlash(flashCanvas.getContext('2d'), 128);
+    drawFlash(flashCanvas.getContext('2d', { willReadFrequently: true }), 128);
     kit.setFlash(flashCanvas);
     const fx = makeFx(THREE, mats);
     scene.add(fx.root);
@@ -94,6 +94,10 @@ export default {
     const snd = makeSound(ctx);
     const S = ov.S;
     const size = new THREE.Vector2();
+    // Compile the shaders on worker threads while the page keeps its frame rate: the first frames draw only the flat
+    // 2D layer until they are ready (a few tens of ms on a real GPU, so nobody sees it; a hard stop after 4 s regardless).
+    let ready = !renderer.compileAsync;
+    const readyBy = performance.now() + 4000;
     const v3 = new THREE.Vector3();
 
     // ---- the two snipers ----
@@ -352,8 +356,6 @@ export default {
     let frameDt = 0, anim = 0, introT = 0, overT = 0, wasSudden = false, known = 1, knownT = 0, heading = 0, fired = false, edgeUsed = false, standUsed = false, scopeUsed = false;
     let scopeOn = false, spotted = false, spotT = 0, driftT = 0, promptStage = 0, promptT = 0, note = '', noteA = 0, shakeT = 0, hornPrev = 0, gullT = 6, boltStage = 0, burstT = 0;
     const cs = { x: 0, y: 0, warn: 0, moving: 0 };
-    const dbg = globalThis.__PAPER_DBG || null; // DBG
-    if (dbg) Object.assign(dbg, { P, camera, W, set, fx, stands, ctx, shots, S, placeStandee, fire, scene, mats }); // DBG
     const rmem = { x: 0, z: 0, has: false };
     const dev = () => ctx.input.device;
 
@@ -427,15 +429,13 @@ export default {
         if (v.i !== ctx.me) {
           const ty = Math.atan2(-(v.x - me.x), -(v.z - me.z)), tp = Math.atan2(1.2 - EYE, Math.hypot(v.x - me.x, v.z - me.z));
           yaw = me.yaw + angDiff(me.yaw, ty) * u; pitch = me.pitch + (tp - me.pitch) * u;
-          const k = Math.min(overT * 1.4, 5) / Math.max(8, Math.hypot(v.x - me.x, v.z - me.z));
-          x += (v.x - me.x) * k; z += (v.z - me.z) * k;
-          fov = Math.max(14, fov + (24 - fov) * clamp(overT / 0.9, 0, 1));
+          // a slow storybook push-in: zoom, never dolly (a camera sliding through cardboard and containers looks broken)
+          fov = fov + (22 - fov) * clamp(overT / 0.9, 0, 1) - 5 * clamp((overT - 0.9) / 1.2, 0, 1);
         } else {
           y = EYE - 0.9 * u; roll = 0.35 * u; pitch = me.pitch + 0.3 * u; fov = base - 8 * u;
           yaw = me.yaw + angDiff(me.yaw, Math.atan2(-(foe.x - me.x), -(foe.z - me.z))) * 0.4 * u;
         }
       }
-      if (dbg && dbg.cam) { x = dbg.cam.x; y = dbg.cam.y; z = dbg.cam.z; yaw = dbg.cam.yaw; pitch = dbg.cam.pitch; fov = dbg.cam.fov || fov; roll = 0; } // DBG
       camera.position.set(x, y, z);
       camera.rotation.set(pitch, yaw, roll);
       if (Math.abs(camera.fov - fov) > 0.001) { camera.fov = fov; }
@@ -494,7 +494,8 @@ export default {
       } else { S.prompt = ''; S.promptKey = ''; S.spot = ''; S.spotKey = ''; }
     }
 
-    const inst = {
+    if (!ready) renderer.compileAsync(scene, camera).then(() => { ready = true; }, () => { ready = true; }); // everything is in the scene now
+    return {
       update(dt) {
         anim += dt; frameDt += dt;
         const live = ctx.phase === 'live';
@@ -546,19 +547,16 @@ export default {
       },
 
       render() {
-        const T = dbg && dbg.T, t0 = T ? performance.now() : 0; // DBG
         const fdt = Math.min(frameDt, 0.1);
         frameDt = 0;
-        const fov = cameraRig(fdt);
+        cameraRig(fdt);
         renderer.getDrawingBufferSize(size);
         mats.set(size.x, size.y, clamp(ctx.height / 235, 1.9, 4.6) * renderer.getPixelRatio(), camera.near);
-        const t1 = T ? performance.now() : 0; // DBG
-        if (!(dbg && dbg.noGL)) renderer.render(scene, camera); // DBG
-        const t2 = T ? performance.now() : 0; // DBG
+        if (!ready && performance.now() > readyBy) ready = true;
+        if (ready) renderer.render(scene, camera);
+        else { renderer.setClearColor(0xf7f1e3, 1); renderer.clear(); } // paper while the shaders compile
         fillOverlay(fdt);
-        const t3 = T ? performance.now() : 0; // DBG
-        if (!(dbg && dbg.noOv)) ov.draw(); // DBG
-        if (T) { T.c += t1 - t0; T.g += t2 - t1; T.f += t3 - t2; T.o += performance.now() - t3; T.n++; } // DBG
+        ov.draw();
       },
 
       resize(w, h) {
@@ -614,14 +612,6 @@ export default {
         mats.dispose();
       },
     };
-    if (dbg) { // DBG: where does the frame go?
-      const T = (dbg.T = { u: 0, r: 0, c: 0, f: 0, g: 0, o: 0, n: 0 });
-      const timed = (k, fn) => (...a) => { const t = performance.now(); const r = fn(...a); T[k] += performance.now() - t; return r; };
-      inst.update = timed('u', inst.update);
-      const rr = inst.render;
-      inst.render = timed('r', rr);
-    }
-    return inst;
   },
 };
 

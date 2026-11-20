@@ -61,14 +61,14 @@ export function makeFx(THREE, mats) {
   const markTex = (() => {
     const c = document.createElement('canvas');
     c.width = c.height = 64;
-    drawMark(c.getContext('2d'), 64);
+    drawMark(c.getContext('2d', { willReadFrequently: true }), 64);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     texs.push(t);
     return t;
   })();
   const NM = 36;
-  const markMat = new THREE.MeshBasicMaterial({ map: markTex, alphaTest: 0.5, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+  const markMat = new THREE.MeshBasicMaterial({ map: markTex, alphaTest: 0.5, side: THREE.DoubleSide });
   mls.push(markMat);
   const marks = new THREE.InstancedMesh(quad, markMat, NM);
   marks.frustumCulled = false;

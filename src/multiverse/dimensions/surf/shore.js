@@ -65,16 +65,29 @@ export function buildShore(THREE, haze, seed, Q, sun, renderer) {
   }
   // ---- the land behind: jungle ridges and the volcano ----
   {
-    const nx = 150, nd = 60, pos = [], col = [], idx = [], c = new THREE.Color();
+    // Ridged jungle hills: spurs that run down to the bay with gullies between them, a
+    // volcano with a notched crater, and behind it all a farther range the haze turns blue.
+    const ridge = (x, d) => { const r = 1 - Math.abs(fbm(x * 0.006 + 1.7, d * 0.0035, 4)); return r * r; };
+    const H = (x, d) => (5 + hills(x, d)) * (1 - 0.9 * smoothstep(1250, 1700, Math.abs(x))); // (the ends sink away: no cut edge on the skyline)
+    const hills = (x, d) => {
+      const rise = smoothstep(150, 520, d), n = fbm(x * 0.0042 + 3, d * 0.0042, 4), vx = x + 330, vd = d - 900, v2 = vx * vx + vd * vd;
+      return rise * (40 + n * 85 + ridge(x, d) * 70) + 230 * Math.exp(-v2 / (2 * 210 * 210)) * (1 - 0.16 * Math.exp(-v2 / 2200)) * (1 + 0.08 * fbm(x * 0.02, d * 0.02, 2))
+        + 60 * Math.exp(-((x - 620) * (x - 620) + (d - 520) * (d - 520)) / 60000) + 170 * smoothstep(1300, 1650, d) * (0.6 + 0.4 * fbm(x * 0.0025 + 5, 1.3, 3) + 0.35 * ridge(x * 0.6, 900));
+    };
+    const nx = 240, nd = 84, pos = [], col = [], idx = [], c = new THREE.Color(), e = 6;
     for (let j = 0; j <= nd; j++) for (let i = 0; i <= nx; i++) {
-      const x = -1500 + (i / nx) * 3000, d = 150 + (j / nd) * 1300 + 0;
-      const rise = smoothstep(150, 520, d), n = fbm(x * 0.0042 + 3, d * 0.0042, 4), vx = x + 330, vd = d - 900;
-      const h = 5 + rise * (55 + n * 110) + 210 * Math.exp(-(vx * vx + vd * vd) / (2 * 210 * 210)) * (1 - 0.14 * Math.exp(-(vx * vx + vd * vd) / 2200)) + 55 * Math.exp(-((x - 620) * (x - 620) + (d - 520) * (d - 520)) / 60000);
-      pos.push(x, h * (1 - smoothstep(1250, 1450, d) * 0.7), shoreZ(Math.max(-700, Math.min(700, x))) - d);
-      // jungle below, bare rock high up; gullies in shadow, and the drifting shade of the clouds
-      const k = smoothstep(90, 230, h) + n * 0.2, gully = 0.55 + 0.9 * Math.abs(fbm(x * 0.011, d * 0.016, 4)), cloud = 0.62 + 0.38 * smoothstep(-0.25, 0.2, fbm(x * 0.0021 + 9, d * 0.003, 2));
-      const dapple = Math.min(1.35, gully) * cloud;
-      c.setRGB(lerp(0.085, 0.3, k) * dapple, lerp(0.16, 0.19, k) * dapple, lerp(0.05, 0.13, k) * dapple);
+      const x = -1700 + (i / nx) * 3400, d = 150 + Math.pow(j / nd, 1.25) * 1650;
+      const h = H(x, d), slope = Math.hypot(H(x + e, d) - h, H(x, d + e) - h) / e;
+      pos.push(x, h, shoreZ(Math.max(-700, Math.min(700, x))) - d);
+      // palm green by the beach, deep jungle up the hills, rust-red earth and dark rock where it is
+      // steep, olive grass on the tops; gullies in shadow and the drifting shade of the clouds
+      const n = fbm(x * 0.013 + 4, d * 0.013, 3), steep = smoothstep(0.45, 1.0, slope + n * 0.15), top = smoothstep(120, 260, h + n * 40);
+      const gully = 0.6 + 0.75 * smoothstep(0.1, 0.8, ridge(x, d) + n * 0.25), cloud = 0.66 + 0.34 * smoothstep(-0.25, 0.2, fbm(x * 0.0021 + 9, d * 0.003, 2));
+      let r = lerp(0.07, 0.11, smoothstep(-0.3, 0.4, n)), gr = lerp(0.15, 0.2, smoothstep(-0.3, 0.4, n)), b = 0.05;
+      r = lerp(r, 0.17, top * 0.7); gr = lerp(gr, 0.19, top * 0.7); b = lerp(b, 0.07, top * 0.7);
+      r = lerp(r, 0.19, steep * 0.85); gr = lerp(gr, 0.13, steep * 0.85); b = lerp(b, 0.09, steep * 0.85);
+      const k = gully * cloud * (1 - 0.35 * smoothstep(1400, 1700, d));
+      c.setRGB(r * k, gr * k, b * k);
       col.push(c.r, c.g, c.b);
     }
     for (let j = 0; j < nd; j++) for (let i = 0; i < nx; i++) { const a = j * (nx + 1) + i, b = a + 1, cc = a + nx + 1, dd = cc + 1; idx.push(a, b, cc, b, dd, cc); }
@@ -182,7 +195,7 @@ export function buildShore(THREE, haze, seed, Q, sun, renderer) {
   for (let i = 0; i < 5; i++) M.add(cyl(0.09, 0.11, 1.5, 5), [FIRE[0], FIRE[1] + 0.4, FIRE[2]], '#3a2a1e', [0.9, (i / 5) * TAU, 0]);
   GLOW.add(cone(0.4, 1.1, 6), [FIRE[0], FIRE[1] + 0.75, FIRE[2]], '#ffffff');
 
-  const props = new THREE.Mesh(M.build(), lit({})), rocks = new THREE.Mesh(ROCK.build(), haze.patch(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }), '#40261a'));
+  const props = new THREE.Mesh(M.build(), lit({})), rocks = new THREE.Mesh(ROCK.build(), haze.patch(new THREE.MeshLambertMaterial({ vertexColors: true }), '#40261a')); // (faceted by its normals: no second shader)
   const glow = new THREE.Mesh(GLOW.build(), haze.patch(new THREE.MeshLambertMaterial({ color: '#000000', emissive: new THREE.Color(1, 0.62, 0.26), emissiveIntensity: 7 })));
   props.castShadow = props.receiveShadow = rocks.castShadow = rocks.receiveShadow = true;
   group.add(props, rocks, glow);

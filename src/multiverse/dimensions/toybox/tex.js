@@ -62,8 +62,10 @@ export function makeTextures(THREE, renderer, seed, names, rich) {
   const RW = rich ? 2048 : 1024, RH = Math.round((RW * RUG_B) / RUG_A), rc = makeCanvas(RW, RH);
   {
     const g = rc.g, k = RW / (RUG_A * 2), w = 0.52, rings = Math.floor(RUG_B / w);
-    const base = ['#7b2f31', '#8a3a35', '#6f2a30', '#84332f', '#93403a'];
-    const special = { 0: '#232b47', 1: '#2a3454', 2: '#b7a27c', 3: '#232b47', 8: '#a8926c', 13: '#2a3454', 14: '#a8926c', 20: '#8f7a5a' };
+    // Brick and rust, banded with navy, denim and oatmeal: warm, but dusty enough that the
+    // amber plastic still jumps off it.
+    const base = ['#6a3434', '#743d37', '#5e313a', '#78443a', '#6f3a30'];
+    const special = { 0: '#232b47', 1: '#2a3454', 2: '#b7a27c', 3: '#232b47', 6: '#3b4a6b', 8: '#a8926c', 11: '#6d6248', 13: '#2a3454', 14: '#a8926c', 17: '#3b4a6b', 20: '#8f7a5a' };
     g.translate(RW / 2, RH / 2);
     for (let i = 0; i < rings; i++) {
       const a = (RUG_A - i * w) * k, b = (RUG_B - i * w) * k, col = special[i] || base[Math.floor(rng() * base.length)];
@@ -194,7 +196,32 @@ export function makeTextures(THREE, renderer, seed, names, rich) {
   }
   const domino = tex(dc.canvas);
 
-  return { boards, boardsRough, rug, blocks, covers, paper, track, domino, dispose() { for (const t of all) t.dispose(); } };
+  // ---- the rug rolled up: braid along its length, a spiral of rings on each end ----
+  const rs = makeCanvas(256, 64), rcap = makeCanvas(128, 128);
+  {
+    const g = rs.g, cols = ['#232b47', '#6a3434', '#2a3454', '#743d37', '#a8926c'];
+    for (let i = 0; i < 8; i++) { g.fillStyle = cols[i % cols.length]; g.fillRect(i * 32, 0, 32, 64); }
+    for (let x = 0; x < 256; x += 8) for (let y = 0; y < 64; y += 6) {
+      g.fillStyle = (x / 8 + y / 6) & 1 ? 'rgba(255,235,210,0.12)' : 'rgba(20,6,10,0.25)';
+      g.beginPath(); g.ellipse(x + 4, y + 3, 4.5, 1.6, (x / 8) & 1 ? 0.6 : -0.6, 0, TAU); g.fill();
+    }
+    const c = rcap.g;
+    c.fillStyle = '#1e1a22'; c.fillRect(0, 0, 128, 128);
+    c.lineCap = 'round';
+    // An Archimedean spiral, one band per turn, in the rug's own colours.
+    for (let k = 0; k < 360; k++) {
+      const a0 = (k / 360) * TAU * 6, a1 = ((k + 1.5) / 360) * TAU * 6, r0 = 4 + (a0 / TAU) * 9.6, r1 = 4 + (a1 / TAU) * 9.6;
+      c.strokeStyle = cols[Math.floor(a0 / TAU) % cols.length]; c.lineWidth = 8.6;
+      c.beginPath(); c.moveTo(64 + Math.cos(a0) * r0, 64 + Math.sin(a0) * r0); c.lineTo(64 + Math.cos(a1) * r1, 64 + Math.sin(a1) * r1); c.stroke();
+    }
+    c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = 1;
+    c.beginPath();
+    for (let k = 0; k <= 360; k++) { const a = (k / 360) * TAU * 6, r = 8.3 + (a / TAU) * 9.6; c.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r); }
+    c.stroke();
+  }
+  const rollSide = tex(rs.canvas, { repeat: true }), rollCap = tex(rcap.canvas);
+
+  return { boards, boardsRough, rug, blocks, covers, paper, track, domino, rollSide, rollCap, dispose() { for (const t of all) t.dispose(); } };
 }
 
 function shuffleStr(s, rng) {

@@ -29,7 +29,7 @@ export function makeView(ctx, THREE, renderer, W) {
   const S = {
     w: 1, h: 1, t: 0, live: false, alive: true, under: false, brace: 0, rx: 0, ry: 0, spreadPx: 10, clear: false, wall: false, ready: true, cycle: 0,
     prompt: '', prompt2: '', promptA: 0, note: '', noteA: 0, noteHot: false, bars: 1, pad: 8, gauge: true, prof: new Float32Array(game.los.n + 1), eyeA: 0, eyeB: 0,
-    colA: me.color, colB: foe.color, ammo: 4, mag: R.mag, reloading: false, dist: 0, kmh: 0, push: 0, white: 0, marks: [], hits: [],
+    colA: me.color, colB: foe.color, safe: ctx.safe, touch: false, ammo: 4, mag: R.mag, reloading: false, dist: 0, kmh: 0, push: 0, white: 0, marks: [], hits: [],
   };
   for (let i = 0; i < 3; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: 'foe', color: '#fff', hollow: false, text: '', sub: '' });
   for (let i = 0; i < 3; i++) S.hits.push({ ang: 0, a: 0, x: 0, z: 0 });
@@ -42,9 +42,8 @@ export function makeView(ctx, THREE, renderer, W) {
 
   function rig(p, dt) {
     const k = p.alive ? p.brace : 0, ks = k * k * (3 - 2 * k);
-    const yaw = p.yaw, pitch = clamp(p.pitch + kickA, -0.75, 0.62);
-    // The boom swings with the aim, but less on the long lens (it would dig into the sea).
-    dirOf(yaw, pitch * lerp(1, 0.3, ks), F);
+    const yaw = p.yaw, pitch = clamp(p.pitch + kickA * (1 - 0.6 * ks), -0.75, 0.62);
+    dirOf(yaw, pitch, F);
     Rt.set(Math.cos(yaw), 0, -Math.sin(yaw));
     camY = damp(camY, p.y, lerp(4.5, 9, ks), dt); // the lens rides the swell, not every ripple
     const back = lerp(9.2, 13, ks), up = lerp(2.3, 1.75, ks), right = lerp(1.15, 0.75, ks);
@@ -53,7 +52,14 @@ export function makeView(ctx, THREE, renderer, W) {
     const need = sea.height(play.pos.x, play.pos.z) + 0.75 - play.pos.y;
     lift = need > lift ? need : damp(lift, Math.max(0, need), 3, dt);
     if (lift > 0) play.pos.y += lift;
-    play.yaw = yaw; play.pitch = pitch; play.lift = AIM_LIFT * ks; play.fov = zoomed(ks);
+    play.yaw = yaw; play.pitch = pitch; play.fov = zoomed(ks);
+    // Third person, always: if the lens has been lifted over a crest, or the aim is up, the
+    // rider would drop out of the foot of the frame — so the lens tips down onto them and the
+    // sight line (drawn as the reticle) stays where it was, higher in the frame.
+    const half = (play.fov * Math.PI) / 360;
+    const feet = Math.atan2(p.y + 0.15 - play.pos.y, Math.max(1, Math.hypot(p.x - play.pos.x, p.z - play.pos.z)));
+    const want = Math.min(half * 0.8, Math.max(AIM_LIFT * ks, pitch - half * 0.8 - feet));
+    play.lift = dt > 0 ? damp(play.lift, want, 10, dt) : want;
     const cross = p.air ? 0 : sea.slope(p.x, p.z, Rt.x, Rt.z);
     play.roll = damp(play.roll, (p.lean * 0.22 + cross * 0.3) * (1 - 0.6 * ks), 6, dt);
   }
@@ -86,18 +92,26 @@ export function makeView(ctx, THREE, renderer, W) {
     // C — in behind them to the boil of foam where they went under, and through it
     pC.set(k.ex - ux * 3.4 + rx * 0.6, k.ey + 0.55, k.ez - uz * 3.4 + rz * 0.6);
     lC.set(k.ex + ux * 0.6, k.ey - 0.5, k.ez + uz * 0.6);
-    const ab = smoothstep(KILL.squat - 0.35, KILL.jump + 0.15, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
+    const ab = smoothstep(KILL.squat, KILL.jump + 0.1, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
     pA.lerp(pB, ab).lerp(pC, bc);
     lA.lerp(lB, ab).lerp(lC, bc);
     const floor = sea.height(pA.x, pA.z) + lerp(0.9, 0.3, bc);
     if (pA.y < floor) pA.y = floor;
-    const e = smoothstep(0, 0.85, t);
-    camera.position.copy(pA);
+    // From whichever lens this client had to the A shot in one move that never lets go of the
+    // falling rider: the lens turns onto them at once, then travels (up and over, never through
+    // the winner) while the zoom holds them at the size they were — a crash zoom on the winner's
+    // screen, a pull-back across the bay on the victim's.
+    const e = smoothstep(0.05, 1.0, t);
+    const hA = 2 * pA.distanceTo(lA) * Math.tan((fA * Math.PI) / 360);
+    camera.position.lerpVectors(kc.p0, pA, e);
+    camera.position.y += Math.sin(Math.PI * e) * kc.arc;
+    const fl2 = sea.height(camera.position.x, camera.position.z) + 0.3;
+    if (camera.position.y < fl2) camera.position.y = fl2;
     camera.lookAt(lA);
     q1.copy(camera.quaternion);
-    camera.position.lerpVectors(kc.p0, pA, e);
-    camera.quaternion.copy(kc.q0).slerp(q1, smoothstep(0, 0.65, t));
-    camera.fov = lerp(kc.f0, lerp(lerp(fA, 46, ab), 60, bc), e);
+    camera.quaternion.copy(kc.q0).slerp(q1, smoothstep(0, 0.3, t));
+    const fD = e < 1 ? clamp((2 * Math.atan(lerp(kc.h0, hA, e) / (2 * Math.max(1, camera.position.distanceTo(lA)))) * 180) / Math.PI, 2.5, 70) : fA;
+    camera.fov = lerp(lerp(fD, 46, ab), 60, bc);
     // the lens goes under: the waterline climbs the frame and stops a fifth of the way from the top
     const wl = t < KILL.sink ? -1 : lerp(-0.12, 0.775, smoothstep(KILL.sink, KILL.under, t)) + 0.012 * Math.min(1, Math.max(0, t - KILL.under) * 2);
     post.u.uWater.value.set(wl, 0.05 * Math.sin(t * 2.1), clamp((t - KILL.sink) * 2, 0, 1));
@@ -114,7 +128,12 @@ export function makeView(ctx, THREE, renderer, W) {
     killCam() {
       trauma = Math.min(1, trauma + 0.4);
       if (!Q.soft) flashA = 0.4;
-      kc = { p0: camera.position.clone(), q0: camera.quaternion.clone(), f0: camera.fov, y: game.kill.w.y, look: new THREE.Vector3(game.kill.x, game.kill.y + 1, game.kill.z) };
+      const k = game.kill, look = new THREE.Vector3(k.v.body.x, k.v.body.y + 0.4, k.v.body.z), w = k.w;
+      // how tall a slice of the world the lens framed at the victim (held through the move), and
+      // how high the move arcs: enough to clear the winner's head on the victim's side of the bay
+      const h0 = 2 * camera.position.distanceTo(look) * Math.tan((camera.fov * Math.PI) / 360);
+      const arc = clamp(Math.hypot(camera.position.x - w.x, camera.position.z - w.z) * 0.1, 0, 12);
+      kc = { p0: camera.position.clone(), q0: camera.quaternion.clone(), f0: camera.fov, h0, arc, y: w.y, look };
       drawAt = -1e9; debt = 0;
     },
     // Where the picture's centre of interest is as the round ends: the spot the winner went in.
@@ -221,7 +240,8 @@ export function makeView(ctx, THREE, renderer, W) {
       pushS = damp(pushS, me.push - (me.air ? 0 : R.grav * me.slope * 0.35), 5, dt); // what the water is doing to your speed
       S.push = pushS; S.white = me.white;
       S.bars = damp(S.bars, bars, 6, dt);
-      S.pad = ctx.input.device === 'touch' ? 8 : 14;
+      S.touch = ctx.input.device === 'touch';
+      S.pad = S.touch ? 8 : 14;
       S.gauge = foe.alive && me.alive;
       const hs = game.los.hs, n = game.los.n;
       for (let i = 0; i <= n; i++) S.prof[i] = hs[ctx.me ? n - i : i];
@@ -267,7 +287,7 @@ export function makeView(ctx, THREE, renderer, W) {
       const inBand = fresh;
       fresh = false;
       frames++;
-      if (!inBand && frames > 2) {
+      if (!inBand && frames > 1) {
         // A render with no update before it is the core photographing the world (the last
         // frame of a round is the next transition's first), or a paused game: the canvas must
         // hold the picture as it is NOW, so the first such call draws; after that the graded
@@ -277,17 +297,19 @@ export function makeView(ctx, THREE, renderer, W) {
       } else {
         stills = 0;
         if (api.force > 0) api.force--; // (test scripts: draw now)
-        else if (Q.soft && frames > 2) {
-          // A software rasteriser pays for a draw over the next several frames, not in one:
-          // add up everything it stalled since, do not draw again while it is still catching
-          // up, and let no more than a sixth of the time go on drawing — the duel runs true.
-          if (iv > 40) { debt += iv - 17; if (api.log && iv > 400) api.log(`stall ${Math.round(iv)} f${frames}`); }
-          if (frames < 14 || iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
+        else if (Q.soft && frames > 1) {
+          // A software rasteriser pays for a draw over the next several frames, not in one —
+          // and for the first one, which builds every shader, most of all. Add up everything
+          // it stalled since, do not draw again while it is still catching up, and let no
+          // more than a sixth of the time go on drawing: the duel itself runs true.
+          if (iv > 40) debt += iv - 17;
+          if (iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
+          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && api.draws > 2) post.setScale(Math.min(0.72, post.scale * 1.08));
         }
       }
-      if (api.log) api.log(`draw#${api.draws + 1} f${frames} debt${Math.round(debt)} iv${Math.round(iv)}`);
+      if (W.stage) W.stage(api.draws);
       drawAt = now;
-      debt = 0;
+      debt = api.draws ? 0 : 500;
       api.draws++;
       post.render(scene, camera, raysK > 0.01 && !Q.soft);
     },

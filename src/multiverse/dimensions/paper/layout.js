@@ -57,7 +57,7 @@ export function windAt(t, s) {
 /** Step the sudden-death curtains: the playable half-length of the yard at time ts since SUDDEN DEATH began. */
 export function yardLimit(ts) {
   if (ts <= 0) return YARD_Z;
-  return Math.max(6.5, YARD_Z - ts * 1.6);
+  return Math.max(3.5, YARD_Z - ts * 2.2);
 }
 
 // ---- collision + navigation ----

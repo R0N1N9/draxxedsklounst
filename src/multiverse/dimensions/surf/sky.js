@@ -12,7 +12,7 @@ export const SUN_COLOR = [1.0, 0.56, 0.24];
 export const HAZE_GLSL = `
 vec3 hazeColor(vec3 dir, vec3 sun) {
   float s = max(dot(dir, sun), 0.0);
-  return mix(vec3(0.19, 0.185, 0.3), vec3(0.95, 0.46, 0.2), s * s * s) + vec3(1.1, 0.42, 0.08) * pow(s, 24.0);
+  return mix(vec3(0.25, 0.235, 0.265), vec3(0.98, 0.5, 0.22), s * s * s) + vec3(1.1, 0.45, 0.1) * pow(s, 24.0);
 }`;
 
 // vec3 skyTex(vec3 dir, float lod) — look the panorama up (lod > 0: blurred, for what rough water
@@ -34,22 +34,22 @@ void main() {
   float az = (vUv.x - 0.5) * 6.2831853, el = vUv.y * vUv.y * 1.5707963;
   vec3 d = vec3(sin(az) * cos(el), sin(el), cos(az) * cos(el));
   float y = d.y, sd = max(dot(d, uSunDir), 0.0), saz = max(dot(normalize(d.xz), normalize(uSunDir.xz)), 0.0);
-  vec3 col = mix(hazeColor(d, uSunDir), mix(vec3(0.085, 0.12, 0.3), vec3(0.6, 0.27, 0.22), saz * saz), smoothstep(0.0, 0.22, y));
+  vec3 col = mix(hazeColor(d, uSunDir), mix(vec3(0.075, 0.15, 0.25), vec3(0.62, 0.31, 0.2), saz * saz), smoothstep(0.0, 0.22, y));
   // opposite the sun: the blue-grey shadow of the earth on the horizon, and the rose belt above it
-  col = mix(col, vec3(0.43, 0.27, 0.34), smoothstep(0.005, 0.07, y) * (1.0 - smoothstep(0.07, 0.24, y)) * (1.0 - saz) * 0.65);
-  col = mix(col, vec3(0.014, 0.06, 0.17), smoothstep(0.1, 0.8, y));
+  col = mix(col, vec3(0.55, 0.36, 0.31), smoothstep(0.005, 0.07, y) * (1.0 - smoothstep(0.07, 0.24, y)) * (1.0 - saz) * 0.65);
+  col = mix(col, vec3(0.012, 0.07, 0.15), smoothstep(0.1, 0.8, y));
   col += vec3(1.0, 0.45, 0.13) * (pow(sd, 5.0) * 0.3 + pow(sd, 36.0) * 0.9);
   // Clouds live on a plane overhead; dividing by height lays them down towards the horizon.
   vec2 p = d.xz / (y + 0.1);
   vec2 ls = normalize(uSunDir.xz) * 0.22;
   // high cirrus: thin streaks that have already gone pink
   float ci = smoothstep(0.5, 0.82, fbm(p * vec2(0.22, 0.95) + vec2(11.0, 3.0) + fbm(p * 0.4) * 0.8)) * smoothstep(0.03, 0.3, y);
-  col = mix(col, mix(vec3(0.62, 0.3, 0.38), vec3(1.5, 0.7, 0.34), saz * saz), ci * 0.6);
+  col = mix(col, mix(vec3(0.7, 0.42, 0.36), vec3(1.5, 0.74, 0.34), saz * saz), ci * 0.6);
   // low deck: long bars, dark bellies, burning edges on the side that faces the sun
   vec2 q = p * vec2(0.42, 1.25) + vec2(2.0, -1.0);
   float n = deck(q), dens = smoothstep(0.5, 0.7, n) * smoothstep(0.012, 0.09, y) * (1.0 - smoothstep(0.55, 0.95, y) * 0.6);
   float lit = clamp((n - deck(q + ls * vec2(0.42, 1.25))) * 5.0 + 0.42, 0.0, 1.0);
-  vec3 cl = mix(mix(vec3(0.085, 0.075, 0.17), vec3(0.3, 0.13, 0.17), saz * saz), mix(vec3(0.95, 0.4, 0.36), vec3(2.6, 1.05, 0.3), pow(saz, 1.5)), lit * lit);
+  vec3 cl = mix(mix(vec3(0.1, 0.095, 0.14), vec3(0.32, 0.15, 0.14), saz * saz), mix(vec3(1.0, 0.52, 0.36), vec3(2.6, 1.1, 0.3), pow(saz, 1.5)), lit * lit);
   col = mix(col, cl, dens * 0.92);
   gl_FragColor = vec4(col, 1.0);
 }`;

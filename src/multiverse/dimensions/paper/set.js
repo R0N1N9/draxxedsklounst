@@ -1,7 +1,7 @@
 // Everything in the yard that moves: the gantry crane and its box, the forklifts, gulls, windsocks, a drifting paper
 // plane and — in sudden death — the paper curtains closing in. Anything that touches the fight is a pure function of
 // ctx.time (craneAt, forkAt, windAt in layout.js); the rest is dressing on a private clock.
-import { INK, PAPER, ID, GROUND_SHADE, faceTone, darker } from './style.js';
+import { INK, PAPER, ID, GROUND_SHADE, faceTone, darker, lin } from './style.js';
 import { FillBuf, LineBuf, LineSet } from './lines.js';
 import { craneAt, forkAt, CH, CW, FORK_X, yardLimit } from './layout.js';
 import { HOLES, RING, HOLE_R } from './world.js';
@@ -34,7 +34,7 @@ export function makeSet(ctx, THREE, mats, W) {
   };
 
   // ---- flat cast shadows for the things that move (the static ones are baked into the ground layer) ----
-  const shadowMat = new THREE.MeshBasicMaterial({ color: GROUND_SHADE, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 3, side: THREE.DoubleSide });
+  const shadowMat = new THREE.MeshBasicMaterial({ color: GROUND_SHADE, side: THREE.DoubleSide });
   mls.push(shadowMat);
   const hullPts = [], hullOut = [];
   function dynShadow() {
@@ -64,7 +64,7 @@ export function makeSet(ctx, THREE, mats, W) {
         for (const q of lo) hullOut.push(q);
         for (const q of up) hullOut.push(q);
         const n = Math.min(9, hullOut.length), a = geo.attributes.position.array;
-        for (let i = 0; i < n; i++) { a[i * 3] = hullOut[i][0]; a[i * 3 + 1] = 0; a[i * 3 + 2] = hullOut[i][1]; }
+        for (let i = 0; i < n; i++) { a[i * 3] = hullOut[i][0]; a[i * 3 + 1] = -0.005; a[i * 3 + 2] = hullOut[i][1]; }
         geo.attributes.position.needsUpdate = true;
         geo.setDrawRange(0, Math.max(0, n - 2) * 3);
       },
@@ -126,56 +126,60 @@ export function makeSet(ctx, THREE, mats, W) {
   const forks = [forklift('#4e9a7e'), forklift('#4e9a7e')];
   const fk = { z: 0, dz: 1 };
 
-  // ---- windsocks ----
-  const flags = [];
-  const flagGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1.5, 0.08, 0, 0, -0.7, 0]), 3));
-  geos.push(flagGeo);
-  for (const [x, z, k] of [[6.5, -8, 0], [-6.5, 8, 1], [23, 3, 0], [-23, -3, 1]]) {
+  // ---- windsocks: poles are static; the four pennants are ONE dynamic mesh (plus one line set) ----
+  const FLAGS = [[6.5, -8, 0], [-6.5, 8, 1], [23, 3, 0], [-23, -3, 1]];
+  {
     const F = new FillBuf(), L = new LineBuf();
-    boxInto(F, L, x - 0.07, 0, z - 0.07, x + 0.07, 5.2, z + 0.07, '#d9d1bb', 0.9);
+    for (const [x, z] of FLAGS) boxInto(F, L, x - 0.07, 0, z - 0.07, x + 0.07, 5.2, z + 0.07, '#d9d1bb', 0.9);
     freeze(F, L, root);
-    const m = new THREE.MeshBasicMaterial({ color: ID[k], side: THREE.DoubleSide });
-    mls.push(m);
-    const piv = new THREE.Group();
-    piv.position.set(x, 5.0, z);
-    const mesh = new THREE.Mesh(flagGeo, m);
-    const ls = new LineSet(THREE, 3, mats.ink);
-    ls.add(0, 0, 0, 1.5, 0.08, 0, INK, 0.9); ls.add(1.5, 0.08, 0, 0, -0.7, 0, INK, 0.9); ls.add(0, -0.7, 0, 0, 0, 0, INK, 0.9);
-    ls.flush();
-    geos.push(ls.geo);
-    const arm = new THREE.Group();
-    arm.add(mesh, ls.mesh);
-    piv.add(arm);
-    root.add(piv);
-    flags.push({ piv, arm });
   }
+  const flagPos = new Float32Array(FLAGS.length * 9), flagCol = new Float32Array(FLAGS.length * 9);
+  FLAGS.forEach(([, , k], i) => { const c = lin(ID[k]); for (let v = 0; v < 3; v++) flagCol.set([c.r, c.g, c.b], i * 9 + v * 3); });
+  const flagGeo = new THREE.BufferGeometry();
+  flagGeo.setAttribute('position', new THREE.BufferAttribute(flagPos, 3).setUsage(THREE.DynamicDrawUsage));
+  flagGeo.setAttribute('color', new THREE.BufferAttribute(flagCol, 3));
+  geos.push(flagGeo);
+  const flagMesh = new THREE.Mesh(flagGeo, fillMat);
+  flagMesh.frustumCulled = false;
+  const flagLines = new LineSet(THREE, FLAGS.length * 3, mats.ink, true);
+  geos.push(flagLines.geo);
+  root.add(flagMesh, flagLines.mesh);
+  const FP = [[0, 0], [1.5, 0.08], [0, -0.7]];
 
-  // ---- gulls: flat cut-outs on a carousel, three wing poses ----
-  const gullMats = [];
-  for (let f = 0; f < 3; f++) {
-    const c = document.createElement('canvas');
-    c.width = 192; c.height = 96;
-    const g = c.getContext('2d');
-    const lift = [-34, 0, 30][f];
+  // ---- gulls: flat cut-outs on a carousel, all eight in one dynamic mesh over a three-pose atlas ----
+  const gullCanvas = document.createElement('canvas');
+  gullCanvas.width = 576; gullCanvas.height = 96;
+  {
+    const g = gullCanvas.getContext('2d', { willReadFrequently: true });
     g.lineJoin = 'round'; g.lineCap = 'round';
-    const wing = (s) => { g.beginPath(); g.moveTo(96, 52); g.quadraticCurveTo(96 + s * 40, 52 + lift * 0.4 - 22, 96 + s * 84, 52 + lift); g.quadraticCurveTo(96 + s * 50, 52 + lift * 0.3 + 4, 96 + s * 12, 62); g.closePath(); g.fillStyle = PAPER; g.fill(); g.lineWidth = 6; g.strokeStyle = INK; g.stroke(); };
-    wing(-1); wing(1);
-    g.beginPath(); g.ellipse(96, 56, 22, 10, 0, 0, TAU); g.fillStyle = PAPER; g.fill(); g.stroke();
-    g.beginPath(); g.moveTo(116, 52); g.lineTo(134, 54); g.lineTo(116, 58); g.closePath(); g.fillStyle = '#f2c230'; g.fill(); g.lineWidth = 4; g.stroke();
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    texs.push(t);
-    const m = new THREE.SpriteMaterial({ map: t, alphaTest: 0.5 });
-    mls.push(m);
-    gullMats.push(m);
+    for (let f = 0; f < 3; f++) {
+      const lift = [-34, 0, 30][f];
+      g.save();
+      g.translate(f * 192, 0);
+      const wing = (s) => { g.beginPath(); g.moveTo(96, 52); g.quadraticCurveTo(96 + s * 40, 52 + lift * 0.4 - 22, 96 + s * 84, 52 + lift); g.quadraticCurveTo(96 + s * 50, 52 + lift * 0.3 + 4, 96 + s * 12, 62); g.closePath(); g.fillStyle = PAPER; g.fill(); g.lineWidth = 6; g.strokeStyle = INK; g.stroke(); };
+      wing(-1); wing(1);
+      g.beginPath(); g.ellipse(96, 56, 22, 10, 0, 0, TAU); g.fillStyle = PAPER; g.fill(); g.stroke();
+      g.beginPath(); g.moveTo(116, 52); g.lineTo(134, 54); g.lineTo(116, 58); g.closePath(); g.fillStyle = '#f2c230'; g.fill(); g.lineWidth = 4; g.stroke();
+      g.restore();
+    }
   }
+  const gullTex = new THREE.CanvasTexture(gullCanvas);
+  gullTex.colorSpace = THREE.SRGBColorSpace;
+  texs.push(gullTex);
+  const NG = 8, gpos = new Float32Array(NG * 12), guv = new Float32Array(NG * 8), gidx = [];
+  for (let k = 0; k < NG; k++) gidx.push(k * 4, k * 4 + 1, k * 4 + 2, k * 4 + 2, k * 4 + 1, k * 4 + 3);
+  const gullGeo = new THREE.BufferGeometry();
+  gullGeo.setAttribute('position', new THREE.BufferAttribute(gpos, 3).setUsage(THREE.DynamicDrawUsage));
+  gullGeo.setAttribute('uv', new THREE.BufferAttribute(guv, 2).setUsage(THREE.DynamicDrawUsage));
+  gullGeo.setIndex(gidx);
+  geos.push(gullGeo);
+  const gullMat = new THREE.MeshBasicMaterial({ map: gullTex, alphaTest: 0.5, side: THREE.DoubleSide });
+  mls.push(gullMat);
+  const gullMesh = new THREE.Mesh(gullGeo, gullMat);
+  gullMesh.frustumCulled = false;
+  root.add(gullMesh);
   const gulls = [];
-  for (let k = 0; k < 8; k++) {
-    const s = new THREE.Sprite(gullMats[0]);
-    s.scale.set(3.2, 1.6, 1);
-    root.add(s);
-    gulls.push({ s, a: Math.random() * TAU, r: 14 + Math.random() * 42, h: 13 + Math.random() * 14, v: (0.07 + Math.random() * 0.06) * (k % 2 ? 1 : -1), ph: Math.random() * 9 });
-  }
+  for (let k = 0; k < NG; k++) gulls.push({ a: Math.random() * TAU, r: 14 + Math.random() * 42, h: 13 + Math.random() * 14, v: (0.07 + Math.random() * 0.06) * (k % 2 ? 1 : -1), ph: Math.random() * 9 });
 
   // ---- a paper plane that crosses now and then ----
   const plane = new THREE.Group();
@@ -276,20 +280,37 @@ export function makeSet(ctx, THREE, mats, W) {
       shadows[1 + k].set(s * -FORK_X - 0.7, s * fk.z - 1.5, s * -FORK_X + 0.7, s * fk.z + 1.5, 0, 2.1);
       g.rotation.y = fk.dz * s > 0 ? 0 : Math.PI;
     }
-    for (let i = 0; i < flags.length; i++) {
-      const f = flags[i];
-      const w = wind * (i % 2 ? -1 : 1) * 0.8 + wind * 0.2;
-      f.arm.scale.x = w >= 0 ? 1 : -1;
-      f.arm.rotation.z = -Math.PI * 0.42 + Math.min(1, Math.abs(w)) * Math.PI * 0.42 + Math.sin(anim * 5 + i) * 0.05 * Math.abs(w);
-      f.arm.rotation.y = Math.sin(anim * 0.6 + i) * 0.1;
+    for (let i = 0; i < FLAGS.length; i++) {
+      const w = wind * (i % 2 ? -1 : 1) * 0.8 + wind * 0.2, sx = w >= 0 ? 1 : -1;
+      const rz = -Math.PI * 0.42 + Math.min(1, Math.abs(w)) * Math.PI * 0.42 + Math.sin(anim * 5 + i) * 0.05 * Math.abs(w), ry = Math.sin(anim * 0.6 + i) * 0.1;
+      const cz = Math.cos(rz), sz = Math.sin(rz), cy = Math.cos(ry), sy = Math.sin(ry);
+      for (let v = 0; v < 3; v++) {
+        const x1 = FP[v][0] * sx, y1 = FP[v][1];
+        const x2 = x1 * cz - y1 * sz, y2 = x1 * sz + y1 * cz;
+        flagPos[i * 9 + v * 3] = FLAGS[i][0] + x2 * cy; flagPos[i * 9 + v * 3 + 1] = 5.0 + y2; flagPos[i * 9 + v * 3 + 2] = FLAGS[i][1] - x2 * sy;
+      }
+      for (let e = 0; e < 3; e++) {
+        const a = i * 9 + e * 3, b = i * 9 + ((e + 1) % 3) * 3;
+        flagLines.set(i * 3 + e, flagPos[a], flagPos[a + 1], flagPos[a + 2], flagPos[b], flagPos[b + 1], flagPos[b + 2], INK, 0.9);
+      }
     }
-    for (const g of gulls) {
+    flagGeo.attributes.position.needsUpdate = true;
+    flagLines.flush(FLAGS.length * 3);
+    const me = camera.matrixWorld.elements; // gulls face the camera, drawn into one mesh
+    for (let k = 0; k < NG; k++) {
+      const g = gulls[k];
       g.a += g.v * 0.016;
-      const cx = Math.sin(g.a) * g.r, cz = Math.cos(g.a * 0.8) * g.r * 0.6;
-      g.s.position.set(cx, g.h + Math.sin(anim * 0.5 + g.ph) * 1.1, cz);
-      g.s.material = gullMats[Math.floor(anim * 4.2 + g.ph) % 3 === 0 ? 0 : (Math.floor(anim * 4.2 + g.ph) % 3 === 1 ? 1 : 2)];
-      g.s.scale.x = (g.v > 0 ? 1 : -1) * 3.2;
+      const cx = Math.sin(g.a) * g.r, cy = g.h + Math.sin(anim * 0.5 + g.ph) * 1.1, cz = Math.cos(g.a * 0.8) * g.r * 0.6;
+      const hw = 1.6 * (g.v > 0 ? 1 : -1), hh = 0.8;
+      for (let v = 0; v < 4; v++) {
+        const sx = v & 1 ? 1 : -1, sy = v & 2 ? 1 : -1, o = k * 12 + v * 3;
+        gpos[o] = cx + me[0] * hw * sx + me[4] * hh * sy; gpos[o + 1] = cy + me[1] * hw * sx + me[5] * hh * sy; gpos[o + 2] = cz + me[2] * hw * sx + me[6] * hh * sy;
+      }
+      const f = Math.floor(anim * 4.2 + g.ph) % 3;
+      for (let v = 0; v < 4; v++) { guv[k * 8 + v * 2] = (f + (v & 1 ? 1 : 0)) / 3; guv[k * 8 + v * 2 + 1] = v & 2 ? 1 : 0; }
     }
+    gullGeo.attributes.position.needsUpdate = true;
+    gullGeo.attributes.uv.needsUpdate = true;
     const cyc = anim % 38;
     plane.visible = cyc < 7;
     if (plane.visible) {

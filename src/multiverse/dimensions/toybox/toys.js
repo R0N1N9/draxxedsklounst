@@ -32,19 +32,21 @@ function rifleman(G, kneel) {
     const el = kneel ? [0.3, 0.72, -0.14] : [0.3, sy - 0.18, -0.14];
     b.limb([0.06, sy, -0.21], el, 0.085, 0.07); b.limb(el, [0.56, ry - 0.05, 0.07], 0.07, 0.065);
   });
-  part('head', (b) => { b.add(G.ball(0.135, 14, 10), { p: [0.1, sy + 0.22, 0.03] }); b.add(G.cyl(0.07, 0.08, 0.1, 8), { p: [0.06, sy + 0.1, 0.02] }); });
+  // (a big head and a broad helmet: from above, the helmet is what tells you it is a soldier)
+  part('head', (b) => { b.add(G.ball(0.165, 14, 10), { p: [0.1, sy + 0.23, 0.03] }); b.add(G.cyl(0.07, 0.08, 0.1, 8), { p: [0.06, sy + 0.1, 0.02] }); });
   part('helmet', (b) => {
-    b.add(G.dome(0.18, 16, 8), { p: [0.09, sy + 0.24, 0.03], s: [1.08, 0.9, 1] });
-    b.add(G.cyl(0.2, 0.215, 0.03, 16), { p: [0.09, sy + 0.24, 0.03], s: [1.08, 1, 1] });
+    b.add(G.dome(0.24, 18, 9), { p: [0.09, sy + 0.27, 0.03], s: [1.1, 0.92, 1] });
+    b.add(G.cyl(0.26, 0.29, 0.04, 18), { p: [0.09, sy + 0.27, 0.03], s: [1.1, 1, 1] });
   });
   part('rifle', (b) => {
     const z = 0.1;
-    b.add(G.rbox(0.34, 0.13, 0.07, 0.03, 2), { p: [0.03, ry - 0.03, z], r: [0, 0, -0.12] }); // stock
-    b.add(G.rbox(0.42, 0.1, 0.075, 0.03, 2), { p: [0.38, ry, z] }); // receiver
-    b.add(G.cyl(0.03, 0.03, 0.62, 8), { p: [0.86, ry + 0.01, z], r: [0, 0, Math.PI / 2] }); // barrel
-    b.add(G.cyl(0.045, 0.045, 0.09, 8), { p: [1.15, ry + 0.01, z], r: [0, 0, Math.PI / 2] }); // muzzle
-    b.add(G.cyl(0.045, 0.045, 0.32, 10), { p: [0.4, ry + 0.1, z], r: [0, 0, Math.PI / 2] }); // scope
-    b.add(G.cyl(0.058, 0.045, 0.06, 10), { p: [0.58, ry + 0.1, z], r: [0, 0, Math.PI / 2] });
+    // (a toy's rifle is always too big for it: that is what makes the silhouette)
+    b.add(G.rbox(0.36, 0.15, 0.09, 0.035, 2), { p: [0.03, ry - 0.03, z], r: [0, 0, -0.12] }); // stock
+    b.add(G.rbox(0.46, 0.12, 0.1, 0.035, 2), { p: [0.38, ry, z] }); // receiver
+    b.add(G.cyl(0.048, 0.048, 0.78, 8), { p: [0.98, ry + 0.01, z], r: [0, 0, Math.PI / 2] }); // barrel
+    b.add(G.cyl(0.06, 0.06, 0.11, 8), { p: [1.36, ry + 0.01, z], r: [0, 0, Math.PI / 2] }); // muzzle
+    b.add(G.cyl(0.055, 0.055, 0.36, 10), { p: [0.42, ry + 0.115, z], r: [0, 0, Math.PI / 2] }); // scope
+    b.add(G.cyl(0.07, 0.055, 0.07, 10), { p: [0.62, ry + 0.115, z], r: [0, 0, Math.PI / 2] });
   });
   return parts;
 }
@@ -123,7 +125,7 @@ export function makeToys(THREE, G) {
 
   // ---- the lamp: base at `base`, shade at `head`, pointing along `dir` (unit) ----
   function lamp(base, head, dir) {
-    const b = new G.Bag(), enamel = '#d9d2c0', brass = '#c9a24a';
+    const b = new G.Bag(), enamel = '#d5573c', brass = '#c9a24a';
     b.add(G.cyl(1.9, 2.15, 0.34, 30), { p: [base.x, 0.17, base.z], color: enamel });
     const el = [base.x + (head.x - base.x) * 0.2, head.y * 0.72, base.z + (head.z - base.z) * 0.05], neck = [head.x - dir.x * 0.5, head.y - dir.y * 0.5, head.z - dir.z * 0.5];
     b.limb([base.x, 0.3, base.z], el, 0.16, 0.14, enamel, false);
@@ -132,6 +134,8 @@ export function makeToys(THREE, G) {
     b.add(G.ball(0.26, 12, 10), { p: neck, color: brass });
     q.setFromUnitVectors(up, v.set(dir.x, dir.y, dir.z));
     b.add(G.lathe([[0.3, -0.5], [0.42, 0], [0.75, 0.3], [1.9, 2.3], [1.98, 2.34]], 30), { p: [head.x, head.y, head.z], q: q.clone(), color: enamel });
+    b.add(G.cyl(0.34, 0.3, 0.3, 14), { p: [head.x - dir.x * 0.6, head.y - dir.y * 0.6, head.z - dir.z * 0.6], q: q.clone(), color: brass }); // the vent cap
+    b.add(G.torus(1.96, 0.07, 6, 30), { p: [head.x + dir.x * 2.32, head.y + dir.y * 2.32, head.z + dir.z * 2.32], q: q.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2)), color: brass }); // the rolled rim
     const body = b.build();
     // What glows: the inside of the shade and the bulb.
     const g = new G.Bag(), bulb = new G.Bag();
