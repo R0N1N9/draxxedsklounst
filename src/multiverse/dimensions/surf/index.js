@@ -166,7 +166,8 @@ export default {
       // The hit: the board leaves, the rider starts to fall. (The water comes later.)
       wipeout(v) {
         const c = rgb[1 - v.i];
-        fx.star(v.x, v.y + 1, v.z, 8, 6 + c[0] * 6, 6 + c[1] * 6, 6 + c[2] * 6, 0.12);
+        const cd = Math.hypot(v.x - view.camera.position.x, v.z - view.camera.position.z);
+        fx.star(v.x, v.y + 1, v.z, 2 + Math.min(6, cd * 0.06), 6 + c[0] * 6, 6 + c[1] * 6, 6 + c[2] * 6, 0.12); // (a flare, not a white-out, when it is your own board)
         fx.confetti(v.x, v.y + 1, v.z, 26, [[2 + c[0] * 5, 2 + c[1] * 5, 2 + c[2] * 5], [3, 3, 3]]);
         fx.splash(v.x, v.y, v.z, 1.6, 9, 9);
         for (let i = 0; i < 16; i++) fx.drop(v.x, v.y + 0.3, v.z, rnd(3), 9 + Math.random() * 12, rnd(3), 1 + Math.random(), 0.1); // what the board took up with it

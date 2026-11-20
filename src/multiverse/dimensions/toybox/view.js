@@ -22,7 +22,7 @@ export function makeView(ctx, THREE, renderer, o) {
   let wt = 0, introT = -1, kc = null, trauma = 0, kick = 0, punch = 0, flashA = 0;
   let fresh = false, frames = 0, tPrev = 0, worst = 0, worstPrev = 0, skipLeft = 0, held = null;
   if (lastCost >= 130) worst = worstPrev = lastCost;
-  const api = { camera, L, force: 0, wt: 0, pxPerUnit: 20 };
+  const api = { camera, L, wt: 0, pxPerUnit: 20 };
 
   // How big and how steep: fill the width with the rug, then tilt until it fills the height too.
   function fit() {
@@ -155,10 +155,8 @@ export function makeView(ctx, THREE, renderer, o) {
       fresh = false;
       if (iv > worst) worst = iv;
       let draw = true;
-      if (api.force > 0) api.force--;
-      else if (!hadUpdate) { /* the core photographing the world for a transition: always a real frame */ }
+      if (!hadUpdate) { /* the core photographing the world for a transition: always a real frame */ }
       else if ((++frames > 3 || lastCost > 0) && skipLeft > 0) { skipLeft--; draw = false; }
-      if (api.log) api.log.push(Math.round(now) * (draw ? 1 : -1));
       S.w = ctx.width; S.h = ctx.height;
       // Words stay stuck to the picture they were written for: between real draws, the labels of the last one.
       drawOverlay(ctx.g, draw || !held ? S : held);
@@ -168,14 +166,11 @@ export function makeView(ctx, THREE, renderer, o) {
       worst = 0;
       skipLeft = cost < 70 ? 0 : cost < 130 ? 1 : Math.min(120, Math.round(cost / 9));
       lastCost = cost;
-      api.cost = cost; api.drawn = (api.drawn || 0) + 1;
       held = skipLeft > 0 ? JSON.parse(JSON.stringify(S)) : null;
       post.render(room.scene, camera);
       renderer.setRenderTarget(null);
     },
   });
-  // (test scripts) how long n real draws take, GPU work included
-  api.bench = (n = 3) => { const gl = renderer.getContext(), t0 = performance.now(); const px = new Uint8Array(4); for (let i = 0; i < n; i++) { if (Q.nopost) { renderer.setRenderTarget(null); renderer.render(room.scene, camera); } else post.render(room.scene, camera); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); } renderer.setRenderTarget(null); return (performance.now() - t0) / n; };
   // The lens must be valid before the first input is read through it.
   api.update(0, false);
   fresh = false;

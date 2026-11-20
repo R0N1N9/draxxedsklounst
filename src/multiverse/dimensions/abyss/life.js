@@ -256,7 +256,7 @@ export function buildLife(THREE, mats, U, W, Q, heightAt) {
   for (const s of schools) group.add(s.mesh);
 
   // ---- the turtle
-  const creature = (define, amp, freq) => mats.shader({ vertexShader: CREA_VERT, fragmentShader: CREA_FRAG, vertexColors: true, defines: define ? { [define]: 1 } : {}, uniforms: { uAmp: { value: amp }, uFreq: { value: freq } }, side: THREE.DoubleSide });
+  const creature = (define, amp, freq) => (mats.lean && (define = null), mats.shader({ vertexShader: CREA_VERT, fragmentShader: CREA_FRAG, vertexColors: true, defines: define ? { [define]: 1 } : {}, uniforms: { uAmp: { value: amp }, uFreq: { value: freq } }, side: THREE.DoubleSide }));
   const turtle = new THREE.Group();
   {
     const shell = new THREE.SphereGeometry(0.62, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2);

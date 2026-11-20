@@ -280,7 +280,7 @@ export function buildReef(THREE, W, mats, U, seed, lean) {
     return paint(g, 1, 1, 1);
   })();
   const fanMat = mats.reefFan;
-  inst(fanGeo, fanMat, W.decor.fan, (r, d, c) => {
+  if (fanMat) inst(fanGeo, fanMat, W.decor.fan, (r, d, c) => {
     d.position.set(r.x, r.y - 0.05, r.z);
     d.rotation.set(0, r.rot, 0);
     d.scale.setScalar(r.s * 1.2);
@@ -485,8 +485,7 @@ function buildWreck(THREE, W, mats, keep) {
     }
     net.computeVertexNormals();
     paint(net, 0.5, 0.46, 0.3);
-    const netMesh = new THREE.Mesh(keep(net), mats.net);
-    parts.push(netMesh);
+    if (mats.net) parts.push(new THREE.Mesh(keep(net), mats.net));
     const floats = [];
     for (let i = 0; i < 6; i++) {
       const s = new THREE.SphereGeometry(0.28, 10, 8);

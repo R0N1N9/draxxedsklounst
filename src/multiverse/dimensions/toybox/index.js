@@ -10,18 +10,22 @@
 //   really pointing, and it wanders: a lot on the move, less standing, hardly at all when
 //   braced. And it wanders far less at a target that is LIT — so the lamp's pool in the middle
 //   is the killing ground and the dark flanks are the way round. Time the swing, or get close.
-// THE WORLD    The train is moving cover (and shoves anyone on the track). The lamp sways on
-//   its neck, so the pool drifts. Headlights from the street sweep through the blind and light
-//   up whoever they cross. All of it is a pure function of the round clock. Nothing but a
-//   rival's pellet ever takes a soldier out.
+// THE WORLD    The train is moving cover (and shoves anyone on the track). Now and then a glass
+//   marble is flicked across the rug: more moving cover, it shoves too, and pellets glance off
+//   it. The lamp sways on its neck, so the pool drifts. Headlights from the street sweep through
+//   the blind and light up whoever they cross. All of it is a pure function of the round clock.
+//   Nothing but a rival's pellet ever takes a soldier out.
 // CONTROLS     move · aim (mouse on the floor / right stick through the camera) · SHOOT ·
 //   alt BRACE (kneel: steady, the laser runs its whole length and shows its bounce — but you
-//   cannot move) · a1 ROLL (a tumble; pellets pass over you mid-roll) · a2 COPTER (a wind-up
-//   helicopter that hunts the rival and holds a spotlight on them for five seconds: the home
-//   dimension's spotting drone, here it makes them the easy target wherever they hide).
+//   cannot move) · a1 ROLL (a tumble; pellets pass over you mid-roll) · a2 SPOTLIGHT (a wind-up
+//   copter that hunts the rival and holds a spotlight on them for five seconds: the home
+//   dimension's spotting drone. It is a little slower than a walk, so a rival who keeps running
+//   slips out of the light — at the price of their aim).
 // THE BOT      hides behind something, leans out, kneels, waits for its laser to cross you,
-//   shoots, ducks back and comes closer as the round ages. Its first exchange is ranging fire
-//   (never on target before ~9 s). It rolls away from pellets it sees coming, sends the copter
+//   shoots, ducks back and comes closer as the round ages, each round in one of three tempers
+//   (HOLD the range, STALK through the dark, PUSH in). Its first shots are ranging fire (never
+//   on target before 6-14 s); across the rug it reads you less surely, the more so in the dark.
+//   It rolls away from pellets it sees coming, moves when it has been shot at, sends the copter
 //   when you sit in the dark, and takes snap shots up close.
 // THE KILL     the figure bursts into its moulded parts — helmet, rifle, legs, base — which
 //   clatter across the floorboards in slow motion while the lens pushes in and swings round.
@@ -34,7 +38,7 @@
 //   pellets, lasers, copters, particles) · post.js (tilt-shift, bloom, grade) · view.js (camera,
 //   screen <-> floor) · overlay.js (2D) · sound.js · bot.js.
 import { clamp, lerp, damp, smoothstep, angDiff, angDamp, segCircle, disposeTree } from '../../kit.js';
-import { buildWorld, hit, SPAWN, BODY_R, SPOT_R, MUZZLE, gunY } from './world.js';
+import { buildWorld, hit, SPAWN, BODY_R, SPOT_R, MUZZLE, MARBLE_R, gunY } from './world.js';
 import { makeGeo } from './geo.js';
 import { makeTextures } from './tex.js';
 import { makeToys } from './toys.js';
@@ -73,7 +77,7 @@ export default {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
       if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.rich = false; Q.pbr = false; Q.scale = 0.66; Q.shadow = 1024; }
     } catch { /* masked: assume a real GPU */ }
-    if (globalThis.__toyboxQ) Object.assign(Q, globalThis.__toyboxQ); // test scripts: force a build
+    if (globalThis.__toyboxQ) Object.assign(Q, globalThis.__toyboxQ); // (to look at one build on the other's machine: set before the module loads)
     const names = ctx.players.map((p) => p.name);
     const W = buildWorld(ctx.rng, names);
     const geo = makeGeo(THREE), tex = makeTextures(THREE, renderer, ctx.seed, names, Q.rich), toys = makeToys(THREE, geo);
@@ -97,7 +101,7 @@ export default {
     const aims = [0, 1].map(() => ({ on: false, stub: false, full: 0, w: 0.06, len: 0, x1: 0, z1: 0, bx: 0, bz: 0, hasB: false }));
     const clacks = [];
     const flags = { shots: 0, firstShotT: -1, braced: 0, introOn: false };
-    let T = -INTRO, introClock = 0, tick = 0, pelId = 0, killInfo = null, chuffT = 0, tootN = 0, carOn = false, sudMsg = -1;
+    let T = -INTRO, introClock = 0, tick = 0, pelId = 0, killInfo = null, chuffT = 0, tootN = 0, carOn = false, marbleOn = false, rumbleT = 0, sudMsg = -1;
 
     const mk = () => ({ x: 0, y: 0, hx: 0, hy: 0, color: '#fff', alive: true });
     const S = {
@@ -172,8 +176,8 @@ export default {
           b.trav += tw; rem -= tw;
           fx.ping(hx, b.y, hz, nx, nz, s.mat);
           sfx.ping(hx, s.mat);
-          if (s.mat === 'wood' && !b.bounced) {
-            // One bounce off wood, and it comes off a little slower.
+          if ((s.mat === 'wood' || s.mat === 'glass') && !b.bounced) {
+            // One bounce off wood (or the marble), and it comes off a little slower.
             const d = 2 * (dx * nx + dz * nz);
             b.sp *= 0.85; rem *= 0.85;
             b.vx = (dx - d * nx) * b.sp; b.vz = (dz - d * nz) * b.sp;
@@ -325,7 +329,7 @@ export default {
       if (e.alive) { const u = segCircle(p.x, p.z, p.x + dx * t, p.z + dz * t, e.x, e.z, 0.6); if (u >= 0) { t *= u; s = null; } }
       A.len = t - MUZZLE; A.x1 = p.x + dx * t; A.z1 = p.z + dz * t;
       if (A.len < 0.3) { A.on = false; return A; }
-      if (s && s.mat === 'wood' && A.full > 0.02) {
+      if (s && (s.mat === 'wood' || s.mat === 'glass') && A.full > 0.02) {
         const d = 2 * (dx * nx + dz * nz), rx = dx - d * nx, rz = dz - d * nz, ox = A.x1 + nx * 0.03, oz = A.z1 + nz * 0.03;
         let t2 = W.cast(ox, oz, rx, rz, 24, 0.05);
         if (e.alive) { const u = segCircle(ox, oz, ox + rx * t2, oz + rz * t2, e.x, e.z, 0.6); if (u >= 0) t2 *= u; }
@@ -345,12 +349,26 @@ export default {
       view.killCam(v);
     }
 
+    // The marble does not stop for dominoes: it knocks them over (on both screens alike, as its
+    // path is a function of the clock), and it clinks off everything else.
+    function marbleThrough() {
+      const m = W.marble;
+      if (W.clink) { sfx.ping(W.clink.x, 'glass'); fx.ping(W.clink.x, 0.9, W.clink.z, 0, 0, 'glass'); }
+      if (!m.on || !(m.dx || m.dz)) return;
+      for (const r of W.rows) {
+        if (!r.on) continue;
+        const rx = m.x - r.x, rz = m.z - r.z;
+        if (Math.abs(rx * r.c + rz * r.s) < r.hw + MARBLE_R * 0.8 && Math.abs(-rx * r.s + rz * r.c) < r.hd + MARBLE_R * 0.8) topple(r, W.dominoAt(r, m.x, m.z), m.dx * r.c + m.dz * r.s >= 0 ? 1 : -1);
+      }
+    }
+
     // ---- one slice of the simulation at world time `now` ----
     function frame(dt, now, first) {
       const phase = ctx.phase;
       T = now;
       if (ctx.sudden && W.suddenAt < 0 && phase === 'live') { W.beginSudden(T); sfx.lightsOn(); sfx.music(true); sudMsg = 2.7; view.shake(0.3); }
       W.setTime(T);
+      marbleThrough();
       tick ^= 1; // neither sniper always moves first
       for (let n = 0; n < 2; n++) {
         const p = P[n ^ tick];
@@ -364,6 +382,8 @@ export default {
       if ((chuffT -= dt) <= 0) { chuffT = 0.44; if (W.cars[0].on) sfx.chuff(W.cars[0].x); }
       if (T > 0 && Math.floor((T + 4) / 12) !== tootN) { tootN = Math.floor((T + 4) / 12); if (W.cars[0].on) sfx.toot(W.cars[0].x); }
       if (W.head.k > 0 && !carOn) { carOn = true; sfx.car(Math.sign(W.head.p) || 1); } else if (W.head.k <= 0) carOn = false;
+      if (W.marble.on) { if (!marbleOn) sfx.flick(W.marble.x); if ((rumbleT -= dt) <= 0) { rumbleT = 0.11; sfx.rumble(W.marble.x); } }
+      marbleOn = W.marble.on;
       for (let i = clacks.length - 1; i >= 0; i--) if (T >= clacks[i].t) { sfx.domino(clacks[i].x, clacks[i].k); clacks.splice(i, 1); }
       if (sudMsg > 0 && (sudMsg -= dt) <= 0) ctx.hud.message('TIDY-UP TIME', 'The big light is on · the rug is rolling up', 3);
     }
@@ -472,7 +492,6 @@ export default {
         disposeTree(room.scene);
       },
     };
-    inst.debug = { P, W, cop, pellets, view, flags, S, room, fx, post, Q }; // test scripts only
     post.resize();
     return inst;
   },

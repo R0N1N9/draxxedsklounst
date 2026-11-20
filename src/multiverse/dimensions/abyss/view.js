@@ -194,7 +194,7 @@ export function makeView(ctx, THREE, renderer, S) {
           if (Math.random() < real * 40) bubbles.emit(p.x + (Math.random() - 0.5) * 0.6, p.y + (Math.random() - 0.5) * 0.5, p.z + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.4, 1.5, (Math.random() - 0.5) * 0.4, 0.05 + Math.random() * 0.08, 0.01, 5, 1, 1, 1, 1, 0.5, 1.2);
         }
         p.model.pose(pose, real);
-        p.model.root.visible = p !== ME || !!kill;
+        if (!staged.includes(p.model.root)) p.model.root.visible = p !== ME || !!kill;
         const reveal = (ctx.sudden || ctx.time < p.revealT || (phase === 'intro' && p !== ME)) && p.alive;
         p.model.ghost.visible = reveal && p !== ME;
         p.model.mat.uniforms.uGhost.value = damp(p.model.mat.uniforms.uGhost.value, p.model.ghost.visible ? 1 : 0, 8, real);
@@ -306,15 +306,9 @@ export function makeView(ctx, THREE, renderer, S) {
         return;
       }
       drawAt = now; drawn++; measure = true; drawnPhase = phase; worst = 0;
-      // the software build waits for its shaders to finish compiling rather than stall
-      if (!warmed()) {
-        renderer.setRenderTarget(null);
-        renderer.setClearColor(0x062a33, 1);
-        renderer.clear();
-        HUD.w = ctx.width; HUD.h = ctx.height;
-        drawOverlay(ctx, HUD, api, S, camera, project);
-        return;
-      }
+      // software build: bring the world in a piece per draw, so no one frame has to compile
+      // every shader at once (a CPU compiles each one in about a second)
+      if (staged.length && drawn > 1) for (let n = 0; n < 2 && staged.length; n++) staged.shift().visible = true;
       // ---- the frame
       const pf = post.u;
       pf.uBreath.value = zoom * 0.75;
@@ -357,29 +351,11 @@ export function makeView(ctx, THREE, renderer, S) {
     },
   };
 
-  // Shader warm-up (software rasteriser only: there one compile can take seconds, and a
-  // first frame that waits on forty of them freezes the page). Polled from render, no timers.
-  const warm = { list: null, done: !Q.soft };
+  const staged = [];
   if (Q.soft) {
-    try {
-      const set = new Set();
-      for (const sc of [scene, hands, post.warmScene]) {
-        renderer.compile(sc, camera);
-        sc.traverse((o) => { if (o.material) set.add(o.material); });
-      }
-      warm.list = [...set];
-    } catch { warm.done = true; }
-  }
-  function warmed() {
-    if (warm.done) return true;
-    try {
-      for (const m of warm.list) {
-        const pr = renderer.properties.get(m).currentProgram;
-        if (pr && !pr.isReady()) return false;
-      }
-    } catch { /* fall through: just draw */ }
-    warm.done = true;
-    return true;
+    for (const o of [...S.reef.group.children, ...S.life.group.children.filter((c) => c.visible), kraken.group, S.snow.mesh, glow.mesh, S.smoke.mesh, ...P.map((p) => p.model.root)]) {
+      if (o.visible) { o.visible = false; staged.push(o); }
+    }
   }
 
   function inkAtCam() {

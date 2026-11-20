@@ -478,7 +478,7 @@ class Tube {
 export function buildKraken(THREE, mats, U, sim) {
   const group = new THREE.Group();
   const shader = (frag, defines) => mats.shader({ vertexShader: SKIN_VERT, fragmentShader: frag, defines, uniforms: { uFlinch: { value: 0 }, uGlow: { value: 1 }, uBlink: { value: 0 } } });
-  const bodyMat = shader(SKIN_FRAG, {}), finMat = shader(SKIN_FRAG, { FIN: 1 }), armMat = shader(SKIN_FRAG, { ARM: 1 }), eyeMat = shader(EYE_FRAG, {});
+  const bodyMat = shader(SKIN_FRAG, {}), finMat = mats.lean ? bodyMat : shader(SKIN_FRAG, { FIN: 1 }), armMat = shader(SKIN_FRAG, { ARM: 1 }), eyeMat = shader(EYE_FRAG, {});
   finMat.side = THREE.DoubleSide;
   armMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch; finMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch;
   armMat.uniforms.uGlow = bodyMat.uniforms.uGlow; finMat.uniforms.uGlow = bodyMat.uniforms.uGlow;

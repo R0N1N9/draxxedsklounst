@@ -242,17 +242,21 @@ export function makeMaterials(THREE, U, lean) {
   // lean: the software-rasteriser build (one shadow tap, one detail tap)
   const shader = (o) => add(new THREE.ShaderMaterial({ ...o, defines: { ...(o.defines || {}), ...(lean ? { LEAN: 1 } : {}) }, uniforms: { ...U, ...(o.uniforms || {}) } }));
   const reef = (define, extra = {}) => shader({ vertexShader: REEF_VERT, fragmentShader: REEF_FRAG, defines: { [define]: 1, ...(extra.defines || {}) }, vertexColors: true, uniforms: { uSway: { value: new THREE.Vector4(extra.sway || 0, 0, 0, 0) } }, side: extra.side || THREE.FrontSide });
+  // the software build shares one program between rock, coral and wreck, and leaves out
+  // the fans and the net (a dozen fewer shaders to compile on a CPU)
+  const rock = reef('ROCK');
   return {
     all,
     add,
     shader,
+    lean: !!lean,
     terrain: reef('TERRAIN'),
-    rock: reef('ROCK'),
-    coral: reef('CORAL'),
-    coralSway: reef('CORAL', { defines: { SWAY: 1 }, sway: 0.05, side: THREE.DoubleSide }),
-    wreck: reef('WRECK', { side: THREE.DoubleSide }),
-    net: reef('WRECK', { defines: { NET: 1 }, side: THREE.DoubleSide }),
-    reefFan: reef('CORAL', { defines: { FAN: 1, SWAY: 1 }, sway: 0.08, side: THREE.DoubleSide }),
+    rock,
+    coral: lean ? rock : reef('CORAL'),
+    coralSway: lean ? rock : reef('CORAL', { defines: { SWAY: 1 }, sway: 0.05, side: THREE.DoubleSide }),
+    wreck: lean ? rock : reef('WRECK', { side: THREE.DoubleSide }),
+    net: lean ? null : reef('WRECK', { defines: { NET: 1 }, side: THREE.DoubleSide }),
+    reefFan: lean ? null : reef('CORAL', { defines: { FAN: 1, SWAY: 1 }, sway: 0.08, side: THREE.DoubleSide }),
     dispose() { for (const m of all) m.dispose(); all.length = 0; },
   };
 }

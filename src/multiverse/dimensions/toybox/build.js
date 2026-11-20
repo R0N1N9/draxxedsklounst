@@ -3,7 +3,7 @@
 // headlights that sweep in through the blind are added there, analytically, so they cost
 // no shadow maps and no extra light slots.
 import { clamp, lerp, makeRng, makeCanvas, rand, TAU } from '../../kit.js';
-import { RUG_A, RUG_B, LOOP, SPOT_R, TIDY } from './world.js';
+import { RUG_A, RUG_B, LOOP, SPOT_R, TIDY, MARBLE_R } from './world.js';
 import { TOY } from './tex.js';
 
 export const LAMP_HEAD = { x: -18.4, y: 5.7, z: -8.8 }, LAMP_BASE = { x: -23.6, z: -11.4 };
@@ -177,6 +177,26 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
     add(obj);
     views.push({ o, obj });
   }
+  // The marble: violet glass (nobody's colour) with a twisted cream-and-red vane, a cat's eye.
+  const marble = (() => {
+    const g0 = G.ball(MARBLE_R, 28, 20), g = g0.toNonIndexed(), p = g.attributes.position, col = new Float32Array(p.count * 3), c = new THREE.Color();
+    g0.dispose();
+    const glass = new THREE.Color('#8a70d0'), vane = new THREE.Color('#f2e6c9'), cream = new THREE.Color('#e2583e');
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i) / MARBLE_R, y = p.getY(i) / MARBLE_R, z = p.getZ(i) / MARBLE_R, tw = y * 2.2;
+      const d1 = Math.abs(x * Math.cos(tw) + z * Math.sin(tw)), d2 = Math.abs(-x * Math.sin(tw) + z * Math.cos(tw));
+      const pick = d1 < 0.17 ? vane : d2 < 0.08 ? cream : glass;
+      c.copy(pick);
+      if (pick === glass) c.multiplyScalar(0.8 + 0.2 * Math.abs(y)); // (a little darker where you look through the most glass)
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const m = add(mesh(keep(g), M.glass));
+    m.visible = false;
+    return m;
+  })();
+  const mAxis = new THREE.Vector3();
+
   // Dominoes: one instanced mesh; each instance picks one of four faces from the atlas.
   if (dom.list.length) {
     const g = keep(G.rbox(0.95, 1.9, 0.24, 0.05, 2)), uv = g.attributes.uv, per = uv.count / 6;
@@ -368,6 +388,14 @@ void main() {
         if (k > 0) { obj.position.y = (o.kind === 'car' ? 0.15 : 0) + Math.sin(k * Math.PI * 0.5) * 1.6; obj.scale.setScalar(1 - k * k); obj.rotation.y = -o.rot + k * 2.5; }
       }
       if (ts >= 0 && W.trackView.visible && ts > TIDY - 0.9) { W.trackView.visible = false; }
+      // The marble rolls, and it never slides.
+      const mo = W.marble;
+      if (marble.visible && !mo.on && ts >= 0 && fx) fx.pop(marble.position.x, 1, marble.position.z);
+      marble.visible = mo.on;
+      if (mo.on) {
+        marble.position.set(mo.x, MARBLE_R, mo.z);
+        if (mo.dx * mo.dx + mo.dz * mo.dz > 1e-10) marble.quaternion.setFromAxisAngle(mAxis.set(mo.dz, 0, -mo.dx).normalize(), mo.dist / MARBLE_R);
+      }
       // Dominoes: standing, falling in turn, or gone.
       if (dom.inst) {
         for (let n = 0; n < dom.list.length; n++) {

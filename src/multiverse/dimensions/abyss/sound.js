@@ -33,7 +33,7 @@ const SUDDEN = {
 export function makeSound(ctx) {
   const au = ctx.audio;
   const ear = { x: 0, y: 0, z: 0, rx: 1, rz: 0 };
-  let bed = null, rumble = null, level = 1, pan = 0, late = 0, whaleT = 6 + Math.random() * 8;
+  let bed = null, rumble = null, hushG = null, growl = null, swell = 0, level = 1, pan = 0, late = 0, whaleT = 6 + Math.random() * 8;
   function place(x, y, z, reach = 40) {
     const dx = x - ear.x, dy = y - ear.y, dz = z - ear.z, dist = Math.hypot(dx, dy, dz);
     pan = dist > 0.5 ? clamp(((dx * ear.rx + dz * ear.rz) / dist) * 0.7, -0.7, 0.7) : 0;
@@ -43,41 +43,34 @@ export function makeSound(ctx) {
   // the hush of the sea, and the kraken's voice: built by hand, so they can swell and fade
   function startBed() {
     const ac = au.ctx, out = au.out;
-    if (bed || !ac || !out || true) return;
+    if (bed || !ac || !out) return;
     try {
       const len = ac.sampleRate * 2, buf = ac.createBuffer(1, len, ac.sampleRate), d = buf.getChannelData(0);
       let b = 0;
       for (let i = 0; i < len; i++) { b = b * 0.97 + (Math.random() * 2 - 1) * 0.03; d[i] = b * 6; } // brown noise
       const nodes = [];
-      const hush = (freq, gain, lfoHz, depth) => {
-        const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(), lfo = ac.createOscillator(), lg = ac.createGain();
-        src.buffer = buf; src.loop = true;
-        f.type = 'lowpass'; f.frequency.value = freq; f.Q.value = 0.5;
-        g.gain.value = 0; g.gain.setTargetAtTime(gain, ac.currentTime, 1.5);
-        lfo.frequency.value = lfoHz; lg.gain.value = depth;
-        lfo.connect(lg); lg.connect(g.gain);
-        src.connect(f); f.connect(g); g.connect(out);
-        src.start(); lfo.start();
-        nodes.push(src, f, g, lfo, lg);
-      };
-      hush(320, 0.12, 0.08, 0.05);
-      hush(900, 0.018, 0.13, 0.012);
-      // the kraken: two low sines through a lowpass, the gain set from how close it is
-      const o1 = ac.createOscillator(), o2 = ac.createOscillator(), o3 = ac.createOscillator(), rf = ac.createBiquadFilter(), rg = ac.createGain(), tr = ac.createOscillator(), tg = ac.createGain();
+      // one hush (its swell is driven from update, not an LFO: the fewer live nodes the better
+      // on a busy machine), and the kraken's voice: two low tones through one filter
+      const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+      src.buffer = buf; src.loop = true;
+      f.type = 'lowpass'; f.frequency.value = 360; f.Q.value = 0.4;
+      g.gain.value = 0; g.gain.setTargetAtTime(0.12, ac.currentTime, 1.5);
+      src.connect(f); f.connect(g); g.connect(out);
+      src.start();
+      nodes.push(src, f, g);
+      hushG = g;
+      const o1 = ac.createOscillator(), o2 = ac.createOscillator(), rf = ac.createBiquadFilter(), rg = ac.createGain();
       o1.type = 'sine'; o1.frequency.value = 36;
-      o2.type = 'triangle'; o2.frequency.value = 54.5;
-      o3.type = 'sawtooth'; o3.frequency.value = 72.8;
-      rf.type = 'lowpass'; rf.frequency.value = 160; rf.Q.value = 2;
+      o2.type = 'sawtooth'; o2.frequency.value = 54.5;
+      rf.type = 'lowpass'; rf.frequency.value = 150; rf.Q.value = 2.5;
       rg.gain.value = 0;
-      tr.frequency.value = 0.31; tg.gain.value = 18; // the growl wanders in pitch
-      tr.connect(tg); tg.connect(o3.frequency);
-      const o3g = ac.createGain(); o3g.gain.value = 0.35;
-      o1.connect(rf); o2.connect(rf); o3.connect(o3g); o3g.connect(rf); rf.connect(rg); rg.connect(out);
-      o1.start(); o2.start(); o3.start(); tr.start();
-      nodes.push(o1, o2, o3, rf, rg, tr, tg, o3g);
+      o1.connect(rf); o2.connect(rf); rf.connect(rg); rg.connect(out);
+      o1.start(); o2.start();
+      nodes.push(o1, o2, rf, rg);
+      growl = o2;
       rumble = rg;
       bed = nodes;
-    } catch { bed = null; }
+    } catch { bed = []; }
   }
   const bub = (g, f0, f1, dur, delay = 0) => au.noise({ filter: 'bandpass', freq: f0, freqEnd: f1, q: 1.2, dur, gain: g * level, attack: 0.01, pan, delay: late + delay });
   let rumbleAt = 0;
@@ -93,7 +86,10 @@ export function makeSound(ctx) {
       if (rumble && ac && (rumbleAt -= dt) <= 0) {
         rumbleAt = 0.1;
         const g = clamp(1.4 / (1 + Math.max(0, krakenDist) / 14), 0, 1) * (0.5 + pass * 0.7);
-        rumble.gain.setTargetAtTime(g * 0.55, ac.currentTime, 0.35);
+        rumble.gain.setTargetAtTime(g * 0.6, ac.currentTime, 0.35);
+        swell += 0.1;
+        if (growl) growl.frequency.setTargetAtTime(54.5 + Math.sin(swell * 0.31) * 9, ac.currentTime, 0.4);
+        if (hushG) hushG.gain.setTargetAtTime(0.12 + Math.sin(swell * 0.5) * 0.04, ac.currentTime, 0.8);
       }
       if ((whaleT -= dt) <= 0) {
         whaleT = 14 + Math.random() * 16;
@@ -109,7 +105,7 @@ export function makeSound(ctx) {
     exhale(x, y, z, mine, big) {
       place(x, y, z, 20);
       const g = (mine ? 1 : 0.6) * (big ? 1.5 : 1);
-      for (let i = 0; i < (big ? 9 : 5); i++) bub(0.16 * g, 300 + Math.random() * 500, 900 + Math.random() * 900, 0.12 + Math.random() * 0.1, i * 0.07 + Math.random() * 0.03);
+      for (let i = 0; i < (big ? 5 : 3); i++) bub(0.16 * g, 300 + Math.random() * 500, 900 + Math.random() * 900, 0.12 + Math.random() * 0.1, i * 0.07 + Math.random() * 0.03);
       au.noise({ filter: 'lowpass', freq: 500, freqEnd: 200, dur: 0.5 + (big ? 0.5 : 0), gain: 0.14 * g * level, attack: 0.03, pan, delay: late });
     },
     holdIn() { au.noise({ filter: 'bandpass', freq: 900, freqEnd: 400, q: 0.8, dur: 0.35, gain: 0.08, attack: 0.05 }); },
@@ -153,7 +149,7 @@ export function makeSound(ctx) {
       au.sfx('thud', { gain: 1, pitch: 0.8 });
       au.noise({ filter: 'lowpass', freq: 900, freqEnd: 120, dur: 1.2, gain: 0.6, attack: 0.01 });
       au.tone({ freq: 90, freqEnd: 32, type: 'sine', dur: 1.4, gain: 0.5 });
-      for (let i = 0; i < 12; i++) bub(0.25, 300 + Math.random() * 900, 1500 + Math.random() * 800, 0.2, 0.15 + i * 0.09);
+      for (let i = 0; i < 6; i++) bub(0.25, 300 + Math.random() * 900, 1500 + Math.random() * 800, 0.2, 0.15 + i * 0.09);
       au.tone({ freq: 587, freqEnd: 580, type: 'sine', dur: 2.6, gain: 0.05, attack: 0.3, delay: 0.4 });
       au.tone({ freq: 880, freqEnd: 870, type: 'sine', dur: 2.6, gain: 0.035, attack: 0.4, delay: 0.55 });
     },
@@ -167,7 +163,7 @@ export function makeSound(ctx) {
     shove() {
       au.noise({ filter: 'lowpass', freq: 500, freqEnd: 100, dur: 0.7, gain: 0.7, attack: 0.01 });
       au.tone({ freq: 70, freqEnd: 35, type: 'sine', dur: 0.6, gain: 0.5 });
-      for (let i = 0; i < 6; i++) bub(0.25, 400 + Math.random() * 600, 1300, 0.15, i * 0.05);
+      for (let i = 0; i < 3; i++) bub(0.25, 400 + Math.random() * 600, 1300, 0.15, i * 0.08);
     },
     // sonar: a clean ping that rings out, and its echo
     ping(x, y, z, mine) {
@@ -182,11 +178,11 @@ export function makeSound(ctx) {
     pop(x, y, z) { place(x, y, z, 40); au.tone({ freq: 900, freqEnd: 300, type: 'sine', dur: 0.2, gain: 0.15 * level, pan }); bub(0.3, 600, 1800, 0.35); },
     kick() { au.noise({ filter: 'lowpass', freq: 400, freqEnd: 150, dur: 0.35, gain: 0.16, attack: 0.04 }); },
     mask() { au.noise({ filter: 'bandpass', freq: 700, freqEnd: 300, q: 0.8, dur: 0.25, gain: 0.15, attack: 0.01 }); au.sfx('click', { gain: 0.3, pitch: 0.5, delay: 0.12 }); },
-    splash() { au.noise({ filter: 'lowpass', freq: 1600, freqEnd: 200, dur: 1.4, gain: 0.45, attack: 0.01 }); for (let i = 0; i < 14; i++) au.noise({ filter: 'bandpass', freq: 400 + Math.random() * 900, freqEnd: 1600, q: 1.2, dur: 0.18, gain: 0.12, attack: 0.01, delay: i * 0.06 }); },
+    splash() { au.noise({ filter: 'lowpass', freq: 1600, freqEnd: 200, dur: 1.4, gain: 0.45, attack: 0.01 }); for (let i = 0; i < 7; i++) au.noise({ filter: 'bandpass', freq: 400 + Math.random() * 900, freqEnd: 1600, q: 1.2, dur: 0.18, gain: 0.12, attack: 0.01, delay: i * 0.06 }); },
     sudden() { au.sfx('riser', { gain: 0.4 }); au.tone({ freq: 45, freqEnd: 30, type: 'sawtooth', dur: 3, gain: 0.25, attack: 0.5 }); },
     dispose() {
       if (bed) for (const node of bed) { try { if (node.stop) node.stop(); } catch { /* never started */ } try { node.disconnect(); } catch { /* gone */ } }
-      bed = null; rumble = null;
+      bed = null; rumble = null; hushG = null; growl = null;
     },
   };
 }

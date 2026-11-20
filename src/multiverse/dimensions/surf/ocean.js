@@ -76,7 +76,8 @@ void main() {
   vec3 refl = skyTex(normalize(R + vec3(0.0, 0.03, 0.0)), mix(SKY_LOD, 1.0, smoothstep(4.0, 140.0, dist))) * 0.9; // (close water mirrors a blur: no hard cloud edges at your feet)
   float sd = max(dot(R, uSunDir), 0.0);
   // glitter: the broad road, the hot core, and sparks where a ripple happens to face the sun
-  float spark = smoothstep(0.82, 1.0, d3.z + d1.w * 0.5) * (1.0 - far * 0.5);
+  // (from the ripple fields, never the lace channel: glints along the lace seams draw a net on the sea)
+  float spark = smoothstep(0.66, 0.92, d3.x * 0.55 + d1.y * 0.45 + (d2.w - 0.5) * 0.25) * (1.0 - far * 0.5);
   float glit = pow(sd, 1500.0) * 80.0 + pow(sd, 200.0) * 3.2 + pow(sd, 22.0) * (0.2 + spark * 1.4) + pow(sd, 90.0) * spark * 8.0;
 
   // what is under it
@@ -96,7 +97,7 @@ void main() {
   }
 
   // foam: where the surface folds, in streaks on the high water, and along the sand
-  float lace = d3.z * 0.6 + texture2D(tDetail, vP0 * 0.071 + rip * 0.05 - t * vec2(0.013, 0.006)).z * 0.75 * (0.5 + d1.w);
+  float lace = d3.z * 0.45 * d2.w + texture2D(tDetail, vP0 * 0.071 + rip * 0.12 - t * vec2(0.013, 0.006)).z * 0.75 * (0.35 + d1.w);
   float foam = smoothstep(0.3, 0.72, (1.0 - smoothstep(0.44, 0.8, J)) * (0.72 + lace * 0.7)) + smoothstep(1.2, 3.0, h) * smoothstep(1.0, 1.35, lace + d2.w * 0.7) * 0.35;
   float band = sin(depth * 2.6 + t * 1.25 + d2.w * 3.0 + vP0.x * 0.02);
   foam += (smoothstep(0.55, 1.0, band) * (0.35 + lace) * (1.0 - smoothstep(0.6, 4.5, depth)) + (1.0 - smoothstep(0.05, 0.55, depth)) * (0.6 + lace)) * step(-0.3, depth);
