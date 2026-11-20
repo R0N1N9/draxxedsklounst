@@ -97,8 +97,8 @@ export function makeView(ctx, THREE, renderer, S) {
   const tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3(), camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
   const pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, speed: 0, loaded: true, dead: -1, aim: 0, recoil: 0 };
   const vm = { load: 1, kick: 0, sway: { x: 0, y: 0 }, bob: 0, aim: 0, drop: 0 };
-  let tPrev = 0, drawAt = 0, cost = 0, measure = false, drawn = 0, fresh = false, drawnPhase = '';
-  let bob = 0, loadShown = 1, introLoad = 0, frames = 0, govT = 0, govN = 0, govGood = 0, lastNow = 0, shadowEvery = Q.soft ? 3 : 1;
+  let tPrev = 0, drawAt = 0, cost = 0, worst = 0, measure = false, drawn = 0, fresh = false, drawnPhase = '';
+  let bob = 0, loadShown = 1, introLoad = 0, frames = 0, govT = 0, govN = 0, govGood = 0, lastNow = 0, shadowEvery = Q.soft ? 6 : 1;
   const HUD = { reticle: { x: 0, y: 0 }, marks: [], ping: pingedAt, notes };
   const killCamPos = new THREE.Vector3(), killLook = new THREE.Vector3(), kM = new THREE.Matrix4(), kQ = new THREE.Quaternion();
   // loose kit for the kill: a mask and two fins that drift off
@@ -116,6 +116,7 @@ export function makeView(ctx, THREE, renderer, S) {
     camera, post,
     get zoom() { return zoom; },
     shot: null, // test scripts: pin the camera
+    always: false, // test scripts: never skip a draw
     note(text, dur = 2) { notes.text = text; notes.a = dur; },
     kick() { kickA = 1; },
     shove() { shoveA = 1; hurt = 1; api.note('THE KRAKEN SHOVED YOU', 1.6); },
@@ -193,7 +194,7 @@ export function makeView(ctx, THREE, renderer, S) {
           if (Math.random() < real * 40) bubbles.emit(p.x + (Math.random() - 0.5) * 0.6, p.y + (Math.random() - 0.5) * 0.5, p.z + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.4, 1.5, (Math.random() - 0.5) * 0.4, 0.05 + Math.random() * 0.08, 0.01, 5, 1, 1, 1, 1, 0.5, 1.2);
         }
         p.model.pose(pose, real);
-        p.model.root.visible = p !== ME || !!kill;
+        if (!staged.includes(p.model.root)) p.model.root.visible = p !== ME || !!kill;
         const reveal = (ctx.sudden || ctx.time < p.revealT || (phase === 'intro' && p !== ME)) && p.alive;
         p.model.ghost.visible = reveal && p !== ME;
         p.model.mat.uniforms.uGhost.value = damp(p.model.mat.uniforms.uGhost.value, p.model.ghost.visible ? 1 : 0, 8, real);
@@ -295,15 +296,19 @@ export function makeView(ctx, THREE, renderer, S) {
       const now = performance.now(), iv = tPrev ? now - tPrev : 0;
       tPrev = now;
       if (measure) { cost = iv; measure = false; }
+      if (iv > worst) worst = iv; // a GPU running behind shows up as long frames between draws
       let draw = true;
-      if (Q.soft && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < Math.min(4000, cost * 5)) draw = false;
+      if (api.freeze || Q.soft && !api.always && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < Math.min(6000, Math.max(1000, cost * 5, worst * 5))) draw = false;
       fresh = false;
       if (!draw) {
         HUD.w = ctx.width; HUD.h = ctx.height;
         drawOverlay(ctx, HUD, api, S, camera, project);
         return;
       }
-      drawAt = now; drawn++; measure = true; drawnPhase = phase;
+      drawAt = now; drawn++; measure = true; drawnPhase = phase; worst = 0;
+      // software build: bring the world in a piece per draw, so no one frame has to compile
+      // every shader at once (a CPU compiles each one in about a second)
+      if (staged.length && drawn > 1) for (let n = 0; n < 2 && staged.length; n++) staged.shift().visible = true;
       // ---- the frame
       const pf = post.u;
       pf.uBreath.value = zoom * 0.75;
@@ -345,6 +350,13 @@ export function makeView(ctx, THREE, renderer, S) {
       loose.length = 0;
     },
   };
+
+  const staged = [];
+  if (Q.soft) {
+    for (const o of [...S.reef.group.children, ...S.life.group.children.filter((c) => c.visible), kraken.group, S.snow.mesh, glow.mesh, S.smoke.mesh, ...P.map((p) => p.model.root)]) {
+      if (o.visible) { o.visible = false; staged.push(o); }
+    }
+  }
 
   function inkAtCam() {
     let k = 0;

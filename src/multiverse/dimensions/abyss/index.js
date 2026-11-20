@@ -78,13 +78,13 @@ export default {
     const Q = { soft: false, tier: 0, scale: 1, shadow: 1024, fish: 260, snow: 2600, msaa: true };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.36, shadow: 512, fish: 140, snow: 900, msaa: false });
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.32, shadow: 512, fish: 60, snow: 700, msaa: false });
     } catch { /* masked: assume a GPU */ }
-    const tex = makeTextures(THREE, renderer);
+    const tex = makeTextures(THREE, renderer, Q.soft);
     const U = makeShared(THREE, tex);
     const mats = makeMaterials(THREE, U, Q.soft);
     const scene = new THREE.Scene();
-    const reef = buildReef(THREE, W, mats, U, ctx.seed);
+    const reef = buildReef(THREE, W, mats, U, ctx.seed, Q.soft);
     scene.add(reef.group);
     const life = buildLife(THREE, mats, U, W, Q, heightAt);
     scene.add(life.group);
@@ -586,8 +586,12 @@ export default {
       if (ctx.sudden && suddenAt < 0) { suddenAt = T; sfx.sudden(); sfx.music(true); view.note('THE KRAKEN IS CLOSING IN', 3); }
       // the animal: during the intro it is already moving, on its way to time 0
       const kt = phase === 'intro' ? Math.min(0, introT - 3.6) : T;
+      const pr = prof.on ? performance : null;
+      let t0 = pr ? pr.now() : 0;
+      const lap = (k) => { if (pr) { const t = pr.now(); prof[k] = (prof[k] || 0) + t - t0; t0 = t; } };
       sim.snapshot();
       sim.update(kt);
+      lap('kraken');
       tick ^= 1;
       for (let n = 0; n < 2; n++) {
         const p = P[n ^ tick];
@@ -597,7 +601,9 @@ export default {
         else step(p, humanCmd(p), dt);
         if (p.dead >= 0) p.dead += dt;
       }
+      lap('divers');
       if (phase !== 'intro') { stepSpears(dt); stepPings(dt); stepDecoys(dt); }
+      lap('spears');
       for (let i = inks.length - 1; i >= 0; i--) if (T - inks[i].t0 > 9.5) inks.splice(i, 1);
       breathedT = Math.max(0, breathedT - dt);
 
@@ -609,9 +615,12 @@ export default {
       bubbles.update(dt, clock, true);
       smoke.update(dt, clock, false);
       glow.update(dt, clock, false);
+      lap('clouds');
       life.update(dt, clock, { divers: P.filter((p) => p.alive || p.dead < 3), extra: extra.slice(0, ne), glow, kraken: sim.S });
 
+      lap('life');
       view.update(dt, T, introT);
+      lap('view');
       sfx.update(dt, sim.distance(ME.x, ME.y, ME.z), sim.S.pass);
       // the network and the HUD
       ctx.net.sendState({
@@ -623,7 +632,9 @@ export default {
       ctx.hud.cooldown('a2', ME.decoyCd / DECOY_CD);
       ctx.hud.cooldown('alt', ME.holdLock ? 1 - ME.air / 0.4 : 0);
       ctx.hud.cooldown('jump', ME.kickCd / KICK_CD);
+      lap('rest');
     }
+    const prof = { on: false }; // test scripts: per-section update timings
 
     const view = makeView(ctx, THREE, renderer, {
       scene, hands, viewModel, P, ME, FOE, U, Q, W, sim, kraken, life, reef, bubbles, glow, smoke, snow, spears, pings, decoys, inks, inkR, sfx, eyeOf, dirOf,
@@ -682,7 +693,7 @@ export default {
       },
     };
     inst.view = view; // test scripts: view.shot = {x,y,z,tx,ty,tz,fov} pins the camera
-    inst.P = P; inst.sim = sim;
+    inst.P = P; inst.sim = sim; inst.prof = prof;
     view.resize(ctx.width, ctx.height);
     return inst;
   },

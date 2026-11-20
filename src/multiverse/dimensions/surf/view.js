@@ -24,7 +24,7 @@ export function makeView(ctx, THREE, renderer, W) {
   const camera = new THREE.PerspectiveCamera(52, ctx.width / Math.max(1, ctx.height), 0.3, 9000);
   camera.rotation.order = 'YXZ';
   const F = new THREE.Vector3(), Rt = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), sunDir = new THREE.Vector3(SUN.x, SUN.y, SUN.z);
-  const pA = new THREE.Vector3(), lA = new THREE.Vector3(), pB = new THREE.Vector3(), lB = new THREE.Vector3(), pC = new THREE.Vector3(), lC = new THREE.Vector3(), q1 = new THREE.Quaternion();
+  const pA = new THREE.Vector3(), lA = new THREE.Vector3(), pB = new THREE.Vector3(), lB = new THREE.Vector3(), pC = new THREE.Vector3(), lC = new THREE.Vector3(), q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion();
   const play = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, fov: 52, roll: 0, lift: 0 };
   const S = {
     w: 1, h: 1, t: 0, live: false, alive: true, under: false, brace: 0, rx: 0, ry: 0, spreadPx: 10, clear: false, wall: false, ready: true, cycle: 0,
@@ -92,9 +92,11 @@ export function makeView(ctx, THREE, renderer, W) {
     // C — in behind them to the boil of foam where they went under, and through it
     pC.set(k.ex - ux * 3.4 + rx * 0.6, k.ey + 0.55, k.ez - uz * 3.4 + rz * 0.6);
     lC.set(k.ex + ux * 0.6, k.ey - 0.5, k.ez + uz * 0.6);
-    const ab = smoothstep(KILL.squat, KILL.jump + 0.1, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
+    // (A2: before going round, the lens opens out and tips down until the winner is in the foot
+    // of the frame watching the water close over the other one — then round to B)
+    const a2 = smoothstep(KILL.squat - 0.4, KILL.squat + 0.1, t), ab = smoothstep(KILL.squat + 0.05, KILL.jump + 0.12, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
+    const hA = 2 * pA.distanceTo(lA) * Math.tan((fA * Math.PI) / 360);
     pA.lerp(pB, ab).lerp(pC, bc);
-    lA.lerp(lB, ab).lerp(lC, bc);
     const floor = sea.height(pA.x, pA.z) + lerp(0.9, 0.3, bc);
     if (pA.y < floor) pA.y = floor;
     // From whichever lens this client had to the A shot in one move that never lets go of the
@@ -102,16 +104,23 @@ export function makeView(ctx, THREE, renderer, W) {
     // the winner) while the zoom holds them at the size they were — a crash zoom on the winner's
     // screen, a pull-back across the bay on the victim's.
     const e = smoothstep(0.05, 1.0, t);
-    const hA = 2 * pA.distanceTo(lA) * Math.tan((fA * Math.PI) / 360);
     camera.position.lerpVectors(kc.p0, pA, e);
     camera.position.y += Math.sin(Math.PI * e) * kc.arc;
     const fl2 = sea.height(camera.position.x, camera.position.z) + 0.3;
     if (camera.position.y < fl2) camera.position.y = fl2;
-    camera.lookAt(lA);
-    q1.copy(camera.quaternion);
-    camera.quaternion.copy(kc.q0).slerp(q1, smoothstep(0, 0.3, t));
+    // the lens pans from subject to subject (turning, not dragging a look-at point across the bay)
+    camera.lookAt(lA); q1.copy(camera.quaternion);
+    let f2 = 0;
+    if (a2 > 0) {
+      camera.lookAt(tmp2.set(w.x, kc.y + 1.5, w.z)); q2.copy(camera.quaternion);
+      f2 = clamp((q1.angleTo(q2) * 180) / Math.PI * 1.3 + 12, 24, 80);
+      q1.slerp(q2, 0.55 * a2);
+    }
+    if (ab > 0) { camera.lookAt(lB); q2.copy(camera.quaternion); q1.slerp(q2, ab); }
+    if (bc > 0) { camera.lookAt(lC); q2.copy(camera.quaternion); q1.slerp(q2, bc); }
+    camera.quaternion.copy(kc.q0).slerp(q1, smoothstep(0, 0.42, t));
     const fD = e < 1 ? clamp((2 * Math.atan(lerp(kc.h0, hA, e) / (2 * Math.max(1, camera.position.distanceTo(lA)))) * 180) / Math.PI, 2.5, 70) : fA;
-    camera.fov = lerp(lerp(fD, 46, ab), 60, bc);
+    camera.fov = lerp(lerp(lerp(fD, f2, a2), 46, ab), 60, bc);
     // the lens goes under: the waterline climbs the frame and stops a fifth of the way from the top
     const wl = t < KILL.sink ? -1 : lerp(-0.12, 0.775, smoothstep(KILL.sink, KILL.under, t)) + 0.012 * Math.min(1, Math.max(0, t - KILL.under) * 2);
     post.u.uWater.value.set(wl, 0.05 * Math.sin(t * 2.1), clamp((t - KILL.sink) * 2, 0, 1));

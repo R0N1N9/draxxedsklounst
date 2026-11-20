@@ -185,7 +185,7 @@ export function makePost(THREE, renderer, U, q) {
   const sunCam = new THREE.OrthographicCamera(-62, 62, 62, -62, 1, 260);
   sunCam.layers.set(1);
   const bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
-  let scale = q.scale, tier = q.tier;
+  let scale = q.scale, tier = q.tier, bloomDone = false;
 
   function setShadowSize(s) {
     if (s === shadowSize) return;
@@ -263,16 +263,21 @@ export function makePost(THREE, renderer, U, q) {
       pass(mBlur, vol, volB, vol.width, vol.height);
       mBlur.uniforms.uDir.value.set(0, 1);
       pass(mBlur, volB, vol, vol.width, vol.height);
-      pass(mPre, scene, qa, w, h);
-      mBlur.uniforms.uDir.value.set(1, 0);
-      pass(mBlur, qa, qb, qa.width, qa.height);
-      mBlur.uniforms.uDir.value.set(0, 1);
-      pass(mBlur, qb, qa, qa.width, qa.height);
-      pass(mDown, qa, ea, qa.width, qa.height);
-      mBlur.uniforms.uDir.value.set(1.6, 0);
-      pass(mBlur, ea, eb, ea.width, ea.height);
-      mBlur.uniforms.uDir.value.set(0, 1.6);
-      pass(mBlur, eb, ea, ea.width, ea.height);
+      if (!q.soft || !bloomDone) {
+        // (the software build blooms once and keeps it: a CPU cannot spare five passes a frame)
+        bloomDone = true;
+        pass(mPre, scene, qa, w, h);
+        mBlur.uniforms.uDir.value.set(1, 0);
+        pass(mBlur, qa, qb, qa.width, qa.height);
+        mBlur.uniforms.uDir.value.set(0, 1);
+        pass(mBlur, qb, qa, qa.width, qa.height);
+        pass(mDown, qa, ea, qa.width, qa.height);
+        mBlur.uniforms.uDir.value.set(1.6, 0);
+        pass(mBlur, ea, eb, ea.width, ea.height);
+        mBlur.uniforms.uDir.value.set(0, 1.6);
+        pass(mBlur, eb, ea, ea.width, ea.height);
+        if (q.soft) { renderer.setRenderTarget(qa); renderer.clear(); renderer.setRenderTarget(ea); renderer.clear(); }
+      }
       fu.tBloom.value = qa.texture;
       fu.tWide.value = ea.texture;
       fu.tVol.value = vol.texture;

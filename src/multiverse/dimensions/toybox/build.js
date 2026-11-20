@@ -3,7 +3,7 @@
 // headlights that sweep in through the blind are added there, analytically, so they cost
 // no shadow maps and no extra light slots.
 import { clamp, lerp, makeRng, makeCanvas, rand, TAU } from '../../kit.js';
-import { RUG_A, RUG_B, LOOP, SPOT_R, TIDY } from './world.js';
+import { RUG_A, RUG_B, LOOP, SPOT_R, TIDY, MARBLE_R } from './world.js';
 import { TOY } from './tex.js';
 
 export const LAMP_HEAD = { x: -18.4, y: 5.7, z: -8.8 }, LAMP_BASE = { x: -23.6, z: -11.4 };
@@ -64,7 +64,6 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   const M = {
     floor: std({ map: tex.boards, roughnessMap: tex.boardsRough, roughness: 0.62, envMapIntensity: 0.9 }),
     rug: std({ map: tex.rug, roughness: 0.96, envMapIntensity: 0.15 }, { clip: true }),
-    rim: std({ color: '#1c2238', roughness: 0.95, envMapIntensity: 0.1 }, { clip: true }),
     block: std({ map: tex.blocks, roughness: 0.5 }),
     paint: std({ vertexColors: true, roughness: 0.4 }),
     matte: std({ vertexColors: true, roughness: 0.85 }),
@@ -92,17 +91,19 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   }
   const rug = add(mesh(keep(new THREE.CircleGeometry(1, 96).rotateX(-Math.PI / 2).scale(RUG_A, 1, RUG_B)), M.rug, false));
   {
-    // Its edge: a thin dark wall down to the boards.
-    const n = 96, pos = [], nor = [], idx = [];
+    // Its edge: a thin wall down to the boards, in the braid of the outermost ring (and the rug's
+    // own material, so it costs no shader of its own).
+    const n = 96, pos = [], nor = [], uv = [], idx = [];
     for (let i = 0; i <= n; i++) {
       const a = (i / n) * TAU, c = Math.cos(a), s = Math.sin(a), nl = Math.hypot(c / RUG_A, s / RUG_B);
       pos.push(c * RUG_A, 0, s * RUG_B, c * (RUG_A + 0.05), -0.16, s * (RUG_B + 0.05));
       nor.push(c / RUG_A / nl, 0.2, s / RUG_B / nl, c / RUG_A / nl, 0.2, s / RUG_B / nl);
+      uv.push(0.5 + c * 0.497, 0.5 - s * 0.497, 0.5 + c * 0.493, 0.5 - s * 0.493); // (the rug's disc is laid with its v running to -z)
       if (i < n) idx.push(i * 2, i * 2 + 2, i * 2 + 1, i * 2 + 1, i * 2 + 2, i * 2 + 3);
     }
     const g = keep(new THREE.BufferGeometry());
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setIndex(idx);
-    add(mesh(g, M.rim, false));
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+    add(mesh(g, M.rug, false));
   }
   const rollGeo = keep(new THREE.CylinderGeometry(1, 1, 1, 22).rotateX(Math.PI / 2));
   const rolls = [-1, 1].map((s) => { const m = add(mesh(rollGeo, [M.roll, M.rollCap, M.rollCap])); m.visible = false; m.userData.s = s; return m; });
@@ -176,6 +177,26 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
     add(obj);
     views.push({ o, obj });
   }
+  // The marble: violet glass (nobody's colour) with a twisted cream-and-red vane, a cat's eye.
+  const marble = (() => {
+    const g0 = G.ball(MARBLE_R, 28, 20), g = g0.toNonIndexed(), p = g.attributes.position, col = new Float32Array(p.count * 3), c = new THREE.Color();
+    g0.dispose();
+    const glass = new THREE.Color('#8a70d0'), vane = new THREE.Color('#f2e6c9'), cream = new THREE.Color('#e2583e');
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i) / MARBLE_R, y = p.getY(i) / MARBLE_R, z = p.getZ(i) / MARBLE_R, tw = y * 2.2;
+      const d1 = Math.abs(x * Math.cos(tw) + z * Math.sin(tw)), d2 = Math.abs(-x * Math.sin(tw) + z * Math.cos(tw));
+      const pick = d1 < 0.17 ? vane : d2 < 0.08 ? cream : glass;
+      c.copy(pick);
+      if (pick === glass) c.multiplyScalar(0.8 + 0.2 * Math.abs(y)); // (a little darker where you look through the most glass)
+      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const m = add(mesh(keep(g), M.glass));
+    m.visible = false;
+    return m;
+  })();
+  const mAxis = new THREE.Vector3();
+
   // Dominoes: one instanced mesh; each instance picks one of four faces from the atlas.
   if (dom.list.length) {
     const g = keep(G.rbox(0.95, 1.9, 0.24, 0.05, 2)), uv = g.attributes.uv, per = uv.count / 6;
@@ -192,7 +213,7 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   const ld = new THREE.Vector3(0 - LAMP_HEAD.x, 0 - LAMP_HEAD.y, 0.5 - LAMP_HEAD.z).normalize();
   const lampGeo = toys.lamp(LAMP_BASE, LAMP_HEAD, ld);
   keep(lampGeo.body); keep(lampGeo.glow); keep(lampGeo.bulb);
-  add(mesh(lampGeo.body, std({ vertexColors: true, roughness: 0.32, side: THREE.DoubleSide }), false, false));
+  add(mesh(lampGeo.body, std({ vertexColors: true, roughness: 0.32 }), false, false)); // (the inside of the shade is the glow)
   add(mesh(lampGeo.glow, M.glow, false, false));
   add(mesh(lampGeo.bulb, M.bulb, false, false));
   // The glow round the bulb and the mouth of the shade: the one hot thing in a dark room, and
@@ -330,7 +351,7 @@ void main() {
     dust.frustumCulled = false; dust.renderOrder = 6;
   }
 
-  const ma = new THREE.Matrix4(), mb = new THREE.Matrix4(), headDirW = new THREE.Vector3(0.5, 0.42, 0.76).normalize();
+  const ma = new THREE.Matrix4(), mb = new THREE.Matrix4(), headDirW = new THREE.Vector3(0.5 * W.head.side, 0.42, 0.76).normalize();
   let bigK = 0;
 
   return {
@@ -367,6 +388,14 @@ void main() {
         if (k > 0) { obj.position.y = (o.kind === 'car' ? 0.15 : 0) + Math.sin(k * Math.PI * 0.5) * 1.6; obj.scale.setScalar(1 - k * k); obj.rotation.y = -o.rot + k * 2.5; }
       }
       if (ts >= 0 && W.trackView.visible && ts > TIDY - 0.9) { W.trackView.visible = false; }
+      // The marble rolls, and it never slides.
+      const mo = W.marble;
+      if (marble.visible && !mo.on && ts >= 0 && fx) fx.pop(marble.position.x, 1, marble.position.z);
+      marble.visible = mo.on;
+      if (mo.on) {
+        marble.position.set(mo.x, MARBLE_R, mo.z);
+        if (mo.dx * mo.dx + mo.dz * mo.dz > 1e-10) marble.quaternion.setFromAxisAngle(mAxis.set(mo.dz, 0, -mo.dx).normalize(), mo.dist / MARBLE_R);
+      }
       // Dominoes: standing, falling in turn, or gone.
       if (dom.inst) {
         for (let n = 0; n < dom.list.length; n++) {

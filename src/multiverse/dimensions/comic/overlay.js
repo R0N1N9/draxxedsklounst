@@ -229,14 +229,16 @@ export function drawOverlay(g, S, L) {
   // ---- the splash page ----
   const sp = S.splash;
   if (sp.a > 0) {
-    const word = L.sprites[sp.word], u = clamp(sp.t / 0.22, 0, 1), k = ease.outBack(u) * (1 + Math.max(0, sp.t - 0.22) * 0.05);
-    const tw = Math.min(w * 0.56, h * 0.95), sc = (tw / word.w) * k;
+    // The word lands beside the victim, never on them: the reader must see who took the hit.
+    const word = L.sprites[sp.word], u = clamp(sp.t / 0.22, 0, 1), k = ease.outBack(u) * (1 + Math.max(0, sp.t - 0.22) * 0.04);
+    const tw = Math.min(w * 0.5, h * 0.9), sc = (tw / word.w) * k;
+    const wx = clamp(sp.x + sp.side * w * 0.2, w * 0.3, w * 0.7), wy = clamp(sp.y - h * 0.24, h * 0.24, h * 0.42);
     g.globalAlpha = sp.a;
-    g.save(); g.translate(clamp(sp.x, w * 0.3, w * 0.7), clamp(sp.y - h * 0.1, h * 0.42, h * 0.58)); g.rotate(-0.1 + Math.sin(sp.t * 40) * 0.012 * Math.max(0, 1 - sp.t * 2));
+    g.save(); g.translate(wx, wy); g.rotate(-0.1 * sp.side + Math.sin(sp.t * 40) * 0.012 * Math.max(0, 1 - sp.t * 2));
     g.drawImage(word.canvas, -word.w * sc / 2, -word.h * sc / 2, word.w * sc, word.h * sc);
     g.restore();
-    if (sp.t > 0.5 && sp.caption) {
-      const cu = ease.outCubic(clamp((sp.t - 0.5) / 0.3, 0, 1)), px = Math.max(12, 19 * ui);
+    if (sp.t > 0.6 && sp.caption) {
+      const cu = ease.outCubic(clamp((sp.t - 0.6) / 0.3, 0, 1)), px = Math.max(12, 19 * ui);
       g.globalAlpha = sp.a * cu;
       caption(g, sp.caption, midX - (1 - cu) * 40, Math.min(h - S.safeB - px * 2.2, h * 0.76), px, { align: 'center', maxW: w * 0.9 });
     }

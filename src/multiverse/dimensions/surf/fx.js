@@ -86,7 +86,8 @@ void main() {
   // spreads: the lace is warped and broken up by the blotch channel so it never reads as tiles
   vec4 b = texture2D(tDetail, vP * 0.041 + 0.17);
   vec2 warp = (b.xy - 0.5) * 0.35;
-  float lace = texture2D(tDetail, vP * 0.17 + warp).b * 0.65 + texture2D(tDetail, vP * 0.06 - warp + 0.4).b * 0.55;
+  vec4 r1 = texture2D(tDetail, vP * 0.17 + warp), r2 = texture2D(tDetail, vP * 0.06 - warp + 0.4);
+  float lace = smoothstep(0.35, 0.85, r1.x * 0.5 + r2.y * 0.5) * 0.8 + r2.b * b.w * 0.35; // streaks and patches, only a hint of net
   float e = 1.0 - vS * vS, fresh = smoothstep(0.35, 0.9, vA);
   float body = mix(lace * (0.5 + b.w), 0.75 + lace * 0.25, fresh);
   float a = clamp(vA * e * body * smoothstep(0.15, 0.55, b.w + e * 0.35 + fresh * 0.4) * 1.3, 0.0, 1.0);
