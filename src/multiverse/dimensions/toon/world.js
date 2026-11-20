@@ -47,7 +47,7 @@ export function buildWorld(rng) {
     anvils: [], // live anvil rects, rebuilt every frame
     cr: [], // everything a cork can hit, rebuilt every frame
     ev: buildEvents(rng),
-    handPh: 0,
+    carOn: true,
   };
   w.carX = (t) => MID + 300 * Math.sin(t * 0.43 + w.car.ph);
   refresh(w, 0);
@@ -226,7 +226,7 @@ export function moveBody(w, b, dt) {
         for (let i = 0; i < w.boards.length; i++) { const q = w.boards[i]; if (xr > q.x && xl < q.x + q.w) test(q.y, 'board'); }
         if (onPlank(b.x)) test(plankY(w, b.x), 'see');
         const c = w.car;
-        if (Math.abs(b.x - w.hand) < c.w / 2) test(c.y, 'car');
+        if (w.carOn && Math.abs(b.x - w.hand) < c.w / 2) test(c.y, 'car');
       }
       if (kind) { b.y = best; b.vy = 0; b.ground = true; b.plat = kind; }
     } else {

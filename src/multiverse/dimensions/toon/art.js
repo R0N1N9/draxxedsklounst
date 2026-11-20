@@ -2,13 +2,12 @@
 // only rock, wall and far mesas are static). The ink outlines of the terrain are NOT baked into the picture:
 // they are three pre-jittered Path2D variants that the renderer cycles ~12 times a second, so the rock itself
 // boils like a cel while its (costly) hatching stays in the bitmap.
-import { clamp, makeCanvas, makeRng, rand } from '../../kit.js';
-import { noise2 } from '../../kit.js';
+import { clamp, makeCanvas, makeRng, rand, noise2 } from '../../kit.js';
 import { C, hash1 } from './ink.js';
 import { W, GY, FLOOR, PIV, LIP } from './world.js';
 
 export const BOUNDS = { x0: -300, y0: -260, x1: 1900, y1: 1180 };
-export const ARCH = [{ x: 540, y: FLOOR }, { x: 1060, y: FLOOR }]; // painted tunnel mouths on the canyon floor
+export const ARCH = [{ x: 520, y: FLOOR }, { x: 1080, y: FLOOR }]; // painted tunnel mouths on the canyon floor
 const FACE = [[0, 0], [4, 24], [-6, 62], [12, 98], [12, 122], [-2, 160], [-10, 232], [2, 280], [2, 302], [-12, 362], [-6, 420], [0, FLOOR - GY]];
 
 function layer(x0, y0, x1, y1, ppu) {
@@ -54,7 +53,7 @@ function mesa(g, rng, side) {
   const lx = f[0][0];
   g.lineTo(lx - dir * 26, GY);
   g.quadraticCurveTo(lx + dir * 2, GY, lx + dir * 4, GY + 16);
-  for (const [x, y] of f) g.lineTo(x, y);
+  for (let i = 1; i < f.length; i++) g.lineTo(f[i][0], f[i][1]);
   g.lineTo(f[f.length - 1][0], BOUNDS.y1);
   g.lineTo(side ? W + 300 : -300, BOUNDS.y1);
   g.closePath();
