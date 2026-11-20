@@ -1,0 +1,6 @@
+
+/* Touch devices: no backdrop blur over the 3D view (it's slow on iPad Safari and can show as
+   black boxes over the WebGL canvas). */
+@media (pointer: coarse) {
+  .tb, .menu-card, .brief, #h-card, #cell-hud *, .cell-tbar *, #touch * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+}

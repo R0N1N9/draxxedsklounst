@@ -31,6 +31,8 @@ import { WEAPONS } from './weapons.js';
 import { Supply } from './supply.js';
 import { RULES, rulesLabel } from './rules.js';
 import { PALETTES as PALS } from './atmosphere.js';
+import { AtmosFX } from './atmofx.js';
+import { hazeUniforms as HZ } from './atmosphere.js';
 
 const ACCENTS = ['#e0a040', '#40c8d8'];
 // Higher magnification = bigger objective = more glint.
@@ -154,6 +156,9 @@ export class Game {
     }
 
     this.world = new World(this.scene, quality, this.palette);
+    // Atmosphere: dust / pollen in the air, low mist banks, fireflies at dusk.
+    const dusk = paletteKey === 'dusk';
+    this.atmos = new AtmosFX(this.scene, { quality, night: dusk, color: dusk ? '#ffc8a8' : '#ffe2a0', mistColor: dusk ? '#8c7aa8' : '#d8c0a0', mistOpacity: dusk ? 0.05 : 0.035, bright: dusk ? 0.4 : 0.55 });
     this.sunDir = applyPalette(this.palette, { sky: this.world.sky, sunLight: this.sun, hemi: this.hemi, renderer: this.renderer });
 
     this.effects = new Effects(this.scene);
@@ -1104,6 +1109,7 @@ export class Game {
       this.sun.position.copy(this.sunDir).multiplyScalar(400);
     }
     this.effects.update(dt, this.camera);
+    if (this.atmos) this.atmos.update(dt, this.camera, HZ.uWind.value, (x, z) => this.world.heightAt(x, z));
     this.audio.setListener(this.camera);
     this.audio.setWind(w2.length());
 
