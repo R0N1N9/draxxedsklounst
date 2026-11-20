@@ -311,3 +311,9 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 
 /* Quickhack scan mode */
 #cell-hud.qh .c-obj, #cell-hud.qh .c-ammo, #cell-hud.qh .c-keys, #cell-hud.qh .c-kit, #cell-hud.qh .c-pip, #cell-hud.qh .c-vis { opacity: 0.25; transition: opacity 0.2s; }
+
+/* Radio subtitles */
+#cell-subs { position: fixed; left: 50%; bottom: 128px; transform: translateX(-50%); z-index: 30; max-width: min(760px, calc(100vw - 32px)); padding: 6px 12px; background: rgba(0, 0, 0, 0.55); color: #f2f4f6; font: 600 16px/1.35 var(--sans, system-ui, sans-serif); text-align: center; text-shadow: 0 1px 2px #000; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+#cell-subs.on { opacity: 1; }
+#cell-subs b { letter-spacing: 0.08em; margin-right: 6px; font-family: var(--mono, monospace); font-size: 13px; }
+@media (pointer: coarse) { #cell-subs { bottom: 170px; font-size: 14px; } }

@@ -283,7 +283,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 ### Comms
 
 - **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER and SYNC, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
-- **Radio voices:** operators and ISR speak over a scratchy radio for cut-scenes, pings, AI replies and the ISR mission briefing as you walk in.
+- **Radio:** operators and ISR Overwatch talk over a tactical squad net. You hear a mic click and static on key-up, clipped male voices over a crackling static bed with dropouts, and a squelch tail on key-down; Overwatch ends with a talk-permit chirp. Every line is **subtitled**.
 - **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
 - **Cut-scenes:**
   - Opening: drive in, gear up, walk out.
@@ -365,7 +365,7 @@ Matchmaking uses the free public PeerJS broker only to exchange connection detai
 
 ## Graphics presets
 
-**Auto** picks a preset based on the GPU:
+**Auto** picks a preset based on the GPU (iPads get Medium, with the render resolution capped on touch devices):
 
 - **High**: Apple Silicon and discrete GPUs. Shadows, MSAA, bloom, ink outlines and the full grade.
 - **Medium**: phones and mid-range GPUs.

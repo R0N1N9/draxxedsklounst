@@ -51,7 +51,9 @@ function detectQuality() {
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
     const r = (ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) + '';
     const ua = navigator.userAgent;
-    if (/Apple M\d|Apple GPU|Apple/i.test(r) || /iPad|iPhone|Macintosh/.test(ua)) return 'high';
+    // iPads report themselves as Macs: tell them apart by touch, and give them the medium preset.
+    if ((/iPad|iPhone/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1))) return 'medium';
+    if (/Apple M\d|Apple GPU|Apple/i.test(r) || /Macintosh/.test(ua)) return 'high';
     if (/HD Graphics (2|3|4|5)\d{3}|HD Graphics$|Mesa Intel\(R\) HD|Ivybridge|Sandybridge|Haswell|llvmpipe|SwiftShader/i.test(r)) return 'low';
     if (/Mali|Adreno|PowerVR|Immortalis|Xclipse/i.test(r) || /Android/.test(ua)) return 'medium';
     if (/NVIDIA|GeForce|Radeon|RTX|Iris Xe|Arc/i.test(r)) return 'high';

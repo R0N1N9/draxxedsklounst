@@ -79,6 +79,7 @@ export const OBJECTIVES = [
 ];
 
 const BLEED = 30;
+const TOUCH = typeof navigator !== 'undefined' && (navigator.maxTouchPoints > 1 || /iPad|iPhone|Android/.test(navigator.userAgent)) && matchMedia('(pointer: coarse)').matches;
 const QUAD_BAT = 300; // seconds of flight (half rate while flying, quarter while parked)
 
 // ---------------------------------------------------------------------------
@@ -394,6 +395,8 @@ export class CellGame {
     const q = this.quality;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: q === 'low', powerPreference: 'high-performance', stencil: false });
     this.pr = q === 'high' ? Math.min(devicePixelRatio, 2) : q === 'medium' ? Math.min(devicePixelRatio, 1.5) : Math.min(devicePixelRatio, 1);
+    // Tablets and phones: cap the render resolution (Retina iPads otherwise push ~5 Mpx through the post pass).
+    if (TOUCH) this.pr = Math.min(this.pr, q === 'high' ? 1.25 : 1);
     this.renderer.setPixelRatio(this.pr);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.35;
@@ -2260,18 +2263,7 @@ export class CellGame {
     if (cv.width !== w) { cv.width = w; cv.height = h; }
     cam.aspect = w / h;
     cam.updateProjectionMatrix();
-    const r = this.renderer;
-    r.autoClear = false;
-    r.setScissorTest(true);
-    r.setScissor(0, 0, w, h);
-    r.setViewport(0, 0, w, h);
-    r.clear();
-    r.render(this.scene, cam);
-    r.setScissorTest(false);
-    r.setViewport(0, 0, innerWidth, innerHeight);
-    r.autoClear = true;
-    const pr = r.getPixelRatio(), src = r.domElement;
-    cv.getContext('2d').drawImage(src, 0, src.height - h * pr, w * pr, h * pr, 0, 0, w, h);
+    this._cornerRender(cam, w, h, cv, cv.getContext('2d'));
   }
 
   // How hard bright light in front of you blooms the night-vision tube (0..1.5).
@@ -2331,31 +2323,38 @@ export class CellGame {
       if (this.isr.mode === 'IR') cam.layers.enable(1); else cam.layers.disable(1);
       this._renderToCanvas(cam, this.hud.sqIsr);
     }
-    this.composer.render();
-    // Tablet camera feed: drawn straight into a hole in the console.
-    // (rendered into the bottom-left corner of the main canvas, under the tablet, and copied
-    // into the console's own canvas ~15 times a second).
+    // Tablet camera feed (~15 Hz): rendered into a corner of the main canvas and copied into
+    // the console *before* the post pass, so the full frame always paints over that corner.
     this._feedT = (this._feedT || 0) - dt;
     const f = this.tablet.visible && this._feedT <= 0 && this.tablet.feed();
     if (f) {
       this._feedT = 1 / 15;
-      const r = this.renderer;
-      const w = Math.round(f.w), h = Math.round(f.h);
-      r.autoClear = false;
-      r.setScissorTest(true);
-      r.setScissor(0, 0, w, h);
-      r.setViewport(0, 0, w, h);
-      r.clear();
       f.cam.layers.disable(1);
-      r.render(this.scene, f.cam);
-      r.setScissorTest(false);
-      r.setViewport(0, 0, innerWidth, innerHeight);
-      r.autoClear = true;
-      const pr = r.getPixelRatio(), src = r.domElement;
-      f.ctx.drawImage(src, 0, src.height - h * pr, w * pr, h * pr, 0, 0, f.canvas.width, f.canvas.height);
+      this._cornerRender(f.cam, Math.round(f.w), Math.round(f.h), f.canvas, f.ctx);
       f.ctx.fillStyle = 'rgba(0,255,224,0.06)';
       for (let y = 0; y < f.canvas.height; y += 3) f.ctx.fillRect(0, y, f.canvas.width, 1);
     }
+    this.composer.render();
+  }
+
+  // Render a camera into the bottom-left corner of the main canvas and copy it out to a 2D
+  // canvas. Restores the renderer's exact viewport / scissor afterwards (the canvas isn't
+  // always innerWidth x innerHeight, e.g. on iPad), so nothing is left behind on screen.
+  _cornerRender(cam, w, h, canvas, ctx) {
+    const r = this.renderer;
+    const vp = r.getViewport(new THREE.Vector4()), sc = r.getScissor(new THREE.Vector4()), st = r.getScissorTest();
+    r.autoClear = false;
+    r.setScissorTest(true);
+    r.setScissor(0, 0, w, h);
+    r.setViewport(0, 0, w, h);
+    r.clear();
+    r.render(this.scene, cam);
+    r.setScissorTest(st);
+    r.setScissor(sc);
+    r.setViewport(vp);
+    r.autoClear = true;
+    const pr = r.getPixelRatio(), src = r.domElement;
+    ctx.drawImage(src, 0, src.height - h * pr, w * pr, h * pr, 0, 0, canvas.width, canvas.height);
   }
 
   // ---- HUD ------------------------------------------------------------------------------

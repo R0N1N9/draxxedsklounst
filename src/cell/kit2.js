@@ -152,6 +152,8 @@ export const Kit2 = {
     if (!this.radio) return;
     if (who === 'me') who = this.role;
     if (who === 'partner') who = this.partnerRole;
+    // Subtitles carry the operators' callsigns.
+    this.radio.names = { [this.role]: this.name, [this.partnerRole]: this.partnerName, isr: 'OVERWATCH' };
     this.radio.say(who, text);
   },
 
