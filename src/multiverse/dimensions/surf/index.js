@@ -79,7 +79,7 @@ export default {
   angleFields: ['hd', 'yaw', 'pitch'],
 
   create(ctx) {
-    const { THREE, renderer } = ctx.three, tC0 = performance.now(), LOG = [];
+    const { THREE, renderer } = ctx.three;
     // Two builds of one picture: a software rasteriser draws the same sea at a lower
     // resolution, without multisampling or lens colour, under full-resolution grain.
     const Q = { soft: false, scale: 1 };
@@ -356,13 +356,7 @@ export default {
         disposeTree(scene);
       },
     };
-    inst.dbg = { game, view, sea, world, fx, Q, SET, LOG }; // test scripts only
-    LOG.push(`create ${Math.round(performance.now() - tC0)}ms`);
-    view.log = (m) => { if (LOG.length < 80) LOG.push(`${Math.round(performance.now() - tC0)} ${m} js${Math.round(jsMs)} g${renderer.info.memory.geometries} t${renderer.info.memory.textures} p${renderer.info.programs.length}`); jsMs = 0; };
-    let jsMs = 0;
-    const up0 = inst.update, rn0 = inst.render;
-    inst.update = (dt) => { const a = performance.now(); up0(dt); jsMs += performance.now() - a; };
-    inst.render = () => { const a = performance.now(); rn0(); jsMs += performance.now() - a; };
+    inst.dbg = { game, view, sea, world, fx, Q, SET }; // test scripts only
     post.resize();
     return inst;
   },

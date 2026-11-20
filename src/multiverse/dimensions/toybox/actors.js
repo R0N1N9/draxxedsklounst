@@ -116,7 +116,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
     const cone = new THREE.Mesh(coneGeo, keep(new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uA: { value: 0 } },
       vertexShader: 'varying float vY; void main() { vY = -position.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: 'precision highp float; uniform float uA; varying float vY; void main() { gl_FragColor = vec4(vec3(0.75, 0.86, 1.0) * uA * (0.06 + 0.2 * pow(1.0 - vY, 2.0)), 1.0); }',
+      fragmentShader: 'precision highp float; uniform float uA; varying float vY; void main() { gl_FragColor = vec4(vec3(0.75, 0.86, 1.0) * uA * (0.07 + 0.26 * pow(1.0 - vY, 2.0)), 1.0); }',
     })));
     cone.visible = false; cone.renderOrder = 7; scene.add(cone);
     return { g, rotor, key, cone };

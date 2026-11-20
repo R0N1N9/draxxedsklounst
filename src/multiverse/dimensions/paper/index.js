@@ -352,8 +352,6 @@ export default {
     let frameDt = 0, anim = 0, introT = 0, overT = 0, wasSudden = false, known = 1, knownT = 0, heading = 0, fired = false, edgeUsed = false, standUsed = false, scopeUsed = false;
     let scopeOn = false, spotted = false, spotT = 0, driftT = 0, promptStage = 0, promptT = 0, note = '', noteA = 0, shakeT = 0, hornPrev = 0, gullT = 6, boltStage = 0, burstT = 0;
     const cs = { x: 0, y: 0, warn: 0, moving: 0 };
-    const dbg = globalThis.__PAPER_DBG || null; // DBG
-    if (dbg) Object.assign(dbg, { P, camera, W, set, fx, stands, ctx, shots, S, placeStandee, fire, scene, mats }); // DBG
     const rmem = { x: 0, z: 0, has: false };
     const dev = () => ctx.input.device;
 
@@ -427,15 +425,13 @@ export default {
         if (v.i !== ctx.me) {
           const ty = Math.atan2(-(v.x - me.x), -(v.z - me.z)), tp = Math.atan2(1.2 - EYE, Math.hypot(v.x - me.x, v.z - me.z));
           yaw = me.yaw + angDiff(me.yaw, ty) * u; pitch = me.pitch + (tp - me.pitch) * u;
-          const k = Math.min(overT * 1.4, 5) / Math.max(8, Math.hypot(v.x - me.x, v.z - me.z));
-          x += (v.x - me.x) * k; z += (v.z - me.z) * k;
-          fov = Math.max(14, fov + (24 - fov) * clamp(overT / 0.9, 0, 1));
+          // a slow storybook push-in: zoom, never dolly (a camera sliding through cardboard and containers looks broken)
+          fov = fov + (22 - fov) * clamp(overT / 0.9, 0, 1) - 5 * clamp((overT - 0.9) / 1.2, 0, 1);
         } else {
           y = EYE - 0.9 * u; roll = 0.35 * u; pitch = me.pitch + 0.3 * u; fov = base - 8 * u;
           yaw = me.yaw + angDiff(me.yaw, Math.atan2(-(foe.x - me.x), -(foe.z - me.z))) * 0.4 * u;
         }
       }
-      if (dbg && dbg.cam) { x = dbg.cam.x; y = dbg.cam.y; z = dbg.cam.z; yaw = dbg.cam.yaw; pitch = dbg.cam.pitch; fov = dbg.cam.fov || fov; roll = 0; } // DBG
       camera.position.set(x, y, z);
       camera.rotation.set(pitch, yaw, roll);
       if (Math.abs(camera.fov - fov) > 0.001) { camera.fov = fov; }
@@ -494,7 +490,7 @@ export default {
       } else { S.prompt = ''; S.promptKey = ''; S.spot = ''; S.spotKey = ''; }
     }
 
-    const inst = {
+    return {
       update(dt) {
         anim += dt; frameDt += dt;
         const live = ctx.phase === 'live';
@@ -546,19 +542,14 @@ export default {
       },
 
       render() {
-        const T = dbg && dbg.T, t0 = T ? performance.now() : 0; // DBG
         const fdt = Math.min(frameDt, 0.1);
         frameDt = 0;
-        const fov = cameraRig(fdt);
+        cameraRig(fdt);
         renderer.getDrawingBufferSize(size);
         mats.set(size.x, size.y, clamp(ctx.height / 235, 1.9, 4.6) * renderer.getPixelRatio(), camera.near);
-        const t1 = T ? performance.now() : 0; // DBG
-        if (!(dbg && dbg.noGL)) renderer.render(scene, camera); // DBG
-        const t2 = T ? performance.now() : 0; // DBG
+        renderer.render(scene, camera);
         fillOverlay(fdt);
-        const t3 = T ? performance.now() : 0; // DBG
-        if (!(dbg && dbg.noOv)) ov.draw(); // DBG
-        if (T) { T.c += t1 - t0; T.g += t2 - t1; T.f += t3 - t2; T.o += performance.now() - t3; T.n++; } // DBG
+        ov.draw();
       },
 
       resize(w, h) {
@@ -614,14 +605,6 @@ export default {
         mats.dispose();
       },
     };
-    if (dbg) { // DBG: where does the frame go?
-      const T = (dbg.T = { u: 0, r: 0, c: 0, f: 0, g: 0, o: 0, n: 0 });
-      const timed = (k, fn) => (...a) => { const t = performance.now(); const r = fn(...a); T[k] += performance.now() - t; return r; };
-      inst.update = timed('u', inst.update);
-      const rr = inst.render;
-      inst.render = timed('r', rr);
-    }
-    return inst;
   },
 };
 

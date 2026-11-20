@@ -14,13 +14,13 @@ export function makeBot(ctx, W, G) {
   function create(p) {
     return {
       mode: 'hide', gx: p.x, gz: p.z, post: null, wait: 0.8 + R() * 1.6, aimT: 0, seen: 0, lost: 0, err: 0, errTo: 0, errT: 0, off: R() < 0.5 ? 1 : -1,
-      threat: 0, lastX: p.x, lastZ: p.z, stuckT: 0, still: 0, strafe: R() < 0.5 ? 1 : -1, strafeT: 0, pel: -1, pelT: 0, pelGo: false, open: 8.6 + R() * 1.6, nerve: 0.7 + R() * 0.6, tx: 0, tz: 0, snap: 0, cop: 3 + R() * 6,
+      threat: 0, lastX: p.x, lastZ: p.z, stuckT: 0, still: 0, strafe: R() < 0.5 ? 1 : -1, strafeT: 0, pel: -1, pelT: 0, pelGo: false, open: 10.1 + R() * 1.6, nerve: 0.7 + R() * 0.6, tx: 0, tz: 0, snap: 0, cop: 3 + R() * 6,
     };
   }
 
   // Somewhere to be: behind something, about as far from them as the round's age says.
   function pickPost(p, e, b, T) {
-    const sudden = W.suddenAt >= 0, want = sudden ? 7 : lerp(27, 9, clamp((T - 9) / 30, 0, 1)) * b.nerve;
+    const sudden = W.suddenAt >= 0, want = sudden ? 7 : lerp(27, 8, clamp((T - 9) / 22, 0, 1)) * b.nerve;
     let best = null, bs = -1e9;
     for (let i = 0; i < W.posts.length; i++) {
       const q = W.posts[i];
@@ -84,14 +84,19 @@ export function makeBot(ctx, W, G) {
     if (sees) { b.seen += dt; b.lost = 0; } else { b.lost += dt; if (b.lost > 0.5) b.seen = 0; }
 
     // ---- where to point: lead them by the pellet's flight, less well when less skilled ----
-    const lead = (dist / PELLET) * (0.35 + 0.65 * skill);
-    let tx = e.x + e.vx * lead, tz = e.z + e.vz * lead;
-    // The first exchange is ranging fire: close enough to make them duck, never on them.
+    // The first exchange is ranging fire: close enough to make them duck, never on them — it
+    // lands a stride BEHIND a moving target, so nobody walks into it.
     const ranging = T < b.open && !sudden;
-    if (ranging) { tx += (-dz / dist) * b.off * 1.7; tz += (dx / dist) * b.off * 1.7; }
+    const lead = ranging ? 0 : (dist / PELLET) * (0.35 + 0.65 * skill);
+    let tx = e.x + e.vx * lead, tz = e.z + e.vz * lead;
+    if (ranging) {
+      const lat = (e.vx * -dz + e.vz * dx) / dist;
+      if (Math.abs(lat) > 0.8) b.off = lat > 0 ? -1 : 1;
+      tx += (-dz / dist) * b.off * 2.4; tz += (dx / dist) * b.off * 2.4;
+    }
     b.tx = tx; b.tz = tz;
     b.errT -= dt;
-    if (b.errT <= 0) { b.errT = 0.45 + R() * 0.5; b.errTo = gauss(R) * lerp(0.05, 0.009, skill); }
+    if (b.errT <= 0) { b.errT = 0.45 + R() * 0.5; b.errTo = gauss(R) * lerp(0.05, 0.009, skill) * (ranging ? 0.4 : 1); }
     b.err += (b.errTo - b.err) * Math.min(1, dt * 3);
     const want = Math.atan2(tz - p.z, tx - p.x) + b.err;
     cmd.a = p.a + angDiff(p.a, want) * (1 - Math.exp(-dt * (4 + 9 * skill)));

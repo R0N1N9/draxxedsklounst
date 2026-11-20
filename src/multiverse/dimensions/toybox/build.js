@@ -18,8 +18,8 @@ const PATCH_LIGHT = `
 {
   float tbD = vTbW.x * uTbHead.z + vTbW.z * uTbHead.w - uTbHead.x;
   float tbQ = -vTbW.x * uTbHead.w + vTbW.z * uTbHead.z;
-  float tbWin = (1.0 - smoothstep(3.6, 5.6, abs(tbD))) * (1.0 - smoothstep(9.0, 15.0, abs(tbQ + 2.0))) * uTbHead.y;
-  float tbSlat = smoothstep(0.22, 0.42, abs(fract(tbD * 0.52) - 0.5) * 2.0);
+  float tbWin = (1.0 - smoothstep(4.8, 7.2, abs(tbD))) * (1.0 - smoothstep(10.0, 16.0, abs(tbQ + 2.0))) * uTbHead.y;
+  float tbSlat = smoothstep(0.2, 0.4, abs(fract(tbD * 0.46) - 0.5) * 2.0);
   vec3 tbIrr = uTbHeadCol * tbWin * tbSlat * max(dot(normal, uTbHeadDir), 0.0);
   float tbUp = 0.3 + 0.7 * max(dot(normal, uTbUp), 0.0);
   for (int i = 0; i < 2; i++) tbIrr += uTbSpotCol * uTbSpot[i].z * (1.0 - smoothstep(${(SPOT_R * 0.5).toFixed(2)}, ${SPOT_R.toFixed(2)}, length(vTbW.xz - uTbSpot[i].xy))) * tbUp;
@@ -32,8 +32,8 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   scene.background = new THREE.Color(0.012, 0.01, 0.02);
   const rng = makeRng(0x7075);
   const U = {
-    head: { value: new THREE.Vector4(0, 0, W.head.ca, W.head.sa) }, headDir: { value: new THREE.Vector3(0, 1, 0) }, headCol: { value: new THREE.Color(9, 8, 6) },
-    spot: { value: [new THREE.Vector4(), new THREE.Vector4()] }, spotCol: { value: new THREE.Color(3.4, 3.9, 4.8) }, up: { value: new THREE.Vector3(0, 1, 0) }, lim: { value: 99 },
+    head: { value: new THREE.Vector4(0, 0, W.head.ca, W.head.sa) }, headDir: { value: new THREE.Vector3(0, 1, 0) }, headCol: { value: new THREE.Color(12, 10.5, 8) },
+    spot: { value: [new THREE.Vector4(), new THREE.Vector4()] }, spotCol: { value: new THREE.Color(6, 6.9, 8.4) }, up: { value: new THREE.Vector3(0, 1, 0) }, lim: { value: 99 },
   };
   const owned = []; // materials and geometries made here
   const keep = (x) => { owned.push(x); return x; };
@@ -338,7 +338,7 @@ void main() {
       dustMat.uniforms.uT.value = wt; dustMat.uniforms.uPx.value = pxPerUnit * 0.045 * renderer.getPixelRatio();
       // Sudden death: somebody turns the big light on.
       bigK += ((ts >= 0 ? 1 : 0) - bigK) * Math.min(1, dt * 5);
-      big.intensity = bigK * 2.4; hemi.intensity = HEMI + bigK * 1.3; beamMat.uniforms.uA.value = 0.06 * (1 - bigK * 0.7);
+      big.intensity = bigK * 1.5; hemi.intensity = HEMI + bigK * 0.5; beamMat.uniforms.uA.value = 0.06 * (1 - bigK * 0.7);
       // The train, and whatever is being tidied away.
       for (const v of views) {
         const o = v.o, obj = v.obj;

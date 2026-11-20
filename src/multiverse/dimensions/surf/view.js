@@ -29,7 +29,7 @@ export function makeView(ctx, THREE, renderer, W) {
   const S = {
     w: 1, h: 1, t: 0, live: false, alive: true, under: false, brace: 0, rx: 0, ry: 0, spreadPx: 10, clear: false, wall: false, ready: true, cycle: 0,
     prompt: '', prompt2: '', promptA: 0, note: '', noteA: 0, noteHot: false, bars: 1, pad: 8, gauge: true, prof: new Float32Array(game.los.n + 1), eyeA: 0, eyeB: 0,
-    colA: me.color, colB: foe.color, ammo: 4, mag: R.mag, reloading: false, dist: 0, kmh: 0, push: 0, white: 0, marks: [], hits: [],
+    colA: me.color, colB: foe.color, touch: false, ammo: 4, mag: R.mag, reloading: false, dist: 0, kmh: 0, push: 0, white: 0, marks: [], hits: [],
   };
   for (let i = 0; i < 3; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: 'foe', color: '#fff', hollow: false, text: '', sub: '' });
   for (let i = 0; i < 3; i++) S.hits.push({ ang: 0, a: 0, x: 0, z: 0 });
@@ -221,7 +221,8 @@ export function makeView(ctx, THREE, renderer, W) {
       pushS = damp(pushS, me.push - (me.air ? 0 : R.grav * me.slope * 0.35), 5, dt); // what the water is doing to your speed
       S.push = pushS; S.white = me.white;
       S.bars = damp(S.bars, bars, 6, dt);
-      S.pad = ctx.input.device === 'touch' ? 8 : 14;
+      S.touch = ctx.input.device === 'touch';
+      S.pad = S.touch ? 8 : 14;
       S.gauge = foe.alive && me.alive;
       const hs = game.los.hs, n = game.los.n;
       for (let i = 0; i <= n; i++) S.prof[i] = hs[ctx.me ? n - i : i];
@@ -281,11 +282,11 @@ export function makeView(ctx, THREE, renderer, W) {
           // A software rasteriser pays for a draw over the next several frames, not in one:
           // add up everything it stalled since, do not draw again while it is still catching
           // up, and let no more than a sixth of the time go on drawing — the duel runs true.
-          if (iv > 40) { debt += iv - 17; if (api.log && iv > 400) api.log(`stall ${Math.round(iv)} f${frames}`); }
+          if (iv > 40) debt += iv - 17;
           if (frames < 14 || iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
+          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && debt > 0) post.setScale(Math.min(0.72, post.scale * 1.08));
         }
       }
-      if (api.log) api.log(`draw#${api.draws + 1} f${frames} debt${Math.round(debt)} iv${Math.round(iv)}`);
       drawAt = now;
       debt = 0;
       api.draws++;

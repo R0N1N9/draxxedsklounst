@@ -97,7 +97,7 @@ void main() {
 
   // foam: where the surface folds, in streaks on the high water, and along the sand
   float lace = d3.z * 0.6 + texture2D(tDetail, vP0 * 0.071 + rip * 0.05 - t * vec2(0.013, 0.006)).z * 0.75 * (0.5 + d1.w);
-  float foam = smoothstep(0.72, 0.3, J) * (0.35 + lace) + smoothstep(1.0, 2.8, h) * smoothstep(0.95, 1.3, lace + d2.w * 0.7) * 0.5;
+  float foam = smoothstep(0.8, 0.44, J) * (0.3 + lace) + smoothstep(1.0, 2.8, h) * smoothstep(0.95, 1.3, lace + d2.w * 0.7) * 0.5;
   float band = sin(depth * 2.6 + t * 1.25 + d2.w * 3.0 + vP0.x * 0.02);
   foam += (smoothstep(0.55, 1.0, band) * (0.35 + lace) * smoothstep(4.5, 0.6, depth) + smoothstep(0.55, 0.05, depth) * (0.6 + lace)) * step(-0.3, depth);
   foam = clamp(foam, 0.0, 1.0);

@@ -207,7 +207,7 @@ export function buildWorld(rng, names) {
         const s = W.spots[i];
         if (s.on > 0) l = Math.max(l, s.on * (1 - smoothstep(SPOT_R * 0.55, SPOT_R, Math.hypot(x - s.x, z - s.z))));
       }
-      if (W.head.k > 0) l = Math.max(l, W.head.k * (1 - smoothstep(3.2, 5.2, Math.abs(x * hca + z * hsa - W.head.p))));
+      if (W.head.k > 0) l = Math.max(l, W.head.k * (1 - smoothstep(4.6, 7, Math.abs(x * hca + z * hsa - W.head.p))));
       return l;
     },
 

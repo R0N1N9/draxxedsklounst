@@ -251,7 +251,7 @@ export function makeGame(ctx, sea, world, fx) {
     const fx2 = -Math.sin(p.hd), fz2 = -Math.cos(p.hd);
     p.x += fx2 * p.v * dt; p.z += fz2 * p.v * dt;
     if (p.dive <= 0 && !p.air) {
-      const fl = sea.flow(p.x, p.z), white = smoothstep(0.72, 0.36, fl.fold);
+      const fl = sea.flow(p.x, p.z), white = smoothstep(0.8, 0.46, fl.fold);
       p.white = damp(p.white, white, 9, dt);
       const cx = fl.vx * R.carry + fl.bx * p.white * R.shove, cz = fl.vz * R.carry + fl.bz * p.white * R.shove;
       p.x += cx * dt; p.z += cz * dt;

@@ -118,7 +118,7 @@ export function drawOverlay(g, S) {
     g.fillRect(clear(S, foe.hx, y, 90) - w / 2 + 4, y + small * 0.62, (w - 8) * clamp(S.foeLit, 0, 1), 2);
     g.globalAlpha = 1;
   }
-  if (S.note.a > 0.01) { const y = S.note.y - px * 2.2; tape(g, clear(S, S.note.x, y, 150), y, S.note.bold, S.note.rest, S.note.color, small, Math.min(1, S.note.a * 2.5)); }
+  if (S.note.a > 0.01) { const y = S.note.y - px * 2.2; tape(g, clear(S, S.note.x, y, 150), y, S.note.bold, S.note.rest, S.note.color, small, Math.min(1, S.note.a * 2.5), INK); }
 
   // ---- sudden death: nobody can be missed ----
   if (S.sudden && S.live) {
@@ -126,7 +126,7 @@ export function drawOverlay(g, S) {
       if (!p.alive) continue;
       const y = p.hy - px * 1.6 - Math.abs(Math.sin(t * 6)) * 6;
       g.fillStyle = p.color; g.strokeStyle = 'rgba(0,0,0,0.6)'; g.lineWidth = 2;
-      g.beginPath(); g.moveTo(p.hx - 9, y - 12); g.lineTo(p.hx + 9, y - 12); g.lineTo(p.hx, y); g.closePath(); g.stroke(); g.fill();
+      g.beginPath(); g.moveTo(p.hx - 13, y - 17); g.lineTo(p.hx + 13, y - 17); g.lineTo(p.hx, y); g.closePath(); g.stroke(); g.fill();
     }
   }
 }

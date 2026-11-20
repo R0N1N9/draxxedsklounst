@@ -44,7 +44,7 @@ export function drawOverlay(g, S) {
       if (m.sub) label(g, m.sub, m.x, m.y - 39 * u, 9.5 * u, CREAM, m.a * 0.85, 'center', FONT, 600);
     } else if (m.kind === 'foe') {
       // off screen: an arrow on an ellipse that keeps clear of the corners' controls
-      const rx = w * 0.3, ry = h * 0.33, ax = cx + Math.sin(m.ang) * rx, ay = cy - Math.cos(m.ang) * ry;
+      const rx = S.touch ? Math.min(w * 0.16, h * 0.3) : w * 0.3, ry = S.touch ? rx : h * 0.33, ax = cx + Math.sin(m.ang) * rx, ay = Math.min(cy - Math.cos(m.ang) * ry, S.touch ? h * 0.6 : h);
       g.save();
       g.translate(ax, ay);
       g.rotate(m.ang);

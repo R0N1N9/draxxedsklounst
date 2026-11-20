@@ -123,7 +123,7 @@ export function makeToys(THREE, G) {
 
   // ---- the lamp: base at `base`, shade at `head`, pointing along `dir` (unit) ----
   function lamp(base, head, dir) {
-    const b = new G.Bag(), enamel = '#d9d2c0', brass = '#c9a24a';
+    const b = new G.Bag(), enamel = '#d5573c', brass = '#c9a24a';
     b.add(G.cyl(1.9, 2.15, 0.34, 30), { p: [base.x, 0.17, base.z], color: enamel });
     const el = [base.x + (head.x - base.x) * 0.2, head.y * 0.72, base.z + (head.z - base.z) * 0.05], neck = [head.x - dir.x * 0.5, head.y - dir.y * 0.5, head.z - dir.z * 0.5];
     b.limb([base.x, 0.3, base.z], el, 0.16, 0.14, enamel, false);
@@ -132,6 +132,8 @@ export function makeToys(THREE, G) {
     b.add(G.ball(0.26, 12, 10), { p: neck, color: brass });
     q.setFromUnitVectors(up, v.set(dir.x, dir.y, dir.z));
     b.add(G.lathe([[0.3, -0.5], [0.42, 0], [0.75, 0.3], [1.9, 2.3], [1.98, 2.34]], 30), { p: [head.x, head.y, head.z], q: q.clone(), color: enamel });
+    b.add(G.cyl(0.34, 0.3, 0.3, 14), { p: [head.x - dir.x * 0.6, head.y - dir.y * 0.6, head.z - dir.z * 0.6], q: q.clone(), color: brass }); // the vent cap
+    b.add(G.torus(1.96, 0.07, 6, 30), { p: [head.x + dir.x * 2.32, head.y + dir.y * 2.32, head.z + dir.z * 2.32], q: q.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2)), color: brass }); // the rolled rim
     const body = b.build();
     // What glows: the inside of the shade and the bulb.
     const g = new G.Bag(), bulb = new G.Bag();
