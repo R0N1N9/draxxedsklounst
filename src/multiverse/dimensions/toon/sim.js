@@ -19,7 +19,7 @@ export function makeSim(ctx, w, S, sound, fx) {
   const sh = { x: 0, y: 0 };
   const r1 = (v) => Math.round(v * 10) / 10;
   const corks = S.corks;
-  for (let i = 0; i < CORKS; i++) corks.push({ live: false, owner: 0, x: 0, y: 0, vx: 0, vy: 0, g: 0, judge: false, bounces: 0, age: 0, seed: i * 3.1, ox: 0, oy: 0, charge: 0, ricochet: false });
+  for (let i = 0; i < CORKS; i++) corks.push({ live: false, owner: 0, x: 0, y: 0, vx: 0, vy: 0, g: 0, judge: false, bounces: 0, age: 0, seed: i * 3.1, ox: 0, oy: 0, charge: 0, ricochet: false, whiz: false });
   let cork = 0, holeN = 0, decoyN = 0;
   const reloadT = () => (ctx.sudden ? RELOAD * 0.55 : RELOAD);
 
@@ -49,7 +49,7 @@ export function makeSim(ctx, w, S, sound, fx) {
     for (let i = 0; i < CORKS; i++) { const q = corks[(cork + i) % CORKS]; if (!q.live) { k = q; cork = (cork + i + 1) % CORKS; break; } }
     if (!k) { k = corks[cork]; cork = (cork + 1) % CORKS; }
     k.live = true; k.owner = owner; k.x = x; k.y = y; k.ox = x; k.oy = y; k.vx = Math.cos(a) * sp.v; k.vy = Math.sin(a) * sp.v; k.g = sp.g;
-    k.judge = judge; k.bounces = 0; k.age = 0; k.charge = c; k.ricochet = false;
+    k.judge = judge; k.bounces = 0; k.age = 0; k.charge = c; k.ricochet = false; k.whiz = false;
     const p = P[owner];
     p.recoil = 1; p.flash = 0.11;
     if (p.remote) { p.rt = reloadT() * (1 + c * 0.55); p.rmax = p.rt; p.charge = 0; }
@@ -154,6 +154,10 @@ export function makeSim(ctx, w, S, sound, fx) {
           }
         }
         if (k.x < -400 || k.x > W + 400 || k.y > 1250 || k.y < -1100 || k.age > 6) k.live = false;
+        if (k.live && !k.whiz && k.owner !== ctx.me) { // a near miss rattles the local sniper
+          const me = P[ctx.me];
+          if (me.alive && Math.hypot(k.x - me.x, k.y - (me.y - 50)) < 120) { k.whiz = true; sound.whiz(k.x); S.shake.add(0.18); me.scare = 0.7; }
+        }
       }
     }
   }
@@ -213,12 +217,12 @@ export function makeSim(ctx, w, S, sound, fx) {
     let pair = null;
     for (const q of S.holes) if (q.owner === p.i && !q.b) pair = q;
     if (pair) {
-      if (Math.abs(pair.a.x - p.x) < 90 && Math.abs(pair.a.y - p.y) < 40) { p.a1msg = 'TOO CLOSE|walk further away'; p.a1msgT = 1.6; return false; }
+      if (Math.abs(pair.a.x - p.x) < 90 && Math.abs(pair.a.y - p.y) < 40) { p.a1msg = ['TOO CLOSE', 'walk further away']; p.a1msgT = 1.6; return false; }
       pair.b = newHole(p.x, p.y, 1);
       pair.age = 0;
       p.a1cd = 6.5;
       p.a1n = 2;
-      if (!p.bot && p.i === ctx.me && !S.holeTold2) { S.holeTold2 = true; p.a1msg = 'WALK INTO ONE HOLE|POP OUT OF THE OTHER'; p.a1msgT = 3.2; }
+      if (!p.bot && p.i === ctx.me && !S.holeTold2) { S.holeTold2 = true; p.a1msg = ['WALK INTO ONE HOLE', 'POP OUT OF THE OTHER']; p.a1msgT = 3.2; }
       if (online && p.i === ctx.me) ctx.net.send({ k: 'hole', n: 1, x: r1(p.x), y: r1(p.y), pid: pair.id });
     } else {
       for (let i = S.holes.length - 1; i >= 0; i--) if (S.holes[i].owner === p.i) S.holes.splice(i, 1);
@@ -226,7 +230,7 @@ export function makeSim(ctx, w, S, sound, fx) {
       S.holes.push(pair);
       p.a1n = 1;
       p.a1lock = 0.4;
-      if (!p.bot && p.i === ctx.me && !S.holeTold1) { S.holeTold1 = true; p.a1msg = 'NOW SLAP|THE TWIN'; p.a1msgT = 2.6; }
+      if (!p.bot && p.i === ctx.me && !S.holeTold1) { S.holeTold1 = true; p.a1msg = ['NOW SLAP', 'THE TWIN']; p.a1msgT = 2.6; }
       if (online && p.i === ctx.me) ctx.net.send({ k: 'hole', n: 0, x: r1(p.x), y: r1(p.y), pid: pair.id });
     }
     p.sq.v -= 8;
@@ -345,7 +349,7 @@ export function makeSim(ctx, w, S, sound, fx) {
     // ladders
     if (p.lad) {
       const l = p.lad, top = ladderTop(w, l);
-      p.st = 2; p.h = PH; p.ground = false;
+      p.st = 2; p.h = PH; p.ground = false; p.charge = 0;
       p.x += (l.x - p.x) * Math.min(1, dt * 16); // swing onto the rungs
       const dy = live && p.stun <= 0 ? (cmd.my < -0.2 ? -1 : cmd.my > 0.2 ? 1 : 0) : 0;
       p.y += dy * CLIMB * dt;
@@ -429,7 +433,7 @@ export function makeSim(ctx, w, S, sound, fx) {
       p.a2cd = 11;
       const id = p.i * 1000 + ++decoyN;
       plantDecoy(p.i, id, p.x, p.y, p.face);
-      if (!p.bot && p.i === ctx.me && !S.decoyTold) { S.decoyTold = true; p.a1msg = 'A CUT-OUT OF YOU|bait for their cork'; p.a1msgT = 2.8; }
+      if (!p.bot && p.i === ctx.me && !S.decoyTold) { S.decoyTold = true; p.a1msg = ['A CUT-OUT OF YOU', 'bait for their cork']; p.a1msgT = 2.8; }
       if (online && p.i === ctx.me) ctx.net.send({ k: 'decoy', id, x: r1(p.x), y: r1(p.y), f: p.face });
       if (p.i === ctx.me) S.usedDecoy = true;
     }

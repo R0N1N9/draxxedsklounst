@@ -11,12 +11,17 @@
 //   Your aim rides the board: it wanders with speed and turning and tips with the face under
 //   you. The reticle is drawn where the round will really go, so you can see all of that.
 // CONTROLS     stick / WASD: CARVE (push where you want to go — relative to where you look —
-//   and the board carves round to it; faster down a face, slower up one) · look: AIM ·
-//   FIRE · alt BRACE (one knee: steady, zoomed 3.6x, but no steering and you slow to a
-//   drift — a sitting duck with a lens that glints) · a1 DIVE (duck under for a second:
+//   and the board carves round to it) · look: AIM ·
+//   FIRE · alt BRACE (one knee: steady, a 2.8x lens — you stay in the foot of the frame —
+//   but no steering: the sea takes you where it likes, and your scope glints) · a1 DIVE (duck under for a second:
 //   nothing can touch you, and you come up 15 m further on; the dodge) · a2 SPRAY (a hard
 //   cutback throws a curtain of spray across your line of sight for seven seconds — the
 //   smoke grenade of the sea: it hides, it does not stop rounds).
+// THE SEA      moves you, as a pure function of place and time (sea.flow): the surface runs
+//   forward on every crest and back in every trough and carries the board with it; a face
+//   is a slope (15 m/s² of it: you gain speed dropping in and lose it climbing out); and
+//   where a crest is breaking — the white water you can see — it shoves you along at half
+//   the wave's own speed, drags at you and shakes your aim. Picking a line matters.
 // THE WORLD    All of it runs off the round clock, so both clients see the same bay. A pod
 //   of dolphins leaps round the middle (they stop rounds, and are fine), a fin circles and
 //   bumps any board it reaches (a nudge, never a bite), a beach ball bounces through on the
@@ -26,9 +31,12 @@
 // THE BOT      bot.js: feels the swell out, ranges with a shot or two that skip past, then
 //   holds the range and waits for windows or zig-zags in through the troughs; braces to
 //   shoot, relocates after, dives when lined up, throws spray when caught reloading.
-// THE KILL     The wipe-out of the century, in slow motion: the board fires into the sky
-//   end over end, the rider cartwheels after it, a tower of white water goes up — and a
-//   rainbow hangs in the mist while the camera drifts round low on the sunward side.
+// THE KILL     One unbroken beat that hands the match to the world below (overTime 4.5 s).
+//   The loser's board fires into the sky; they come off it arms out and tumble down the face
+//   into a tower of white water with a rainbow in the mist — seen on a long lens over the
+//   winner's shoulder. The winner watches them go under, crouches, and dives in after them
+//   head first; the camera swings round behind, follows them down, and the last frame is the
+//   lens crossing the waterline: foam and bubbles, the bright surface overhead, blue below.
 // SUDDEN DEATH The swell dies away to almost nothing — no cover left — both snipers are
 //   marked with a beam, and the buoy line closes on the middle of the bay.
 //
@@ -41,7 +49,7 @@ import { clamp, lerp, disposeTree, hexToRgb } from '../../kit.js';
 import { DEFAULTS } from '../../contract.js';
 import { makeSea, SET } from './sea.js';
 import { makeWorld } from './world.js';
-import { makeGame, LOOK, R } from './game.js';
+import { makeGame, LOOK, R, KILL, SLOW } from './game.js';
 import { makeBot } from './bot.js';
 import { makeSky, SUN, SUN_COLOR } from './sky.js';
 import { makeOcean } from './ocean.js';
@@ -67,7 +75,7 @@ export default {
   hint: 'Wave crests block your shot — fire when you can see them.',
   altToggle: true,
   roundTime: ROUND,
-  overTime: 3.3,
+  overTime: KILL.end,
   angleFields: ['hd', 'yaw', 'pitch'],
 
   create(ctx) {
@@ -155,34 +163,53 @@ export default {
       reloaded(p) { if (p === game.me && !p.bot) sfx.reloaded(); },
       dry(p) { if (p === game.me) sfx.dry(); },
       horn() { sfx.horn(); sfx.setWave(); view.note('SET WAVE COMING THROUGH', true, 3.2); },
-      wipeout(v, dx, dz) {
+      // The hit: the board leaves, the rider starts to fall. (The water comes later.)
+      wipeout(v) {
         const c = rgb[1 - v.i];
-        fx.star(v.x, v.y + 1, v.z, 9, 6 + c[0] * 6, 6 + c[1] * 6, 6 + c[2] * 6, 0.12);
-        fx.confetti(v.x, v.y + 1, v.z, 30, [[2 + c[0] * 5, 2 + c[1] * 5, 2 + c[2] * 5], [3, 3, 3]]);
-        // the tower
-        for (let i = 0; i < 44; i++) { const a = Math.random() * 6.28, r = Math.random() * 1.6, up = 9 + Math.random() * 16; fx.mist(v.x + Math.cos(a) * r, v.y + 0.3, v.z + Math.sin(a) * r, Math.cos(a) * (1 + r), up, Math.sin(a) * (1 + r), 1.2 + Math.random() * 1.0, 1.4, 4.5 + Math.random() * 2, 0.7, 10, 0.5); }
-        for (let i = 0; i < 70; i++) { const a = Math.random() * 6.28, s = 2 + Math.random() * 7; fx.drop(v.x, v.y + 0.3, v.z, Math.cos(a) * s, 8 + Math.random() * 18, Math.sin(a) * s, 1 + Math.random() * 1.2, 0.08 + Math.random() * 0.1); }
-        for (let i = 0; i < 3; i++) fx.ring(v.x, v.y, v.z, 1 + i, 9 + i * 4, 1.2 + i * 0.3, 0.9);
-        // a hanging veil for the rainbow to live in
-        for (let i = 0; i < 26; i++) fx.mist(v.x + rnd(9) - SUN.x * 8, v.y + 1 + Math.random() * 7, v.z + rnd(9) - SUN.z * 8, rnd(0.6), 0.6 + Math.random(), rnd(0.6), 2.4, 3, 7, 0.16, 0.2, 0.5);
-        fx.warm(0.1);
+        fx.star(v.x, v.y + 1, v.z, 8, 6 + c[0] * 6, 6 + c[1] * 6, 6 + c[2] * 6, 0.12);
+        fx.confetti(v.x, v.y + 1, v.z, 26, [[2 + c[0] * 5, 2 + c[1] * 5, 2 + c[2] * 5], [3, 3, 3]]);
+        fx.splash(v.x, v.y, v.z, 1.6, 9, 9);
+        for (let i = 0; i < 16; i++) fx.drop(v.x, v.y + 0.3, v.z, rnd(3), 9 + Math.random() * 12, rnd(3), 1 + Math.random(), 0.1); // what the board took up with it
+        fx.warm(0.06);
         sfx.wipeout(v.x, v.z);
       },
-      splashDown(x, y, z, size) { fx.splash(x, y, z, 1.6 * size, 8, 8 * size); sfx.splashDown(x, z, size); },
+      // Something fell in: the board, or (big) the rider — a tower of white water, and a bow in its mist.
+      splashDown(x, y, z, size, body) {
+        fx.splash(x, y, z, 1.6 * size, 8, 8 * size);
+        sfx.splashDown(x, z, size);
+        if (!body) return;
+        const k = game.kill;
+        for (let i = 0; i < 40; i++) { const a = Math.random() * 6.28, r = Math.random() * 1.8, up = 8 + Math.random() * 13; fx.mist(x + Math.cos(a) * r, y + 0.3, z + Math.sin(a) * r, Math.cos(a) * (1 + r), up, Math.sin(a) * (1 + r), 1.4 + Math.random() * 1.2, 1.4, 4.5 + Math.random() * 2, 0.7, 9, 0.5); }
+        for (let i = 0; i < 60; i++) { const a = Math.random() * 6.28, s = 2 + Math.random() * 7; fx.drop(x, y + 0.3, z, Math.cos(a) * s, 7 + Math.random() * 15, Math.sin(a) * s, 1 + Math.random() * 1.2, 0.08 + Math.random() * 0.1); }
+        for (let i = 0; i < 3; i++) fx.ring(x, y, z, 1 + i, 9 + i * 4, 1.4 + i * 0.3, 0.9);
+        for (let i = 0; i < 24; i++) fx.mist(x + rnd(8) + k.ux * 5, y + 1 + Math.random() * 7, z + rnd(8) + k.uz * 5, rnd(0.6), 0.6 + Math.random(), rnd(0.6), 3, 3, 7, 0.15, 0.2, 0.5); // a veil for the bow to hang in
+        fx.rainbow(x + k.ux * 9, y - 2, z + k.uz * 9);
+      },
+      // The winner leaves their board...
+      spring(w) { fx.splash(w.x, w.y, w.z, 0.9, 4, 3); ctx.audio.sfx('whoosh', { gain: 0.5 }); },
+      // ...and goes in clean: a tight column, a ring, and the sound closing over.
+      header(x, y, z) {
+        for (let i = 0; i < 14; i++) fx.mist(x + rnd(0.4), y + 0.2, z + rnd(0.4), rnd(1.2), 4 + Math.random() * 6, rnd(1.2), 0.9 + Math.random() * 0.6, 0.7, 2.6, 0.65, 9, 0.6);
+        for (let i = 0; i < 26; i++) fx.drop(x, y + 0.2, z, rnd(2.5), 5 + Math.random() * 8, rnd(2.5), 0.7 + Math.random() * 0.6, 0.08);
+        fx.ring(x, y, z, 0.6, 5, 1.1, 0.9); fx.ring(x, y, z, 0.3, 8, 1.6, 0.6);
+        sfx.header(x, z);
+      },
     };
     game = makeGame(ctx, sea, world, hooks);
     const P = game.P, me = game.me, foe = P[1 - ctx.me];
     const brain = makeBot(ctx, sea, world, game);
     for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = brain.create(p);
     const post = makePost(THREE, renderer, { msaa: !Q.soft, scale: Q.scale, lens: !Q.soft });
-    view = makeView(ctx, THREE, renderer, { scene, sea, world, game, fx, post, ocean, haze, models, Q, sfx });
+    // If the clock ran ahead of the frames (a hitch), run the hand-off out before the round's last picture is taken.
+    const settle = () => { for (let i = 0; i < 200 && ctx.phase === 'over' && game.kill.on && game.kill.t < KILL.end - 0.02; i++) frame(0.05 * SLOW, T + 0.05 * SLOW, true); };
+    view = makeView(ctx, THREE, renderer, { scene, sea, world, game, post, ocean, haze, Q, sfx, settle });
 
     let T = -4.6, introRate = 1, introOn = false, suddenSeen = false, sprayAcc = [0, 0], wallAcc = 0, driftAcc = 0, wasTurn = 0;
     const bp = game.bullets.map(() => ({ on: false, x: 0, y: 0, z: 0 }));
     const riders = [{ x: 0, z: 0, v: 0, on: false }, { x: 0, z: 0, v: 0, on: false }];
 
     function humanCmd(p, first) {
-      const inp = ctx.input, c = p.cmd, live = ctx.phase === 'live', k = first && live ? LOOK * lerp(1, 0.34, p.brace) : 0;
+      const inp = ctx.input, c = p.cmd, live = ctx.phase === 'live', k = first && live ? LOOK * lerp(1, 0.42, p.brace) : 0;
       c.mx = inp.moveX; c.my = inp.moveY;
       c.yaw = p.yaw - inp.lookX * k;
       c.pitch = clamp(p.pitch - inp.lookY * k, -0.6, 0.5);
@@ -198,7 +225,7 @@ export default {
         rd.x = p.x; rd.z = p.z; rd.v = p.v; rd.on = onWater && p.v > 1.2;
         if (!onWater || p.v < 2) continue;
         const fxh = -Math.sin(p.hd), fzh = -Math.cos(p.hd), carve = Math.abs(p.turn);
-        sprayAcc[p.i] += dt * (p.v * 1.6 + carve * p.v * 2.2);
+        sprayAcc[p.i] += dt * (p.v * 1.6 + carve * p.v * 2.2 + p.white * 30);
         for (; sprayAcc[p.i] >= 1; sprayAcc[p.i] -= 1) {
           const side = p.turn > 0 ? -1 : 1, sx = Math.cos(p.hd) * side, sz = -Math.sin(p.hd) * side, hard = Math.min(1, carve / 1.8);
           fx.mist(p.x - fxh * 1.1 + rnd(0.3), p.y + 0.15, p.z - fzh * 1.1 + rnd(0.3), -fxh * p.v * 0.25 + sx * hard * 4 + rnd(0.7), 1.2 + hard * 3.5 + Math.random() * 1.5, -fzh * p.v * 0.25 + sz * hard * 4 + rnd(0.7), 0.6 + Math.random() * 0.5, 0.45, 1.5 + hard * 1.4, 0.34, 5, 1.2);
@@ -292,7 +319,7 @@ export default {
         else if (phase === 'live') { sfx.music(); view.poke(); }
         else if (phase === 'over') {
           const r = ctx.result;
-          if (r && r.victim >= 0) { game.fell(P[r.victim]); view.killCam(P[r.victim]); }
+          if (r && r.victim >= 0 && r.winner >= 0) { game.fell(P[r.victim]); view.killCam(); }
         }
       },
       onNet(msg) {

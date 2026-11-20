@@ -373,6 +373,27 @@ export function drawCloud(g, x, y, s, seed, idx = 1) {
   g.restore();
 }
 
+/** A cover rock: a lumpy inked boulder with hatching and a crack, drawn live so it can boil — and get up and leave. */
+export function drawRock(g, cx, by, lit, seed, hop = 0) {
+  g.save();
+  g.translate(cx, by - hop);
+  const pts = [-47, 0, -53, -20, -36, -46, -8, -62, 24, -57, 48, -32, 51, 0];
+  g.beginPath();
+  poly(g, pts, seed, lit ? C.g1 : C.g2, 0, 1.2, C.ink, 1.4);
+  g.save();
+  poly(g, pts, seed, null, 0, 0, C.ink, 0.1);
+  g.clip();
+  g.fillStyle = lit ? C.paper2 : C.g1;
+  g.beginPath(); g.ellipse(-12, -40, 30, 17, -0.3, 0, 6.283); g.fill();
+  g.strokeStyle = `rgba(27,22,18,${lit ? 0.16 : 0.32})`; g.lineWidth = 1.6;
+  g.beginPath(); for (let x = -70; x < 60; x += 9) { g.moveTo(x, -70); g.lineTo(x + 70, 4); } g.stroke();
+  g.restore();
+  poly(g, pts, seed, null, 4.2, 1.4, C.ink, 1.4);
+  g.strokeStyle = 'rgba(27,22,18,0.6)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(26, -52); g.lineTo(18, -30); g.lineTo(26, -16); g.stroke();
+  g.restore();
+}
+
 /** The cover rocks have faces and watch the duel: eyes follow (lx, ly) and blink. */
 export function drawRockFace(g, cx, cy, lx, ly, T, seed, alarmed) {
   const blink = (T * 0.7 + seed) % 3.1 < 0.13;

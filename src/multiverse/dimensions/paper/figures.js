@@ -1,7 +1,7 @@
 // The paper people: a sniper is a printed card on a thin core — a full target face-on, a ruled line edge-on.
 // Standees are the same card in cardboard. The mascots dotted round the yard are plain scenery cut-outs.
 import { drawSniper, drawMascot, drawGlint, dieCut } from './art.js';
-import { ID, ID_DARK, INK, PAPER, KRAFT, GROUND_SHADE, lighter } from './style.js';
+import { ID, ID_DARK, INK, PAPER, GROUND_SHADE, lighter } from './style.js';
 import { LineSet } from './lines.js';
 
 const TAU = Math.PI * 2;
@@ -37,7 +37,7 @@ export function makeFigureKit(THREE, mats) {
   const shadowGeo = new THREE.CircleGeometry(0.6, 20).rotateX(-Math.PI / 2);
   geos.push(quad, slabGeo, shadowGeo);
   const cardMat = (tex) => {
-    const m = new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, side: THREE.FrontSide, alphaToCoverage: true });
+    const m = new THREE.MeshBasicMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide }); // double-sided so every card, sign and cloud shares one shader program
     matl.push(m);
     return m;
   };
@@ -47,9 +47,9 @@ export function makeFigureKit(THREE, mats) {
     mascot: canvasTex((g) => { drawMascot(g); dieCut(g, 256, 512, 7, '#fffdf5'); }, 256, 512),
   };
   const mLive = tex.live.map(cardMat), mStand = tex.standee.map(cardMat), mMascot = cardMat(tex.mascot);
-  const coreMats = ID.map((c) => { const m = new THREE.MeshBasicMaterial({ color: c }); matl.push(m); return m; });
-  const standCore = new THREE.MeshBasicMaterial({ color: '#b98a55' });
-  const shadowMat = new THREE.MeshBasicMaterial({ color: GROUND_SHADE, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const coreMats = ID.map((c) => { const m = new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide }); matl.push(m); return m; });
+  const standCore = new THREE.MeshBasicMaterial({ color: '#b98a55', side: THREE.DoubleSide });
+  const shadowMat = new THREE.MeshBasicMaterial({ color: GROUND_SHADE, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   matl.push(standCore, shadowMat);
 
   // crumpled paper ball, shared by every figure that dies (one geometry, one set of edge lines per ball)
@@ -105,7 +105,7 @@ export function makeFigureKit(THREE, mats) {
     }
     const bg = ballGeo.clone();
     bg.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const bm = new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+    const bm = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
     const bmesh = new THREE.Mesh(bg, bm);
     const bl = new LineSet(THREE, bp.count, mats.ink);
     for (let f = 0; f < bp.count / 3; f++) {
@@ -135,8 +135,8 @@ export function makeFigureKit(THREE, mats) {
     };
     return f;
   }
-  const flashMat = new THREE.SpriteMaterial({ map: null, depthWrite: false, transparent: true });
-  const glintMat = new THREE.SpriteMaterial({ map: canvasTex((g) => drawGlint(g, 128), 128, 128), depthWrite: false, transparent: true });
+  const flashMat = new THREE.SpriteMaterial({ map: null, depthWrite: false, transparent: true, alphaTest: 0.01 });
+  const glintMat = new THREE.SpriteMaterial({ map: canvasTex((g) => drawGlint(g, 128), 128, 128), depthWrite: false, transparent: true, alphaTest: 0.01 });
   matl.push(flashMat, glintMat);
   return {
     sniper: (i) => build('live', i),

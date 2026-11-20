@@ -136,6 +136,8 @@ export function drawOverlay(g, S) {
       g.fillStyle = on ? '#f3c66a' : rgba(CREAM, 0.16); g.fill();
       if (on) { g.fillStyle = '#ff9a55'; g.fillRect(x, y, bw, 4 * u); }
     }
+    // what the sea is doing to your speed
+    label(g, S.white > 0.3 ? 'WHITE WATER' : `${S.kmh} KM/H ${S.push > 1 ? '▲' : S.push < -1 ? '▼' : ''}`, bx, gy - 15 * u, 11.5 * u, S.white > 0.3 ? CORAL : CREAM, 0.9, 'right');
     if (S.reloading) label(g, 'RELOAD', bx - 2 * (bw + 4 * u), gy + gh - bh - 9 * u, 10 * u, CORAL, 0.6 + 0.4 * Math.sin(S.t * 10));
     // how far apart
     label(g, `${S.dist} M`, gx + gw - 4, gy + 9 * u, 11 * u, CREAM, 0.9, 'right');

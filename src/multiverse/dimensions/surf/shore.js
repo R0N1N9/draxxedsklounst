@@ -234,12 +234,12 @@ export function buildShore(THREE, haze, seed, Q, sun, renderer) {
   beam.position.set(LH.x, LH.y + 25.7, LH.z);
   group.add(beam);
 
-  // ---- the evening shadows, once ----
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 1024);
-  sun.shadow.bias = -0.0008;
-  sun.shadow.normalBias = 0.5;
-  {
+  // ---- the evening shadows, once (a software rasteriser goes without: the map costs it a second per mount) ----
+  if (!Q.soft) {
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 1024);
+    sun.shadow.bias = -0.0008;
+    sun.shadow.normalBias = 0.5;
     const sc = sun.shadow.camera, inv = new THREE.Matrix4(), v = new THREE.Vector3();
     sun.position.set(SUN.x * 500, SUN.y * 500, SUN.z * 500 - 190);
     sun.target.position.set(0, 0, -190);
@@ -255,11 +255,11 @@ export function buildShore(THREE, haze, seed, Q, sun, renderer) {
     }
     sc.left = x0; sc.right = x1; sc.bottom = y0; sc.top = y1; sc.near = -z1 - 10; sc.far = -z0 + 10;
     sc.updateProjectionMatrix();
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
   }
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = Q.soft ? THREE.BasicShadowMap : THREE.PCFSoftShadowMap;
-  renderer.shadowMap.autoUpdate = false;
-  renderer.shadowMap.needsUpdate = true;
 
   return {
     group, fire: FIRE, lighthouse: LH,

@@ -25,9 +25,21 @@ export function makeView(ctx, THREE, renderer, X) {
   for (let i = 0; i < 5; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: '', color: '#fff', hollow: false, text: '' });
   for (let i = 0; i < 14; i++) S.pops.push({ on: false, word: 'BLAM', wx: 0, wy: 0, wz: 0, t: 0, dur: 1, rot: 0, size: 1, rise: 1, x: 0, y: 0, px: 10, pin: false });
   let wt = 0, boom = BOOM, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, flashA = 0, speedA = 0, suddenA = 0, popN = 0;
-  let frames = 0, fresh = false, held = false, shadowDirty = true, glintT = 0, tPrev = 0, cost = 0, drawAfter = 0, drew = false;
+  let frames = 0, fresh = false, held = false, shadowDirty = true, glintT = 0, cost = 0, drawAfter = 0, since = 0;
+  let sync = null, syncAt = 0;
+  function pollSync() {
+    if (!sync) return;
+    try {
+      const gl = renderer.getContext();
+      if (gl.getSyncParameter(sync, gl.SYNC_STATUS) !== gl.SIGNALED) return;
+      gl.deleteSync(sync);
+    } catch { /* a lost context: carry on as if it had finished */ }
+    sync = null;
+    cost = performance.now() - syncAt;
+    drawAfter = performance.now() + Math.min(3000, cost * 1.5);
+  }
   const lt = { ok: false, x: 0, z: 0, roof: 0 };
-  const api = { camera, shot: null, force: 0, lt, S, get frames() { return frames; } };
+  const api = { camera, shot: null, force: 0, lt, S, get frames() { return frames; }, get busy() { pollSync(); return !!sync; }, get cost() { return cost; } };
 
   const dirOf = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
   // The sniper's place on the page: left of centre, and on a phone clear of the left thumb's cluster.
@@ -88,8 +100,8 @@ export function makeView(ctx, THREE, renderer, X) {
     kick(k) { kickV += 0.3 * k; trauma = Math.min(1, trauma + 0.2 * k); },
     flash(k) { flashA = Math.max(flashA, k); },
     shadows() { shadowDirty = true; },
-    beginIntro() { introT = 0; drawAfter = 0; },
-    poke() { drawAfter = 0; }, // whatever the pacing says, draw the next frame
+    beginIntro() { introT = 0; drawAfter = 0; since = 99; },
+    poke() { drawAfter = 0; since = 99; }, // whatever the pacing says, draw the next frame
     /** A sound effect, lettered into the world at (x, y, z). pin: keep it on the page even if the place is off it. */
     pop(word, x, y, z, size = 1, dur = 0.9, pin = false) {
       const p = S.pops[popN]; popN = (popN + 1) % S.pops.length;
@@ -112,12 +124,13 @@ export function makeView(ctx, THREE, renderer, X) {
       look.set(v.x, v.y + 1.1, v.z);
       S.splash.word = word; S.splash.caption = text; S.splash.t = 0; S.splash.a = 1;
       for (const p of S.pops) p.on = false;
-      drawAfter = 0;
+      drawAfter = 0; since = 99;
     },
     focus() {
       const r = ctx.result, v = P[r && r.victim >= 0 ? r.victim : 1 - ctx.me], m = project(v.x, v.y + 1, v.z, S.marks[4]);
       return m.on ? { x: m.x, y: m.y } : { x: ctx.width / 2, y: ctx.height / 2 };
     },
+    dispose() { if (sync) { try { renderer.getContext().deleteSync(sync); } catch { /* gone with its context */ } sync = null; } },
     resize(w, h) {
       if (!(w > 0 && h > 0)) return;
       camera.aspect = w / h;
@@ -137,7 +150,7 @@ export function makeView(ctx, THREE, renderer, X) {
       for (const p of S.pops) if (p.on && (p.t += rdt) >= p.dur) p.on = false;
       // ...but with no GPU the page is redrawn only now and then (see render), and between
       // draws the lens and the 2D layer hold still with it, so what is on screen stays one picture.
-      if (!fresh) held = !Q.rich && frames > 1 && !api.force && performance.now() < drawAfter;
+      if (!fresh) { pollSync(); held = !Q.rich && frames > 1 && !api.force && (!!sync || performance.now() < drawAfter || since < 4); }
       fresh = true;
       if (held) return;
       rig(me, dt, play);
@@ -311,24 +324,25 @@ export function makeView(ctx, THREE, renderer, X) {
     },
 
     render() {
-      // A machine with no GPU cannot draw this page sixty times a second; let it draw as often
-      // as it can and keep the 2D layer (and the duel underneath) running true in between.
-      const now = performance.now(), iv = tPrev ? now - tPrev : 0, inBand = fresh;
-      tPrev = now;
+      // A machine with no GPU cannot draw this page sixty times a second. It draws one, waits
+      // (a fence in the command stream says when the rasteriser has really finished — the
+      // browser would happily queue more), rests in proportion to what the page cost, and
+      // keeps the duel and the 2D layer running true in between. A render with no update
+      // before it is the core photographing the world for a transition: always drawn.
+      const inBand = fresh;
       fresh = false;
-      // The wait after a drawn frame is what that frame cost; no more than two fifths of the
-      // time may go on drawing. (A render with no update before it is the core photographing
-      // the world for a transition: that one is always drawn.)
-      if (drew) { cost = iv; drawAfter = now + Math.min(4000, cost * 1.5); }
       const draw = Q.rich || !inBand || !held;
       if (api.force > 0) api.force--;
-      drew = draw;
+      since = draw ? 0 : since + 1;
       drawOverlay(ctx.g, S, letters);
       if (!draw) return;
       frames++;
       renderer.shadowMap.needsUpdate = Q.rich || shadowDirty;
       shadowDirty = false;
       post.render(scene, camera);
+      if (!Q.rich && !sync) {
+        try { const gl = renderer.getContext(); sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush(); syncAt = performance.now(); } catch { sync = null; }
+      }
     },
   });
   return api;

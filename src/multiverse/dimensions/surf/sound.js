@@ -88,12 +88,12 @@ export function makeSfx(ctx) {
     setWave() { au.noise({ filter: 'lowpass', freq: 160, freqEnd: 420, q: 0.5, dur: 5, gain: 0.5, attack: 3.5 }); },
     wipeout(x, z) {
       place(x, z, 120);
-      au.sfx('boom', { gain: 0.8 * level, pan });
-      water(1.2, 500, 3200, 0.9); water(1.0, 2600, 500, 2.2, 0.35);
+      au.sfx('hit', { gain: 0.9 * level, pan });
+      water(0.8, 500, 3200, 0.6);
       au.tone({ freq: 660, freqEnd: 1760, type: 'triangle', dur: 0.7, gain: 0.12 * level, attack: 0.02, delay: 0.1 }); // the board, leaving
-      au.sfx('chime', { gain: 0.5, delay: 0.6 });
     },
-    splashDown(x, z, size) { place(x, z, 80); water(0.9 * size, 1200, 260, 0.6); },
+    header(x, z) { place(x, z, 80); water(0.9, 2400, 300, 0.5); au.tone({ freq: 300, freqEnd: 70, type: 'sine', dur: 0.6, gain: 0.3 * level, pan }); au.noise({ filter: 'lowpass', freq: 900, freqEnd: 140, q: 0.7, dur: 2.2, gain: 0.55, attack: 0.5, delay: 0.45 }); },
+    splashDown(x, z, size) { place(x, z, 120); water(1.1 * size, 1200, 260, 0.7); if (size >= 1) { au.sfx('boom', { gain: 0.7 * level, pan }); water(1.0, 2600, 500, 2.2, 0.2); au.sfx('chime', { gain: 0.4, delay: 0.5 }); } },
     sudden() { au.sfx('riser', { gain: 0.5 }); },
     dispose() {
       if (bed) for (const node of bed) { try { if (node.stop) node.stop(); } catch { /* never started */ } try { node.disconnect(); } catch { /* already gone */ } }

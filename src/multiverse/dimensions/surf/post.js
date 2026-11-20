@@ -44,6 +44,21 @@ const GRADE = `
 uniform sampler2D tBloom, tWide, tRays;
 uniform vec3 uSunCol;
 uniform float uTime, uExposure, uRays, uFlinch, uFlash, uFade, uBrace, uDive, uAspect;
+uniform vec3 uWater; // the lens going under: waterline height (0 bottom .. 1 top, < 0 = dry), tilt, froth
+float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+// Three sizes of bubble, each in its own rising lattice: a disc, a rim and a glint.
+float bubbles(vec2 p, float t) {
+  float acc = 0.0;
+  for (int L = 0; L < 3; L++) {
+    float fl = float(L), s = 6.0 + fl * 8.0;
+    vec2 q = p * s + vec2(fl * 3.7 + sin(t * 1.3 + p.y * 5.0 + fl) * 0.12, -t * (1.0 + fl * 0.8));
+    vec2 c = floor(q), f = fract(q) - 0.5 - (vec2(h21(c), h21(c + 3.1)) - 0.5) * 0.5;
+    float r = h21(c + 7.0), rad = 0.1 + 0.26 * r * r, d = length(f);
+    acc += step(0.42, h21(c + 11.0)) * ((1.0 - smoothstep(rad * 0.7, rad, d)) * 0.3 + (1.0 - smoothstep(0.0, 0.035, abs(d - rad * 0.88))) * 0.55 + (1.0 - smoothstep(0.0, rad * 0.3, length(f - vec2(-0.32, 0.32) * rad))) * 0.7);
+  }
+  return acc;
+}
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 void main() {
   vec2 c = vUv - 0.5, uv = vUv;
@@ -67,6 +82,22 @@ void main() {
   col = pow(col, vec3(1.0 / 2.2));
   float vig = 1.0 - smoothstep(0.25, 1.0, length(c * vec2(1.0, 0.9)) * (1.0 + 0.45 * uFlinch + 0.35 * uBrace + 0.5 * uDive));
   col *= mix(0.5, 1.0, vig);
+  if (uWater.x > -0.5) {
+    vec2 p = vec2(vUv.x * uAspect, vUv.y);
+    float line = uWater.x + (vUv.x - 0.5) * uWater.y + sin(vUv.x * 9.0 + uTime * 2.6) * 0.012 + (vn(vec2(vUv.x * 14.0, uTime * 1.7)) - 0.5) * 0.03;
+    float d = line - vUv.y, under = smoothstep(-0.006, 0.006, d); // d > 0: this pixel is under water
+    vec3 uw = mix(vec3(0.0, 0.33, 0.52), vec3(0.01, 0.1, 0.27), smoothstep(0.0, 0.75, d));              // blue below
+    uw = mix(uw, vec3(0.45, 0.93, 0.88), exp(-max(d, 0.0) * 6.5) * 0.9);                                 // the bright surface just overhead
+    uw += vec3(0.2, 0.42, 0.4) * pow(vn(vec2(vUv.x * 11.0 - d * 3.0, uTime * 0.5)), 3.0) * exp(-max(d, 0.0) * 2.5); // shafts of light
+    uw = mix(uw, col * vec3(0.35, 0.8, 0.9), 0.18 * exp(-max(d, 0.0) * 4.0));                            // a ghost of the world above
+    float trail = exp(-pow((vUv.x - 0.5) * 3.2, 2.0));                                                   // thickest where the diver went
+    uw = mix(uw, vec3(0.9, 1.0, 1.0), clamp(bubbles(p, uTime) * (0.3 + 0.7 * trail + exp(-max(d, 0.0) * 5.0) * 0.6), 0.0, 1.0) * 0.85);
+    float froth = smoothstep(0.45, 0.8, vn(p * 9.0 + vec2(0.0, uTime * 0.8)) * 0.6 + vn(p * 23.0 - vec2(uTime * 0.5, 0.0)) * 0.5) * exp(-max(d, 0.0) * 4.5) * uWater.z;
+    uw = mix(uw, vec3(0.95, 1.0, 0.98), froth);                                                          // churned white under the line
+    col = mix(col, uw, under);
+    col = mix(col, vec3(0.8, 0.95, 0.95), 0.4 * (1.0 - smoothstep(0.0, 0.16, -d)) * (1.0 - under) * uWater.z); // water sheeting off the glass
+    col = mix(col, vec3(1.0), exp(-abs(d) * 90.0) * 0.9);                                                // the seam itself
+  }
   gl_FragColor = vec4(mix(col, vec3(1.0, 0.96, 0.88), uFlash) * uFade, 1.0);
 }`;
 const PRESENT = HEAD + `
@@ -94,7 +125,7 @@ export function makePost(THREE, renderer, q) {
   const fu = {
     tBloom: { value: null }, tWide: { value: null }, tRays: { value: null }, uSunCol: { value: new THREE.Color(1, 0.6, 0.28) },
     uTime: { value: 0 }, uExposure: { value: 1 }, uRays: { value: 0 }, uFlinch: { value: 0 }, uFlash: { value: 0 }, uFade: { value: 1 },
-    uBrace: { value: 0 }, uDive: { value: 0 }, uAspect: { value: 1 },
+    uBrace: { value: 0 }, uDive: { value: 0 }, uAspect: { value: 1 }, uWater: { value: new THREE.Vector3(-1, 0, 0) },
   };
   const mGrade = mat(HEAD + (q.lens ? '#define LENS\n' : '') + GRADE, fu), mPresent = mat(PRESENT, { uTime: fu.uTime });
   const rt = (o) => new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: false, ...o });

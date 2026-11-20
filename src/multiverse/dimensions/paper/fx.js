@@ -1,6 +1,6 @@
 // Juice, all of it paper and ink: scraps and confetti, dashed trajectory lines that hang in the air, bullets as
 // drawn streaks, ink splats on steel and the sudden-death beacons. Pools are fixed-size: nothing allocates per frame.
-import { INK, PAPER, KRAFT, ID } from './style.js';
+import { INK, ID } from './style.js';
 import { LineSet } from './lines.js';
 import { drawMark } from './art.js';
 
@@ -33,6 +33,7 @@ export function makeFx(THREE, mats) {
   mls.push(fillMat, inkMat);
   const fillIM = new THREE.InstancedMesh(quad, fillMat, NP);
   const inkIM = new THREE.InstancedMesh(quad, inkMat, NP);
+  fillIM.count = inkIM.count = 0;
   for (const im of [fillIM, inkIM]) { im.frustumCulled = false; im.instanceMatrix.setUsage(THREE.DynamicDrawUsage); root.add(im); }
   const P = [];
   for (let i = 0; i < NP; i++) P.push({ live: false, x: 0, y: -99, z: 0, vx: 0, vy: 0, vz: 0, rx: 0, ry: 0, rz: 0, sx: 0, sy: 0, sz: 0, size: 0.1, age: 0, life: 1, g: 6, flut: 0 });
@@ -73,7 +74,8 @@ export function makeFx(THREE, mats) {
   marks.frustumCulled = false;
   for (let i = 0; i < NM; i++) marks.setMatrixAt(i, zero);
   root.add(marks);
-  let mn = 0;
+  let mn = 0, markHigh = 0;
+  marks.count = 0;
   const qz = new THREE.Vector3(0, 0, 1), nn = new THREE.Vector3();
   function mark(x, y, z, nx, ny, nz, size) {
     nn.set(nx, ny, nz);
@@ -83,6 +85,8 @@ export function makeFx(THREE, mats) {
     dummy.scale.set(size, size, 1);
     dummy.updateMatrix();
     marks.setMatrixAt(mn, dummy.matrix);
+    markHigh = Math.max(markHigh, mn + 1);
+    marks.count = markHigh;
     mn = (mn + 1) % NM;
     marks.instanceMatrix.needsUpdate = true;
   }
@@ -131,12 +135,14 @@ export function makeFx(THREE, mats) {
   const beaconPos = [{ x: 0, y: 0, z: 0, on: false }, { x: 0, y: 0, z: 0, on: false }];
 
   function update(dt, anim) {
-    // scraps
+    // scraps (only the live span is drawn: instances cost a fixed overhead each on software rasterisers)
+    let hi = -1;
     for (let i = 0; i < NP; i++) {
       const p = P[i];
       if (!p.live) continue;
       p.age += dt;
       if (p.age >= p.life) { p.live = false; fillIM.setMatrixAt(i, zero); inkIM.setMatrixAt(i, zero); continue; }
+      hi = i;
       const k = Math.exp(-1.4 * dt);
       p.vx *= k; p.vz *= k; p.vy = p.vy * k - p.g * dt * (p.flut ? 0.55 : 1);
       if (p.flut) { p.vx += Math.sin(p.age * 7 + i) * 2.4 * dt + windPush * 5 * dt; p.vz += Math.cos(p.age * 6 + i * 2) * 2.4 * dt; }
@@ -153,6 +159,7 @@ export function makeFx(THREE, mats) {
       dummy.updateMatrix();
       inkIM.setMatrixAt(i, dummy.matrix);
     }
+    fillIM.count = inkIM.count = hi + 1;
     fillIM.instanceMatrix.needsUpdate = true;
     inkIM.instanceMatrix.needsUpdate = true;
     // trails + bullets

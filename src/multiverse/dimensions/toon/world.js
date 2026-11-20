@@ -21,13 +21,14 @@ const mirror = (r) => ({ x: W - r.x - r.w, y: r.y, w: r.w, h: r.h, k: r.k });
 export function buildWorld(rng) {
   const solids = [];
   const add = (r) => { solids.push(r); };
-  add({ x: -700, y: GY, w: 1150, h: 1400, k: 'mesa' });
-  add({ x: 1150, y: GY, w: 1150, h: 1400, k: 'mesa' });
+  add({ x: -900, y: GY, w: 1350, h: 1400, k: 'mesa' });
+  add({ x: 1150, y: GY, w: 1350, h: 1400, k: 'mesa' });
   add({ x: 450, y: FLOOR, w: 700, h: 700, k: 'floor' });
   add({ x: 735, y: PIV.y + 4, w: 130, h: FLOOR - PIV.y - 4, k: 'pillar' });
   const rockL = { x: 246, y: GY - 64, w: 96, h: 64, k: 'rock' };
+  const rockR = mirror(rockL);
   add(rockL);
-  add(mirror(rockL));
+  add(rockR);
   const perchL = { x: 204, y: 205, w: 200, h: 12, k: 'board' };
   const boards = [perchL, mirror(perchL)];
   const ladders = [
@@ -40,7 +41,7 @@ export function buildWorld(rng) {
   ];
   const springs = [{ x0: 404, x1: 448, y: GY, dir: 1 }, { x0: 1152, x1: 1196, y: GY, dir: -1 }];
   const w = {
-    solids, boards, ladders, springs,
+    solids, boards, ladders, springs, rocks: [rockL, rockR],
     tilt: 0, tiltV: 0, tilt0: 0,
     tower: { n: 3, x: PIV.x - CRATE / 2, wob: 0, wobV: 0, rect: { x: PIV.x - CRATE / 2, y: 0, w: CRATE, h: 0, k: 'tower' }, lost: [] },
     car: { x: MID, y: CAR_Y, vx: 0, w: CAR_W, ph: rand(rng, 0, 6.28), lastX: MID },
@@ -218,7 +219,7 @@ export function moveBody(w, b, dt) {
       let best = 1e9, kind = '';
       const xl = b.x - b.hw * 0.8, xr = b.x + b.hw * 0.8;
       const test = (y, k) => { if (y >= prevY - 2 && y <= b.y + 0.01 && y < best) { best = y; kind = k; } };
-      for (let i = 0; i < solids.length; i++) { const q = solids[i]; if (xr > q.x && xl < q.x + q.w) test(q.y, 'solid'); }
+      for (let i = 0; i < solids.length; i++) { const q = solids[i]; if (q.h > 0 && xr > q.x && xl < q.x + q.w) test(q.y, 'solid'); }
       const tw = w.tower.rect;
       if (tw.h > 0 && xr > tw.x && xl < tw.x + tw.w) test(tw.y, 'solid');
       for (let i = 0; i < w.anvils.length; i++) { const q = w.anvils[i]; if (xr > q.x && xl < q.x + q.w) test(q.y, 'solid'); }
@@ -232,7 +233,7 @@ export function moveBody(w, b, dt) {
     } else {
       for (let i = 0; i < solids.length; i++) {
         const q = solids[i], qb = q.y + q.h;
-        if (b.x + b.hw > q.x && b.x - b.hw < q.x + q.w && b.y - b.h < qb && prevY - b.h >= qb - 2) { b.y = qb + b.h; b.vy = 0; }
+        if (q.h > 0 && b.x + b.hw > q.x && b.x - b.hw < q.x + q.w && b.y - b.h < qb && prevY - b.h >= qb - 2) { b.y = qb + b.h; b.vy = 0; }
       }
     }
   }

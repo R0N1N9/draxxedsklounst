@@ -1,7 +1,7 @@
 // INK CITY — the city as geometry. Nearly all of it is three instanced shapes (box,
 // cylinder, cone) in a handful of draw calls; the props that sudden death rubs out live in
 // batches of their own so one uniform can turn them to blue pencil.
-import { makeRng, rand, pick } from '../../kit.js';
+import { makeRng, rand, pick, clamp } from '../../kit.js';
 import { PAL } from './art.js';
 import { rgb } from './mats.js';
 import { HALF_X, STREET, BLIMP } from './world.js';
@@ -54,6 +54,32 @@ export function buildCity(THREE, W, mats, art, seed) {
     // string courses down the facade
     for (const dy of [4.6, 11.2, 17.8]) if (r.h - dy > 3) B.add(r.cx, r.h - dy, r.cz, w + 0.5, 0.34, d + 0.5, PAL.stone);
   }
+  // ---- what a roof collects: aerials, vent caps; and down the street face, a fire escape ----
+  const clear = (r, x, z) => { for (const q of r.rects) if (x > q.x - 0.8 && x < q.x + q.w + 0.8 && z > q.y - 0.8 && z < q.y + q.h + 0.8) return false; return true; };
+  for (const r of W.roofs) {
+    const out = r.side ? -1 : 1; // away from the street
+    if (rng() < 0.7) {
+      const x = rand(rng, r.x0 + 1.2, r.x1 - 1.2), z = out > 0 ? r.z1 - 0.9 : r.z0 + 0.9, h = rand(rng, 3.2, 5.2);
+      if (clear(r, x, z)) { B.add(x, r.h + h / 2, z, 0.09, h, 0.09, PAL.dark); for (let k = 0; k < 3; k++) B.add(x, r.h + h - 0.4 - k * 0.55, z, 1.3 - k * 0.3, 0.05, 0.05, PAL.dark); }
+    }
+    for (let k = 0; k < 3; k++) {
+      const x = rand(rng, r.x0 + 1.5, r.x1 - 1.5), z = rand(rng, r.z0 + 1.5, r.z1 - 1.5);
+      if (!clear(r, x, z) || Math.hypot(x - W.spawn[r.side].x, z - W.spawn[r.side].z) < 2.5) continue;
+      C.add(x, r.h + 0.22, z, 0.42, 0.44, 0.42, PAL.metal); K.add(x, r.h + 0.56, z, 0.62, 0.26, 0.62, '#7d8fa3');
+    }
+    if (r.row === 0) {
+      const zf = out > 0 ? r.z0 : r.z1, x = clamp(r.cx + rand(rng, -3, 3), r.x0 + 3, r.x1 - 3);
+      for (let f = 0; f < 5; f++) {
+        const y = r.h - 3.4 - f * 3.3, dir = f & 1 ? 1 : -1;
+        B.add(x, y, zf - out * 0.6, 4.4, 0.12, 1.2, PAL.dark);
+        B.add(x, y + 0.95, zf - out * 1.17, 4.4, 0.07, 0.07, PAL.dark);
+        for (const sx of [-2.2, -0.7, 0.7, 2.2]) B.add(x + sx, y + 0.5, zf - out * 1.17, 0.06, 0.95, 0.06, PAL.dark);
+        B.add(x + dir * 0.3, y - 1.65, zf - out * 0.7, 4.3, 0.08, 0.5, PAL.dark, 0, 0, 0, dir * 0.87);
+      }
+    }
+  }
+  // street lamps: beads of light down the canyon
+  for (let x = -126; x <= 126; x += 14) for (const sgn of [-1, 1]) { B.add(x, 3, sgn * 7.2, 0.16, 6, 0.16, PAL.dark); B.add(x, 6.1, sgn * 6.6, 0.5, 0.36, 1.3, '#ffe9a0', 5); }
   // ---- cover ----
   const boards = [];
   for (const p of W.props) {

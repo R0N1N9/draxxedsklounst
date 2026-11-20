@@ -5,7 +5,9 @@
 import { clamp, lerp, smoothstep, rand, shuffle, TAU } from '../../kit.js';
 
 export const RUG_A = 21, RUG_B = 12.5;      // the rug is an ellipse; soldiers never leave it
-export const BODY_R = 0.5;
+export const BODY_R = 0.66, FIG = 1.36;     // a soldier's footprint; how much bigger than the model it is drawn
+export const MUZZLE = 1.56;                 // how far in front of its feet the muzzle is
+export const gunY = (k) => 1.7 - 0.34 * k;  // muzzle height, standing (k = 0) to kneeling (k = 1)
 export const SPAWN = [{ x: -17, z: -1.3 }, { x: 17, z: -1.3 }];
 export const LOOP = { x: 0, z: 0.6, a: 10.2, b: 4.7 }; // centre line of the train track
 export const CAR_N = 3, CAR_HW = 1.38, CAR_HD = 0.72, CAR_GAP = 3.15, LAP = 24; // seconds per lap
@@ -236,7 +238,7 @@ export function buildWorld(rng, names) {
     const o = solids[i];
     for (let k = 0; k < 8; k++) {
       const ex = k < 4 ? (k & 1 ? 1 : -1) : k === 4 ? 1 : k === 5 ? -1 : 0, ez = k < 4 ? (k & 2 ? 1 : -1) : k === 6 ? 1 : k === 7 ? -1 : 0;
-      const lx = ex * (o.hw + 0.95), lz = ez * (o.hd + 0.95), x = o.x + lx * o.c - lz * o.s, z = o.z + lx * o.s + lz * o.c;
+      const lx = ex * (o.hw + 1.05), lz = ez * (o.hd + 1.05), x = o.x + lx * o.c - lz * o.s, z = o.z + lx * o.s + lz * o.c;
       if (!W.onRug(x, z, 1.2) || W.inside(x, z, 0.6)) continue;
       const f = ((x - LOOP.x) / LOOP.a) ** 2 + ((z - LOOP.z) / LOOP.b) ** 2;
       if (f > 0.72 && f < 1.35) continue; // not on the track

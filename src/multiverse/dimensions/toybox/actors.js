@@ -1,7 +1,7 @@
 // TOY BOX — everything that moves on the rug: the two plastic riflemen (they hop, kneel,
 // tumble and come apart), their lasers and pellets, the wind-up copters, sparks and splinters.
 import { clamp, damp, lerp, TAU } from '../../kit.js';
-import { SPOT_R } from './world.js';
+import { SPOT_R, FIG, MUZZLE, gunY } from './world.js';
 
 const RIBBON_VERT = 'attribute vec2 aUv; varying vec2 vU; void main() { vU = aUv; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }';
 const RIBBON_FRAG = `precision highp float; uniform vec3 uCol; uniform float uA; uniform float uFade; varying vec2 vU;
@@ -14,12 +14,12 @@ void main() {
 const RING_FRAG = `precision highp float; uniform vec3 uCol; uniform float uFill, uT, uMe, uLit; varying vec2 vU;
 void main() {
   vec2 p = vU * 2.0 - 1.0; float r = length(p), a = atan(p.y, p.x);
-  float ring = smoothstep(0.62, 0.66, r) * (1.0 - smoothstep(0.74, 0.78, r));
+  float ring = smoothstep(0.6, 0.63, r) * (1.0 - smoothstep(0.68, 0.71, r));
   float f = fract(a / 6.2832 + 0.25);
   float lit = f < uFill ? 1.0 : 0.18;
   // The local player's ring also has four ticks that turn; the rival's is plain.
-  float ticks = uMe * smoothstep(0.82, 0.85, r) * (1.0 - smoothstep(0.95, 0.99, r)) * step(0.78, abs(sin((a + uT * 1.2) * 2.0)));
-  float glow = (1.0 - smoothstep(0.0, 0.62, r)) * 0.1 * (uMe + uLit);
+  float ticks = uMe * smoothstep(0.76, 0.79, r) * (1.0 - smoothstep(0.9, 0.94, r)) * step(0.86, abs(sin((a + uT * 1.2) * 2.0)));
+  float glow = (1.0 - smoothstep(0.0, 0.6, r)) * 0.05 * (uMe + uLit);
   gl_FragColor = vec4(mix(uCol, vec3(1.0, 0.9, 0.7), uLit * 0.6) * (ring * lit * (1.3 + uLit) + ticks * 1.2 + glow), 1.0);
 }`;
 const POINT_VERT = 'attribute vec4 aCol; attribute float aSize; uniform float uPx; varying vec4 vC; void main() { vC = aCol; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); gl_PointSize = max(1.0, aSize * uPx); }';
@@ -56,13 +56,14 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
   }
 
   // ---- the riflemen ----
-  const ringGeo = keep(new THREE.PlaneGeometry(2.7, 2.7).rotateX(-Math.PI / 2));
+  const ringGeo = keep(new THREE.PlaneGeometry(3.3, 3.3).rotateX(-Math.PI / 2));
   const dotGeo = keep(new THREE.SphereGeometry(0.13, 10, 8));
   const men = [0, 1].map((i) => {
     const col = new THREE.Color(colors[i]);
     const plastic = room.patch(Q.rich
-      ? new THREE.MeshPhysicalMaterial({ color: col, roughness: 0.36, metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.22, emissive: col.clone().multiplyScalar(0.07) })
-      : new THREE.MeshStandardMaterial({ color: col, roughness: 0.36, metalness: 0, emissive: col.clone().multiplyScalar(0.07) }));
+      ? new THREE.MeshPhysicalMaterial({ color: col, roughness: 0.4, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.25, emissive: col.clone().multiplyScalar(0.05) })
+      : Q.pbr ? new THREE.MeshStandardMaterial({ color: col, roughness: 0.36, metalness: 0, emissive: col.clone().multiplyScalar(0.07) })
+        : new THREE.MeshLambertMaterial({ color: col, emissive: col.clone().multiplyScalar(0.1) }));
     const ghost = keep(new THREE.MeshBasicMaterial({ color: col.clone().lerp(new THREE.Color('#ffffff'), 0.25), transparent: true, opacity: 0.5, depthFunc: THREE.GreaterDepth, depthWrite: false }));
     const root = new THREE.Group(), pivot = new THREE.Group(), poses = [toys.stand, toys.kneel].map((geo) => {
       const m = new THREE.Mesh(geo, plastic), x = new THREE.Mesh(geo, ghost);
@@ -73,7 +74,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
     pivot.position.y = 0.85;
     root.add(pivot);
     scene.add(root);
-    const ringMat = keep(new THREE.ShaderMaterial({ vertexShader: 'varying vec2 vU; void main() { vU = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }', fragmentShader: RING_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uCol: { value: hdr(colors[i], 1.5) }, uFill: { value: 1 }, uT: { value: 0 }, uMe: { value: i === me ? 1 : 0 }, uLit: { value: 0 } } }));
+    const ringMat = keep(new THREE.ShaderMaterial({ vertexShader: 'varying vec2 vU; void main() { vU = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }', fragmentShader: RING_FRAG, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, uniforms: { uCol: { value: hdr(colors[i], 1.0) }, uFill: { value: 1 }, uT: { value: 0 }, uMe: { value: i === me ? 1 : 0 }, uLit: { value: 0 } } }));
     const ring = new THREE.Mesh(ringGeo, ringMat);
     ring.renderOrder = 2;
     scene.add(ring);
@@ -99,7 +100,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
   const coneGeo = keep(new THREE.ConeGeometry(SPOT_R, 1, 28, 1, true).translate(0, -0.5, 0));
   const discGeo = keep(new THREE.CircleGeometry(1.55, 24).rotateX(-Math.PI / 2));
   const copters = [0, 1].map((i) => {
-    const g = new THREE.Group(), body = new THREE.Mesh(toys.copter, room.patch(new THREE.MeshStandardMaterial({ color: new THREE.Color(colors[i]), vertexColors: true, roughness: 0.35, metalness: 0, emissive: new THREE.Color(colors[i]).multiplyScalar(0.25) })));
+    const g = new THREE.Group(), body = new THREE.Mesh(toys.copter, room.std({ color: new THREE.Color(colors[i]), vertexColors: true, roughness: 0.35, emissive: new THREE.Color(colors[i]).multiplyScalar(0.25) }));
     const rotor = new THREE.Mesh(toys.rotor, room.M.paint), key = new THREE.Mesh(toys.key, room.M.paint);
     const disc = new THREE.Mesh(discGeo, keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(0.7, 0.75, 0.8), transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide })));
     const lens = new THREE.Mesh(dotGeo, keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 10, 12) })));
@@ -167,7 +168,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
 
   const fx = {
     muzzle(x, y, z, dx, dz, owner) {
-      flash.position.set(x + dx * 0.3, y + 0.3, z + dz * 0.3); flash.intensity = 60;
+      flash.position.set(x + dx * 0.3, y + 0.5, z + dz * 0.3); flash.intensity = 16;
       sparks.emit(x, y, z, dx * 2, 0, dz * 2, 0.09, 1.9, 0.4, 3.5, 2.6, 1.4, 1, 0, 0);
       for (let k = 0; k < 7; k++) sparks.emit(x, y, z, dx * (6 + R() * 9) + S() * 5, 1 + R() * 3, dz * (6 + R() * 9) + S() * 5, 0.12 + R() * 0.16, 0.2, 0.05, 3 + pc[owner][0] * 2, 2 + pc[owner][1] * 2, 1 + pc[owner][2] * 2, 1, 8, 3);
       puffs.emit(x + dx * 0.3, y, z + dz * 0.3, dx * 1.6, 0.6, dz * 1.6, 0.5, 0.4, 1.3, 0.9, 0.88, 0.82, 0.3, -0.4, 2.5);
@@ -200,10 +201,10 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       for (const b of s.bits) {
         const m = b.m, c = b.c;
         // three's Ry(t): x' = x cos t + z sin t, z' = -x sin t + z cos t
-        if (c) m.position.set(x + c.x * cy + c.z * sy, Math.max(b.r, c.y - (kneel ? 0.2 : 0)), z - c.x * sy + c.z * cy);
+        if (c) m.position.set(x + (c.x * cy + c.z * sy) * FIG, Math.max(b.r, (c.y - (kneel ? 0.2 : 0)) * FIG), z + (-c.x * sy + c.z * cy) * FIG);
         else m.position.set(x + S() * 0.5, 0.4 + R() * 1.0, z + S() * 0.5);
         m.rotation.set(0, -yaw, 0);
-        if (!c) { m.rotation.set(R() * 6, R() * 6, R() * 6); m.scale.set(0.6 + R() * 1.4, 0.5 + R() * 1.2, 0.5 + R()); }
+        if (!c) { m.rotation.set(R() * 6, R() * 6, R() * 6); m.scale.set(0.6 + R() * 1.4, 0.5 + R() * 1.2, 0.5 + R()); } else m.scale.setScalar(FIG);
         m.visible = true;
         const up = c ? c.y : 0.8, sp = 5 + R() * 6;
         b.vx = dx * sp + S() * 7; b.vz = dz * sp + S() * 7; b.vy = 4 + R() * 5 + up * 3;
@@ -212,7 +213,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       for (let k = 0; k < 26; k++) chips.emit(x, 0.5 + R() * 1.1, z, dx * (2 + R() * 8) + S() * 9, 2 + R() * 8, dz * (2 + R() * 8) + S() * 9, 0.7 + R() * 0.7, 0.16, 0.07, pc[i][0], pc[i][1], pc[i][2], 1, 24, 0.5, true);
       for (let k = 0; k < 16; k++) sparks.emit(x, 0.9, z, S() * 22, R() * 12, S() * 22, 0.2 + R() * 0.25, 0.26, 0.04, 3 + pc[i][0] * 3, 3 + pc[i][1] * 3, 3 + pc[i][2] * 3, 1, 14, 2);
       sparks.emit(x, 1, z, 0, 0, 0, 0.14, 5, 1, 4, 3.6, 3, 1, 0, 0);
-      flash.position.set(x, 1.6, z); flash.intensity = 120;
+      flash.position.set(x, 2, z); flash.intensity = 34;
     },
 
     // p: the simulation's soldier. aim: { on, x1, z1, bx, bz, hasB, full } — where its laser goes.
@@ -228,7 +229,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       s.squash = Math.max(0, s.squash - dt * 9);
       const kneelSq = Math.sin(clamp(k, 0, 1) * Math.PI) * 0.2, sq = 1 - s.squash * 0.14 - kneelSq - p.recoil * 0.05;
       s.root.position.set(p.x, air, p.z);
-      s.root.scale.set(1 + (1 - sq) * 0.5, sq, 1 + (1 - sq) * 0.5);
+      s.root.scale.set(FIG * (1 + (1 - sq) * 0.5), FIG * sq, FIG * (1 + (1 - sq) * 0.5));
       q1.setFromAxisAngle(yAxis, -p.shotA);
       if (rolling) { ax.set(p.rdz, 0, -p.rdx); q2.setFromAxisAngle(ax, p.roll * TAU); q1.premultiply(q2); }
       else {
@@ -248,7 +249,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       const u = s.ringMat.uniforms;
       u.uT.value = wt; u.uFill.value = p.reload > 0 ? 1 - p.reload / p.reloadMax : 1; u.uLit.value = p.lit;
       // The laser: a stub from the hip, the whole line (and its bounce) when braced.
-      const y = lerp(1.25, 1.0, k), mx = p.x + Math.cos(p.shotA) * 1.15, mz = p.z + Math.sin(p.shotA) * 1.15;
+      const y = gunY(k), mx = p.x + Math.cos(p.shotA) * MUZZLE, mz = p.z + Math.sin(p.shotA) * MUZZLE;
       const a = aim.on && !rolling ? (p.reload > 0 ? 0.25 : 1) * (0.82 + 0.18 * Math.sin(wt * 40 + p.i)) : 0, w = aim.w;
       if (a > 0 && aim.full > 0.02) {
         s.beam.set(mx, y, mz, aim.x1, y, aim.z1, w, a * aim.full * 0.75);
@@ -289,7 +290,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
     },
 
     update(dt, pxPerUnit, pixelRatio) {
-      flash.intensity = Math.max(0, flash.intensity - dt * 900);
+      flash.intensity = Math.max(0, flash.intensity - dt * 220);
       const px = pxPerUnit * pixelRatio;
       sparks.mat.uniforms.uPx.value = chips.mat.uniforms.uPx.value = puffs.mat.uniforms.uPx.value = px;
       sparks.update(dt); chips.update(dt); puffs.update(dt);

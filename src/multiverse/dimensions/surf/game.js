@@ -8,11 +8,14 @@ import { ARENA, shoreZ } from './sea.js';
 export const LOOK = 0.0022;
 export const R = {
   bulletV: 280, bulletG: 3, bolt: 1.2, reload: 2.2, mag: 4,
-  acc: 6.5, vmax: 9.6, coast: 0.5, grav: 10, turn: 2.3,
+  acc: 6.5, vmax: 9.6, coast: 0.5, grav: 15, turn: 2.3, carry: 1.5, shove: 0.5,
   diveT: 1.05, diveV: 15, diveCd: 7, sprayCd: 13, sprayLife: 7.5, sprayHW: 9, sprayH: 6.5, sprayAhead: 7,
-  eye: 1.52, eyeBrace: 1.05, top: 1.85, topBrace: 1.36, hitR: 0.46, spawnZ: 58, zoom: 3.6,
+  eye: 1.52, eyeBrace: 1.05, top: 1.85, topBrace: 1.36, hitR: 0.46, spawnZ: 58, zoom: 2.8,
 };
 const LOS_N = 24;
+export const SLOW = 0.35; // the core runs the kill moment at this speed
+// The hand-off, in real seconds from the hit: the winner crouches, leaves the board, goes under.
+export const KILL = { squat: 1.75, jump: 2.25, flight: 0.84, sink: 3.75, under: 4.2, end: 4.5 };
 
 export function makeGame(ctx, sea, world, fx) {
   const flip = ctx.seed & 1, sx = 10 + (ctx.seed % 23);
@@ -21,7 +24,8 @@ export function makeGame(ctx, sea, world, fx) {
     return {
       i, side, x: side * sx, z: side * R.spawnZ, y: 0, vy: 0, air: false, hd: 0, v: 0, turn: 0, lean: 0, slope: 0, yaw: 0, pitch: 0,
       braced: false, brace: 0, dive: 0, diveCd: 0, wet: 0, sprayCd: 0, cut: 0, cutDir: 1, ammo: R.mag, bolt: 0, reload: 0,
-      alive: true, dead: -1, swayX: 0, swayY: 0, swayT: i * 3.7, recoil: 0, flinch: 0, bumpCd: 0, shotT: -9, wake: 0,
+      alive: true, dead: -1, swayX: 0, swayY: 0, swayT: i * 3.7, recoil: 0, flinch: 0, bumpCd: 0, shotT: -9, wake: 0, white: 0, push: 0, squat: 0,
+      hop: { on: false, wet: false, t: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, phi: 0, k: 0 },
       remote: ctx.opponent === 'remote' && i !== ctx.me, bot: null, color: ctx.players[i].color,
       body: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, rot: 0, spin: 0, wet: false }, brd: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, rot: 0, spin: 0, wet: false },
       cmd: { mx: 0, my: 0, yaw: 0, pitch: 0, fire: false, alt: false, a1: false, a2: false },
@@ -241,8 +245,23 @@ export function makeGame(ctx, sea, world, fx) {
       const a = thrust * R.acc - (R.acc / (R.vmax * R.vmax)) * p.v * p.v - R.coast * p.v * (1 - thrust) - (p.braced ? 1.6 * p.v : 0) - (p.air ? 0 : R.grav * p.slope) - Math.abs(p.turn) * p.v * 0.1;
       p.v = clamp(p.v + a * dt, 0, 17);
     }
+    // The sea moves you. The surface runs forward on every crest and back in every trough,
+    // and where a crest is breaking (the white water you can see) it takes the board with it,
+    // drags at it and shakes it. All of it is a function of place and time: read it, pick a line.
     const fx2 = -Math.sin(p.hd), fz2 = -Math.cos(p.hd);
     p.x += fx2 * p.v * dt; p.z += fz2 * p.v * dt;
+    if (p.dive <= 0 && !p.air) {
+      const fl = sea.flow(p.x, p.z), white = smoothstep(0.72, 0.36, fl.fold);
+      p.white = damp(p.white, white, 9, dt);
+      const cx = fl.vx * R.carry + fl.bx * p.white * R.shove, cz = fl.vz * R.carry + fl.bz * p.white * R.shove;
+      p.x += cx * dt; p.z += cz * dt;
+      p.push = cx * fx2 + cz * fz2; // how hard the water is helping (+) or fighting (-) your line
+      if (p.white > 0.05) {
+        p.v *= Math.exp(-1.1 * p.white * dt);
+        p.hd += Math.sin(T * 7.3 + p.i * 2.1) * 0.9 * p.white * dt;
+        p.flinch = Math.max(p.flinch, p.white * 0.55);
+      }
+    } else { p.white = damp(p.white, 0, 9, dt); p.push = 0; }
     // The buoy line: the rip takes you back in. (It closes in sudden death.)
     const ring = world.ring, e = Math.hypot(p.x / (ARENA.rx * ring), p.z / (ARENA.rz * ring));
     if (e > 1) { const k = (1 - 1 / e) * Math.min(1, dt * (ctx.sudden ? 3.2 : 2.2)); p.x -= p.x * k; p.z -= p.z * k; if (e > 1.12) p.v *= Math.max(0, 1 - dt * 1.5); }
@@ -313,33 +332,84 @@ export function makeGame(ctx, sea, world, fx) {
     p.slope = p.air || p.dive ? 0 : sea.slope(p.x, p.z, -Math.sin(p.hd), -Math.cos(p.hd));
   }
 
-  // The wipe-out: the board goes one way, the sniper the other.
+  // ---- the kill, and the hand-off ----
+  // One continuous beat on its own clock (real seconds; the sea keeps running in slow motion):
+  // the board fires into the sky and the loser tumbles down the face into the water; the
+  // winner watches them go under, crouches, and dives in after them head first.
+  const kill = { on: false, t: 0, v: null, w: null, ux: 0, uz: 1, x: 0, y: 0, z: 0, splashed: false, ex: 0, ey: 0, ez: 0 };
   function fell(v) {
     const w = P[1 - v.i], ki = killInfo && killInfo.v === v.i ? killInfo : null;
-    let dx = ki ? ki.dx : v.x - w.x, dz = ki ? ki.dz : v.z - w.z;
+    let dx = v.x - w.x, dz = v.z - w.z;
     const l = Math.hypot(dx, dz) || 1;
     dx /= l; dz /= l;
-    v.alive = false; v.dead = 0; v.braced = false; v.dive = 0;
+    if (ki) { const kl = Math.hypot(ki.dx, ki.dz) || 1; if (kl > 0.2) { dx = ki.dx / kl; dz = ki.dz / kl; } }
+    v.alive = false; v.dead = 0; v.braced = false; v.dive = 0; v.air = false;
+    w.braced = false; w.dive = 0; w.v = 0;
     const b = v.body, s = v.brd;
-    b.x = v.x; b.y = v.y + 0.9; b.z = v.z; b.vx = dx * 5.5; b.vy = 10.5; b.vz = dz * 5.5; b.rot = 0; b.spin = 13; b.wet = false;
+    // knocked off the back of the board, down the face of whatever they were riding
+    const fl = sea.flow(v.x, v.z), sxl = sea.slope(v.x, v.z, 1, 0), szl = sea.slope(v.x, v.z, 0, 1);
+    b.x = v.x; b.y = v.y + 0.95; b.z = v.z; b.vx = dx * 3.2 - sxl * 9 + fl.vx; b.vy = 4.6; b.vz = dz * 3.2 - szl * 9 + fl.vz; b.rot = 0; b.spin = 7.5; b.wet = false;
     s.x = v.x; s.y = v.y + 0.2; s.z = v.z; s.vx = -dx * 2.2 + dz * 1.5; s.vy = 25; s.vz = -dz * 2.2 - dx * 1.5; s.rot = 0; s.spin = 17; s.wet = false;
-    stepDead(v, 0.09); // the first frame of the wipe-out already has everything in the air
-    v.dead = 0;
+    kill.on = true; kill.t = 0; kill.v = v; kill.w = w; kill.splashed = false;
+    kill.ux = (v.x - w.x) / l; kill.uz = (v.z - w.z) / l;
+    kill.x = v.x; kill.y = v.y; kill.z = v.z;
+    kill.ex = w.x + kill.ux * 4.4; kill.ez = w.z + kill.uz * 4.4; kill.ey = sea.height(kill.ex, kill.ez); // (refined when the winner lands)
+    stepDead(v, 0.07); // the first frame of it already has everything in the air
     fx.wipeout(v, dx, dz);
   }
   function stepDead(p, dt) {
     p.dead += dt;
     for (const o of [p.body, p.brd]) {
       if (o.wet) continue;
-      o.vy -= (o === p.brd ? 15 : 14) * dt;
+      o.vy -= (o === p.brd ? 15 : 13) * dt;
       o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt;
       o.rot += o.spin * dt;
-      if (o.vy < 0 && o.y < sea.height(o.x, o.z) - 0.2) { o.wet = true; fx.splashDown(o.x, sea.height(o.x, o.z), o.z, o === p.body ? 1 : 0.6); }
+      const hs = sea.height(o.x, o.z);
+      if (o.vy < 0 && o.y < hs - 0.25) {
+        o.wet = true;
+        if (o === p.body) { kill.splashed = true; kill.x = o.x; kill.y = hs; kill.z = o.z; }
+        fx.splashDown(o.x, hs, o.z, o === p.body ? 1 : 0.6, o === p.body);
+      }
     }
+  }
+  // dt here is real time: the choreography does not run in the core's slow motion.
+  function stepKill(dt) {
+    const k = kill, w = k.w, v = k.v, t = (k.t += dt);
+    stepDead(v, dt * lerp(0.42, 1, smoothstep(0.7, 1.4, t)));
+    w.recoil = Math.max(0, w.recoil - dt * 4.5);
+    w.brace = damp(w.brace, 0, 8, dt);
+    w.lean = damp(w.lean, 0, 6, dt);
+    w.squat = smoothstep(KILL.squat, KILL.jump, t) * (1 - smoothstep(KILL.jump, KILL.jump + 0.12, t));
+    w.yaw += angDiff(w.yaw, Math.atan2(-k.ux, -k.uz)) * Math.min(1, dt * 5);
+    w.pitch = damp(w.pitch, -0.05, 4, dt);
+    w.swayX = w.swayY = 0;
+    const h = w.hop;
+    if (!h.on) {
+      w.y = sea.height(w.x, w.z);
+      w.slope = sea.slope(w.x, w.z, -Math.sin(w.hd), -Math.cos(w.hd));
+      if (t >= KILL.jump) {
+        h.on = true; h.wet = false; h.t = 0; h.x = w.x; h.y = w.y + 0.8; h.z = w.z; h.yaw = Math.atan2(-k.ux, -k.uz);
+        h.vx = k.ux * 5.4; h.vy = 4.9; h.vz = k.uz * 5.4;
+        fx.spring(w);
+      }
+      return;
+    }
+    h.t += dt;
+    h.k = Math.min(1, h.t / 0.22);
+    h.phi = Math.min(2.45, 2.3 * (h.t / KILL.flight) ** 1.6); // over the top and in head first
+    if (!h.wet) {
+      h.vy -= 13.5 * dt;
+      const hs = sea.height(h.x, h.z);
+      if (h.vy < 0 && h.y < hs + 0.35) { h.wet = true; k.ex = h.x; k.ey = hs; k.ez = h.z; fx.header(h.x, hs, h.z); }
+    } else { const d = Math.exp(-2.2 * dt); h.vx *= d; h.vy = Math.max(h.vy * d, -4.5); h.vz *= d; }
+    h.x += h.vx * dt; h.y += h.vy * dt; h.z += h.vz * dt;
+    // the board they left behind just rides the swell
+    w.y = sea.height(w.x, w.z);
+    w.slope = sea.slope(w.x, w.z, -Math.sin(w.hd), -Math.cos(w.hd));
   }
 
   const G = {
-    P, me, bullets, walls, los, cam, R,
+    P, me, bullets, walls, los, cam, R, kill,
     get T() { return T; },
     eyeY, topY, hidden, sees, aimDir, rayWater, wallBlocks, addWall, fell,
     set killInfo(v) { killInfo = v; },
@@ -351,9 +421,9 @@ export function makeGame(ctx, sea, world, fx) {
       sea.at(T);
       world.at(T);
       tick ^= 1; // neither sniper always moves first
-      for (let n = 0; n < 2; n++) {
+      if (kill.on) stepKill(Math.min(0.1, dt / SLOW));
+      else for (let n = 0; n < 2; n++) {
         const p = P[n ^ tick];
-        if (p.dead >= 0) { stepDead(p, dt); p.recoil = Math.max(0, p.recoil - dt * 4.5); continue; }
         if (p.remote) puppet(p, dt); else step(p, cmdFor(p, dt), dt);
       }
       if (ctx.phase !== 'intro') stepBullets(dt);

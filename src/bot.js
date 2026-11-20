@@ -453,6 +453,7 @@ export class BotPeer {
           const part = hit.c.part;
           let dmg = b.def.damage[part];
           if (part === 'torso' && this.player && this.player.vs === 'plate') dmg = Math.round(dmg * VEST.plateTorso);
+          if (this.g.mv) dmg = Math.max(dmg || 0, 100); // "Do you want to develop an app?": any hit is the kill
           this._emit({ t: 'hit', id: b.id, part, dmg, dist: Math.round(b.o.distanceTo(ip)), ip: ip.toArray() });
           dead = true;
         } else if (wh) dead = true;

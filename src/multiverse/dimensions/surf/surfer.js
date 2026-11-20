@@ -34,6 +34,7 @@ export function makeHaze(THREE) {
 }
 
 const L1 = 0.5, L2 = 0.52, A1 = 0.34, A2 = 0.33; // thigh, shin, upper arm, forearm
+const JOINTS = ['hip', 'chest', 'head', 'footF', 'footB', 'kneeF', 'kneeB', 'shR', 'shL', 'haR', 'haL', 'elR', 'elL', 'butt'];
 
 export function makeSurferKit(THREE, haze) {
   const cyl = new THREE.CylinderGeometry(1, 1, 1, 10, 1), ball = new THREE.SphereGeometry(1, 12, 8), box = new THREE.BoxGeometry(1, 1, 1);
@@ -109,31 +110,37 @@ export function makeSurferKit(THREE, haze) {
 
     // p: a sniper from game.js. Everything here is presentation.
     function update(p, sea, T) {
-      const dead = p.dead >= 0, k = dead ? 0 : p.brace, splay = dead ? Math.min(1, p.dead * 6) : 0;
+      const dead = p.dead >= 0, hop = p.hop.on, k = dead ? 0 : p.brace, splay = dead ? Math.min(1, p.dead * 5) : 0, hk = hop ? p.hop.k : 0;
       // ---- the board ----
+      const sx = Math.cos(p.hd), sz = -Math.sin(p.hd);
       if (dead) {
         board.position.set(p.brd.x, p.brd.y, p.brd.z);
         board.rotation.set(p.brd.rot, p.hd, p.brd.rot * 0.37, 'YXZ');
         board.visible = !p.brd.wet;
-        body.position.set(p.body.x, p.body.y - 0.9, p.body.z);
-        body.rotation.set(p.body.rot, p.hd + p.body.rot * 0.21, 0, 'YXZ');
+        body.position.set(p.body.x, p.body.y, p.body.z);
+        body.rotation.set(-p.body.rot, p.hd + p.body.rot * 0.17, Math.sin(p.body.rot * 0.6) * 0.5, 'YXZ');
         body.visible = !p.body.wet;
       } else {
-        const sx = Math.cos(p.hd), sz = -Math.sin(p.hd);
         const cross = p.air || p.dive > 0 ? 0 : sea.slope(p.x, p.z, sx, sz);
-        let y = p.y, pitch = Math.atan(p.air ? clamp(p.vy * 0.06, -0.5, 0.5) : p.slope), roll = Math.atan(cross) * 0.8 + p.lean;
+        let y = p.y, pitch = Math.atan(p.air ? clamp(p.vy * 0.06, -0.5, 0.5) : p.slope), roll = Math.atan(cross) * 0.8 + p.lean + Math.sin(T * 9 + p.i) * 0.12 * p.white;
         if (p.dive > 0) { const u = 1 - p.dive / 1.05; y -= Math.sin(Math.PI * u) * 2.4; pitch = Math.cos(Math.PI * u) * -1.0; }
         board.position.set(p.x, y, p.z);
         board.rotation.set(pitch, p.hd, roll, 'YXZ');
         board.visible = body.visible = true;
-        body.position.copy(board.position);
-        body.rotation.set(pitch * 0.5, p.hd, roll * 0.7 + p.lean * 0.5, 'YXZ');
+        if (hop) {
+          // off the board: the body turns over its own middle and goes in head first
+          body.position.set(p.hop.x, p.hop.y, p.hop.z);
+          body.rotation.set(-p.hop.phi, p.hop.yaw, 0, 'YXZ');
+        } else {
+          body.position.copy(board.position);
+          body.rotation.set(pitch * 0.5, p.hd, roll * 0.7 + p.lean * 0.5, 'YXZ');
+        }
       }
       // ---- joints ----
-      const rel = dead ? 0 : angDiff(p.hd, p.yaw), pt = dead ? 0 : clamp(p.pitch + p.swayY, -0.7, 0.7) - (1 - k) * 0.22 + p.recoil * 0.1;
+      const rel = dead || hop ? 0 : angDiff(p.hd, p.yaw), pt = dead ? 0 : clamp(p.pitch + p.swayY, -0.7, 0.7) - (1 - k) * 0.22 + p.recoil * 0.1;
       const cp = Math.cos(pt), a = J.aim.set(-Math.sin(rel) * cp, Math.sin(pt), -Math.cos(rel) * cp), r = J.right.set(Math.cos(rel), 0, -Math.sin(rel));
       const ride = dead ? 0 : Math.min(1, p.v / 10), bob = dead ? 0 : Math.sin(T * 2.2 + p.i * 2) * 0.012;
-      const hipY = lerp(0.86 - 0.1 * ride - (p.air ? 0.12 : 0), 0.5, k) + bob;
+      const hipY = lerp(0.86 - 0.1 * ride - (p.air ? 0.12 : 0) - p.white * 0.1 - p.squat * 0.3, 0.5, k) + bob;
       J.hip.set(p.lean * -0.12, hipY, 0.03);
       J.footF.set(0.02, 0.2, lerp(-0.42, -0.46, k)).lerp(v0.set(0.35, 0.3, -0.75), splay);
       J.footB.set(-0.02, 0.2, lerp(0.46, 0.82, k)).lerp(v0.set(-0.35, 0.3, 0.75), splay);
@@ -153,6 +160,15 @@ export function makeSurferKit(THREE, haze) {
       if (dead) { J.haR.copy(J.shR).addScaledVector(r, 0.6 * splay); J.haR.y += 0.2; J.haL.copy(J.shL).addScaledVector(r, -0.6 * splay); J.haL.y += 0.2; }
       ik(J.shR, J.haR, A1, A2, J.pole.set(r.x * 0.7, -0.8, r.z * 0.7), J.elR);
       ik(J.shL, J.haL, A1, A2, J.pole.set(-r.x * 0.5, -0.9, -r.z * 0.5), J.elL);
+      if (dead) for (const key of JOINTS) J[key].y -= 0.9; // (the body turns about its middle, not its feet)
+      if (hk > 0) {
+        // the header: a straight line from fingertips to toes, about the hips
+        const hy = J.hip.y, mv = (j, x, y, z) => { j.y -= hy * hk; j.lerp(v0.set(x, y, z), hk); };
+        mv(J.hip, 0, 0, 0); mv(J.chest, 0, 0.47, -0.03); mv(J.head, 0, 0.82, -0.02);
+        mv(J.footF, 0.09, -1.0, 0.02); mv(J.footB, -0.09, -1.0, 0.02); mv(J.kneeF, 0.09, -0.5, -0.03); mv(J.kneeB, -0.09, -0.5, -0.03);
+        mv(J.shR, 0.2, 0.6, 0); mv(J.shL, -0.2, 0.6, 0); mv(J.haR, 0.05, 1.26, -0.04); mv(J.haL, -0.05, 1.26, -0.04);
+        mv(J.elR, 0.19, 0.94, -0.06); mv(J.elL, -0.19, 0.94, -0.06);
+      }
       // ---- lay the meshes ----
       lay(limbs.thighF, J.hip, J.kneeF, 0.11); lay(limbs.shinF, J.kneeF, J.footF, 0.085);
       lay(limbs.thighB, J.hip, J.kneeB, 0.11); lay(limbs.shinB, J.kneeB, J.footB, 0.085);
@@ -165,8 +181,8 @@ export function makeSurferKit(THREE, haze) {
       put(balls.shR, J.shR, 0.1); put(balls.shL, J.shL, 0.1); put(balls.elR, J.elR, 0.075); put(balls.elL, J.elL, 0.075);
       put(balls.haR, J.haR, 0.065); put(balls.haL, J.haL, 0.065); put(balls.head, J.head, 0.165);
       hat.position.copy(J.head);
-      hat.rotation.set(-pt * 0.5, Math.atan2(-a.x, -a.z), 0, 'YXZ');
-      rifle.visible = !dead || p.dead < 0.05;
+      hat.rotation.set(-pt * 0.5 * (1 - hk), Math.atan2(-a.x, -a.z), 0, 'YXZ');
+      rifle.visible = !hop && (!dead || p.dead < 0.05);
       rifle.position.copy(J.butt);
       rifle.rotation.set(pt, Math.atan2(-a.x, -a.z), 0, 'YXZ');
       body.updateMatrixWorld(true);

@@ -22,7 +22,7 @@ export function makeBot(ctx, w, S, p) {
     pose: 0,
   };
   const sp = { v: 0, g: 0 };
-  const tr = new Float32Array(80);
+  const tr = new Float32Array(160);
   const sol = { a: 0, t: 0, ok: false };
 
   function enemy() { return S.P[1 - me]; }
@@ -46,12 +46,15 @@ export function makeBot(ctx, w, S, p) {
   const shoulderY = () => p.y - (SHOULDER - 2) * (p.st === 1 ? 0.66 : 1);
 
   function pickPlan() {
-    const wt = WEIGHT[skill < 0.4 ? 0 : skill < 0.75 ? 1 : 2].slice();
     const e = enemy();
+    // out in the middle of the canyon there is only one thing to do
+    if (p.ground && p.y > GY + 40) { b.plan = p.y < FLOOR - 40 && onPlank(p.x) ? 'island' : 'descend'; b.stage = 0; b.planT = 8 + Math.random() * 6; b.stuck = 0; return; }
+    const wt = WEIGHT[skill < 0.4 ? 0 : skill < 0.75 ? 1 : 2].slice();
     for (let i = 0; i < wt.length; i++) {
       if (PLANS[i] === b.plan) wt[i] *= 0.2;
       if ((PLANS[i] === 'launch' || PLANS[i] === 'descend') && (S.tl < 5 || (e.y > GY + 40))) wt[i] *= 0.2;
       if (ctx.sudden && (PLANS[i] === 'hold' || PLANS[i] === 'rock')) wt[i] *= 0.3;
+      if (S.tl > 20 && (PLANS[i] === 'hold' || PLANS[i] === 'rock')) wt[i] *= 0.5; // the stand-off gets old
     }
     let r = Math.random() * wt.reduce((s, v) => s + v, 0), k = 0;
     while (k < wt.length - 1 && (r -= wt[k]) > 0) k++;
@@ -71,13 +74,14 @@ export function makeBot(ctx, w, S, p) {
   /** Where am I going and how do I get there: the plan's current step. */
   function navigate(dt) {
     const onTop = p.ground && p.y > GY - 70 && p.y <= GY + 6; // on the mesa, or on top of its rock
+    const upOK = onTop || (!p.ground && p.y < GY + 10); // or hopping about up there
     const perchTop = 205;
     switch (b.plan) {
       case 'hold': {
         if (!onTop && p.ground && p.y > GY + 20) { b.plan = 'descend'; break; }
         if (p.ground && p.y < GY - 30) { break; } // up on the perch: stay put
         if (b.stage === 0) { b.goalX = X(90 + Math.random() * 120); b.stage = 1; }
-        if (b.stage === 1 && onTop && walk(b.goalX, 12)) { b.stage = 2; b.wait = 0.8 + Math.random() * 1.6; }
+        if (b.stage === 1 && upOK && walk(b.goalX, 12)) { b.stage = 2; b.wait = 0.8 + Math.random() * 1.6; }
         if (b.stage === 2) { b.wait -= dt; if (b.wait <= 0) { b.goalX = X(70 + Math.random() * 150); b.stage = 1; } }
         break;
       }
@@ -92,14 +96,14 @@ export function makeBot(ctx, w, S, p) {
       }
       case 'perch': {
         const lx = X(222);
-        if (b.stage === 0) { if (!onTop) { b.plan = 'hold'; break; } if (walk(lx, 6)) b.stage = 1; } else if (b.stage === 1) {
+        if (b.stage === 0) { if (!upOK) { b.plan = 'hold'; break; } if (walk(lx, 6)) b.stage = 1; } else if (b.stage === 1) {
           cmd.my = -1;
           if (p.lad) b.stage = 2; else if (Math.abs(p.x - lx) > 14) b.stage = 0;
         } else if (b.stage === 2) { cmd.my = -1; if (!p.lad && Math.abs(p.y - perchTop) < 8) { b.stage = 3; b.goalX = X(260 + Math.random() * 110); } } else if (b.stage === 3) { walk(b.goalX, 10); }
         break;
       }
       case 'lip': {
-        if (!onTop) { b.plan = 'hold'; break; }
+        if (!upOK) { b.plan = 'hold'; break; }
         walk(X(380), 12);
         break;
       }
@@ -126,9 +130,14 @@ export function makeBot(ctx, w, S, p) {
       case 'descend': {
         // down the cliff ladder, across the floor, up the pillar ladder
         const cx = X(378), px = X(718);
-        if (p.y < GY + 10 && p.ground && b.stage === 0) { if (walk(cx, 8)) { cmd.my = 1; if (p.lad) b.stage = 1; } } else if (b.stage === 0) b.stage = 1;
-        if (b.stage === 1) { cmd.my = 1; if (!p.lad && p.y > FLOOR - 8) b.stage = 2; }
-        if (b.stage === 2) { if (walk(px, 8)) { b.stage = 3; } }
+        if (b.stage === 0) {
+          if (p.lad) b.stage = 1;
+          else if (p.ground && p.y > FLOOR - 30) b.stage = 2; // already down on the floor
+          else if (p.ground && p.y > GY + 30) { b.plan = 'island'; b.stage = 0; } // somewhere in the middle
+          else if (upOK && walk(cx, 8) && p.ground) cmd.my = 1;
+        }
+        if (b.stage === 1) { cmd.my = 1; if (!p.lad && p.ground && p.y > FLOOR - 8) b.stage = 2; }
+        if (b.stage === 2) { if (walk(px, 8)) b.stage = 3; }
         if (b.stage === 3) { cmd.my = -1; if (p.lad) b.stage = 4; }
         if (b.stage === 4) { cmd.my = -1; if (!p.lad && p.y < PIV.y + 40) { b.plan = 'island'; b.stage = 0; b.planT = 10; } }
         break;
@@ -188,7 +197,15 @@ export function makeBot(ctx, w, S, p) {
     if (b.stuck > 2.5) { b.plan = 'hold'; b.stage = 0; b.planT = 4; b.stuck = 0; }
 
     navigate(dt);
-    // the rock is in the way: hop it
+    // the rock is in the way: hop it, with a run-up
+    if (p.ground && cmd.mx && !p.lad && b.jumpT <= 0) {
+      const dir = Math.sign(cmd.mx);
+      for (const q of w.solids) {
+        if (q.k !== 'rock') continue;
+        const dx = dir > 0 ? q.x - (p.x + PW) : p.x - PW - (q.x + q.w);
+        if (dx > -4 && dx < 40 && p.y > q.y + 4 && p.y - q.y < 90) { cmd.jump = true; b.jumpT = 0.5; break; }
+      }
+    }
     if (cmd.mx && Math.abs(p.vx) < 30 && p.ground && !p.lad && p.st === 0 && !b.charging) b.blockT += dt; else b.blockT = 0;
     if (b.blockT > 0.18 && p.ground) { cmd.jump = true; b.blockT = 0; }
 
@@ -254,14 +271,14 @@ export function makeBot(ctx, w, S, p) {
     const c = p.charge;
     // predicted target position: lead by the flight time, with skill deciding how well it is judged
     let tx = tg.x, ty = tg.y - tg.h * 0.45;
-    if (b.errT <= 0) { b.errT = 0.6 + Math.random() * 0.8; b.err = gauss(Math.random) * (0.06 - 0.047 * skill) * (1 - 0.5 * c) * (1 + 1.5 * Math.max(0, 1 - b.fired / 3)); b.leadK = 0.3 + 0.7 * skill + gauss(Math.random) * 0.15 * (1 - skill); }
+    if (b.errT <= 0) { b.errT = 0.6 + Math.random() * 0.8; b.err = gauss(Math.random) * (0.06 - 0.047 * skill) * (1 - 0.5 * c) * (1 + 1.5 * Math.max(0, 1 - b.fired / 3)) * (1 - 0.4 * clamp((S.tl - 18) / 25, 0, 1)); b.leadK = 0.3 + 0.7 * skill + gauss(Math.random) * 0.15 * (1 - skill); }
     let ok = false;
     for (let pass = 0; pass < 2 && !ok; pass++) {
       const high = pass === 1;
       let ex = tx, ey = ty;
       solve(sx, sy, ex, ey, c, high);
       for (let it = 0; it < 2 && sol.ok; it++) { ex = tg.x + tg.vx * sol.t * b.leadK; ey = ty; solve(sx, sy, ex, ey, c, high); }
-      if (!sol.ok || sol.t > 1.9) continue;
+      if (!sol.ok || sol.t > (high ? 2.7 : 1.9)) continue;
       // is the arc clear all the way?
       const L = GUN.base + 9 + c * GUN.sect * GUN.n;
       shotParams(c, ctx.sudden, sp);
@@ -270,10 +287,16 @@ export function makeBot(ctx, w, S, p) {
       ok = Math.hypot(hx - ex, hy - ey) < 80 || n * 0.05 > sol.t + 0.02;
       if (ok) { tx = ex; ty = ey; }
     }
-    b.noOk = ok ? 0 : b.noOk + dt;
+    // the crate tower is in the way: knock it down
+    let tower = false;
+    if (!ok && b.noOk > 1.0 && w.tower.n > 0 && live && S.tl >= b.readyAt) {
+      const tw = w.tower.rect, cx = tw.x + tw.w / 2, cy = tw.y + tw.h * 0.4;
+      if ((cx - p.x) * (e.x - cx) > 0 && solve(sx, sy, cx, cy, c, false).ok && sol.t < 1.9) { ok = true; tower = true; }
+    }
+    b.noOk = ok && !tower ? 0 : b.noOk + dt;
     // no clear shot for a while: go and find one
-    if (b.noOk > 2.2 && !p.lad && live) { b.noOk = 0; b.plan = Math.random() < 0.5 ? 'lip' : 'perch'; b.stage = 0; b.planT = 6; b.charging = false; }
-    const want = ok ? sol.a + b.err : dxe > 0 ? -0.35 : Math.PI + 0.35;
+    if (b.noOk > 2.2 && !p.lad && live && (b.plan === 'hold' || b.plan === 'rock' || b.plan === 'lip')) { b.noOk = 0; b.plan = Math.random() < 0.5 ? 'lip' : 'perch'; b.stage = 0; b.planT = 6; b.charging = false; }
+    const want = ok ? sol.a + (tower ? b.err * 0.4 : b.err) : dxe > 0 ? -0.35 : Math.PI + 0.35;
     b.desired = want;
     cmd.a = angLerp(p.aim, want, 1 - Math.exp(-dt * (5 + 11 * skill)));
     // fire: after the opening feel-out, once the aim has settled and the reaction time has passed
