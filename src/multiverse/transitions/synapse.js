@@ -21,8 +21,8 @@
 //   2.98 → 5.66 the chase: hops accelerate, relay cells fire, recruited cells light in
 //               amber and cyan, the loser's last thought lands a word per node; from 4.4
 //               the next world's palette floods the tissue from the far end
-//   5.66 → 6.45 the synapse: vesicles driven into the membrane, sparks across the cleft,
-//               the spine takes the hit — white-out (opaque white from 6.45)
+//   5.66 → 6.5  the synapse: vesicles driven into the membrane, sparks across the cleft,
+//               the spine takes the hit — white-out (solid white from 6.5)
 //   6.66        THE SWAP, held on white
 //   6.78        ACT 3 · the title lands in ink on the white
 //   7.08 → 10.2 the post-synaptic tree grows through the white; behind its front the new
@@ -56,7 +56,7 @@ import { buildNetwork, buildGrowth, STAINS, rgb } from './synapse/network.js';
 import { buildAtlas, drawRecord, drawScale, drawChase, titleLayout, drawTitle, accentPair } from './synapse/overlay.js';
 
 const DURATION = 10.4, SWAP_AT = 0.64;
-const LEVELS = 5; // bloom pyramid depth
+const LEVELS = 4; // bloom pyramid depth
 
 function timeline() {
   const swap = DURATION * SWAP_AT, D = DURATION;
@@ -64,7 +64,7 @@ function timeline() {
     D, swap,
     eyeIn: 0.22, pull1: 1.2, dilate: 1.2, crt: 1.3, plunge0: 1.55, plunge1: 2.3, neuroIn: 1.55,
     ignite: 2.9, chase0: 2.98, chase1: swap - 1.0,
-    burst: swap - 0.97, cross: swap - 0.74, white0: swap - 0.62, white1: swap - 0.21,
+    burst: swap - 0.97, cross: swap - 0.72, white0: swap - 0.56, white1: swap - 0.13,
     flood0: swap - 2.3, flood1: swap - 0.6,
     title: swap + 0.12, reveal0: swap + 0.42, reveal1: D - 0.2,
   };
@@ -96,19 +96,21 @@ export default {
     const bg2 = bgTo.map((v, i) => v * Math.min(1, 0.2 / bgMax) + accRgb[i] * 0.03); // the next world's ground, kept dark enough to be haze
     const ink = mixHex('#07070d', luminance(pal.bg) < 0.2 ? pal.bg : '#000000', 0.45);
 
-    const net = buildNetwork(THREE, rng, { T, stain, pulse: pulseRgb, sideCols: [rgb(colW), rgb(colL)], accent: accRgb, fg: luminance(pal.fg) > 0.25 ? rgb(pal.fg) : white });
+    // The next world's second voice: its foreground if that is a light, else a paler accent.
+    const fgRgb = luminance(pal.fg) > 0.25 ? rgb(pal.fg) : accRgb.map((v) => lerp(v, 1, 0.5));
+    const net = buildNetwork(THREE, rng, { T, stain, pulse: pulseRgb, sideCols: [rgb(colW), rgb(colL)], accent: accRgb, fg: fgRgb });
     const atlas = buildAtlas(ctx, rng, colW);
     const J = net.hops, st = net.stations;
 
     const eye = {
       seed: rand(rng, 0, 50), ri: rand(rng, 0.44, 0.54), cx: 0.5 + rand(rng, 0.03, 0.1), cy: 0.5 + rand(rng, -0.07, -0.01),
-      rot: rand(rng, 0.12, 0.4) * randSign(rng), imgS: rand(rng, 0.17, 0.22), p0: rand(rng, 0.34, 0.42), p1: rand(rng, 0.68, 0.78),
+      rot: rand(rng, 0.12, 0.4) * randSign(rng), imgS: rand(rng, 0.19, 0.25), p0: rand(rng, 0.34, 0.42), p1: rand(rng, 0.62, 0.7),
       light: [rand(rng, 0.24, 0.4) * randSign(rng), rand(rng, 0.24, 0.4)],
     };
     const cam = {
       side: randSign(rng), phi0: rand(rng, -0.4, 0.9), spin: rand(rng, 0.6, 2.2) * randSign(rng),
-      sway: rand(rng, 0.15, 0.4), swayF: rand(rng, 1, 2.4), rad0: rand(rng, 10, 14), rad1: rand(rng, 8, 11.5),
-      ahead: rand(rng, 7, 13), roll: rand(rng, 0.08, 0.3) * randSign(rng), rollF: rand(rng, 0.6, 1.4),
+      sway: rand(rng, 0.15, 0.4), swayF: rand(rng, 1, 2.4), rad0: rand(rng, 10, 14), rad1: rand(rng, 6, 9),
+      ahead: rand(rng, 4, 8), roll: rand(rng, 0.08, 0.3) * randSign(rng), rollF: rand(rng, 0.6, 1.4),
       fov0: rand(rng, 40, 48), fov1: rand(rng, 58, 68),
       endPhi: rand(rng, -0.3, 0.55), endRad: rand(rng, 15, 19), endBack: rand(rng, -3, 2),
     };
@@ -161,7 +163,7 @@ export default {
     const V3 = (a) => new THREE.Vector3(a[0], a[1], a[2]);
     const U = {
       uTime: { value: 0 }, uTan: { value: 1 }, uInvH: { value: 1 / 720 }, uFog: { value: 0.0105 }, uFlood: { value: 0 }, uGain: { value: 1 },
-      uFloodCol: { value: V3(accRgb) }, uFocus: { value: 20 }, uAperture: { value: 0.22 }, uCocMax: { value: 0.032 },
+      uFloodCol: { value: V3(accRgb) }, uFloodCol2: { value: V3(fgRgb) }, uFocus: { value: 20 }, uAperture: { value: 0.22 }, uCocMax: { value: 0.032 },
       uShutter: { value: 1 / 70 }, uAspect: { value: 1 }, uCamVel: { value: new THREE.Vector3() },
       tMem: { value: texMem }, uTiles: { value: atlas.tiles },
     };
@@ -181,14 +183,15 @@ export default {
 
     const rtOpts = { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, stencilBuffer: false, generateMipmaps: false };
     const rt = (o) => new THREE.WebGLRenderTarget(4, 4, { ...rtOpts, ...o });
-    const rtScene = rt(), rtGraded = rt({ type: THREE.UnsignedByteType }), rtWarm = rt();
+    const byte = { type: THREE.UnsignedByteType };
+    const rtScene = rt(), rtGraded = rt(byte), rtWarm = rt();
     const down = [], up = [];
-    for (let i = 0; i < LEVELS; i++) { down.push(rt()); if (i < LEVELS - 1) up.push(rt()); }
+    for (let i = 0; i < LEVELS; i++) { down.push(rt(byte)); if (i < LEVELS - 1) up.push(rt(byte)); }
     const aspect0 = ctx.width / ctx.height;
     const rtGrow = new THREE.WebGLRenderTarget(Math.round(400 * clamp(aspect0, 1, 2.4)), 400, { ...rtOpts, type: THREE.UnsignedByteType });
 
     const v2 = () => new THREE.Vector2();
-    const pDown = fullscreenPass(THREE, { fragmentShader: SH.DOWN_FRAG, uniforms: { tSrc: { value: null }, uTexel: { value: v2() }, uClamp: { value: 14 } } });
+    const pDown = fullscreenPass(THREE, { fragmentShader: SH.DOWN_FRAG, uniforms: { tSrc: { value: null }, uTexel: { value: v2() }, uCoded: { value: 0 } } });
     const pUp = fullscreenPass(THREE, { fragmentShader: SH.UP_FRAG, uniforms: { tSrc: { value: null }, tAdd: { value: null }, uTexel: { value: v2() }, uAdd: { value: 1 } } });
     const pGrade = fullscreenPass(THREE, {
       fragmentShader: SH.GRADE_FRAG,
@@ -211,7 +214,7 @@ export default {
     const pArrive = fullscreenPass(THREE, {
       fragmentShader: SH.ARRIVE_FRAG,
       uniforms: {
-        tGrow: { value: rtGrow.texture }, tTo: { value: texBlack }, uK: { value: 0 }, uAspect: { value: 1 }, uIslT: { value: 1.2 }, uOut: { value: 1 }, uHasTo: { value: 0 },
+        tGrow: { value: rtGrow.texture }, tTo: { value: texBlack }, uK: { value: 0 }, uAspect: { value: 1 }, uIslT: { value: 1.27 }, uOut: { value: 1 }, uHasTo: { value: 0 },
         uTexel: { value: v2() }, uInk: { value: V3(rgb(ink)) }, uAccent: { value: V3(accRgb) }, uWhite: { value: new THREE.Vector3(1, 1, 1) }, uIsl: { value: new THREE.Vector4(0.9, 0.4, 0.3, 0.12) },
       },
     });
@@ -224,7 +227,7 @@ export default {
       const kIn = ease.outQuart(seg(t, T.neuroIn, T.ignite + 0.3));
       const kCh = seg(t, T.ignite - 0.15, T.chase1), kChS = ease.inOutSine(kCh);
       const kEnd = ease.inOutCubic(seg(t, T.chase1 - 1.0, T.chase1 + 0.3)); // swung out to the tableau by the time the charge lands
-      const back = lerp(lerp(lerp(88, 21, kIn), 12.5, kChS), cam.endBack, kEnd);
+      const back = lerp(lerp(lerp(88, 21, kIn), 17, kChS), cam.endBack, kEnd);
       const rad = lerp(lerp(cam.rad0, cam.rad1, kChS), cam.endRad, kEnd);
       const phi = lerp(cam.phi0 + cam.spin * kChS + cam.sway * Math.sin(kCh * Math.PI * cam.swayF), cam.endPhi, kEnd);
       const sCam = sc - back;
@@ -232,12 +235,14 @@ export default {
       net.route.frame(sCam, Tn, Bn, Nn);
       const ox = Math.cos(phi) * cam.side * rad, oy = Math.sin(phi) * rad;
       o.px = P.x + Bn.x * ox + Nn.x * oy; o.py = P.y + Bn.y * ox + Nn.y * oy; o.pz = P.z + Bn.z * ox + Nn.z * oy;
-      net.route.at(lerp(lerp(sc, sp, 0.3) + lerp(4, cam.ahead, kChS), net.cleftS, kEnd), P);
+      // Eyes on the impulse all the way in; only at the very end does the gaze step across to the cleft.
+      net.route.at(lerp(sc, sp, 0.55) + lerp(4, cam.ahead, kChS) * (1 - kEnd) + 2.3 * seg(t, T.chase1 - 0.3, T.chase1 + 0.3), P);
       o.lx = P.x; o.ly = P.y; o.lz = P.z;
       net.route.at(lerp(sp, net.cleftS, seg(t, T.burst, T.cross)), P);
       o.hx = P.x; o.hy = P.y; o.hz = P.z;
       o.roll = cam.roll * Math.sin(kCh * Math.PI * 2 * cam.rollF) * (1 - kEnd);
-      o.tilt = 0.2 * kEnd; // look below the cleft: the discharge sits in the upper half, clear of the title
+      o.tilt = 0.13 * kEnd; // look below the cleft: the discharge sits in the upper half, clear of the title
+      o.ap = lerp(lerp(0.24, 0.1, kChS), 0.17, kEnd); // shallow focus for the portraits, deep for the run
       o.fov = lerp(lerp(cam.fov0, cam.fov1, kChS), 46, kEnd) - 12 * ease.inCubic(seg(t, T.cross, T.white1));
       return o;
     }
@@ -260,7 +265,7 @@ export default {
     applyCam(T.white1);
     const cleft = net.route.at(net.cleftS, { x: 0, y: 0, z: 0 });
     const rootUv = toUv(cleft.x, cleft.y, cleft.z, v2());
-    const root = { x: clamp(rootUv.x, 0.3, 0.7) * aspect0, y: clamp(rootUv.y, 0.66, 0.82) };
+    const root = { x: clamp(rootUv.x, 0.3, 0.7) * aspect0, y: clamp(rootUv.y, 0.64, 0.8) };
     const growGeo = buildGrowth(THREE, rng, aspect0, root);
     const mGrow = new THREE.ShaderMaterial({
       uniforms: { uAspect0: { value: aspect0 } }, vertexShader: SH.GROW_VERT, fragmentShader: SH.GROW_FRAG, depthTest: false, depthWrite: false, side: THREE.DoubleSide,
@@ -286,7 +291,7 @@ export default {
     const size = v2();
     function sizeTargets() {
       renderer.getDrawingBufferSize(size);
-      const k = ctx.dpr >= 1.5 ? 0.75 : 1; // the tissue is all soft light: 1.5x CSS resolution is plenty
+      const k = ctx.dpr >= 1.5 ? 0.625 : 1; // the tissue is all soft light: 1.25x CSS resolution is plenty
       const W = Math.max(16, Math.round(size.x * k)), H = Math.max(16, Math.round(size.y * k));
       if (W === rtW && H === rtH) return;
       rtW = W; rtH = H;
@@ -314,6 +319,7 @@ export default {
       U.uInvH.value = 1 / rtH;
       U.uAspect.value = aspect;
       U.uFocus.value = Math.max(3, Math.hypot(cs.hx - cs.px, cs.hy - cs.py, cs.hz - cs.pz));
+      U.uAperture.value = cs.ap;
       U.uCamVel.value.set(vx, vy, vz);
       U.uFlood.value = flood;
 
@@ -332,6 +338,8 @@ export default {
       cu.uI.value = 7 * kd * kd;
       cu.uSize.value = 8 + 44 * kd * kd;
       cu.uRot.value = -t * 1.3;
+      meshes[3].visible = hu.uI.value > 0; // a flare is a big quad: do not fill it for nothing
+      meshes[4].visible = cu.uI.value > 0;
 
       renderer.setRenderTarget(rtScene);
       renderer.render(scene, camera);
@@ -339,6 +347,7 @@ export default {
       for (let i = 0; i < LEVELS; i++) {
         pDown.uniforms.tSrc.value = src.texture;
         pDown.uniforms.uTexel.value.set(1 / src.width, 1 / src.height);
+        pDown.uniforms.uCoded.value = i ? 1 : 0;
         renderer.setRenderTarget(down[i]);
         pDown.render(renderer);
         src = down[i];
@@ -379,7 +388,8 @@ export default {
       u.uC.value.set(lerp(lerp(focusUv.x, eye.cx, kPull), 0.5, kZoom), lerp(lerp(focusUv.y, eye.cy, kPull), 0.5, kZoom));
       u.uImgRot.value = eye.rot * kPull;
       u.uBulge.value = 0.85 * kPull;
-      u.uP.value = lerp(eye.p0, eye.p1, ease.outBack(seg(t, T.dilate, T.dilate + 0.42)));
+      // The pupil starts wide enough to hold the whole picture, tightens as we pull away, then blows.
+      u.uP.value = lerp(lerp(0.9, eye.p0, ease.outCubic(seg(t, 0, T.pull1 * 0.8))), eye.p1, ease.outBack(seg(t, T.dilate, T.dilate + 0.42)));
       // The tube switches off: the picture collapses to a line, the line to a dot, the dot goes out.
       const k1 = ease.inCubic(seg(t, T.crt, T.crt + 0.14)), k2 = ease.inCubic(seg(t, T.crt + 0.12, T.crt + 0.3));
       u.uCrt.value.set(lerp(1, 0.02, k2), lerp(1, 0.012, k1));
@@ -475,7 +485,7 @@ export default {
           u.uIsl.value.set(lay.cx / h, 1 - lay.cy / h, lay.bw / 2 / h, lay.bh / 2 / h);
           renderer.setRenderTarget(null);
           pArrive.render(renderer);
-          if (t >= T.title) drawTitle(g, lay, t - T.title, smoothstep(1.16, 1.4, k), title);
+          if (t >= T.title) drawTitle(g, lay, t - T.title, smoothstep(1.1, 1.26, k), title);
         }
 
         // Instrument readouts over acts 1 and 2.

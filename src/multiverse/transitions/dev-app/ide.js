@@ -104,19 +104,25 @@ function drawTitle(g, th, L, plan, st) {
   // Status pill, left of the button
   const bs = st.build;
   let text = 'Idle', col = th.dim, kind = 'dot';
-  if (live) { text = 'Running'; col = th.ok; } else if (bs.state === 'run') { text = `Building ${Math.round(bs.k * 100)}%`; col = th.brand; kind = 'spin'; } else if (bs.state === 'err') { text = '1 error'; col = th.err; kind = 'cross'; } else if (bs.state === 'fix') { text = 'Auto-fixed'; col = th.ok; kind = 'check'; } else if (bs.state === 'ok') { text = 'Build succeeded'; col = th.ok; kind = 'check'; } else if (st.typing) { text = 'Editing'; col = th.dim; }
+  if (live) { text = 'Running'; col = th.ok; }
+  else if (bs.state === 'run') { text = `Building ${Math.round(bs.k * 100)}%`; col = th.brand; kind = 'spin'; }
+  else if (bs.state === 'err') { text = '1 error'; col = th.err; kind = 'cross'; }
+  else if (bs.state === 'fix') { text = 'Auto-fixed'; col = th.ok; kind = 'check'; }
+  else if (bs.state === 'ok') { text = 'Build succeeded'; col = th.ok; kind = 'check'; }
+  else if (st.typing) text = 'Editing';
   g.font = th.ui(L.fz(11.5), 600);
-  const tw = g.measureText(text).width, ph = L.px(22), pw = tw + L.px(30), pxr = b.x - L.px(10), pxl = pxr - pw;
+  const fu = L.fz(11.5) / 11.5; // spacing inside chips follows the type, which has a floor on small screens
+  const tw = g.measureText(text).width, ph = Math.max(L.px(22), 15), pw = tw + 30 * fu, pxr = b.x - L.px(10), pxl = pxr - pw;
   roundRect(g, pxl, cy - ph / 2, pw, ph, th.hard ? 1 : ph / 2);
   g.fillStyle = rgba(col, th.key === 'dark' ? 0.16 : 0.13);
   g.fill();
   g.fillStyle = g.strokeStyle = th.key === 'dark' ? col : mixHex(col, '#000000', 0.15);
-  const ix = pxl + L.px(12), isz2 = L.fz(9);
+  const ix = pxl + 12 * fu, isz2 = L.fz(9);
   if (kind === 'spin') icoSpin(g, ix, cy, isz2 * 1.25, st.t * 1.6);
   else if (kind === 'check') icoCheck(g, ix, cy, isz2);
   else if (kind === 'cross') icoCross(g, ix, cy, isz2);
   else { g.beginPath(); g.arc(ix, cy, isz2 * 0.36, 0, TAU); g.fill(); }
-  g.fillText(text, pxl + L.px(21), cy + 0.5);
+  g.fillText(text, pxl + 21 * fu, cy + 0.5);
   // Breadcrumb in whatever room is left in the middle
   const room = pxl - L.px(18) - x;
   if (room > L.px(90)) {
@@ -353,13 +359,14 @@ function drawColumn(g, th, L, plan, st, to) {
   // Badge (right)
   const B = { LIVE: [th.err, 'dot'], STOPPED: [th.dim, 'stop'], REBUILDING: [th.brand, 'spin'], READY: [th.ok, 'check'], RUNNING: [th.ok, 'dot'], ERROR: [th.err, 'cross'] }[st.badge] || [th.dim, 'dot'];
   g.font = th.ui(L.fz(10.5), 700);
-  const bw = g.measureText(st.badge).width + L.px(26), bh = L.px(18), bx = h.x + h.w - L.pad - bw;
+  const fu = L.fz(10.5) / 10.5;
+  const bw = g.measureText(st.badge).width + 27 * fu, bh = Math.max(L.px(18), 12), bx = h.x + h.w - L.pad - bw;
   roundRect(g, bx, hy - bh / 2, bw, bh, th.hard ? 1 : bh / 2);
   g.fillStyle = rgba(B[0], th.key === 'dark' ? 0.18 : 0.14);
   g.fill();
   const bcol = th.key === 'dark' ? B[0] : mixHex(B[0], '#000000', 0.12);
   g.fillStyle = g.strokeStyle = bcol;
-  const ix = bx + L.px(10), isz = L.fz(8);
+  const ix = bx + 10 * fu, isz = L.fz(8);
   if (B[1] === 'spin') icoSpin(g, ix, hy, isz * 1.2, st.t * 1.6);
   else if (B[1] === 'check') icoCheck(g, ix, hy, isz);
   else if (B[1] === 'cross') icoCross(g, ix, hy, isz);
@@ -371,7 +378,7 @@ function drawColumn(g, th, L, plan, st, to) {
     g.fill();
     g.globalAlpha = 1;
   }
-  g.fillText(st.badge, bx + L.px(18), hy + 0.5);
+  g.fillText(st.badge, bx + 19 * fu, hy + 0.5);
   g.font = th.mono(L.fz(10.5), 400);
   g.fillStyle = th.dim;
   g.textAlign = 'right';

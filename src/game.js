@@ -450,9 +450,11 @@ export class Game {
       const winner = mine > theirs ? 0 : theirs > mine ? 1 : -1;
       this._hostEndRound(winner, 'time', { up: [mine, theirs] });
     } else if (this.phase === 'end' && this.mv) {
-      // Multiverse: no next round here — the point throws the match into another dimension.
-      this.phase = 'hold';
-      this.mv.roundOver(this.result ? this.result.winner : -1, this.result || {});
+      // The director takes it from here (the point throws the match somewhere else) — unless
+      // it declines, as it does for a drawn round before anyone has scored: then this is
+      // still just the classic duel and the next round starts as usual.
+      if (this.mv.roundOver(this.result ? this.result.winner : -1, this.result || {}) === false) this._hostStartRound();
+      else this.phase = 'hold';
     } else if (this.phase === 'end') {
       if (Math.max(...this.scores) >= ROUND.winsToMatch) {
         this.phase = 'match';
@@ -1160,6 +1162,9 @@ export class Game {
     this.hud.show(false);
     this.hud.card('');
     this.pendingCard = null;
+    // The valley's own pause menu must not ride along into the next dimension.
+    document.getElementById('pause').classList.remove('on');
+    this.paused = false;
     document.getElementById('touch').classList.remove('active');
     if (this.loadoutPanel.open) {
       this.loadoutPanel.open = false;

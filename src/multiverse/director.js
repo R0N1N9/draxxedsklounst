@@ -19,7 +19,33 @@ const STATE_HZ = 20;
 const INTERP = 0.1; // seconds the remote puppet runs behind
 const OVER_SLOWMO = 0.35;
 const FINALE = '@finale';
+const VOID = '@void';
+const FAULT = 'REALITY FAULT';
 const clean = (s, d) => String(s || d).replace(/[<>&"]/g, '').slice(0, 16) || d;
+const label = (s) => String(s || '').replace(/[<>&"]/g, '').slice(0, 40).toUpperCase(); // kill labels run longer than callsigns
+
+// What a round shows when its world could not be built: static, until the host moves the match on.
+const voidWorld = {
+  id: VOID, name: 'STATIC', tagline: '', perspective: '', renderer: '2d', aim: 'pointer',
+  palette: { bg: '#000000', fg: '#e8e6f0', accent: '#e8e6f0' }, controls: {},
+  create(ctx) {
+    let t = 0;
+    return {
+      update(dt) { t += dt; },
+      render() {
+        const g = ctx.g, w = ctx.width, h = ctx.height;
+        g.fillStyle = '#050508';
+        g.fillRect(0, 0, w, h);
+        g.fillStyle = 'rgba(232,230,240,0.07)';
+        for (let i = 0; i < 90; i++) {
+          const y = ((Math.sin(i * 91.7 + Math.floor(t * 24) * 13.1) * 0.5 + 0.5) * h) | 0;
+          g.fillRect(0, y, w, 1 + (i % 3));
+        }
+      },
+      dispose() {},
+    };
+  },
+};
 
 function shuffled(list, rng) {
   const a = list.slice();
@@ -87,6 +113,14 @@ export class Director {
     this.selfReady = 0;
     this.peerReady = 0;
     this.goRound = 0;
+    this.settled = 0; // last round whose point has been applied here
+    this.points = new Map(); // guest: points that arrived before this client reached their round
+    this.claims = new Map(); // host: claims that arrived before the host was live in their round
+    this.peerFault = 0; // host: latest round the guest reported it cannot play
+    this.voided = false;
+    this.faultDim = null;
+    this.pendingRematch = null;
+    this.rematchAsked = false;
     this.remoteBuf = [];
     this.remoteOut = null;
     this.pendingState = null;
@@ -209,17 +243,29 @@ export class Director {
       const buf = this.remoteBuf;
       buf.push({ t: performance.now() / 1000, s: m.s });
       if (buf.length > 16) buf.shift();
+      // The host's round clock is the reference: ease ours onto it.
+      if (!this.authority && typeof m.c === 'number' && this.phase === 'live') {
+        const err = m.c + tp.rtt / 2000 - this.time;
+        if (Math.abs(err) > 0.03) this.time += Math.max(-0.25, Math.min(0.25, err)) * 0.2;
+      }
     });
     hello();
   }
 
   _onCtl(m) {
     switch (m.k) {
-      case 'claim':
-        if (this.authority && m.r === this.round && this.phase === 'live') this._point(1 - (m.victim ? 1 : 0), m.victim ? 1 : 0, clean(m.how, '').slice(0, 40));
+      case 'claim': {
+        if (!this.authority || m.r < this.round) break;
+        const v = m.victim ? 1 : 0;
+        if (m.r === this.round && this.phase === 'live') this._point(1 - v, v, label(m.how));
+        else this.claims.set(m.r, m); // not live here yet: settle it the moment we are
         break;
+      }
       case 'fault':
-        if (this.authority && m.r === this.round && this.phase === 'live') this._point(-1, -1, 'REALITY FAULT');
+        if (!this.authority || m.r < this.round) break;
+        if (m.dim) this.broken.add(m.dim);
+        this.peerFault = Math.max(this.peerFault, m.r);
+        if (m.r === this.round && this.phase === 'live') this._point(-1, -1, FAULT);
         break;
       case 'point':
         if (!this.authority) this._applyPoint(m);
@@ -234,10 +280,14 @@ export class Director {
         if (this.selfReady === this.round && this.goRound >= this.round) this._go();
         break;
       case 'rematch?':
-        if (this.authority && this.phase === 'final') this._rematch();
+        if (!this.authority) break;
+        if (this.phase === 'final') this._rematch();
+        else this.rematchAsked = true; // asked before our own card is up: honoured when it is
         break;
       case 'rematch':
-        if (!this.authority) this._applyRematch(m);
+        if (this.authority) break;
+        if (this.phase === 'final') this._applyRematch(m);
+        else this.pendingRematch = m;
         break;
     }
   }
@@ -246,14 +296,21 @@ export class Director {
     if (this.phase === 'idle') return;
     this._log('lost');
     this.input.setEnabled(false);
-    this.hud.card(`<h2 class="lose">CONNECTION LOST</h2><p>${this.players[1 - this.me].name} left the multiverse.</p>`, [{ label: 'Back to menu', primary: true, onClick: () => this.exit() }]);
+    if (this.mod && this.mod.native && this.inst && this.inst.freeze) {
+      try { this.inst.freeze(); } catch (e) { this._error('freeze', e); }
+    }
+    // Until the first point lands nothing may hint that this is anything but the classic duel.
+    const where = this.settled === 0 ? 'game' : 'match';
+    this.hud.card(`<h2 class="lose">CONNECTION LOST</h2><p>${this.players[1 - this.me].name} left the ${where}.</p>`, [{ label: 'Back to menu', primary: true, onClick: () => this.exit() }]);
   }
 
   _netFlush(dt) {
     this.stateT -= dt;
     if (this.stateT > 0 || !this.pendingState) return;
     this.stateT = 1 / STATE_HZ;
-    this.transport.send({ t: 'ms', r: this.round, s: this.pendingState });
+    const m = { t: 'ms', r: this.round, s: this.pendingState };
+    if (this.authority && this.phase === 'live') m.c = Math.round(this.time * 1000) / 1000;
+    this.transport.send(m);
     this.pendingState = null;
   }
 
@@ -343,8 +400,9 @@ export class Director {
   }
 
   async _mount(next) {
-    const mod = next.dim === FINALE ? finale : await loadDimension(next.dim);
+    const mod = next.dim === FINALE ? finale : next.dim === VOID ? voidWorld : await loadDimension(next.dim);
     const round = this.round;
+    this.voided = false;
     this.remoteBuf.length = 0;
     this.remoteOut = null;
     this.pendingState = null;
@@ -381,23 +439,21 @@ export class Director {
     this._log('mount', { dim: mod.id, round, ...(info ? { geo: info.geometries, tex: info.textures } : {}) });
   }
 
-  // Mount, falling back to another dimension if this one cannot even start. The fallback
-  // walks the registry in a fixed order so both online clients land on the same one.
+  // Mount a dimension. One that cannot even be built voids its round: this client shows
+  // static, says so, and the host moves the match on without a point — the same path as a
+  // dimension that throws mid-round, so both clients always stay in step.
   async _mountSafe(next) {
-    let dim = next.dim;
-    for (let tries = 0; tries < 6; tries++) {
-      try {
-        await this._mount({ ...next, dim });
-        return;
-      } catch (e) {
-        this._error(`mount ${dim}`, e);
-        this.broken.add(dim);
-        this._disposeInst();
-        dim = playableDimensions().find((id) => !this.broken.has(id));
-        if (!dim) break;
-      }
+    try {
+      await this._mount(next);
+    } catch (e) {
+      this._error(`mount ${next.dim}`, e);
+      if (next.dim !== FINALE && next.dim !== VOID) this.broken.add(next.dim);
+      this._disposeInst();
+      await this._mount({ ...next, dim: VOID });
+      this.voided = true;
+      this.faultDim = next.dim;
+      if (this.online && !this.authority) this.transport.send({ t: 'mv', k: 'fault', r: this.round, dim: next.dim });
     }
-    throw new Error('No dimension could be mounted');
   }
 
   _disposeInst() {
@@ -413,17 +469,17 @@ export class Director {
   // ---------------------------------------------------------------------------
   // Round flow
   // ---------------------------------------------------------------------------
-  // The dimension is mounted and visible; wait until both sides are, then start it.
+  // The dimension is mounted and visible; wait until both sides are, then start it. Online
+  // nobody starts alone: the channel is reliable, so we simply wait for the other side.
   _ready() {
     this.phase = 'intro';
     this.selfReady = this.round;
+    this.readyAt = performance.now();
+    this._waitShown = false;
     if (!this.online) return this._go();
     this.transport.send({ t: 'mv', k: 'ready', r: this.round });
-    this.readyAt = performance.now();
-    if (this.authority) {
-      if (this.round === 1 && this.peerReady < 1) this.hud.message('', 'Waiting for your opponent to arrive…', 999);
-      this._maybeGo();
-    } else if (this.goRound >= this.round) this._go();
+    if (this.authority) this._maybeGo();
+    else if (this.goRound >= this.round || this.points.has(this.round)) this._go();
   }
 
   _maybeGo() {
@@ -436,12 +492,27 @@ export class Director {
   _go() {
     if (this.phase !== 'intro' || !this.holdIntro) return;
     this.holdIntro = false;
+    if (this._waitShown) { this._waitShown = false; this.hud.message('', '', 0); }
     this._log('go', { round: this.round });
     const mod = this.mod;
+    // Already decided while this client was away: catch up with a hard cut.
+    const stored = this.points.get(this.round);
+    if (stored) {
+      this.points.delete(this.round);
+      this.phase = this.dimPhase = 'live';
+      return this._applyPoint({ ...stored, next: { ...stored.next, fx: 'none' } }, true);
+    }
+    // Cannot be played (here or on the other device): void it.
+    if (this.instDead || this.voided || (this.authority && this.peerFault >= this.round)) {
+      this.phase = this.dimPhase = 'live';
+      return this._voidRound();
+    }
     if (mod.native) {
       this.phase = 'live';
       this.dimPhase = 'live';
+      this.time = 0;
       try { this.inst.begin(); } catch (e) { this._error('native begin', e); }
+      this._onLive();
     } else {
       this.introT = DEFAULTS.introTime;
       this.hud.message('', '', 0);
@@ -451,11 +522,11 @@ export class Director {
       if (mod.aim === 'look') this.input.requestLock();
       this._call('onPhase', 'intro');
     }
-    if (this.pendingPoint && this.pendingPoint.r === this.round) {
-      const m = this.pendingPoint;
-      this.pendingPoint = null;
-      this._applyPoint(m);
-    }
+  }
+
+  _voidRound() {
+    if (this.authority) this._point(-1, -1, FAULT);
+    else if (this.online) this.transport.send({ t: 'mv', k: 'fault', r: this.round, dim: this.faultDim });
   }
 
   _call(fn, arg) {
@@ -464,33 +535,44 @@ export class Director {
     try { inst[fn](arg); } catch (e) { this._fault(fn, e); }
   }
 
-  // A dimension threw mid-round: stop running it and move the match along without a point.
+  // A dimension threw: stop running it and void the round. The fault is sticky — if the
+  // round is not live yet it is voided the moment it would have started (see _go).
   _fault(where, e) {
     this._error(`${this.mod ? this.mod.id : '?'} ${where}`, e);
     if (this.instDead) return;
     this.instDead = true;
-    if (this.mod) this.broken.add(this.mod.id);
-    if (this.phase === 'intro' && !this.holdIntro) { this.phase = 'live'; this.dimPhase = 'live'; }
-    if (this.phase !== 'live') return;
-    if (this.authority) this._point(-1, -1, 'REALITY FAULT');
-    else this.transport.send({ t: 'mv', k: 'fault', r: this.round });
+    if (this.mod && this.mod !== voidWorld && this.mod !== finale) { this.broken.add(this.mod.id); this.faultDim = this.mod.id; }
+    if (this.phase === 'intro' && !this.holdIntro) {
+      this.phase = this.dimPhase = 'live';
+      this.hud.title(this.mod, this.round, false);
+      this.hud.count('');
+    }
+    if (this.online && !this.authority) this.transport.send({ t: 'mv', k: 'fault', r: this.round, dim: this.faultDim });
+    else if (this.phase === 'live') this._point(-1, -1, FAULT);
   }
 
   _kill(round, victim, info) {
     if (round !== this.round || this.phase !== 'live' || this.dimPhase !== 'live') return;
     victim = victim ? 1 : 0;
-    const how = clean(info && info.how, '').slice(0, 40).toUpperCase();
-    if (this.authority) this._point(1 - victim, victim, how);
-    else if (!this.claimed) {
-      this.claimed = true;
-      this.transport.send({ t: 'mv', k: 'claim', r: round, victim, how });
-    }
+    const how = label(info && info.how);
+    if (this.authority) return this._point(1 - victim, victim, how);
+    // One claim per hit; if the host has not answered within a moment, a later hit asks again.
+    const now = performance.now();
+    if (this.claimed && now - this.claimedAt < 1500) return;
+    this.claimed = true;
+    this.claimedAt = now;
+    this.transport.send({ t: 'mv', k: 'claim', r: round, victim, how });
   }
 
+  // Returns false when the native dimension should carry on with its own next round.
   _nativeOver(round, winner, info) {
-    if (!this.authority || round !== this.round || this.phase !== 'live') return;
+    if (!this.authority || round !== this.round || this.phase !== 'live') return true;
     winner = winner === 0 || winner === 1 ? winner : -1;
-    this._point(winner, winner < 0 ? -1 : 1 - winner, clean(info && info.how, '').toUpperCase());
+    // The mode keeps its secret until somebody actually scores: a drawn opening round
+    // is followed by another ordinary round in the valley, exactly as in the classic game.
+    if (winner < 0 && this.settled === 0) return false;
+    this._point(winner, winner < 0 ? -1 : 1 - winner, label(info && info.how));
+    return true;
   }
 
   forcePoint(winner = 0) {
@@ -516,38 +598,53 @@ export class Director {
     this._applyPoint(m);
   }
 
-  _applyPoint(m) {
-    if (m.r > this.round || (m.r === this.round && this.phase === 'intro' && this.holdIntro)) { this.pendingPoint = m; return; }
-    if (m.r !== this.round || (this.phase !== 'live' && this.phase !== 'intro')) return;
+  // fast = catching up on a round that was settled while this client was away: no kill moment.
+  _applyPoint(m, fast) {
+    if (m.r <= this.settled) return;
+    const playing = this.phase === 'live' || (this.phase === 'intro' && !this.holdIntro);
+    if (m.r !== this.round || !playing) { this.points.set(m.r, m); return; } // never dropped: applied when we get there
+    this.settled = m.r;
     this.score = m.score.slice();
     this.result = { winner: m.winner, victim: m.victim, how: m.how || '' };
-    this.history.push({ id: this.mod.id, name: this.mod.name, winner: m.winner });
+    if (m.how !== FAULT) this.history.push({ id: this.mod.id, name: this.mod.name, winner: m.winner });
     this.next = m.next;
     this._log('point', { round: this.round, winner: m.winner, how: m.how, time: Math.round(this.time * 10) / 10, score: this.score.slice(), next: m.next.dim, fx: m.next.fx });
     this.preload = Promise.all([
       m.next.dim === FINALE ? null : loadDimension(m.next.dim).catch((e) => this._error('preload dim', e)),
       m.next.fx && m.next.fx !== 'none' ? loadTransition(m.next.fx).catch((e) => this._error('preload fx', e)) : null,
     ]);
-    if (this.mod.native || this.instDead) {
-      this.phase = 'over';
+    this.phase = 'over';
+    this.hud.setScore(this.score, this.target);
+    if (this.mod.native || this.instDead || this.voided || fast) {
       this.overT = 0;
+      if (!this.mod.native) this.dimPhase = 'over';
     } else {
-      this.phase = 'over';
       this.dimPhase = 'over';
       this.overT = this.mod.overTime || DEFAULTS.overTime;
       this.hud.title(this.mod, this.round, false);
       this.hud.count('');
-      this.hud.setScore(this.score, this.target);
       this.hud.killBanner(m.winner >= 0 ? this.players[m.winner] : null, m.winner >= 0 ? this.players[1 - m.winner] : null, m.how, this.overT);
       this.audio.sfx('kill');
       this._call('onPhase', 'over');
     }
   }
 
-  _tick(dt) {
+  // The round is live on this client: settle anything that was waiting for that.
+  _onLive() {
+    if (!this.authority) return;
+    const c = this.claims.get(this.round);
+    this.claims.clear();
+    if (this.peerFault >= this.round) return this._point(-1, -1, FAULT);
+    if (c) { const v = c.victim ? 1 : 0; return this._point(1 - v, v, label(c.how)); }
+    if (this._forced !== undefined) { const w = this._forced; this._forced = undefined; this._point(w, w < 0 ? -1 : 1 - w, 'DEBUG'); }
+  }
+
+  // dt drives the simulation (clamped); clock drives the round timers (real time online,
+  // so two devices that hitch differently still agree on ctx.time).
+  _tick(dt, clock = dt) {
     const mod = this.mod;
     if (this.phase === 'intro' && !this.holdIntro) {
-      this.introT -= dt;
+      this.introT -= clock;
       const left = this.introT;
       const n = left > 2.4 ? '' : left > 1.6 ? '3' : left > 0.8 ? '2' : left > 0 ? '1' : '';
       if (n && n !== this._countShown) this.audio.sfx('tick', { pitch: 1 + (3 - +n) * 0.12 });
@@ -561,10 +658,10 @@ export class Director {
         this.audio.sfx('chime');
         this._log('live', { round: this.round, dim: mod.id });
         this._call('onPhase', 'live');
-        if (this._forced !== undefined) { const w = this._forced; this._forced = undefined; this._point(w, w < 0 ? -1 : 1 - w, 'DEBUG'); }
+        this._onLive();
       }
     } else if (this.phase === 'live') {
-      this.time += dt;
+      this.time += clock;
       const rt = mod.roundTime || DEFAULTS.roundTime;
       if (!this.sudden && this.time >= rt) {
         this.sudden = true;
@@ -575,7 +672,7 @@ export class Director {
       this.hud.clock(this.sudden ? rt + DEFAULTS.suddenTime - this.time : rt - this.time, this.sudden);
       if (this.authority && this.time >= rt + DEFAULTS.suddenTime) this._point(-1, -1, 'STALEMATE');
     } else if (this.phase === 'over') {
-      this.overT -= dt;
+      this.overT -= clock;
       if (this.overT <= 0) this._startTransition();
     }
     if (this.online) this._sampleRemote();
@@ -607,7 +704,11 @@ export class Director {
     if (this.phase === 'transition') return;
     this.phase = 'transition';
     const next = this.next;
-    (this.preload || Promise.resolve()).then(() => this._beginFx(next)).catch((e) => { this._error('transition', e); this._beginFx({ ...next, fx: 'none' }); });
+    (this.preload || Promise.resolve()).then(() => this._beginFx(next)).catch((e) => {
+      // Whatever went wrong, the match goes on: cut straight to the next world.
+      if (!this.fx) this.fx = { mod: null, inst: null, t: 0, swapT: 0, swapped: false, swapping: false, next };
+      this._fxFault(e);
+    });
   }
 
   async _beginFx(next) {
@@ -650,7 +751,7 @@ export class Director {
         get dpr() { return d.stage.dpr; },
         canvas: this.stage.fxCanvas,
         g: this.stage.fxG,
-        three: this.stage.fxThree(),
+        get three() { return (this._three ||= d.stage.fxThree()); },
         fromImage: this.stage.fromImage,
         get toImage() { return fx.swapped ? d.stage.toImage : null; },
         from: metaOf(from),
@@ -689,7 +790,7 @@ export class Director {
     if (fx.mod) this.broken.add(fx.mod.id);
     if (fx.inst) { try { fx.inst.dispose(); } catch {} }
     fx.inst = null;
-    this.stage.showFx(false);
+    try { this.stage.showFx(false); } catch {}
     if (!fx.swapped && !fx.swapping) this._swap();
     else if (fx.swapped) this._endTransition();
   }
@@ -762,13 +863,16 @@ export class Director {
     this.phase = 'final';
     this.input.setEnabled(false);
     this.hud.show(false);
+    // A rematch that was agreed while this client was still watching the last film.
+    if (this.pendingRematch) { const m = this.pendingRematch; this.pendingRematch = null; return this._applyRematch(m); }
+    if (this.authority && this.rematchAsked) { this.rematchAsked = false; return this._rematch(); }
     const won = this.score[this.me] > this.score[1 - this.me];
     this.audio.sfx(won ? 'powerup' : 'drop');
     this.hud.final({
       won, players: this.players, score: this.score, history: this.history, canRematch: this.authority,
       onRematch: (btn) => {
         if (this.authority) this._rematch();
-        else { this.transport.send({ t: 'mv', k: 'rematch?' }); btn.textContent = 'Waiting for host…'; btn.disabled = true; }
+        else { this.transport.send({ t: 'mv', k: 'rematch?' }); btn.textContent = 'Waiting for host…'; }
       },
       onExit: () => this.exit(),
     });
@@ -793,7 +897,12 @@ export class Director {
     this.result = null;
     this.round = 0; // the swap increments it to 1
     this.selfReady = this.peerReady = this.goRound = 0;
-    this.pendingPoint = null;
+    this.settled = 0;
+    this.peerFault = 0;
+    this.points.clear();
+    this.claims.clear();
+    this.pendingRematch = null;
+    this.rematchAsked = false;
     this.hud.card('');
     this.hud.setScore(this.score, this.target);
     this.next = m.next;
@@ -828,32 +937,55 @@ export class Director {
   // Frame
   // ---------------------------------------------------------------------------
   // 3D dimensions render at full device resolution while the frame rate holds, and give
-  // up pixels (down to half) when it does not — an iPad should never chug.
+  // up pixels (down to half) when it does not — an iPad should never chug. "Holds" is judged
+  // against the display's own cadence (Low Power Mode runs rAF at 30 Hz: that is not
+  // overload), and a resolution that proved too much is not tried again for a while.
   _adaptResolution(dt) {
-    if (this.dev.fixres || !this.inst || !this.mod || this.mod.native || this.mod.renderer !== 'three' || this.fx || this.paused) { this._ft = 0; this._fn = 0; return; }
+    // The quickest steady cadence ever seen is the display's.
+    this._cn = (this._cn || 0) + 1;
+    this._ct = (this._ct || 0) + dt;
+    if (this._cn >= 20) {
+      this._cadence = Math.min(this._cadence || 1, this._ct / this._cn);
+      this._cn = this._ct = 0;
+    }
+    if (this.dev.fixres || !this.inst || !this.mod || this.mod.native || this.mod.renderer !== 'three' || this.fx || this.paused || !this._cadence) { this._ft = this._fn = 0; this._good = 0; return; }
     this._ft = (this._ft || 0) + dt;
     this._fn = (this._fn || 0) + 1;
     if (this._fn < 45) return;
-    const avg = this._ft / this._fn;
+    const avg = this._ft / this._fn, base = Math.max(1 / 120, this._cadence);
     this._ft = this._fn = 0;
-    const k = this.stage.glScale;
-    if (avg > 1 / 48) this.stage.setGlScale(k * 0.85);
-    else if (avg < 1 / 57 && k < 1) this.stage.setGlScale(k * 1.08);
+    const k = this.stage.glScale, now = performance.now();
+    if (avg > base * 1.3) {
+      this._good = 0;
+      this._ceil = k; // this much was too much
+      this._ceilAt = now;
+      this.stage.setGlScale(k * 0.85);
+    } else if (avg < base * 1.1 && k < 1) {
+      if (++this._good < 4) return; // several seconds of headroom first
+      this._good = 0;
+      const up = Math.min(1, k * 1.06);
+      if (this._ceil && up >= this._ceil - 0.01 && now - this._ceilAt < 20000) return;
+      this.stage.setGlScale(up);
+    } else this._good = 0;
   }
 
   _frame(now) {
     this.raf = requestAnimationFrame(this._frameBound);
-    const dt = Math.min((now - this.last) / 1000, 0.05);
+    const real = Math.min((now - this.last) / 1000, 20);
+    const dt = Math.min(real, 0.05);
     this.last = now;
     if (!(dt > 0)) return;
+    // Offline a hitch (or a hidden tab) simply pauses the round clock; online it must not.
+    const lost = this.online ? real - dt : 0;
     this.audio.update();
     if (this.transport) {
       this.transport.tick(dt);
       this._netFlush(dt);
-      // Never leave the guest stranded if a 'go' or 'ready' went missing.
-      if (this.phase === 'intro' && this.holdIntro && this.selfReady === this.round && this.round > 1 && now - this.readyAt > 8000) {
-        if (this.authority) { this.transport.send({ t: 'mv', k: 'go', r: this.round }); }
-        this._go();
+      // Waiting for the other device to arrive (after the reveal only: before it, nothing extra may show).
+      if (this.phase === 'intro' && this.holdIntro && this.selfReady === this.round && !this._waitShown && this.settled > 0 && !this.mod.native && !this.fx && now - this.readyAt > 2500) {
+        this._waitShown = true;
+        this.hud.show(true);
+        this.hud.message('', `Waiting for ${this.players[1 - this.me].name}…`, 9999);
       }
     }
     const speed = Math.max(1, this.dev.speed | 0);
@@ -862,7 +994,7 @@ export class Director {
     else if (this.fx) this._fxFrame(dt * speed);
     else if (this.inst && !this.mod.native && this.phase !== 'final' && this.phase !== 'loading') {
       this.input.poll(dt);
-      if (!(this.paused && !this.online)) for (let i = 0; i < speed; i++) this._tick(dt);
+      if (!(this.paused && !this.online)) for (let i = 0; i < speed; i++) this._tick(dt, i ? dt : dt + lost);
       this._render();
       this.input.endFrame();
       const needLock = this.mod.aim === 'look' && !this.input.touch && this.input.state.device === 'kbm' && !this.paused && document.pointerLockElement !== this.stage.root && this.phase !== 'transition';

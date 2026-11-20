@@ -2,7 +2,7 @@
 // pointer drags the old world by, the inspector tag pinned to the impact point, the
 // placeholder snipers of the half-built scene, the app's splash screen, and the toast.
 import { clamp, lerp, ease, rgba, mixHex, roundRect, contrastOn, TAU } from '../../kit.js';
-import { MONO, DISPLAY, appIcon, dropShadow, softShadow, fit, trunc, icoPlay } from './ui.js';
+import { MONO, DISPLAY, appIcon, dropShadow, softShadow, drawButton, fit, trunc, icoPlay } from './ui.js';
 
 /** Selection outline + eight handles + a live size read-out: the old world as a layer being resized. */
 export function drawHandles(g, th, R, S, a, corner, w, h) {
@@ -40,7 +40,7 @@ export function drawHandles(g, th, R, S, a, corner, w, h) {
 }
 
 /** Dev-tools style tag pinned to the impact point: what the build has to say about the loser. */
-export function drawInspector(g, R, fx, fy, plan, color, k, gone, sc) {
+export function drawInspector(g, R, fx, fy, plan, color, k, del, gone, sc) {
   if (k <= 0.01 || gone >= 0.99) return;
   const x = R.x + fx * R.w, y = R.y + fy * R.h;
   const e = ease.outBack(clamp(k, 0, 1)), a = clamp(k * 2, 0, 1) * (1 - gone);
@@ -58,7 +58,7 @@ export function drawInspector(g, R, fx, fy, plan, color, k, gone, sc) {
   // Tag
   const fs = Math.max(7.5, 12 * sc);
   const l1 = plan.L ? `sniper.${plan.L}` : 'round.result';
-  const l2 = gone > 0 ? 'deleted' : plan.L ? `eliminated${plan.how ? ' · ' + plan.how : ''}` : 'draw · nobody scored';
+  const l2 = del ? 'deleted' : plan.L ? `eliminated${plan.how ? ' · ' + plan.how : ''}` : 'draw · nobody scored';
   g.font = `600 ${fs}px ${MONO}`;
   const w1 = g.measureText(l1).width;
   g.font = `400 ${fs * 0.88}px ${MONO}`;
@@ -89,7 +89,7 @@ export function drawInspector(g, R, fx, fy, plan, color, k, gone, sc) {
   g.fillStyle = color;
   g.fillText(l1, tx + fs * 0.75, ty + tH * 0.32);
   g.font = `400 ${fs * 0.88}px ${MONO}`;
-  g.fillStyle = gone > 0 ? '#ff6170' : '#c9cfdd';
+  g.fillStyle = del ? '#ff6170' : '#c9cfdd';
   g.fillText(l2, tx + fs * 0.75, ty + tH * 0.7);
   g.restore();
 }
@@ -253,7 +253,10 @@ export function drawSplash(g, P, to, plan, ts, rad) {
 export function drawToast(g, th, w, h, plan, to, kin, kout, t) {
   if (kin <= 0 || kout >= 1) return;
   const s = clamp(Math.min(w / 1000, h / 600), 0.62, 1.3);
-  const tw = Math.min(360 * s, w * 0.7), tH = Math.round(66 * s), m = 18 * s;
+  const title = `${plan.toast.title}: ${to.name}`, ic = 40 * s;
+  g.font = th.ui(15 * s, 700);
+  // Wide enough for the name where the screen allows; fit() shrinks whatever is left over.
+  const tw = Math.min(Math.max(360 * s, g.measureText(title).width + ic + 54 * s), w * 0.86), tH = Math.round(66 * s), m = 18 * s;
   const x = plan.toastSide === 'right' ? w - tw - m : (w - tw) / 2;
   const y = lerp(-tH - 30 * s, m, ease.outBack(clamp(kin, 0, 1))) - ease.inCubic(kout) * (tH + m + 30 * s);
   const r = th.hard ? 2 : 14 * s;
@@ -266,24 +269,79 @@ export function drawToast(g, th, w, h, plan, to, kin, kout, t) {
   g.strokeStyle = th.cardLine;
   g.lineWidth = th.hard ? Math.max(1.5, 2 * s) : 1;
   g.stroke();
-  const ic = 40 * s;
   appIcon(g, th, x + 13 * s, y + (tH - ic) / 2, ic, t);
   const tx = x + 13 * s + ic + 12 * s, room = x + tw - tx - 14 * s;
   g.textAlign = 'left';
   g.textBaseline = 'middle';
-  const title = `${plan.toast.title}: ${to.name}`;
   fit(g, title, room, 15 * s, (px) => th.ui(px, 700));
   g.fillStyle = th.cardText;
   g.fillText(title, tx, y + tH * 0.36);
   fit(g, plan.toast.sub, room, 12 * s, (px) => th.ui(px, 400));
   g.fillStyle = th.cardDim;
   g.fillText(plan.toast.sub, tx, y + tH * 0.66);
-  // Time-left hairline in the new world's accent.
+  // A hairline of the new world's accent along the foot.
   g.save();
   roundRect(g, x, y, tw, tH, r);
   g.clip();
   g.fillStyle = mixHex(to.palette.accent, th.card, 0.1);
-  g.fillRect(x, y + tH - Math.max(2, 3 * s), tw * (1 - clamp(kin * 0.25 + kout, 0, 1) * 0), Math.max(2, 3 * s));
+  g.fillRect(x, y + tH - Math.max(2, 3 * s), tw, Math.max(2, 3 * s));
   g.restore();
+  g.restore();
+}
+
+function star(g, cx, cy, r) {
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * TAU - Math.PI / 2, rr = i % 2 ? r * 0.46 : r;
+    g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  g.closePath();
+}
+
+/**
+ * The nag: a needy little card that slides up in the corner of the editor mid-build and
+ * answers itself. kin / kout = 0..1 entrance and exit, act = 0..1 the widget doing its thing.
+ */
+export function drawNag(g, th, L, plan, kin, kout, act, t) {
+  if (kin <= 0 || kout >= 1) return;
+  const nag = plan.nag, ed = L.editor, s = Math.max(L.S, 0.6);
+  const w = Math.min(268 * s, ed.w - 20 * s), h = Math.round((nag.kind === 'tip' ? 62 : 86) * s), m = 14 * s;
+  const x = L.left ? ed.x + ed.w - w - m - (ed.w > 360 ? L.px(52) : 0) : ed.x + ed.w - w - m - (ed.w > 360 ? L.px(52) : 0);
+  const y = ed.y + ed.h - h - m + (1 - ease.outBack(clamp(kin, 0, 1))) * (h + m * 2) + ease.inCubic(kout) * (h + m * 2);
+  const r = th.hard ? 2 : 12 * s, done = act >= 1;
+  g.save();
+  g.beginPath();
+  g.rect(ed.x, ed.y, ed.w, ed.h); // it lives inside the editor panel, and leaves through its floor
+  g.clip();
+  dropShadow(g, th, x, y, w, h, r, 26 * s, 0.3);
+  roundRect(g, x, y, w, h, r);
+  g.fillStyle = th.card;
+  g.fill();
+  g.strokeStyle = th.cardLine;
+  g.lineWidth = th.hard ? Math.max(1.5, 2 * s) : 1;
+  g.stroke();
+  const ic = 28 * s, px = x + 12 * s;
+  appIcon(g, th, px, y + 12 * s, ic, t);
+  const tx = px + ic + 10 * s, room = x + w - tx - 12 * s;
+  g.textAlign = 'left';
+  g.textBaseline = 'middle';
+  fit(g, nag.title, room, 13.5 * s, (p) => th.ui(p, 700));
+  g.fillStyle = th.cardText;
+  g.fillText(nag.title, tx, y + 19 * s);
+  const sub = done && nag.done ? nag.done : nag.sub;
+  fit(g, sub, room, 11.5 * s, (p) => th.ui(p, 400));
+  g.fillStyle = done && nag.done ? (th.key === 'dark' ? th.ok : mixHex(th.ok, '#000000', 0.15)) : th.cardDim;
+  g.fillText(sub, tx, y + 36 * s);
+  if (nag.kind === 'stars') {
+    // Five stars, awarded by nobody.
+    for (let i = 0; i < 5; i++) {
+      const k = clamp(act * 5.6 - i, 0, 1), pop = k > 0 && k < 1 ? 1 + 0.5 * Math.sin(k * Math.PI) : 1;
+      star(g, tx + 9 * s + i * 22 * s, y + 62 * s, 8.5 * s * pop);
+      if (k > 0) { g.fillStyle = '#ffb300'; g.fill(); } else { g.strokeStyle = th.cardDim; g.lineWidth = Math.max(1, 1.2 * s); g.stroke(); }
+    }
+  } else if (nag.kind === 'button') {
+    const bw = Math.min(room, 104 * s), press = act > 0.55 && act < 1 ? Math.sin(((act - 0.55) / 0.45) * Math.PI) : 0;
+    drawButton(g, th, tx, y + 50 * s, bw, 24 * s, { label: act >= 0.8 ? nag.labelB : nag.label, kind: 1, press, px: 11.5, s, dead: done ? 0.6 : 0 });
+  }
   g.restore();
 }

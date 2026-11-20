@@ -25,12 +25,13 @@
 // KILL      The victim shatters into light, a shockwave runs through the grid, the shadows
 //           lift, the decisive rail hangs in the air and the camera pushes in.
 // SUDDEN    The cover dissolves, the shadows lift, and the walls close to a small box.
-import { clamp, damp, angDamp, lerp, ease, segCircle, Particles2D, Shake, TAU } from '../../kit.js';
+import { clamp, damp, angDamp, lerp, ease, segCircle } from '../../kit.js';
 import { W, H, R, SPAWNS, MID, ROUND_TIME, PULSE_EVERY, BEAT, RAIL_SPEED, SPEED, CRAWL, RELOAD, BEAM_FADE, buildWorld, mkPath } from './world.js';
 import { pointSeg } from './geom.js';
 import { makeBot } from './bot.js';
 import { makeRenderer } from './draw.js';
 import { makeSound } from './sound.js';
+import { fxState, makeFx } from './fx.js';
 
 const SWAY_HIP = 0.032, SWAY_RUN = 0.036, SWAY_MIN = 0.0012;
 const BLINK_DIST = 235, BLINK_CD = 5.5;
@@ -40,26 +41,6 @@ const STEP_EVERY = 0.2, STEP_SPEED = 135; // slower than this and the tiles stay
 // The barrel's wander: slow enough to read and time, never a plain sine.
 const wobble = (ph) => 0.62 * Math.sin(ph) + 0.38 * Math.sin(ph * 2.37 + 1.3);
 const r1 = (v) => Math.round(v * 10) / 10;
-
-function pool(n, proto) {
-  const a = [];
-  for (let i = 0; i < n; i++) a.push({ live: false, age: 0, life: 1, ...proto });
-  a.next = 0;
-  return a;
-}
-function take(a) {
-  const o = a[a.next];
-  a.next = (a.next + 1) % a.length;
-  o.live = true;
-  o.age = 0;
-  return o;
-}
-function agePool(a, dt) {
-  for (let i = 0; i < a.length; i++) {
-    const o = a[i];
-    if (o.live && (o.age += dt) >= o.life) o.live = false;
-  }
-}
 
 export default {
   id: 'neon',
@@ -93,13 +74,7 @@ export default {
     // Everything the renderer and the bot read.
     const S = {
       t: 0, P, bullets: [], decoys: [],
-      tiles: pool(56, { x: 0, y: 0, owner: 0 }),          // floor cells lit by a runner
-      rings: pool(12, { x: 0, y: 0, owner: 0, size: 100 }), // shots and blinks ring out across the grid
-      flashes: pool(16, { x: 0, y: 0, owner: -1, size: 60, star: false, a: 0 }),
-      echoes: pool(6, { x: 0, y: 0, a: 0, owner: 0 }),     // blink afterimages
-      scars: pool(20, { x: 0, y: 0, nx: 0, ny: 0, owner: 0 }),
-      parts: new Particles2D(520),
-      shake: new Shake(9, 0.012), shakeOut: { x: 0, y: 0, rot: 0 },
+      ...fxState(),
       dark: 0,                                 // 0 = house lights, 1 = only your sight lines
       vis: 1,                                  // how visible the enemy is to the local player
       ghost: { on: false, x: 0, y: 0, a: 0, t: 0 }, // where they were last seen
@@ -119,32 +94,16 @@ export default {
 
     const human = { mx: 0, my: 0, a: 0, fire: false, alt: false, a1: false, a2: false, da: undefined };
     const scr = { x: 0, y: 0 };
-    let decoyN = 0, pulseN = 0, countN = -1, wasSudden = false, paintT = 0, music = '';
+    let decoyN = 0, pulseN = 0, countN = -1, wasSudden = false, paintT = 0, music = '', frame = 0;
 
     const tell = (i, x, y, q) => { if (P[i].bot) P[i].bot.notice(x, y, q); };
 
-    // ---- light: every one of these shows through the dark ----
+    // Everything a sniper does in the open is light, and light shows through the dark: the
+    // other side's bot hears about it exactly as a player would see it.
+    const fx = makeFx(ctx, S);
     function tile(x, y, owner) {
-      const o = take(S.tiles);
-      o.x = Math.floor(x / 50) * 50;
-      o.y = Math.floor(y / 50) * 50;
-      o.owner = owner;
-      o.life = 1.5;
+      fx.tile(x, y, owner);
       tell(1 - owner, x, y, 0.55);
-    }
-    function ring(x, y, owner, size, life) {
-      const o = take(S.rings);
-      o.x = x; o.y = y; o.owner = owner; o.size = size; o.life = life;
-    }
-    function flash(x, y, owner, size, life, star, a) {
-      const o = take(S.flashes);
-      o.x = x; o.y = y; o.owner = owner; o.size = size; o.life = life; o.star = !!star; o.a = a || 0;
-    }
-    function sparks(x, y, nx, ny, color, n, speed) {
-      for (let i = 0; i < n; i++) {
-        const a = Math.atan2(ny, nx) + (Math.random() - 0.5) * 2.2, s = speed * (0.25 + Math.random());
-        S.parts.emit({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.25 + Math.random() * 0.4, size: 2 + Math.random() * 2.2, color: i % 3 ? color : '#fff4ff', shape: 'spark', drag: 3.5, additive: true });
-      }
     }
 
     // ---- commands ----
@@ -211,6 +170,7 @@ export default {
     function puppet(p, dt) {
       const r = ctx.net.remote;
       p.recoil = Math.max(0, p.recoil - dt * 5);
+      p.reload = Math.max(0, p.reload - dt);
       if (!r || !p.alive) return;
       const dx = r.x - p.x, dy = r.y - p.y;
       p.x = r.x;
@@ -244,18 +204,12 @@ export default {
       if (p.i === ctx.me) sound.deny();
     }
     function blinkFx(owner, x0, y0, x1, y1, a) {
-      const col = ctx.players[owner].color;
-      const e = take(S.echoes);
-      e.x = x0; e.y = y0; e.a = a; e.owner = owner; e.life = 0.9;
-      flash(x0, y0, owner, 70, 0.3);
-      flash(x1, y1, owner, 110, 0.4);
-      ring(x1, y1, owner, 110, 0.7);
+      fx.echo(x0, y0, a, owner);
+      fx.flash(x0, y0, owner, 70, 0.3);
+      fx.flash(x1, y1, owner, 110, 0.4);
+      fx.ring(x1, y1, owner, 110, 0.7);
+      fx.streak(x0, y0, x1, y1, owner);
       tell(1 - owner, x1, y1, 0.8);
-      const d = Math.hypot(x1 - x0, y1 - y0) || 1, ux = (x1 - x0) / d, uy = (y1 - y0) / d;
-      for (let i = 0; i < 14; i++) {
-        const k = Math.random();
-        S.parts.emit({ x: lerp(x0, x1, k) + (Math.random() - 0.5) * 16, y: lerp(y0, y1, k) + (Math.random() - 0.5) * 16, vx: ux * 260 * Math.random(), vy: uy * 260 * Math.random(), life: 0.3 + Math.random() * 0.3, size: 3, color: col, shape: 'spark', drag: 4, additive: true });
-      }
       sound.blink(x1);
     }
 
@@ -287,12 +241,8 @@ export default {
       if (!d.alive) return;
       d.alive = false;
       d.laserOn = false;
-      const col = ctx.players[d.owner].color;
-      S.parts.burst(26, () => {
-        const a = Math.random() * TAU, s = 60 + Math.random() * 260;
-        return { x: d.x, y: d.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.3 + Math.random() * 0.5, size: 3 + Math.random() * 3, color: col, shape: 'square', drag: 3, additive: true };
-      });
-      flash(d.x, d.y, d.owner, 80, 0.3);
+      fx.pixels(d.x, d.y, d.owner);
+      fx.flash(d.x, d.y, d.owner, 80, 0.3);
       sound.pop(d.x);
     }
     function stepDecoys(dt) {
@@ -329,11 +279,12 @@ export default {
     function launch(owner, path, judge) {
       S.bullets.push({ owner, path, judge, s: 0, total: path.l1 + path.l2, age: 0, done: false, fade: 0, bounced: false, kill: false, stopped: false, focus: P[owner].focus });
       P[owner].recoil = 1;
+      if (P[owner].remote) P[owner].reload = RELOAD; // a puppet's capacitor, as far as we can tell
       const a = Math.atan2(path.y1 - path.y0, path.x1 - path.x0);
       const mx = path.x0 + Math.cos(a) * R * 2.3, my = path.y0 + Math.sin(a) * R * 2.3;
-      flash(mx, my, owner, 150, 0.22, true, a);
-      ring(path.x0, path.y0, owner, 150, 0.8);
-      sparks(mx, my, Math.cos(a), Math.sin(a), ctx.players[owner].color, 8, 420);
+      fx.flash(mx, my, owner, 150, 0.22, true, a);
+      fx.ring(path.x0, path.y0, owner, 150, 0.8);
+      fx.sparks(mx, my, Math.cos(a), Math.sin(a), owner, 8, 420);
       S.shake.add(owner === ctx.me ? 0.42 : 0.2);
       S.watch.x = path.x0; S.watch.y = path.y0; S.watch.jolt = 1;
       tell(1 - owner, path.x0, path.y0, 0.9);
@@ -371,20 +322,23 @@ export default {
       }
       return -1;
     }
+    // The kill banner's label (the core keeps 16 characters).
     function howLabel(b, at, foe) {
       const p = b.path, m = Math.round(Math.hypot(foe.x - p.x0, foe.y - p.y0) / 10);
       if (at > p.l1 && p.n === 3) return `RICOCHET · ${m} M`;
       if (m < 22) return 'POINT BLANK';
-      if (!b.focus && m > 60) return `FROM THE HIP · ${m} M`;
-      return m > 95 ? `LONG RAIL · ${m} M` : `${m} M`;
+      if (!b.focus && m > 60) return `HIP SHOT · ${m} M`;
+      return m > 95 ? `LONG RAIL ${m} M` : `${m} M`;
     }
     function stepBullets(dt) {
-      for (let i = S.bullets.length - 1; i >= 0; i--) {
-        const b = S.bullets[i], p = b.path;
+      // Alternate the order from frame to frame: two rails that land on the same frame must
+      // not always favour the same sniper.
+      const n = S.bullets.length, flip = (frame++ & 1) === 1;
+      for (let j = 0; j < n; j++) {
+        const b = S.bullets[flip ? n - 1 - j : j], p = b.path;
         b.age += dt;
         if (b.done) {
           if (!(b.kill && ctx.phase === 'over')) b.fade += dt; // the decisive rail hangs in the air
-          if (b.fade > BEAM_FADE) S.bullets.splice(i, 1);
           continue;
         }
         const s0 = b.s;
@@ -403,9 +357,9 @@ export default {
         }
         if (!b.bounced && p.n === 3 && s1 >= p.l1 && b.total > p.l1) {
           b.bounced = true;
-          flash(p.x1, p.y1, b.owner, 90, 0.25);
-          sparks(p.x1, p.y1, p.n1x, p.n1y, ctx.players[b.owner].color, 12, 380);
-          scar(p.x1, p.y1, p.n1x, p.n1y, b.owner);
+          fx.flash(p.x1, p.y1, b.owner, 90, 0.25);
+          fx.sparks(p.x1, p.y1, p.n1x, p.n1y, b.owner, 12, 380);
+          fx.scar(p.x1, p.y1, p.n1x, p.n1y, b.owner);
           sound.ricochet(p.x1);
         }
         b.s = s1;
@@ -414,20 +368,18 @@ export default {
           if (!b.stopped) {
             const ex = p.n === 3 ? p.x2 : p.x1, ey = p.n === 3 ? p.y2 : p.y1;
             const nx = p.n === 3 ? p.n2x : p.n1x, ny = p.n === 3 ? p.n2y : p.n1y;
-            flash(ex, ey, b.owner, 70, 0.3);
-            sparks(ex, ey, nx, ny, ctx.players[b.owner].color, 10, 300);
-            scar(ex, ey, nx, ny, b.owner);
+            fx.flash(ex, ey, b.owner, 70, 0.3);
+            fx.sparks(ex, ey, nx, ny, b.owner, 10, 300);
+            fx.scar(ex, ey, nx, ny, b.owner);
             sound.impact(ex);
             if (Math.abs(ex - world.drone.x) < 22 && Math.abs(ey - world.drone.y) < 22) S.droneHit = 1.2; // it takes it personally
+            const me = P[ctx.me];
+            if (b.owner !== ctx.me && me.alive && beamDist(p, me) < 60) { sound.whizz(); S.shake.add(0.35); } // that was close
           }
         }
       }
+      for (let i = S.bullets.length - 1; i >= 0; i--) if (S.bullets[i].fade > BEAM_FADE) S.bullets.splice(i, 1);
     }
-    function scar(x, y, nx, ny, owner) {
-      const o = take(S.scars);
-      o.x = x; o.y = y; o.nx = nx; o.ny = ny; o.owner = owner; o.life = 5;
-    }
-
     // ---- what the local player can see ----
     function canSee(m, o) {
       if (solids.los(m.x, m.y, o.x, o.y)) return true;
@@ -492,8 +444,9 @@ export default {
       }
       if (S.kill) {
         tz = 1.28;
-        tx = lerp(W / 2, S.kill.x, 0.6);
-        ty = lerp(H / 2, S.kill.y, 0.6);
+        // Toward the victim, but never so far that the frame fills with void.
+        tx = clamp(lerp(W / 2, S.kill.x, 0.6), W / (2 * tz), W - W / (2 * tz));
+        ty = clamp(lerp(H / 2, S.kill.y, 0.6), H / (2 * tz), H - H / (2 * tz));
         roll = S.kill.x < W / 2 ? -0.016 : 0.016;
         rate = 6.5; // dt is already slowed by the core here
       }
@@ -568,13 +521,7 @@ export default {
         stepBullets(dt);
         sight(dt);
 
-        agePool(S.tiles, dt);
-        agePool(S.rings, dt);
-        agePool(S.flashes, dt);
-        agePool(S.echoes, dt);
-        agePool(S.scars, dt);
-        S.parts.update(dt);
-        S.shakeOut = S.shake.update(dt);
+        fx.update(dt);
         S.watch.jolt = Math.max(0, S.watch.jolt - dt * 2.5);
         S.droneHit = Math.max(0, S.droneHit - dt);
         if (S.kill) S.kill.t += dt;
@@ -596,6 +543,8 @@ export default {
         else if (phase === 'live') {
           sound.lightsOut();
           setMusic('cool');
+          // The two things nobody guesses on their own.
+          ctx.hud.message('LIGHTS OUT', ctx.input.device === 'touch' ? 'Running lights the floor · FOCUS steadies the rail' : 'Running lights the floor · hold FOCUS to steady the rail', 3.2);
         } else if (phase === 'over') {
           sound.stop();
           const res = ctx.result;
@@ -615,20 +564,7 @@ export default {
           }
           const dl = Math.hypot(dx, dy) || 1;
           dx /= dl; dy /= dl;
-          S.kill = { x: v.x, y: v.y, a: v.a, victim: v.i, winner: w.i, t: 0, dx, dy };
-          const col = ctx.players[v.i].color;
-          // Shards of light, thrown the way the rail was travelling.
-          S.parts.burst(70, (i) => {
-            const a = Math.atan2(dy, dx) + (Math.random() - 0.5) * (i % 3 ? 1.7 : TAU), s = 90 + Math.random() * 620;
-            return { x: v.x, y: v.y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.5 + Math.random() * 0.8, size: 2.5 + Math.random() * 3, color: i % 4 ? col : '#fff4ff', shape: 'spark', drag: 2.2, additive: true };
-          });
-          S.parts.burst(34, () => {
-            const a = Math.random() * TAU, s = 40 + Math.random() * 300;
-            return { x: v.x, y: v.y, vx: Math.cos(a) * s + dx * 160, vy: Math.sin(a) * s + dy * 160, life: 0.7 + Math.random() * 0.8, size: 4 + Math.random() * 6, sizeEnd: 1, color: col, shape: 'square', rot: Math.random() * 3, spin: (Math.random() - 0.5) * 14, drag: 1.6, additive: true };
-          });
-          flash(v.x, v.y, -1, 260, 0.5);
-          flash(v.x, v.y, v.i, 200, 0.7);
-          S.shake.add(1);
+          S.kill = { x: v.x, y: v.y, a: v.a, victim: v.i, winner: w.i, t: 0, dx, dy, cracks: fx.shatter(v, dx, dy) };
           S.watch.x = v.x; S.watch.y = v.y; S.watch.jolt = 1;
           sound.kill(v.x);
         }
@@ -667,6 +603,9 @@ export default {
         view.toScreen(o.x, o.y, scr);
         return { x: scr.x, y: scr.y };
       },
+
+      /** For tests and tuning only: the live simulation state. */
+      debug: () => S,
 
       dispose() {
         S.bullets.length = 0;

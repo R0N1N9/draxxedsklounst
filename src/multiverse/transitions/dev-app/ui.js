@@ -156,7 +156,15 @@ export function icoSpin(g, cx, cy, s, turn) {
 }
 export function icoChevron(g, cx, cy, s, open) {
   g.beginPath();
-  if (open) { g.moveTo(cx - s * 0.4, cy - s * 0.2); g.lineTo(cx + s * 0.4, cy - s * 0.2); g.lineTo(cx, cy + s * 0.3); } else { g.moveTo(cx - s * 0.2, cy - s * 0.4); g.lineTo(cx + s * 0.3, cy); g.lineTo(cx - s * 0.2, cy + s * 0.4); }
+  if (open) {
+    g.moveTo(cx - s * 0.4, cy - s * 0.2);
+    g.lineTo(cx + s * 0.4, cy - s * 0.2);
+    g.lineTo(cx, cy + s * 0.3);
+  } else {
+    g.moveTo(cx - s * 0.2, cy - s * 0.4);
+    g.lineTo(cx + s * 0.3, cy);
+    g.lineTo(cx - s * 0.2, cy + s * 0.4);
+  }
   g.closePath();
   g.fill();
 }

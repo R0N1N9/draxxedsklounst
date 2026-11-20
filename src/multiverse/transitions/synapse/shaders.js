@@ -24,13 +24,13 @@ attribute vec4 aGeo;   // tangent.xyz, side * radius
 attribute vec3 aCol;   // resting colour
 attribute vec3 aLit;   // colour of the impulse
 attribute vec4 aTim;   // on-time, decay, sustain, flood order
-attribute vec2 aKA;    // kind (0 fibre, 1 sheath, 2 arc), arc length
+attribute vec2 aKA;    // kind (0 fibre, 1 sheath, 2 arc, 3 bulb), arc length
 uniform float uTime, uTan, uInvH, uFog, uFlood, uGain;
 uniform vec3 uFloodCol;
 ${DOF}
 ${LIGHT}
 varying vec3 vCol;
-varying vec4 vP;       // across (-1..1), blur (0..1), kind, arc
+varying vec4 vP;       // across (-1..1), blur (0..1), kind, width in pixels
 void main() {
   vec3 p = position;
   vec3 toCam = cameraPosition - p;
@@ -46,17 +46,20 @@ void main() {
   float coc = cocAt(z) * zc * uTan;
   float core = max(rad, minW);
   float w = core + coc;
-  p += side * sgn * w;
+  float nearK = smoothstep(3.0, 13.0, z);         // nothing may smear across the lens...
+  p += side * sgn * w * step(0.004, nearK);       // ...and what has faded costs no fill
   float lit = litAt(aTim, uTime), front = frontAt(aTim, uTime, 14.0);
   float idle = 0.7 + 0.3 * sin(aKA.y * 0.45 - uTime * 1.6 + aTim.w * 6.2832);
   float fl = smoothstep(aTim.w * 0.7, aTim.w * 0.7 + 0.3, uFlood);
-  vec3 base = mix(aCol, uFloodCol * (dot(aCol, vec3(0.34)) * 1.7 + 0.03), fl);
-  float wide = aKA.x > 0.5 && aKA.x < 1.5 ? 0.4 : 1.0;   // a sheath is a surface, not a line: light it gently
-  vec3 c = base * idle + (aLit * lit * 2.4 + mix(aLit, vec3(1.0), 0.6) * front * 2.2) * wide;
-  if (aKA.x > 1.5) c *= 0.45 + 0.55 * step(0.35, fract(uTime * 43.0 + aTim.w * 7.0));
-  float energy = min(1.0, rad / minW) * pow(core / w, 0.8);
-  vCol = c * energy * exp(-z * uFog) * smoothstep(1.0, 4.0, z) * uGain;
-  vP = vec4(sgn, coc / w, aKA.x, aKA.y);
+  vec3 base = mix(aCol, uFloodCol * (dot(aCol, vec3(0.34)) * 1.7 + 0.03), fl * 0.82);
+  // Anything wide on screen is a surface, not a line: light it gently or it burns to a flat slab.
+  float wpx = core / (zc * uTan * uInvH);
+  float wide = aKA.x > 1.5 && aKA.x < 2.5 ? 1.0 : mix(1.0, 0.3, smoothstep(5.0, 30.0, wpx));
+  vec3 c = base * idle + (aLit * lit * 2.0 + mix(aLit, vec3(1.0), 0.6) * front * 2.2) * wide;
+  if (aKA.x > 1.5 && aKA.x < 2.5) c *= 0.45 + 0.55 * step(0.35, fract(uTime * 43.0 + aTim.w * 7.0));
+  float energy = min(1.0, rad / minW) * core / w;
+  vCol = c * energy * exp(-z * uFog) * nearK * uGain;
+  vP = vec4(sgn, coc / w, aKA.x, wpx);
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
 }`;
 
@@ -67,10 +70,12 @@ varying vec4 vP;
 void main() {
   float v = abs(vP.x);
   float edge = smoothstep(1.0, 0.7, v);
-  float tube = (0.3 + 0.7 * v * v) * edge;                          // rim-lit: reads as a translucent tube
-  if (vP.z > 0.5) tube = (0.14 + 0.86 * v * v * v) * edge * (0.92 + 0.08 * sin(vP.w * 18.0)) + 0.22 * exp(-v * v * 40.0); // sheath: glassy, faint lamellae, the axon showing through
+  // Thin: a glowing filament. Thick: rim-lit, so it reads as a translucent tube.
+  float tube = mix(exp(-v * v * 2.6), 0.3 + 0.7 * v * v, smoothstep(4.0, 14.0, vP.w)) * edge;
+  if (vP.z > 0.5) tube = (0.12 + 0.88 * v * v * v) * edge + 0.2 * exp(-v * v * 40.0) + 0.16 * exp(-pow((vP.x - 0.42) / 0.1, 2.0)); // sheath: glass, the axon inside it, one long highlight
   if (vP.z > 1.5) tube = pow(max(1.0 - v, 0.0), 1.5) * 1.7;         // arc: a hot filament
-  float soft = exp(-v * v * 3.5) * 0.62;
+  if (vP.z > 2.5) tube = (0.1 + 0.9 * v * v * v * v) * edge;        // bulb: all membrane
+  float soft = exp(-v * v * 3.5) * 0.5;
   gl_FragColor = vec4(vCol * mix(tube, soft, smoothstep(0.0, 0.7, vP.y)), 1.0);
 }`;
 
@@ -83,8 +88,8 @@ attribute vec4 aSom;   // radius, memory tile, memory strength, flood order
 attribute vec3 aCol;
 attribute vec3 aLit;
 attribute vec4 aTim;
-uniform float uTime, uTan, uFog, uFlood, uGain;
-uniform vec3 uFloodCol;
+uniform float uTime, uTan, uInvH, uFog, uFlood, uGain;
+uniform vec3 uFloodCol2;
 ${DOF}
 ${LIGHT}
 varying vec2 vUv;      // in cell radii
@@ -98,12 +103,13 @@ void main() {
   float rad = aSom.x * (1.0 + 0.035 * sin(uTime * 1.4 + aSom.w * 40.0));
   float coc = cocAt(z) * z * uTan;
   float ext = 1.5 + coc / rad;                   // room for the halo and the blur
-  mv.xy += aCorner * rad * ext;
-  vUv = aCorner * ext;
   float fl = smoothstep(aSom.w * 0.7, aSom.w * 0.7 + 0.3, uFlood);
-  float fog = exp(-z * uFog) * smoothstep(1.0, 1.6, z / aSom.x) * uGain;
-  vCol = mix(aCol, uFloodCol * (dot(aCol, vec3(0.34)) * 1.5 + 0.05), fl) * fog;
-  vLit = aLit * fog;
+  float fog = exp(-z * uFog) * smoothstep(1.6, 4.5, z / aSom.x) * uGain;
+  mv.xy += aCorner * rad * ext * step(0.004, fog);
+  vUv = aCorner * ext;
+  vCol = mix(aCol, uFloodCol2 * (dot(aCol, vec3(0.34)) * 1.15 + 0.04), fl * 0.82) * fog;
+  // A cell that fills the frame must glow, not blank the picture: ease its fire with its size on screen.
+  vLit = aLit * fog * mix(1.0, 0.4, smoothstep(40.0, 240.0, rad / (z * uTan * uInvH)));
   vS = vec4(coc / rad, litAt(aTim, uTime), frontAt(aTim, uTime, 7.0), aSom.w);
   vMem = vec3(aSom.y, aSom.z, fog);
   gl_Position = projectionMatrix * mv;
@@ -135,16 +141,16 @@ void main() {
   c *= 1.0 - 0.4 * nuc * sharp;
   c += vCol * (nol * sharp * 0.6 + halo);
   // A memory, magnified by the cell like a lens; it gutters like a bad tube.
-  vec2 m = vUv * 0.7;
-  m *= 1.0 + 0.3 * dot(m, m);
+  vec2 m = vUv * 0.92;
+  m *= 1.0 + 0.14 * dot(m, m);
   vec2 tuv = vec2((vMem.x + clamp(m.x * 0.5 + 0.5, 0.004, 0.996)) / uTiles, clamp(m.y * 0.5 + 0.5, 0.0, 1.0));
   vec4 mem = texture2D(tMem, tuv);
   float flick = 0.35 + 0.65 * noise(vec2(uTime * 6.0 + vS.w * 31.0, vS.w * 17.0));
   float scan = 0.85 + 0.15 * sin(vUv.y * 60.0 + uTime * 9.0);
-  float mm = smoothstep(0.9, 0.5, d) * vMem.y * flick * scan * sharp * (1.0 + 1.6 * vS.y) * mem.a;
-  c = c * (1.0 - 0.6 * min(mm, 1.0)) + mem.rgb * mm * vMem.z;
+  float mm = smoothstep(0.92, 0.6, d) * vMem.y * flick * scan * sharp * (1.0 + 1.6 * vS.y) * mem.a;
+  c = c * (1.0 - 0.6 * min(mm, 1.0)) + (mem.rgb * 1.5 + 0.03) * mm * vMem.z;
   // Firing: the body fills with the impulse's colour, white-hot for an instant.
-  c += vLit * vS.y * (body * (0.5 + 0.6 * rim) + halo * 2.5) + mix(vLit, vec3(vMem.z), 0.5) * vS.z * (body * (0.4 + 0.6 * rim) + halo * 2.0) * 1.5;
+  c += vLit * vS.y * (body * (0.4 + 0.6 * rim) + halo * 2.5) + mix(vLit, vec3(length(vLit) * 0.6), 0.4) * vS.z * (body * (0.35 + 0.65 * rim) + halo * 2.0) * 1.3;
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -160,7 +166,7 @@ attribute vec4 aTim;   // start, life, world radius, rnd
 attribute vec3 aCol;
 attribute float aKind; // 0 mote, 1 spark, 2 vesicle, 3 ring, 4 receptor
 uniform float uTime, uTan, uInvH, uFog, uFlood, uGain, uShutter, uAspect;
-uniform vec3 uCamVel, uFloodCol;
+uniform vec3 uCamVel, uFloodCol2;
 ${DOF}
 varying vec2 vQ;
 varying vec4 vC;
@@ -174,7 +180,7 @@ void main() {
     float ph = uTime * (0.25 + rnd * 0.5) + rnd * 40.0;
     p += aVel * vec3(sin(ph), sin(ph * 1.31 + 1.7), cos(ph * 0.83));
     a = 0.55 + 0.45 * sin(uTime * (1.0 + rnd * 2.0) + rnd * 20.0);
-    col = mix(col, uFloodCol * 0.5, smoothstep(rnd * 0.7, rnd * 0.7 + 0.3, uFlood));
+    col = mix(col, uFloodCol2 * 0.5, smoothstep(rnd * 0.7, rnd * 0.7 + 0.3, uFlood) * 0.8);
   } else if (aKind < 1.5) {
     if (tau < 0.0 || tau > life) a = 0.0;
     float drag = exp(-k * 2.5);
@@ -192,7 +198,7 @@ void main() {
   } else {
     a = tau > 0.0 ? 1.0 + 3.0 * exp(-tau * 6.0) : 0.12;
   }
-  vec3 rel = (vel - uCamVel) * uShutter;
+  vec3 rel = aKind < 1.5 ? (vel - uCamVel) * uShutter : vec3(0.0); // only what flies leaves a streak
   vec4 c0 = projectionMatrix * viewMatrix * vec4(p - rel * 0.5, 1.0);
   vec4 c1 = projectionMatrix * viewMatrix * vec4(p + rel * 0.5, 1.0);
   vQ = vec2(0.0);
@@ -211,10 +217,11 @@ void main() {
   float rr = max(r, rmin) + coc;
   vec2 off = dir * aCorner.x * (rr + len) + vec2(-dir.y, dir.x) * aCorner.y * rr;
   off.x /= uAspect;
-  float energy = min(1.0, r / rmin) * pow(max(r, rmin) / rr, 1.25) * pow(rr / (rr + len), 0.55);
+  float energy = a * min(1.0, r / rmin) * pow(max(r, rmin) / rr, 1.25) * pow(rr / (rr + len), 0.55) * exp(-z * uFog) * smoothstep(0.8, 3.0, z) * uGain;
+  if (energy < 0.004) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vQ = vec2(aCorner.x * (rr + len) / rr, aCorner.y);
   vS = vec2(len / rr, coc / rr);
-  vC = vec4(col * a * energy * exp(-z * uFog) * smoothstep(0.8, 3.0, z) * uGain, aKind);
+  vC = vec4(col * energy, aKind);
   gl_Position = vec4((s0 + s1) * 0.5 + off, 0.0, 1.0);
 }`;
 
@@ -230,7 +237,7 @@ void main() {
   if (k < 0.5) i = mix(exp(-d * d * 4.5), disc * (0.5 + 0.5 * smoothstep(0.45, 0.95, d)), smoothstep(0.15, 0.55, vS.y)); // a point, or a bokeh disc with a bright rim
   else if (k < 1.5) i = exp(-d * d * 5.0) + 0.5 * exp(-d * 10.0);
   else if (k < 2.5) i = disc * (0.18 + 0.82 * d * d * d);           // a bubble
-  else if (k < 3.5) i = disc * smoothstep(0.5, 0.92, d);
+  else if (k < 3.5) i = disc * smoothstep(0.74, 0.93, d);
   else i = exp(-d * d * 4.0);
   gl_FragColor = vec4(vC.rgb * i, 1.0);
 }`;
@@ -266,19 +273,18 @@ void main() {
 // ---------------------------------------------------------------------------
 // Bloom: a dual-filter pyramid (cheap, wide, stable). Down, then up adding each level.
 // ---------------------------------------------------------------------------
+// The pyramid lives in 8-bit targets as sqrt(c / 16): ample for something this blurred,
+// and a quarter of the memory traffic of half floats.
 export const DOWN_FRAG = `
 precision highp float;
 varying vec2 vUv;
 uniform sampler2D tSrc;
 uniform vec2 uTexel;   // one source texel
-uniform float uClamp;
+uniform float uCoded;  // 0: the source is the linear scene · 1: a coded level
+vec3 rd(vec2 uv) { vec3 c = texture2D(tSrc, uv).rgb; return uCoded > 0.5 ? c * c * 16.0 : min(c, vec3(16.0)); }
 void main() {
-  vec3 c = texture2D(tSrc, vUv).rgb * 4.0;
-  c += texture2D(tSrc, vUv + uTexel * vec2(-1.0, -1.0)).rgb;
-  c += texture2D(tSrc, vUv + uTexel * vec2(1.0, -1.0)).rgb;
-  c += texture2D(tSrc, vUv + uTexel * vec2(-1.0, 1.0)).rgb;
-  c += texture2D(tSrc, vUv + uTexel * vec2(1.0, 1.0)).rgb;
-  gl_FragColor = vec4(min(c * 0.125, vec3(uClamp)), 1.0);
+  vec3 c = rd(vUv) * 4.0 + rd(vUv + uTexel * vec2(-1.0, -1.0)) + rd(vUv + uTexel * vec2(1.0, -1.0)) + rd(vUv + uTexel * vec2(-1.0, 1.0)) + rd(vUv + uTexel);
+  gl_FragColor = vec4(sqrt(c * 0.125 / 16.0), 1.0);
 }`;
 
 export const UP_FRAG = `
@@ -287,12 +293,10 @@ varying vec2 vUv;
 uniform sampler2D tSrc, tAdd;
 uniform vec2 uTexel;   // half a source texel
 uniform float uAdd;
+vec3 rd(sampler2D t, vec2 uv) { vec3 c = texture2D(t, uv).rgb; return c * c * 16.0; }
 void main() {
-  vec3 c = texture2D(tSrc, vUv + uTexel * vec2(-2.0, 0.0)).rgb + texture2D(tSrc, vUv + uTexel * vec2(2.0, 0.0)).rgb
-         + texture2D(tSrc, vUv + uTexel * vec2(0.0, -2.0)).rgb + texture2D(tSrc, vUv + uTexel * vec2(0.0, 2.0)).rgb;
-  c += 2.0 * (texture2D(tSrc, vUv + uTexel * vec2(-1.0, 1.0)).rgb + texture2D(tSrc, vUv + uTexel * vec2(1.0, 1.0)).rgb
-            + texture2D(tSrc, vUv + uTexel * vec2(1.0, -1.0)).rgb + texture2D(tSrc, vUv + uTexel * vec2(-1.0, -1.0)).rgb);
-  gl_FragColor = vec4(c / 12.0 + texture2D(tAdd, vUv).rgb * uAdd, 1.0);
+  vec3 c = rd(tSrc, vUv + uTexel * vec2(-1.0, 1.0)) + rd(tSrc, vUv + uTexel) + rd(tSrc, vUv + uTexel * vec2(1.0, -1.0)) + rd(tSrc, vUv - uTexel);
+  gl_FragColor = vec4(sqrt(min(c * 0.25 + rd(tAdd, vUv) * uAdd, vec3(16.0)) / 16.0), 1.0);
 }`;
 
 // ---------------------------------------------------------------------------
@@ -306,20 +310,23 @@ uniform sampler2D tScene, tBloom;
 uniform float uTime, uAspect, uExposure, uBloom, uWarp, uFlash, uFlood, uIn;
 uniform vec2 uCentre, uFlashPos;
 uniform vec3 uBg, uBg2, uFlashCol, uTint;
-${GLSL_NOISE}
 void main() {
   vec2 asp = vec2(uAspect, 1.0);
   vec2 q = vUv - uCentre;
   float r2 = dot(q * asp, q * asp);
   vec2 w = q * uWarp * (0.25 + r2);
   vec3 c = vec3(texture2D(tScene, vUv - w * 1.6).r, texture2D(tScene, vUv - w * 0.8).g, texture2D(tScene, vUv).b);
-  vec3 bl = vec3(texture2D(tBloom, vUv - w * 1.6).r, texture2D(tBloom, vUv - w * 0.8).g, texture2D(tBloom, vUv).b);
-  c += bl * uBloom;
+  vec3 bl = texture2D(tBloom, vUv - w * 0.8).rgb;
+  c += bl * bl * 16.0 * uBloom;
   vec2 hp = (vUv - 0.5) * asp;
-  float hz = fbm(hp * 2.3 + vec2(uTime * 0.07, uTime * 0.03));
+  // Haze: two slow interfering swells are enough to keep the dark from being flat.
+  float hz = 0.5 + 0.27 * sin(hp.x * 2.3 + uTime * 0.11 + 1.4 * sin(hp.y * 1.9 - uTime * 0.05)) + 0.23 * sin(hp.y * 3.4 - uTime * 0.07 + 1.2 * sin(hp.x * 3.1));
   vec3 bg = mix(uBg, uBg2, uFlood) * (0.35 + 1.3 * hz) * (1.0 - 0.55 * dot(hp, hp));
   c = (c + bg) * uIn;
-  c = 1.0 - exp(-c * uExposure);
+  // Shoulder on the brightest channel, so a lit pathway keeps its colour; only the truly hot goes white.
+  float L = max(c.r, max(c.g, c.b)) + 1e-4;
+  float Lt = 1.0 - exp(-L * uExposure);
+  c = mix(c * (Lt / L), vec3(Lt), smoothstep(1.2, 4.5, L) * 0.85);
   c = mix(c, c * c * (3.0 - 2.0 * c), 0.35);
   c *= mix(vec3(1.0), uTint, 0.5 * uFlood);
   c *= 1.0 - 0.42 * smoothstep(0.25, 1.25, dot(hp, hp));
@@ -327,7 +334,9 @@ void main() {
   float f = clamp(uFlash * 3.4 - fd * (1.0 - uFlash) * 1.7, 0.0, 1.0);
   f = f * f * (3.0 - 2.0 * f);
   c += uTint * 0.5 * smoothstep(0.0, 0.5, uFlash) * (1.0 - f) * exp(-fd * 2.2);
-  c += (fract(sin(dot(gl_FragCoord.xy + floor(uTime * 30.0) * 17.0, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * 0.035 * (1.0 - f);
+  vec3 p3 = fract(vec3(gl_FragCoord.xyx + floor(uTime * 30.0) * 13.7) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  c += (fract((p3.x + p3.y) * p3.z) - 0.5) * (0.012 + 0.03 * smoothstep(0.0, 0.25, Lt)) * (1.0 - f);
   gl_FragColor = vec4(mix(c, uFlashCol, f), 1.0);
 }`;
 
@@ -366,26 +375,31 @@ void main() {
   vec2 em = smoothstep(vec2(0.0), vec2(0.03), iuv) * smoothstep(vec2(1.0), vec2(0.97), iuv);
   float inImg = em.x * em.y;
 
-  // Iris. Noise sampled round a circle has no seam at the back of the eye.
-  float pn = (rn - uP) / (1.0 - uP);
+  // Iris and sclera, each computed only where it shows. Noise sampled round a circle has
+  // no seam at the back of the eye.
   vec2 sd = vec2(uSeed, uSeed * 1.618);
-  float f1 = noise(dv * 30.0 + sd + pn * 1.9);
-  float f2 = noise(dv * 8.0 + sd.yx - pn * 0.7);
-  float f3 = noise(dv * 85.0 + sd * 0.37 + pn * 3.3);
-  float fib = f1 * 0.5 + f2 * 0.32 + f3 * 0.18;
-  float coll = 0.27 + 0.1 * (noise(dv * 5.0 + sd) - 0.5);
-  vec3 inner = mix(uIris, vec3(1.0, 0.9, 0.72), 0.4);
-  vec3 outer = uIris * vec3(0.55, 0.6, 0.7);
-  vec3 iris = mix(inner, outer, smoothstep(coll - 0.1, coll + 0.3, pn)) * (0.3 + 1.25 * fib);
-  iris += inner * 0.32 * exp(-pow((pn - coll) / 0.045, 2.0));
-  iris *= 1.0 - 0.6 * smoothstep(0.6, 0.82, noise(dv * 4.0 + sd * 3.0 + pn * 3.0)) * smoothstep(coll, coll + 0.25, pn);
-  iris *= 1.0 - 0.82 * smoothstep(0.78, 1.0, pn);
-  iris *= 0.55 + 0.45 * smoothstep(0.0, 0.08, pn);
-
-  // Sclera, with a few vessels out towards the lids.
-  vec3 scl = vec3(0.84, 0.82, 0.85) * (1.0 - 0.6 * smoothstep(1.0, 2.6, rn)) * (0.68 + 0.32 * smoothstep(1.0, 1.16, rn));
-  float vein = 1.0 - abs(2.0 * fbm(e2 * 3.0 + sd) - 1.0);
-  scl -= vec3(0.02, 0.2, 0.16) * smoothstep(0.86, 0.99, vein) * smoothstep(1.05, 1.6, rn) * 0.7;
+  vec3 iris = vec3(0.0), scl = vec3(0.0);
+  if (rn > uP * 0.9 && rn < 1.03) {
+    float pn = (rn - uP) / (1.0 - uP);
+    float f1 = noise(dv * 30.0 + sd + pn * 1.9);
+    float f2 = noise(dv * 8.0 + sd.yx - pn * 0.7);
+    float f3 = noise(dv * 85.0 + sd * 0.37 + pn * 3.3);
+    float fib = f1 * 0.5 + f2 * 0.32 + f3 * 0.18;
+    float coll = 0.27 + 0.1 * (noise(dv * 5.0 + sd) - 0.5);
+    vec3 inner = mix(uIris, vec3(1.0, 0.9, 0.72), 0.4);
+    vec3 outer = uIris * vec3(0.55, 0.6, 0.7);
+    iris = mix(inner, outer, smoothstep(coll - 0.1, coll + 0.3, pn)) * (0.3 + 1.25 * fib);
+    iris += inner * 0.32 * exp(-pow((pn - coll) / 0.045, 2.0));
+    iris *= 1.0 - 0.6 * smoothstep(0.6, 0.82, noise(dv * 4.0 + sd * 3.0 + pn * 3.0)) * smoothstep(coll, coll + 0.25, pn);
+    iris *= 1.0 - 0.82 * smoothstep(0.78, 1.0, pn);
+    iris *= 0.55 + 0.45 * smoothstep(0.0, 0.08, pn);
+  }
+  if (rn > 0.97) {
+    // Sclera, with a few vessels out towards the lids.
+    scl = vec3(0.84, 0.82, 0.85) * (1.0 - 0.6 * smoothstep(1.0, 2.6, rn)) * (0.68 + 0.32 * smoothstep(1.0, 1.16, rn));
+    float vn = 0.6 * noise(e2 * 3.0 + sd) + 0.4 * noise(e2 * 7.0 - sd);
+    scl -= vec3(0.02, 0.2, 0.16) * smoothstep(0.84, 0.98, 1.0 - abs(2.0 * vn - 1.0)) * smoothstep(1.05, 1.6, rn) * 0.7;
+  }
   vec3 eye = mix(iris, scl, smoothstep(0.98, 1.02, rn));
   eye *= 1.0 - 0.3 * smoothstep(0.0, 2.0, length(e2 - uLight * 1.5));
 
@@ -413,7 +427,7 @@ void main() {
   // are strokes of the same dark, a wet highlight runs along each margin.
   float arch = e2.y + 0.22 * e2.x * e2.x;
   float low = -e2.y + 0.15 * e2.x * e2.x;
-  float lash = 0.07 * smoothstep(0.35, 0.8, noise(vec2(e2.x * 46.0 + arch * 9.0, 3.0 + uSeed)));
+  float lash = arch > 0.6 ? 0.07 * smoothstep(0.35, 0.8, noise(vec2(e2.x * 46.0 + arch * 9.0, 3.0 + uSeed))) : 0.0;
   float lidU = smoothstep(0.80 - lash, 0.87 - lash * 0.6, arch), lidL = smoothstep(1.1, 1.17, low);
   eye *= 1.0 - 0.6 * smoothstep(0.3, 0.86, arch) * uLid;
   eye *= 1.0 - 0.3 * smoothstep(0.75, 1.12, low) * uLid;
@@ -469,13 +483,13 @@ float lum(vec2 uv) { return dot(texture2D(tTo, uv).rgb, vec3(0.299, 0.587, 0.114
 void main() {
   vec2 fp = vUv * vec2(uAspect, 1.0);
   vec4 f = texture2D(tGrow, vUv);
-  float n = fbm(fp * 7.0 + 3.1) - 0.5;
+  float n = 0.5 * noise(fp * 7.0 + 3.1) + 0.3 * noise(fp * 15.0 - 1.7) + 0.2 * noise(fp * 31.0 + 9.2) - 0.5;
   float T = f.r + n * 0.11 * smoothstep(0.0, 0.1, f.r);
   // The title's island: the last white to go, eaten from its shore inward.
   vec2 dq = abs(fp - uIsl.xy) - uIsl.zw;
   float sd = length(max(dq, 0.0)) + min(max(dq.x, dq.y), 0.0) - 0.07 + n * 0.07;
   float isl = smoothstep(0.035, -0.045, sd);
-  T = mix(T, uIslT + clamp(-sd, 0.0, 0.25) * 0.8, isl);
+  T = mix(T, uIslT + clamp(-sd, 0.0, 0.25) * 0.55, isl);
   float tau = uK - T;
 
   float a = 1.0 - smoothstep(0.1, 0.25, tau);

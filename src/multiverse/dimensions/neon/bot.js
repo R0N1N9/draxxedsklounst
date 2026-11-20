@@ -12,7 +12,7 @@ export function makeBot(ctx, world, S, self) {
   const foe = S.P[1 - self.i];
   const solids = world.solids;
   const cmd = { mx: 0, my: 0, a: self.aim, fire: false, alt: false, a1: false, a2: false, da: undefined };
-  const react = 0.16 + 0.5 * (1 - skill);
+  const react = (0.16 + 0.5 * (1 - skill)) * (0.8 + Math.random() * 0.5); // no two snipers are equally quick
   const nerve = Math.random() * 0.55;
   // Everyone knows where the other spawn is.
   const bel = { x: foe.x, y: foe.y, age: 0, on: true };
@@ -20,14 +20,15 @@ export function makeBot(ctx, world, S, self) {
   const fooled = new Map(); // decoy id → did we fall for it
   let pathN = 0, pathI = 0, repath = 0, hasGoal = false, gx = 0, gy = 0, goalBx = 0, goalBy = 0, goalAge = 0;
   let mode = 'seek', modeT = 0; // seek | bank | cover
-  let seen = 0, err = 0, errT = 0, hes = 0.15;
+  let seen = 0, err = 0, errT = 0, hes = Math.random() * 0.3, sighting = false, duel = true, lostT = 0;
   let strafe = Math.random() < 0.5 ? 1 : -1, strafeT = 0;
   let bankA = 0, bankT = 1.5 + Math.random() * 2;
   let painted = 0, dodgeT = 0, dodgeX = 0, dodgeY = 0, laserT = 0;
   let stuck = 0, wait = 0, holdFocus = false, patrolI = -1;
-  let decoyT = 3 + Math.random() * 5, blinkT = 1.5 + Math.random() * 3;
+  let decoyT = 3 + Math.random() * 5, blinkT = 3 + Math.random() * 3;
+  const patience = 3.5 + Math.random() * 2.5; // nobody duels at range before they have found their feet
 
-  const aggression = () => clamp(nerve + ctx.time / 40, 0, 1);
+  const aggression = () => clamp(nerve * 0.6 + ctx.time / 45, 0, 1);
 
   function setGoal(x, y) {
     gx = x;
@@ -63,13 +64,15 @@ export function makeBot(ctx, world, S, self) {
 
   // A spot with a clear line to where we think they are, at the range our nerve likes.
   function pickPeek() {
-    const cells = world.freeCells, pref = lerp(780, 300, aggression());
+    const cells = world.freeCells, pref = lerp(780, 300, aggression()), early = clamp(1 - ctx.time / 12, 0, 1);
     let best = -1, bs = Infinity;
     for (let k = 0; k < 30; k++) {
       const c = cells[(Math.random() * cells.length) | 0];
       const x = world.cellX(c), y = world.cellY(c);
       if (!solids.los(x, y, bel.x, bel.y)) continue;
-      const s = Math.abs(dist(x, y, bel.x, bel.y) - pref) + dist(x, y, self.x, self.y) * 0.7 + Math.random() * 60;
+      // Early on, set up on our own side: the opening is a long-range affair.
+      const depth = Math.max(0, (self.i ? W - x : x) - 560) * 1.5 * early;
+      const s = Math.abs(dist(x, y, bel.x, bel.y) - pref) + dist(x, y, self.x, self.y) * 0.7 + depth + Math.random() * 60;
       if (s < bs) { bs = s; best = c; }
     }
     if (best >= 0) setGoal(world.cellX(best), world.cellY(best));
@@ -120,6 +123,12 @@ export function makeBot(ctx, world, S, self) {
     bel.y = tgt.y;
     bel.age = 0;
     bel.on = true;
+    if (!sighting) {
+      // A fresh sighting: stand and duel, or duck back and come at them from another angle?
+      sighting = true;
+      duel = ctx.time > patience && Math.random() < 0.1 + 0.6 * aggression();
+    }
+    lostT = 0;
     seen += dt;
     if (mode === 'bank') mode = 'seek';
     const dx = tgt.x - self.x, dy = tgt.y - self.y, d = Math.hypot(dx, dy) || 1;
@@ -127,7 +136,7 @@ export function makeBot(ctx, world, S, self) {
     errT -= dt;
     if (errT <= 0) {
       errT = 0.3 + Math.random() * 0.45;
-      err = gauss(Math.random) * (0.045 - 0.036 * skill);
+      err = gauss(Math.random) * (0.06 - 0.042 * skill);
     }
     const want = Math.atan2(dy + (tgt.vy || 0) * tof * lead, dx + (tgt.vx || 0) * tof * lead) + err;
     cmd.a = angDamp(self.aim, want, 6 + 10 * skill, dt);
@@ -139,6 +148,11 @@ export function makeBot(ctx, world, S, self) {
       return;
     }
     const close = d < 330 + 140 * (1 - skill) || (ctx.sudden && d < 620);
+    if (!close && !duel && !ctx.sudden) {
+      if (mode !== 'cover') { mode = 'cover'; modeT = 0; pickCover(); }
+      if (!follow(dt) || modeT > 2.2) duel = true; // nowhere to go: fight after all
+      return;
+    }
     if (close) {
       // Hip fire on the move.
       strafeT -= dt;
@@ -149,7 +163,8 @@ export function makeBot(ctx, world, S, self) {
     } else cmd.alt = true; // plant and focus: the long shot
     const tol = Math.max(0.006, (R * 0.55) / d);
     const steady = close || self.sway < 0.004 + 0.012 * (1 - skill);
-    if (seen > react && steady && self.reload <= 0 && Math.abs(angDiff(self.aim, want)) < tol) {
+    // Nobody is at their sharpest in the first seconds after the lights go out.
+    if (seen > react * (ctx.time < 8 ? 1.8 : 1) && steady && self.reload <= 0 && Math.abs(angDiff(self.aim, want)) < tol) {
       hes -= dt;
       if (hes <= 0) {
         cmd.fire = true;
@@ -160,6 +175,8 @@ export function makeBot(ctx, world, S, self) {
 
   function search(dt) {
     seen = Math.max(0, seen - dt * 2);
+    lostT += dt;
+    if (lostT > 0.6) sighting = false;
     if (mode === 'bank') {
       // A camper behind cover: hold still, line up the ricochet, send it.
       cmd.alt = true;
@@ -181,7 +198,7 @@ export function makeBot(ctx, world, S, self) {
       bankT -= dt;
       if (bankT <= 0) {
         bankT = 1 + Math.random() * 1.6;
-        if (self.reload <= 0.2 && bel.age < 1.2 && Math.random() < 0.2 + 0.55 * skill) {
+        if (ctx.time > 6 && self.reload <= 0.2 && bel.age < 1.2 && Math.random() < 0.2 + 0.55 * skill) {
           const a = world.bank(self.x, self.y, bel.x, bel.y);
           if (a !== null) {
             mode = 'bank';
@@ -204,7 +221,8 @@ export function makeBot(ctx, world, S, self) {
       }
       const had = hasGoal;
       follow(dt);
-      if (had && !hasGoal) { wait = 0.5 + Math.random() * 1.3; holdFocus = Math.random() < 0.55; }
+      // In position: go dark and hold the angle for a while. Patience is the job.
+      if (had && !hasGoal) { wait = (1.2 + Math.random() * 3) * (1 - 0.5 * aggression()); holdFocus = Math.random() < 0.5; }
       lookAt(bel.x, bel.y, 5, dt);
     } else {
       if (!hasGoal) patrolNext();

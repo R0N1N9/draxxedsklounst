@@ -294,7 +294,7 @@ export function buildNetwork(THREE, rng, o) {
     route.dir(st.s, Tn);
     if (st.kind === 'soma') {
       const first = j === 0, lit = first ? o.pulse : o.sideCols[side++ & 1];
-      neuron(P, first ? R0 : RR, { trees: first ? 7 : 5, len: first ? [16, 26] : [12, 20], depth: 3, r0: 0.5, flare: 1.6, wander: 0.5, col: heroDen(), somaCol: somaCol(1.1), lit, fire: st.land, speed: 46, decay: 1.3, sustain: 0.3, order: order(st.s), tile: first ? 0 : tile++, mem: first ? 1.15 : 1, avoid: Tn });
+      neuron(P, first ? R0 : RR, { trees: first ? 7 : 5, len: first ? [16, 26] : [12, 20], depth: 3, r0: first ? 0.5 : 0.38, flare: first ? 1.6 : 0.9, wander: 0.5, col: heroDen(), somaCol: somaCol(1.1), lit, fire: st.land, speed: 46, decay: 1.3, sustain: 0.3, order: order(st.s), tile: first ? 0 : tile++, mem: first ? 1.15 : 1, avoid: Tn });
       ring(P, st.land, first ? 15 : 10, first ? 0.75 : 0.5, mul(lit, 1.6));
       sparks(P, st.land, first ? 80 : 46, [10, 38], [0.35, 0.8], [lit, white, hot]);
     } else if (st.kind === 'node') {
@@ -305,12 +305,12 @@ export function buildNetwork(THREE, rng, o) {
 
   // --- the terminal: a bouton packed with vesicles, the cleft, the spine that receives
   const bulb = (u) => Math.pow(Math.sin(Math.PI * Math.pow(clamp01(u), 1.6)), 0.8);
-  rb.strip(along(L - BOUTON, L, 0.5), (u) => 0.26 + 2.7 * bulb(u), (u) => u * BOUTON, () => stations[J].land, mul(sheathCol, 0.3), o.pulse, 2.0, 0.4, 1, 0);
+  rb.strip(along(L - BOUTON, L, 0.5), (u) => 0.26 + 2.7 * bulb(u), (u) => u * BOUTON, () => stations[J].land, mul(sheathCol, 0.3), o.pulse, 2.0, 0.4, 3, 0);
   const CLEFT = 2.3, SPINE = 8.5, cleftS = L + CLEFT / 2;
   const tCross = T.cross;
-  rb.strip(along(L + CLEFT, L + CLEFT + SPINE, 0.5), (u) => 0.5 + 2.9 * bulb(1 - u * 0.97), (u) => u * SPINE, (u) => tCross + u * 0.12, mul(sheathCol, 0.28), o.accent, 1.2, 0.55, 1, 0);
+  rb.strip(along(L + CLEFT, L + CLEFT + SPINE, 0.5), (u) => 0.5 + 2.9 * bulb(1 - u * 0.97), (u) => u * SPINE, (u) => tCross + u * 0.12, mul(sheathCol, 0.28), o.accent, 1.2, 0.55, 3, 0);
   const trunk0 = L + CLEFT + SPINE, somaS = trunk0 + rand(rng, 20, 28);
-  rb.strip(along(trunk0 - 0.5, somaS, 1.2), () => 0.55, (u) => u * 20, (u) => tCross + 0.1 + u * 0.22, mul(sheathCol, 0.3), o.accent, 1.4, 0.5, 0, 0);
+  rb.strip(along(trunk0, somaS, 1.2), () => 0.58, (u) => u * 20, (u) => tCross + 0.12 + u * 0.22, mul(sheathCol, 0.28), o.accent, 1.2, 0.55, 3, 0);
   route.at(somaS, P);
   route.dir(somaS, Tn);
   neuron(P, 4.2, { trees: 8, len: [18, 30], depth: 3, r0: 0.6, flare: 1.6, wander: 0.45, col: heroDen(), somaCol: somaCol(1.1), lit: o.accent, fire: tCross + 0.3, speed: 110, decay: 1.0, sustain: 0.6, order: 0, tile: 0, mem: 0, avoid: null });
@@ -335,39 +335,39 @@ export function buildNetwork(THREE, rng, o) {
     route.at(L + CLEFT + 0.25 + rr * rr * 0.12, P);
     sp.add({ position: [P.x + (Bn.x * Math.cos(th) + Nn.x * Math.sin(th)) * rr, P.y + (Bn.y * Math.cos(th) + Nn.y * Math.sin(th)) * rr, P.z + (Bn.z * Math.cos(th) + Nn.z * Math.sin(th)) * rr], aVel: [0, 0, 0], aTim: [tCross + rng() * 0.12, 1, 0.2, rng()], aCol: mul(o.accent, 1.4), aKind: [4] });
   }
-  ring(route.at(cleftS, P), tCross, 16, 0.6, mul(mix3(o.accent, white, 0.4), 2));
+  ring(route.at(cleftS, P), tCross, 9, 0.45, mul(mix3(o.accent, white, 0.4), 2));
 
   // --- the forest. Cells near the route are recruited as the impulse goes by: a
   // collateral carries the light out and the whole tree answers in a sniper's colour;
   // towards the end of the run they answer in the next world's instead.
   const count = randInt(rng, 54, 70);
   for (let i = 0; i < count; i++) {
-    const s = rand(rng, -40, L + 60), rho2 = 15 + 50 * Math.pow(rng(), 1.35), th = rng() * TAU, rad = rand(rng, 1.4, 2.7);
+    const s = rand(rng, -40, L + 60), rho2 = 21 + 46 * Math.pow(rng(), 1.3), th = rng() * TAU, rad = rand(rng, 1.4, 2.7);
     route.at(s, P);
     route.frame(s, Tn, Bn, Nn);
     const dx = Math.cos(th), dy = Math.sin(th);
     const dirOut = { x: Bn.x * dx + Nn.x * dy, y: Bn.y * dx + Nn.y * dy, z: Bn.z * dx + Nn.z * dy };
     const c = { x: P.x + dirOut.x * rho2, y: P.y + dirOut.y * rho2, z: P.z + dirOut.z * rho2 };
     const prog = clamp01(s / L);
-    const fires = s > 4 && s < L - 4 && rho2 < 40 && chance(rng, 0.22 + 0.78 * Math.pow(prog, 1.4));
+    const fires = s > 4 && s < L - 4 && rho2 < 48 && chance(rng, 0.45 + 0.55 * Math.pow(prog, 1.4));
     const lit = prog > 0.7 && chance(rng, 0.65) ? o.accent : o.sideCols[side++ & 1];
     const tOut = passTime(s), lag = 0.03 + rho2 * 0.006;
     const ord = order(s);
-    neuron(c, rad, { trees: randInt(rng, 4, 6), len: [9, 20], depth: 2, r0: rand(rng, 0.2, 0.34), flare: 2.2, wander: 0.6, col: tissue(), somaCol: somaCol(), lit, fire: fires ? tOut + lag : NEVER, speed: 55, decay: 1.5, sustain: 0.22, order: ord, tile: randInt(rng, 0, 3), mem: rand(rng, 0.3, 0.7), avoid: null });
+    neuron(c, rad, { trees: randInt(rng, 4, 6), len: [9, 20], depth: 2, r0: rand(rng, 0.2, 0.34), flare: 2.2, wander: 0.6, col: tissue(), somaCol: somaCol(), lit, fire: fires ? tOut + lag : NEVER, speed: 55, decay: 1.0, sustain: 0.42, order: ord, tile: randInt(rng, 0, 3), mem: rand(rng, 0.3, 0.7), avoid: null });
     if (fires) {
       // The collateral: a sagging thread from the axon to the cell.
-      const bend = unit(rng), pts = [], n = 12;
+      const bend = unit(rng), pts = [], n = 26;
       for (let k = 0; k <= n; k++) {
         const u = k / n, w = 4 * u * (1 - u) * rho2 * 0.22, e = rho2 - rad;
         pts.push(P.x + dirOut.x * e * u + bend.x * w, P.y + dirOut.y * e * u + bend.y * w, P.z + dirOut.z * e * u + bend.z * w);
       }
-      rb.strip(pts, () => 0.1, (u) => u * rho2, (u) => tOut + u * lag, tissue(0.5), lit, 2.4, 0.3, 0, ord);
+      rb.strip(pts, () => 0.075, (u) => u * rho2, (u) => tOut + u * lag, tissue(0.5), lit, 2.4, 0.3, 0, ord);
       ring(c, tOut + lag, rad * 3.2, 0.45, mul(lit, 1.2));
     }
   }
   // Long fibres from cells we never meet, crossing the whole volume: the "forest" read.
   for (let i = 0; i < 40; i++) {
-    const s = rand(rng, -30, L + 40), rho2 = rand(rng, 7, 46), th = rng() * TAU, len = rand(rng, 70, 150);
+    const s = rand(rng, -30, L + 40), rho2 = rand(rng, 12, 48), th = rng() * TAU, len = rand(rng, 70, 150);
     route.at(s, P);
     route.frame(s, Tn, Bn, Nn);
     const c = { x: P.x + (Bn.x * Math.cos(th) + Nn.x * Math.sin(th)) * rho2, y: P.y + (Bn.y * Math.cos(th) + Nn.y * Math.sin(th)) * rho2, z: P.z + (Bn.z * Math.cos(th) + Nn.z * Math.sin(th)) * rho2 };
@@ -379,8 +379,8 @@ export function buildNetwork(THREE, rng, o) {
       const u = k / n - 0.5, w = (0.25 - u * u) * 4 * sag;
       pts.push(c.x + d.x * len * u + bend.x * w, c.y + d.y * len * u + bend.y * w, c.z + d.z * len * u + bend.z * w);
     }
-    const late = clamp01(s / L) > 0.45 && chance(rng, 0.45), fr = rand(rng, 0.07, 0.13);
-    rb.strip(pts, () => fr, (u) => u * len, (u) => (late ? passTime(s) + u * 0.5 : NEVER), tissue(0.55), late ? o.accent : white, 3, 0.25, 0, order(s));
+    const late = clamp01(s / L) > 0.45 && chance(rng, 0.45), fr = rand(rng, 0.045, 0.085);
+    rb.strip(pts, () => fr, (u) => u * len, (u) => (late ? passTime(s) + u * 0.5 : NEVER), tissue(0.55), late ? o.accent : white, 3, 0.12, 0, order(s));
   }
   // Motes: neurotransmitter adrift in the fluid; the lens turns the near ones to bokeh.
   for (let i = 0; i < 1500; i++) {

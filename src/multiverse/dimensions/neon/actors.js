@@ -18,15 +18,40 @@ export function makeActors({ ctx, g, S, world, view, cols, glow, line, label, to
     g.stroke();
   };
 
-  // One sniper, seen from above: round where the arena is angular, with a long rail.
-  // reloadK: 1 = just fired … 0 = charged. holo = a hologram (own decoy, an afterimage).
+  // One sniper, seen from above: round where the arena is angular, a long rail out front
+  // and a cloak of light streaming out behind. reloadK: 1 = just fired … 0 = charged.
+  // holo = a hologram (your own decoy, an afterimage).
   function sniper(x, y, a, col, alpha, vx, vy, recoil, reloadK, holo) {
     const px = 1 / view.k, kick = recoil * 6;
+    const sp = Math.hypot(vx, vy), run = Math.min(1, sp / 255);
+    // The cloak trails away from the run (from the aim when standing), and flutters.
+    let tx = -Math.cos(a), ty = -Math.sin(a);
+    if (sp > 40) {
+      tx = lerp(tx, -vx / sp, 0.8 * run);
+      ty = lerp(ty, -vy / sp, 0.8 * run);
+      const n = Math.hypot(tx, ty) || 1;
+      tx /= n;
+      ty /= n;
+    }
+    const nx = -ty, ny = tx, len = R * (1.75 + 1.1 * run);
+    const wob = Math.sin(S.t * (5 + 7 * run) + x * 0.031 + y * 0.017) * R * (0.14 + 0.3 * run);
+    g.lineJoin = 'round';
+    g.beginPath();
+    g.moveTo(x + nx * R * 0.9, y + ny * R * 0.9);
+    g.quadraticCurveTo(x + tx * len * 0.6 + nx * (R * 0.62 + wob), y + ty * len * 0.6 + ny * (R * 0.62 + wob), x + tx * len + nx * wob * 1.7, y + ty * len + ny * wob * 1.7);
+    g.quadraticCurveTo(x + tx * len * 0.6 - nx * (R * 0.62 - wob), y + ty * len * 0.6 - ny * (R * 0.62 - wob), x - nx * R * 0.9, y - ny * R * 0.9);
+    g.closePath();
+    g.fillStyle = g.strokeStyle = col;
+    if (holo) g.setLineDash([4, 3.5]);
+    else { g.globalAlpha = alpha * 0.3; g.fill(); }
+    g.globalAlpha = alpha * 0.85;
+    g.lineWidth = Math.max(1.6, 1.2 * px);
+    g.stroke();
+
     g.save();
     g.translate(x, y);
-    const sp = Math.hypot(vx, vy);
     if (sp > 40) { // lean into the run
-      const va = Math.atan2(vy, vx), st = 1 + 0.16 * Math.min(1, sp / 255);
+      const va = Math.atan2(vy, vx), st = 1 + 0.14 * run;
       g.rotate(va);
       g.scale(st, 1 / st);
       g.rotate(-va);
@@ -34,33 +59,37 @@ export function makeActors({ ctx, g, S, world, view, cols, glow, line, label, to
     g.rotate(a);
     g.lineCap = 'round';
     g.globalAlpha = alpha;
-    if (holo) g.setLineDash([4, 3.5]);
     g.strokeStyle = col;
-    g.lineWidth = Math.max(4.4, 2.6 * px);
-    line(R * 0.3 - kick, 0, R * 2.3 - kick, 0);
+    g.lineWidth = Math.max(4.6, 2.7 * px);
+    line(R * 0.3 - kick, 0, R * 2.35 - kick, 0);
     g.strokeStyle = HOT; // the rail glows white while there is a charge behind it
     g.globalAlpha = alpha * (reloadK > 0 ? 0.22 : 0.95);
-    g.lineWidth = Math.max(1.5, 0.9 * px);
-    line(R - kick, 0, R * 2.3 - kick, 0);
+    g.lineWidth = Math.max(1.6, px);
+    line(R - kick, 0, R * 2.35 - kick, 0);
     g.globalAlpha = alpha;
     g.strokeStyle = col;
     g.lineWidth = Math.max(2.4, 1.5 * px);
-    line(R * 2.3 - kick, -4.5, R * 2.3 - kick, 4.5);
+    line(R * 2.35 - kick, -5, R * 2.35 - kick, 5);
     const bx = -kick * 0.4;
     if (!holo) {
       g.fillStyle = INK;
       g.beginPath();
       g.arc(bx, 0, R, 0, TAU);
       g.fill();
+      g.fillStyle = col;
+      g.globalAlpha = alpha * 0.5;
+      g.fill();
+      g.globalAlpha = alpha;
     }
-    g.lineWidth = Math.max(2.8, 1.9 * px);
-    circle(bx, 0, R - 1.3);
+    g.lineWidth = Math.max(3, 2 * px);
+    circle(bx, 0, R - 1.4);
     g.strokeStyle = HOT; // visor
-    g.lineWidth = Math.max(2.6, 1.5 * px);
+    g.lineWidth = Math.max(2.8, 1.6 * px);
     g.beginPath();
-    g.arc(bx, 0, R * 0.5, -0.8, 0.8);
+    g.arc(bx, 0, R * 0.5, -0.85, 0.85);
     g.stroke();
     g.strokeStyle = col; // three capacitor cells on the back refill as the rail recharges
+    g.lineWidth = Math.max(2.4, 1.5 * px);
     for (let i = 0; i < 3; i++) {
       const aa = Math.PI + (i - 1) * 0.62;
       g.globalAlpha = alpha * ((1 - reloadK) * 3 > i + 0.5 ? 1 : 0.25);
@@ -68,8 +97,8 @@ export function makeActors({ ctx, g, S, world, view, cols, glow, line, label, to
       g.arc(bx, 0, R * 0.55, aa - 0.2, aa + 0.2);
       g.stroke();
     }
-    g.setLineDash([]);
     g.restore();
+    g.setLineDash([]); // after the restore: the dash was set before the save
     g.globalAlpha = 1;
   }
 
@@ -229,22 +258,26 @@ export function makeActors({ ctx, g, S, world, view, cols, glow, line, label, to
     g.globalAlpha = 1;
   }
 
-  // From the hip: where the barrel points right now, and the cone it wanders in.
+  // From the hip: where the barrel points right now, and a bracket for how far it wanders.
   function hipAim(me, col) {
-    const px = 1 / view.k, m0 = R * 2.7, c = Math.cos(me.a), s = Math.sin(me.a);
+    const px = 1 / view.k, m0 = R * 2.8, c = Math.cos(me.a), s = Math.sin(me.a), far = 230;
     g.globalCompositeOperation = 'lighter';
     g.strokeStyle = col;
     g.lineCap = 'round';
-    g.lineWidth = Math.max(1.6, 1.2 * px);
-    for (let i = 0; i < 3; i++) {
-      g.globalAlpha = 0.6 - i * 0.2;
-      line(me.x + c * (m0 + i * 42), me.y + s * (m0 + i * 42), me.x + c * (m0 + i * 42 + 34), me.y + s * (m0 + i * 42 + 34));
+    g.lineWidth = Math.max(1.7, 1.2 * px);
+    for (let i = 0; i < 4; i++) {
+      g.globalAlpha = 0.62 - i * 0.14;
+      line(me.x + c * (m0 + i * 46), me.y + s * (m0 + i * 46), me.x + c * (m0 + i * 46 + 30), me.y + s * (m0 + i * 46 + 30));
     }
-    g.lineWidth = Math.max(1, px);
-    g.globalAlpha = 0.22;
+    g.lineCap = 'butt';
+    g.lineWidth = Math.max(1.3, px);
+    g.globalAlpha = 0.6;
+    g.beginPath();
+    g.arc(me.x, me.y, far, me.aim - me.sway, me.aim + me.sway);
+    g.stroke();
     for (let k = -1; k <= 1; k += 2) {
       const aa = me.aim + k * me.sway;
-      line(me.x + Math.cos(aa) * m0, me.y + Math.sin(aa) * m0, me.x + Math.cos(aa) * (m0 + 150), me.y + Math.sin(aa) * (m0 + 150));
+      line(me.x + Math.cos(aa) * (far - 7), me.y + Math.sin(aa) * (far - 7), me.x + Math.cos(aa) * (far + 7), me.y + Math.sin(aa) * (far + 7));
     }
     g.globalAlpha = 1;
     g.globalCompositeOperation = 'source-over';
@@ -272,7 +305,7 @@ export function makeActors({ ctx, g, S, world, view, cols, glow, line, label, to
       const a = (d.alive ? 1 : 1 - d.fade / 0.4) * (0.6 + 0.25 * Math.sin(t * 31 + d.id));
       lit(d.x, d.y, col, 0.25 * a);
       sniper(d.x, d.y, d.a, col, a, d.vx, d.vy, 0, 0, true);
-      label('DECOY', d.x, d.y - R - 14, 8, col, a * 0.9);
+      label('DECOY', d.x, d.y - R - 14, 8, col, a * 0.9 * clamp01((t - d.born - 0.35) * 4));
     }
 
     if (S.kill) { // what is left of the loser, and a halo for the winner

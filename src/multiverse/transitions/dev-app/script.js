@@ -71,9 +71,9 @@ const THEMES = ['dark', 'light', 'retro'];
 const BRANDS = { dark: ['#7a6cff', '#19c28a', '#ff7a4d', '#3d95ff', '#f0569f'], light: ['#5b4be6', '#0c9f6f', '#e8552a', '#1d6fe0', '#d63384'], retro: ['#1f6f6b', '#b5482f', '#3a4f9c'] };
 const APPS = ['Develop-O-Matic', 'App Builder Deluxe', 'Appsolutely Studio', 'My First App Pro', 'Apps For Everyone'];
 
-export function makePlan(ctx) {
+export function makePlan(ctx, to = ctx.to) {
   const rng = ctx.rng;
-  const to = ctx.to, from = ctx.from;
+  const from = ctx.from;
   const W = ctx.winner ? ctx.winner.name : null, L = ctx.loser ? ctx.loser.name : null;
   const how = String(ctx.how || '').trim();
   const isValley = from.id === 'valley';
@@ -210,7 +210,7 @@ export function makePlan(ctx) {
     ['gravity returned undefined', 'works on my machine'],
     ['too many snipers (2)', 'allowed it'],
   ];
-  const err = chance(rng, 0.6) ? pick(rng, errors) : null;
+  const err = chance(rng, 0.4) ? pick(rng, errors) : null;
   const error = err ? { step: randInt(rng, 2, 3), msg: err[0], fix: err[1] } : null;
   const ms = steps.map(() => randInt(rng, 9, 480));
   const casualties = L ? '1 casualty' : '0 casualties';
@@ -240,6 +240,13 @@ export function makePlan(ctx) {
     { title: 'App launched', sub: W ? `Developed by ${W}. Allegedly.` : 'Developed by nobody in particular.' },
   ]);
   const verb = pick(rng, ['NOW RUNNING', 'LAUNCHING', 'APP READY', 'BUILD 1 OF ∞']);
+  // The pop-up that interrupts the build: a different piece of needy software every time.
+  const nag = pick(rng, [
+    { kind: 'stars', title: `Enjoying ${app}?`, sub: 'Rate your experience', done: 'Thanks for the 5 stars!' },
+    { kind: 'button', title: 'This build uses cookies', sub: 'Manage your preferences', done: 'You accepted all of them.', label: 'Accept all', labelB: 'Accepted' },
+    { kind: 'button', title: `${app} Pro`, sub: 'Upgrade to cancel this build', done: 'Upgrade unavailable during builds.', label: 'Upgrade', labelB: 'Nope' },
+    { kind: 'tip', title: 'Tip of the day', sub: pick(rng, ['You cannot undo this.', 'Snipers load faster if you believe in them.', L ? `${L} can see this too.` : 'Both of you can see this.']) },
+  ]);
 
   // -- small visual dice -----------------------------------------------------------
   const fly = {};
@@ -251,7 +258,7 @@ export function makePlan(ctx) {
   const ink = (c) => (theme === 'dark' ? c : mixHex(c, '#000000', luminance(c) > 0.35 ? 0.42 : 0.1));
 
   return {
-    gag, theme, brand, side, style, app, body, entry, bow, code, steps, error, ms, casualties, project, tree, toast, verb, fly, scan, keySeeds,
+    gag, theme, brand, side, style, app, body, entry, bow, code, steps, error, ms, casualties, project, tree, toast, verb, nag, fly, scan, keySeeds,
     W, L, how, fromTitle, oldThing, oldFile,
     p0: ink('#f2b35b'), p1: ink('#40d8e8'),
     winColor: ctx.winner ? ctx.winner.color : '#f2b35b', loseColor: ctx.loser ? ctx.loser.color : '#40d8e8',

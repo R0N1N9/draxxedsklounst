@@ -91,6 +91,9 @@ export class MvHud {
       this.chips[slot] = { el: c, kbd: c.querySelector('kbd'), badge: c.querySelector('em'), frac: -1, n: undefined };
     }
     this.el.sudden.classList.remove('on');
+    this._clock = '';
+    this.el.clock.textContent = '';
+    this.el.clock.classList.remove('hot');
     this.message('', '', 0);
     this.el.kill.classList.remove('on');
   }
@@ -98,8 +101,9 @@ export class MvHud {
   // Ability state: forwarded to the touch buttons as well, so a dimension only reports it once.
   cooldown(slot, frac) {
     const c = this.chips[slot];
-    if (!c) return;
     frac = frac > 0 ? Math.min(1, frac) : 0;
+    // FIRE always has a touch button, labelled or not.
+    if (!c) { if (this.input) this.input.setCooldown(slot, frac); return; }
     if (Math.abs(frac - c.frac) < 0.01 && (frac > 0) === (c.frac > 0)) return;
     c.frac = frac;
     c.el.style.setProperty('--cd', frac.toFixed(3));
@@ -109,7 +113,8 @@ export class MvHud {
 
   charges(slot, n) {
     const c = this.chips[slot];
-    if (!c || c.n === n) return;
+    if (!c) { if (this.input) this.input.setCharges(slot, n === undefined ? null : n); return; }
+    if (c.n === n) return;
     c.n = n;
     c.badge.textContent = n === null || n === undefined ? '' : String(n);
     c.el.classList.toggle('empty', n === 0);

@@ -13,17 +13,19 @@
 //   0.50  SCRIM      it softens and dims like the backdrop of a modal…
 //   0.72  DIALOG     …and a cheerful alert pops dead centre with a chime: "Do you want to
 //                    develop an app?"  A pointer wanders in on its own and goes for [No].
-//   1.0-3.1  THE GAG one of five (see GAGS in dev-app/dialog.js) — the answer is Yes.
-//   3.4   TAKEOVER   the pointer grabs the corner of the WORLD and resizes it like a layer,
+//   1.0-3.0  THE GAG one of five (see GAGS in dev-app/dialog.js) — the answer is Yes.
+//   3.0   "GREAT CHOICE!"  the icon hops, confetti, "Developing your app…".
+//   3.5   TAKEOVER   the pointer grabs the corner of the WORLD and resizes it like a layer,
 //                    down into the preview pane of an IDE that assembles around it. An
 //                    inspector tag stays pinned to the impact point, naming the loser.
-//   4.1-6.8  CODE    the next world's source types itself: new Dimension("<name>"),
+//   4.2-6.8  CODE    the next world's source types itself: new Dimension("<name>"),
 //                    perspective, palette (real colour chips), players, the score, and
 //                    comments that mock the kill by name.
-//   4.4-7.0  BUILD   comically specific steps; the preview is scanned into a wireframe of
+//   4.5-7.0  BUILD   comically specific steps; the preview is scanned into a wireframe of
 //                    itself in the next world's colours, crunched into placeholder tiles,
 //                    cleared to an empty scene with two placeholder snipers. Sometimes an
-//                    error that fixes itself. BUILD SUCCEEDED.
+//                    error that fixes itself. A needy pop-up rates itself five stars.
+//                    BUILD SUCCEEDED.
 //   7.30  RUN        the pointer presses Run; the preview blooms to white.
 //   7.70  THE SWAP   on full white.
 //   7.8   LAUNCH     the white clears on the app's splash screen in the pane — the new
@@ -38,8 +40,9 @@
 //   3. the layout: preview pane on the left or the right (and so which corner is dragged)
 //   4. the code: three source styles, header / mocking / TODO comments, filler properties
 //   5. the build: step list, whether an error happens, which one, at which step
-//   6. the pointer's entrance and arcs, the preview's scan direction and tile size
-//   7. how the panels fly apart (direction, spin, order), the splash kicker, the toast
+//   6. the pop-up that interrupts the build (stars / cookies / upgrade / tip of the day)
+//   7. the pointer's entrance and arcs, the preview's scan direction and tile size
+//   8. how the panels fly apart (direction, spin, order), the splash kicker, the toast
 //
 // CONTEXT
 //   fromImage  the frozen world; blurred behind the dialog; resized into the pane; turned
@@ -54,21 +57,22 @@
 import { seg, ease, clamp, lerp, hexToRgb, roundRect, canvasTexture, makeCanvas, fullscreenPass, COVER_UV_GLSL, GLSL_NOISE } from '../kit.js';
 import { makePlan, slug } from './dev-app/script.js';
 import { makeTheme, drawPointer, drawRipple, softShadow } from './dev-app/ui.js';
-import { GAGS, T_POP, dialogLayout, gagKeys, drawGag } from './dev-app/dialog.js';
+import { GAGS, T_POP, T_OUT, dialogLayout, gagKeys, drawGag } from './dev-app/dialog.js';
 import { ideLayout, drawIdeBack, drawIdeFront, lerpRect } from './dev-app/ide.js';
-import { drawHandles, drawInspector, drawScaffold, drawReady, drawSplash, drawToast } from './dev-app/launch.js';
+import { drawHandles, drawInspector, drawScaffold, drawReady, drawSplash, drawToast, drawNag } from './dev-app/launch.js';
 
 const DUR = 11, SWAP_AT = 0.7, SWAP = DUR * SWAP_AT;
 const T = {
   scrim: 0.5,
-  grab: 3.38, drag0: 3.44, drag1: 4.24,   // the pointer takes the world by a corner and shrinks it
-  type0: 4.1, type1: 6.82,
-  build0: 4.44, build1: 7.0,
+  grab: 3.5, drag0: 3.56, drag1: 4.36,    // the pointer takes the world by a corner and shrinks it
+  type0: 4.22, type1: 6.82,
+  build0: 4.52, build1: 7.0,
+  nag0: 5.5, nag1: 6.86,                  // a pop-up nobody needed, in the middle of the build
   run: 7.3, white: SWAP - 0.22,           // opaque white from here until the new world exists
   iris0: SWAP + 0.7, iris1: SWAP + 1.0,   // splash → the world, still inside the pane
   exp0: SWAP + 1.25, exp1: SWAP + 2.15,   // the pane takes the screen
   fade1: SWAP + 2.5,
-  toast0: SWAP + 1.7, toast1: DUR - 0.52,
+  toast0: SWAP + 1.6, toast1: DUR - 0.46,
 };
 
 // The old world, wherever the pointer has dragged it, and whatever the build is doing to it.
@@ -191,13 +195,26 @@ export default {
 
   create(ctx) {
     const { THREE, renderer } = ctx.three;
-    const A = ctx.audio, to = ctx.to;
+    const A = ctx.audio;
+    // Palettes are "CSS colours"; everything here (shader uniforms, chips, mixes) wants #rrggbb.
+    const hex = (c, fallback) => {
+      if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+      const g = ctx.g, prev = g.fillStyle;
+      g.fillStyle = fallback;
+      g.fillStyle = String(c);
+      const v = g.fillStyle;
+      g.fillStyle = prev;
+      return /^#[0-9a-f]{6}$/i.test(v) ? v : fallback;
+    };
+    const tp = ctx.to.palette || {};
+    const to = Object.assign({}, ctx.to, { name: String(ctx.to.name || 'UNTITLED'), palette: { bg: hex(tp.bg, '#10131c'), fg: hex(tp.fg, '#e8e6f0'), accent: hex(tp.accent, '#f2b35b') } });
     // Every random decision is taken here, once: the film is then a function of t alone.
-    const plan = makePlan(ctx);
+    const plan = makePlan(ctx, to);
     plan.toSlug = slug(to.name);
     const th = makeTheme(plan);
     plan.loseInk = ctx.loser && ctx.loser.index === 0 ? th.p0 : th.p1;
     const G = GAGS[plan.gag];
+    const confetti = [plan.brand, to.palette.accent, '#f2b35b', '#40d8e8', '#ffffff', to.palette.accent];
     const code = plan.code, nLines = code.lines.length;
 
     // -- GL: the old world -------------------------------------------------------
@@ -311,13 +328,13 @@ export default {
       keysA = gagKeys(plan.gag, D, w, h, plan);
       const last = keysA[keysA.length - 1];
       const c0 = cornerOf(FULL, w, h);
-      keysA.push({ t: Math.max(G.acc + 0.12, last.t + 0.14), x: last.x, y: last.y, bow: 0 });
+      keysA.push({ t: Math.max(G.acc + 0.2, last.t + 0.2), x: last.x, y: last.y, bow: 0 });
       keysA.push({ t: T.grab, x: c0.x, y: c0.y, bow: -plan.bow * 0.5 });
       const c1 = cornerOf(L.scr, w, h), ed = L.editor, run = L.run;
-      const rest = { x: ed.x + ed.w * 0.6, y: ed.y + ed.h * 0.8 };
+      const rest = { x: ed.x + ed.w * 0.3, y: ed.y + ed.h * 0.84 };
       keysB = [
         { t: T.drag1 + 0.1, x: c1.x, y: c1.y },
-        { t: T.drag1 + 0.62, x: rest.x, y: rest.y, bow: plan.bow },
+        { t: T.drag1 + 0.6, x: rest.x, y: rest.y, bow: plan.bow },
         { t: T.run - 0.56, x: rest.x, y: rest.y },
         { t: T.run - 0.1, x: run.x + run.w * 0.6, y: run.y + run.h * 0.62, bow: -plan.bow * 0.8 },
         { t: DUR, x: run.x + run.w * 0.6, y: run.y + run.h * 0.62 },
@@ -348,7 +365,15 @@ export default {
       st.pal = seg(t, lineT1[code.palLine], lineT1[code.palLine] + 0.5);
       const bs = st.build;
       bs.shake = 0;
-      if (t < b[0]) { bs.state = 'idle'; bs.k = 0; bs.label = 'Waiting for changes…'; } else if (t >= T.build1) { bs.state = 'ok'; bs.k = 1; bs.label = 'BUILD SUCCEEDED'; } else {
+      if (t < b[0]) {
+        bs.state = 'idle';
+        bs.k = 0;
+        bs.label = 'Waiting for changes…';
+      } else if (t >= T.build1) {
+        bs.state = 'ok';
+        bs.k = 1;
+        bs.label = 'BUILD SUCCEEDED';
+      } else {
         let i = 0;
         while (i < nSteps - 1 && t >= b[i + 1]) i++;
         let f = ease.outCubic(seg(t, b[i], b[i + 1])); // each step lunges, then drags its feet
@@ -358,7 +383,14 @@ export default {
           if (t < errAt) f = 0.5 * ease.outCubic(seg(t, b[i], errAt));
           else if (t < errEnd) {
             f = 0.5 - 0.16 * ease.outCubic(seg(t, errAt, errAt + 0.18)) + 0.16 * ease.inOutCubic(seg(t, fixAt, errEnd));
-            if (t < fixAt) { bs.state = 'err'; bs.label = `error: ${plan.error.msg}`; bs.shake = 1 - seg(t, errAt, errAt + 0.3); } else { bs.state = 'fix'; bs.label = `auto-fix: ${plan.error.fix}`; }
+            if (t < fixAt) {
+              bs.state = 'err';
+              bs.label = `error: ${plan.error.msg}`;
+              bs.shake = 1 - seg(t, errAt, errAt + 0.3);
+            } else {
+              bs.state = 'fix';
+              bs.label = `auto-fix: ${plan.error.fix}`;
+            }
           } else f = 0.5 + 0.5 * ease.outCubic(seg(t, errEnd, b[i + 1]));
         }
         bs.k = (i + f) / nSteps;
@@ -418,10 +450,18 @@ export default {
     const special = {
       chime2: () => ding(830),
       dead: () => A.tone({ type: 'square', freq: 150, dur: 0.12, gain: 0.07 }),
-      creak: () => { A.tone({ type: 'sawtooth', freq: 240, freqEnd: 130, dur: 0.34, gain: 0.07 }); A.noise({ filter: 'bandpass', freq: 900, freqEnd: 500, q: 6, dur: 0.3, gain: 0.25 }); },
+      creak: () => {
+        A.tone({ type: 'sawtooth', freq: 240, freqEnd: 130, dur: 0.34, gain: 0.07 });
+        A.noise({ filter: 'bandpass', freq: 900, freqEnd: 500, q: 6, dur: 0.3, gain: 0.25 });
+      },
     };
     cue(T_POP, () => ding(660)); // the soft, slightly-too-friendly system chime
     for (const [t, name, o] of G.cues) cue(t, special[name] || (() => A.sfx(name, o)));
+    // "Great choice!" — a pleased little flourish as the confetti goes up.
+    cue(G.acc + 0.09, () => {
+      for (let i = 0; i < 4; i++) A.tone({ type: 'triangle', freq: 1175 * Math.pow(1.26, i), dur: 0.16, gain: 0.07, delay: i * 0.045 });
+      A.noise({ filter: 'highpass', freq: 6000, dur: 0.18, gain: 0.05, attack: 0.02 });
+    });
     cue(T.grab, () => A.sfx('click', { gain: 0.7, pitch: 0.8 }));
     cue(T.drag0, () => { A.sfx('whoosh', { gain: 0.5 }); A.tone({ freq: 560, freqEnd: 170, dur: 0.8, gain: 0.07 }); });
     for (const n in ASM) cue(T.drag0 + ASM[n] + 0.5, () => A.sfx('thud', { gain: 0.16, pitch: 1.5 + ASM[n] * 2 }));
@@ -455,6 +495,9 @@ export default {
       cue(errAt, () => A.sfx('error', { gain: 0.75 }));
       cue(fixAt, () => A.sfx('blip', { gain: 0.5, pitch: 1.7 }));
     }
+    cue(T.nag0, () => A.sfx('blip', { gain: 0.4, pitch: 1.35 }));
+    if (plan.nag.kind === 'stars') for (let i = 0; i < 5; i++) cue(T.nag0 + 0.44 + i * 0.104, () => A.tone({ type: 'triangle', freq: 880 * Math.pow(1.122, i), dur: 0.12, gain: 0.1 }));
+    else if (plan.nag.kind === 'button') cue(T.nag0 + 0.78, () => A.sfx('click', { gain: 0.6, pitch: 1.1 }));
     cue(T.run - 1.5, () => A.sfx('riser', { gain: 0.6 }));
     cue(T.build1, () => A.sfx('chime', { gain: 0.8 }));
     cue(T.run, () => { A.sfx('click', { gain: 1 }); A.stopMusic(0.12); music = false; A.sfx('drop', { gain: 0.5 }); });
@@ -547,7 +590,7 @@ export default {
 
         // ---- GL: the old world, wherever it is and whatever is being done to it ----
         worldRect(t);
-        const blur = ease.outCubic(seg(t, T.scrim, T.scrim + 0.5)) * (1 - ease.inOutCubic(seg(t, G.acc + 0.1, G.acc + 0.42)));
+        const blur = ease.outCubic(seg(t, T.scrim, T.scrim + 0.5)) * (1 - ease.inOutCubic(seg(t, T_OUT - 0.04, T_OUT + 0.26)));
         U.uRect.value.set(R.x / w, 1 - (R.y + R.h) / h, (R.x + R.w) / w, 1 - R.y / h);
         U.uPx.value.set(1 / (R.w * dpr), 1 / (R.h * dpr));
         U.uSA.value = w / h;
@@ -565,16 +608,15 @@ export default {
         U.uErr.value = inErr ? 1 : 0;
         pass.render(renderer);
 
-        const tagK = seg(t, G.acc + 0.26, G.acc + 0.52), tagGone = seg(t, b[0] + 0.5, b[0] + 0.85);
+        const tagK = seg(t, T_OUT + 0.2, T_OUT + 0.46), tagGone = seg(t, b[0] + 0.62, b[0] + 0.92), tagDel = t > b[0] + 0.26;
         const fx = clamp(ctx.focus.x / w, 0.06, 0.94), fy = clamp(ctx.focus.y / h, 0.12, 0.9);
         const tagScale = clamp(R.w / w, 0.5, 1) * clamp(D.s, 0.7, 1.2);
-        const tagDel = t > b[0] + 0.3 ? 1 : 0;
         const ha = Math.min(seg(t, T.grab, T.grab + 0.08), 1 - seg(t, T.drag1 + 0.12, T.drag1 + 0.4));
 
         if (t < T.drag0) {
           // ---- Act 1: the dialog over the frozen world ----
-          drawGag(g, th, D, plan, plan.gag, t, cur);
-          drawInspector(g, R, fx, fy, plan, plan.loseColor, tagK, 0, tagScale);
+          drawGag(g, th, D, plan, plan.gag, t, cur, confetti);
+          drawInspector(g, R, fx, fy, plan, plan.loseColor, tagK, false, 0, tagScale);
           drawHandles(g, th, R, S, ha, cornerOf(R, w, h), w, h);
         } else {
           // ---- Act 2: the IDE, with a hole where the GL layer shows the world ----
@@ -583,6 +625,7 @@ export default {
           assemble(t, w, h);
           drawIdeBack(g, th, L, plan, st, to);
           drawIdeFront(g, th, L, plan, st);
+          drawNag(g, th, L, plan, seg(t, T.nag0, T.nag0 + 0.4), seg(t, T.nag1, T.nag1 + 0.28), seg(t, T.nag0 + 0.42, T.nag0 + 1.0), t);
           const e = seg(t, T.drag0, T.drag1), rad = th.hard ? 0 : 8 * S * ease.inOutCubic(e);
           softShadow(g, R.x, R.y, R.w, R.h, rad, 80 * S * Math.sin(Math.PI * e), 0.42);
           g.globalCompositeOperation = 'destination-out';
@@ -596,7 +639,7 @@ export default {
             roundRect(g, R.x + 0.5, R.y + 0.5, R.w - 1, R.h - 1, rad);
             g.stroke();
           }
-          drawInspector(g, R, fx, fy, plan, plan.loseColor, tagK, tagGone, tagScale * (tagDel ? 1 : 1));
+          drawInspector(g, R, fx, fy, plan, plan.loseColor, tagK, tagDel, tagGone, tagScale);
           drawScaffold(g, R, plan, to, fx, fy, seg(t, b[3] + 0.12, b[3] + 0.4), seg(t, b[3] + 0.26, b[3] + 0.54), ease.outCubic(seg(t, b[4] + 0.1, b[4] + 0.4)), seg(t, b[3] + 0.05, b[3] + 0.35));
           drawReady(g, R, to, seg(t, T.build1 + 0.02, T.build1 + 0.3), t);
           drawHandles(g, th, R, S, ha, cornerOf(R, w, h), w, h);

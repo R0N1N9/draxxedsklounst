@@ -3,7 +3,7 @@
 // dimension's update and endFrame() after it. All styles live in input.css.
 
 const SLOTS = ['fire', 'alt', 'a1', 'a2', 'jump'];
-const KEY_SLOT = { Space: 'jump', ShiftLeft: 'a1', ShiftRight: 'a1', KeyQ: 'a1', KeyE: 'a2', KeyF: 'a2' };
+const KEY_SLOT = { Space: 'jump', ShiftLeft: 'a1', ShiftRight: 'a1', KeyQ: 'a1', KeyE: 'a2', KeyF: 'a2', KeyC: 'alt', ControlLeft: 'alt' };
 const MOVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight']);
 const BLOCKED = new Set(['Tab', 'Space', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight']);
 const PAD_BTN = { fire: 7, alt: 6, a1: 4, a2: 5, jump: 0 }; // standard mapping: RT, LT, LB, RB, A
@@ -65,6 +65,9 @@ export class MvInput {
     this._aimShot = false; // the stick was let go deflected: hold its direction for the firing poll
     this._aimUsed = false;
     this._looks = new Map(); // id -> { x, y, left }
+    this._glass = new Map(); // id -> { x, y } for every finger currently down, anywhere
+    this._adopted = new Set(); // ids taken over in setEnabled(true)
+    this._aimFired = false;
     this._held = new Map(); // id -> button
     this._pauseId = null;
     this._live = new Set();
@@ -137,6 +140,34 @@ export class MvInput {
     if (on) {
       this._layout();
       this._measure();
+      this._adopt();
+    }
+  }
+
+  // Fingers that were already down when the controls came on: one resting on the stick
+  // drives it, the rest look around ('look') or become the aim origin ('pointer'). A
+  // parked finger is never taken as a button press.
+  _adopt() {
+    if (!this.touch || !this._glass.size) return;
+    const g = this._geo;
+    for (const [id, p] of this._glass) {
+      if (id === this._moveId || id === this._aimId || id === this._pauseId || this._held.has(id) || this._looks.has(id)) continue;
+      if (this._moveId === null && Math.hypot(p.x - g.sx, p.y - g.sy) < g.reach) {
+        this._moveId = id;
+        this._moveEl.classList.add('mv-tc-active');
+        this._setMove(p.x, p.y);
+      } else if (this._aim === 'look') this._looks.set(id, { x: p.x, y: p.y, left: p.x < g.w / 2 });
+      else if (this._aimId === null && p.x >= g.w * AIM_ZONE) {
+        this._aimId = id;
+        this._aimOX = p.x;
+        this._aimOY = p.y;
+        this._aimShot = this._aimFired = false;
+        this._aimEl.style.left = `${p.x.toFixed(1)}px`;
+        this._aimEl.style.top = `${p.y.toFixed(1)}px`;
+        this._aimEl.classList.add('mv-tc-active');
+        this._setAim(p.x, p.y);
+      } else continue;
+      this._adopted.add(id);
     }
   }
 
@@ -314,6 +345,8 @@ export class MvInput {
     this._lookX = this._lookY = 0;
     this._altLatch = false;
     this._aimShot = false;
+    this._aimFired = false;
+    this._adopted.clear();
     this._looks.clear();
     for (const b of this._held.values()) { b.n = 0; b.el.classList.remove('mv-tc-down'); }
     this._held.clear();
@@ -355,6 +388,25 @@ export class MvInput {
     const stamp = () => { this._touchT = performance.now(); };
     this._on(window, 'touchstart', stamp, { capture: true, passive: true });
     this._on(window, 'touchend', stamp, { capture: true, passive: true });
+    // Every finger on the glass is tracked, wherever it landed and whether or not the
+    // controls are on: a thumb parked through a transition must work when the round starts.
+    const glass = (e, end, cancelled) => {
+      const list = e.changedTouches;
+      for (let i = 0; i < list.length; i++) {
+        const t = list[i], id = t.identifier;
+        if (end) this._glass.delete(id);
+        else this._glass.set(id, { x: t.clientX, y: t.clientY });
+        // A finger adopted from another element never reaches the overlay's own listeners.
+        if (!this._adopted.has(id) || root.contains(e.target)) continue;
+        if (end) { this._adopted.delete(id); this._touchUp(id, t, cancelled); }
+        else if (this._enabled) this._touchTrack(t);
+      }
+    };
+    const passive = { capture: true, passive: true };
+    this._on(window, 'touchstart', (e) => glass(e, false), passive);
+    this._on(window, 'touchmove', (e) => glass(e, false), passive);
+    this._on(window, 'touchend', (e) => glass(e, true, false), passive);
+    this._on(window, 'touchcancel', (e) => glass(e, true, true), passive);
     const active = { passive: false };
     this._on(root, 'touchstart', (e) => this._touchStart(e), active);
     this._on(root, 'touchmove', (e) => this._touchMove(e), active);
@@ -387,6 +439,7 @@ export class MvInput {
     // A move key held across a disabled spell comes back through its auto-repeat; an action
     // key must be pressed again, or every round would open with a phantom trigger pull.
     if (MOVE_KEYS.has(c)) this._keys.add(c);
+    else if (slot === 'alt' && this._kbmToggle()) { if (!e.repeat) this._altLatch = !this._altLatch; }
     else if (slot && !e.repeat) this._down(slot, c);
     else return;
     // On a touch device the mouse decides 'kbm': a keyboard alone has no pointer to aim with.
@@ -411,7 +464,15 @@ export class MvInput {
     if (!this._locked) { this._mx = e.clientX; this._my = e.clientY; this._mouseSeen = true; }
     this._device('kbm');
     if (e.button === 0) this._down('fire', 'M0');
-    else if (e.button === 2) this._down('alt', 'M2');
+    else if (e.button === 2) {
+      if (this._kbmToggle()) this._altLatch = !this._altLatch;
+      else this._down('alt', 'M2');
+    }
+  }
+
+  // "Toggle scope (instead of hold)" from the game's settings applies to alt on desktop too.
+  _kbmToggle() {
+    return !!(this.settings && this.settings.scopeToggle);
   }
 
   _mouseUp(e) {
@@ -668,7 +729,7 @@ export class MvInput {
         this._altLatch = !this._altLatch;
         c.el.classList.toggle('mv-tc-lit', this._altLatch);
       } else this._down(c.slot, 'T' + id);
-      if (c.slot === 'fire') buzz();
+      if (c.slot === 'fire') { buzz(); if (this._aimId !== null) this._aimFired = true; }
       return;
     }
     if (this._moveId === null && Math.hypot(x - g.sx, y - g.sy) < g.reach) {
@@ -682,6 +743,7 @@ export class MvInput {
       this._aimOX = x;
       this._aimOY = y;
       this._aimShot = false;
+      this._aimFired = false;
       this._aimEl.style.left = `${x.toFixed(1)}px`;
       this._aimEl.style.top = `${y.toFixed(1)}px`;
       this._aimEl.classList.add('mv-tc-active');
@@ -695,21 +757,23 @@ export class MvInput {
     if (e.cancelable) e.preventDefault();
     if (!this._enabled) return;
     const list = e.changedTouches, st = this.settings || {};
-    for (let i = 0; i < list.length; i++) {
-      const t = list[i], id = t.identifier;
-      if (id === this._moveId) this._setMove(t.clientX, t.clientY);
-      else if (id === this._aimId) this._setAim(t.clientX, t.clientY);
-      else {
-        const l = this._looks.get(id);
-        if (!l) continue; // a finger that slid off its button still holds it
-        const k = TOUCH_LOOK * num(l.left ? st.touchSensL : st.touchSensR, 1);
-        this._lookX += (t.clientX - l.x) * k;
-        this._lookY += (t.clientY - l.y) * k;
-        l.x = t.clientX;
-        l.y = t.clientY;
-      }
-    }
+    for (let i = 0; i < list.length; i++) this._touchTrack(list[i], st);
     this._device('touch');
+  }
+
+  _touchTrack(t, st = this.settings || {}) {
+    const id = t.identifier;
+    if (id === this._moveId) this._setMove(t.clientX, t.clientY);
+    else if (id === this._aimId) this._setAim(t.clientX, t.clientY);
+    else {
+      const l = this._looks.get(id);
+      if (!l) return; // a finger that slid off its button still holds it
+      const k = TOUCH_LOOK * num(l.left ? st.touchSensL : st.touchSensR, 1);
+      this._lookX += (t.clientX - l.x) * k;
+      this._lookY += (t.clientY - l.y) * k;
+      l.x = t.clientX;
+      l.y = t.clientY;
+    }
   }
 
   _touchEnd(e, cancelled) {
@@ -735,7 +799,7 @@ export class MvInput {
     else if (id === this._aimId) {
       if (t && !cancelled) this._setAim(t.clientX, t.clientY);
       // Drag to aim, release to fire: a deflected release is one trigger pull along the stick.
-      const shot = !cancelled && this._enabled && Math.hypot(this._aimX, this._aimY) > AIM_FIRE;
+      const shot = !cancelled && this._enabled && !this._aimFired && Math.hypot(this._aimX, this._aimY) > AIM_FIRE;
       const ax = this._aimX, ay = this._aimY;
       this._endAim();
       if (shot) {

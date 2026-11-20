@@ -1,12 +1,12 @@
 // Everything you see. The draw order is the lighting model: the glass floor and whatever
 // the dark may hide go down first, then the shadow volumes, then every source of light
 // (cover, tiles, lasers, rails, the local sniper) on top of the dark.
-import { TAU, clamp, clamp01, lerp, makeCanvas, makeRng, hashSeed, ease, angDiff } from '../../kit.js';
+import { TAU, clamp, clamp01, lerp, makeCanvas, makeRng, hashSeed, hexToRgb, ease, angDiff } from '../../kit.js';
 import { W, H, R, MID, GANTRY, CH_TOP, CH_BOT, BEAT, PULSE_EVERY, SPAWNS, SHUTTER, DRONE, RELOAD, BEAM_FADE } from './world.js';
 import { makeActors } from './actors.js';
-import { VOID, INK, VIOLET, EDGE, PINK, HOT, HAZARD, font } from './style.js';
+import { MARGIN, bakeFloor, bakeHalo } from './floor.js';
+import { INK, VIOLET, EDGE, PINK, HOT, HAZARD, font } from './style.js';
 
-const MARGIN = 70; // baked around the arena so halos are not cut off
 const MASK = 4;    // the shadow mask is a quarter-size sheet: the upscale is its soft edge
 const EYE = [9, 0, -4.5, 7.8, -4.5, -7.8]; // three eye points: a penumbra, not a knife edge
 const VP = { x: W / 2, y: H / 2 + 10 }, LIFT = 1.024; // pillar tops lean away from here
@@ -30,7 +30,8 @@ export function makeRenderer(ctx, world, S) {
   const mask = makeCanvas(W / MASK, H / MASK);
   const sprites = new Map();
   let floor = null, halo = null, bakedL = 0;
-  let haze = null, hazeKey = '';
+  let haze = null, hazeW = 0, hazeH = 0, hazeY = 0, touched = false;
+  const fonts = new Map();
 
   // ---- static vector art, built once ----
   const outlinePath = polyPath(new Path2D(), world.outline);
@@ -44,6 +45,17 @@ export function makeRenderer(ctx, world, S) {
       postsPath.lineTo(VP.x + (x - VP.x) * LIFT, VP.y + (y - VP.y) * LIFT);
       nodesPath.rect(x - 1.6, y - 1.6, 3.2, 3.2);
     }
+  }
+  // Chunky pieces get a second, inner line: glass with some thickness to it.
+  const insetPath = new Path2D();
+  for (const pc of world.pieces) {
+    if (pc.type === 'slab') continue;
+    const s = pc.solid, n = pc.pts.length / 2, pts = [];
+    let rad = 0;
+    for (let i = 0; i < n; i++) rad += Math.hypot(pc.pts[i * 2] - s.cx, pc.pts[i * 2 + 1] - s.cy) / n;
+    const f = 1 - 11 / rad;
+    for (let i = 0; i < n; i++) pts.push(s.cx + (pc.pts[i * 2] - s.cx) * f, s.cy + (pc.pts[i * 2 + 1] - s.cy) * f);
+    polyPath(insetPath, pts);
   }
   const gantryPath = polyPath(new Path2D(), [GANTRY.x0, 0, GANTRY.x1, 0, GANTRY.x1 - GANTRY.inset, GANTRY.d, GANTRY.x0 + GANTRY.inset, GANTRY.d]);
   const gridMinor = new Path2D(), gridMajor = new Path2D();
@@ -77,7 +89,7 @@ export function makeRenderer(ctx, world, S) {
     if (!c) {
       c = makeCanvas(96, 96);
       const gr = c.g.createRadialGradient(48, 48, 0, 48, 48, 48);
-      const n = parseInt(col.slice(1), 16), rgb = `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+      const q = hexToRgb(col), rgb = `${q.r},${q.g},${q.b}`;
       gr.addColorStop(0, `rgba(${rgb},1)`);
       gr.addColorStop(0.22, `rgba(${rgb},0.55)`);
       gr.addColorStop(0.55, `rgba(${rgb},0.15)`);
@@ -100,12 +112,12 @@ export function makeRenderer(ctx, world, S) {
     g.lineTo(x1, y1);
     g.stroke();
   }
-  /** A neon tube: bloom, tube, white-hot core. path = a Path2D, or null for the current path. */
-  function neon(path, col, wide, alpha) {
+  /** A neon tube: bloom, tube, white-hot core. path = a Path2D, or null for the current path. bloom scales the halo. */
+  function neon(path, col, wide, alpha, bloom = 1) {
     g.lineJoin = 'round';
     g.globalCompositeOperation = 'lighter';
     g.strokeStyle = col;
-    g.globalAlpha = alpha * 0.17;
+    g.globalAlpha = Math.min(1, alpha * 0.17 * bloom);
     g.lineWidth = wide * 4.4;
     if (path) g.stroke(path); else g.stroke();
     g.globalAlpha = alpha * 0.92;
@@ -122,7 +134,13 @@ export function makeRenderer(ctx, world, S) {
   function label(text, x, y, px, col, alpha, align) {
     const size = px / view.k;
     if (alpha <= 0.01) return;
-    g.font = font(Math.round(size * 10) / 10);
+    const fs = Math.round(size * 2) / 2;
+    let f = fonts.get(fs); // one string per size, not one per label per frame
+    if (!f) {
+      if (fonts.size > 48) fonts.clear();
+      fonts.set(fs, (f = font(fs)));
+    }
+    g.font = f;
     g.textAlign = align || 'center';
     g.textBaseline = 'middle';
     g.globalAlpha = alpha;
@@ -132,7 +150,9 @@ export function makeRenderer(ctx, world, S) {
   }
 
   function fit() {
-    const w = ctx.width, h = ctx.height, touch = ctx.input.device === 'touch';
+    // Once thumbs have been on the glass the layout stays put (a pad may take over later).
+    if (ctx.input.device === 'touch') touched = true;
+    const w = ctx.width, h = ctx.height, touch = touched;
     // Leave the floor clear of the thumbs (touch) or of the ability chips (desktop), and let
     // the score strip sit on the scoreboard housing rather than on the playfield.
     const below = touch ? clamp((h - 300) * 0.4, 12, 205) : 52;
@@ -151,127 +171,11 @@ export function makeRenderer(ctx, world, S) {
   }
 
   // ---- the baked sheets: the glass floor, and the halos under the cover ----
+  const art = { outlinePath, gridMinor, gridMajor, piecesPath, shutters: world.shutters, serial };
   function bake(L) {
     bakedL = L;
-    const bw = Math.round((W + 2 * MARGIN) * L), bh = Math.round((H + 2 * MARGIN) * L);
-    if (!floor) floor = makeCanvas(bw, bh);
-    else { floor.canvas.width = bw; floor.canvas.height = bh; }
-    const f = floor.g, hair = 1 / L;
-    f.setTransform(L, 0, 0, L, MARGIN * L, MARGIN * L);
-
-    // Corner housings: hatched, so the chamfers read as structure rather than as nothing.
-    f.save();
-    f.beginPath();
-    f.rect(0, 0, W, H);
-    f.clip();
-    f.strokeStyle = 'rgba(127,139,255,0.10)';
-    f.lineWidth = hair * 1.2;
-    f.beginPath();
-    for (let d = 20; d < 480; d += 16) {
-      f.moveTo(0, H - d); f.lineTo(d, H);
-      f.moveTo(W, H - d); f.lineTo(W - d, H);
-      if (d < 200) { f.moveTo(0, d); f.lineTo(d, 0); f.moveTo(W, d); f.lineTo(W - d, 0); }
-    }
-    f.stroke();
-    f.restore();
-
-    f.save();
-    f.clip(outlinePath);
-    f.fillStyle = VOID;
-    f.fillRect(0, 0, W, H);
-    const gr = f.createRadialGradient(MID.x, MID.y + 10, 80, MID.x, MID.y + 10, 1000);
-    gr.addColorStop(0, '#1b134c');
-    gr.addColorStop(0.5, '#0f0b31');
-    gr.addColorStop(1, '#09071d');
-    f.fillStyle = gr;
-    f.fillRect(0, 0, W, H);
-    // Sheen: two soft diagonal bands, a skylight caught in the glass.
-    for (const [x, wd, al] of [[330, 250, 0.06], [1010, 430, 0.04]]) {
-      const lg = f.createLinearGradient(x, 0, x + 0.764 * wd, 0.425 * wd);
-      lg.addColorStop(0, 'rgba(190,170,255,0)');
-      lg.addColorStop(0.5, `rgba(190,170,255,${al})`);
-      lg.addColorStop(1, 'rgba(190,170,255,0)');
-      f.fillStyle = lg;
-      f.fillRect(0, 0, W, H);
-    }
-    f.lineWidth = hair;
-    f.strokeStyle = 'rgba(140,112,255,0.085)';
-    f.stroke(gridMinor);
-    f.lineWidth = hair * 1.3;
-    f.strokeStyle = 'rgba(150,124,255,0.19)';
-    f.stroke(gridMajor);
-    f.fillStyle = 'rgba(214,200,255,0.5)';
-    for (let x = 100; x < W; x += 100) for (let y = 100; y < H; y += 100) f.fillRect(x - 1.3, y - 1.3, 2.6, 2.6);
-
-    // A reticle set into the floor under the centre.
-    f.strokeStyle = 'rgba(160,136,255,0.16)';
-    f.lineWidth = hair * 1.4;
-    for (const r of [150, 245]) { f.beginPath(); f.arc(MID.x, MID.y, r, 0, TAU); f.stroke(); }
-    f.setLineDash([3, 9]);
-    f.beginPath(); f.arc(MID.x, MID.y, 197, 0, TAU); f.stroke();
-    f.setLineDash([]);
-    f.beginPath();
-    for (let i = 0; i < 4; i++) {
-      const c = Math.cos((i * TAU) / 4), s = Math.sin((i * TAU) / 4);
-      f.moveTo(MID.x + c * 245, MID.y + s * 245); f.lineTo(MID.x + c * 285, MID.y + s * 285);
-      f.moveTo(MID.x + c * 120, MID.y + s * 120); f.lineTo(MID.x + c * 150, MID.y + s * 150);
-    }
-    f.stroke();
-
-    // Rails for the shutters, a lane for the polisher.
-    f.strokeStyle = 'rgba(255,79,176,0.26)';
-    f.lineWidth = hair * 1.3;
-    const y0 = MID.y - SHUTTER.amp - SHUTTER.len / 2 - 8, y1 = MID.y + SHUTTER.amp + SHUTTER.len / 2 + 8;
-    f.beginPath();
-    for (const sh of world.shutters) {
-      for (const o of [-5, 5]) { f.moveTo(sh.x + o, y0); f.lineTo(sh.x + o, y1); }
-      for (const y of [y0, y1]) { f.moveTo(sh.x - 12, y); f.lineTo(sh.x + 12, y); }
-      for (let y = y0 + 25; y < y1; y += 25) { f.moveTo(sh.x - 5, y); f.lineTo(sh.x + 5, y); }
-    }
-    f.stroke();
-    f.strokeStyle = 'rgba(255,79,176,0.2)';
-    f.setLineDash([10, 8]);
-    f.beginPath();
-    f.moveTo(MID.x - DRONE.amp - 26, DRONE.y);
-    f.lineTo(MID.x + DRONE.amp + 26, DRONE.y);
-    f.stroke();
-    f.setLineDash([]);
-
-    // Lattice coordinates along the walls, and the arena's serial.
-    f.font = font(10, 500);
-    f.textBaseline = 'middle';
-    f.textAlign = 'center';
-    f.fillStyle = 'rgba(190,176,255,0.3)';
-    for (let i = 0; i < 16; i++) { const x = i * 100 + 50; if (x > CH_BOT + 20 && x < W - CH_BOT - 20) f.fillText(String(i + 1).padStart(2, '0'), x, H - 13); }
-    for (let j = 1; j < 6; j++) { const y = j * 100 + 50; f.fillText('ABCDEFGHI'[j], 13, y); f.fillText('ABCDEFGHI'[j], W - 13, y); }
-    f.font = font(9, 500);
-    f.fillStyle = 'rgba(190,176,255,0.22)';
-    f.fillText(serial.split('').join(' '), MID.x, H - 30);
-    f.restore();
-
-    // The outer wall's halo (it never dissolves, so it lives on the floor sheet).
-    f.save();
-    f.shadowColor = EDGE;
-    f.shadowBlur = 30 * L;
-    f.strokeStyle = 'rgba(127,139,255,0.5)';
-    f.lineWidth = 4;
-    f.lineJoin = 'round';
-    f.stroke(outlinePath);
-    f.restore();
-
-    // Halos under the cover, at half size (they are blur anyway). Faded out in sudden death.
-    const Lh = L * 0.5, hw = Math.round((W + 2 * MARGIN) * Lh), hh = Math.round((H + 2 * MARGIN) * Lh);
-    if (!halo) halo = makeCanvas(hw, hh);
-    else { halo.canvas.width = hw; halo.canvas.height = hh; }
-    const hg = halo.g;
-    hg.setTransform(Lh, 0, 0, Lh, MARGIN * Lh, MARGIN * Lh);
-    hg.shadowColor = VIOLET;
-    hg.shadowBlur = 30 * Lh;
-    hg.strokeStyle = 'rgba(154,120,255,0.75)';
-    hg.lineWidth = 5;
-    hg.lineJoin = 'round';
-    hg.stroke(piecesPath);
-    hg.stroke(piecesPath);
+    floor = bakeFloor(floor, L, art);
+    halo = bakeHalo(halo, L, art);
   }
 
   // ---- the dark: shadow volumes from the local sniper's eye, with light punched through ----
@@ -372,16 +276,15 @@ export function makeRenderer(ctx, world, S) {
     const sh = S.shakeOut;
     const cover = 1 - st.dissolve;
 
-    // ---- backdrop ----
-    g.fillStyle = VOID;
-    g.fillRect(0, 0, w, h);
-    const hk = `${w}|${h}|${view.cx | 0}|${view.cy | 0}`;
-    if (hk !== hazeKey) {
-      hazeKey = hk;
-      haze = g.createRadialGradient(view.cx, view.cy, 0, view.cx, view.cy, Math.max(w, h) * 0.72);
-      haze.addColorStop(0, 'rgba(78,48,190,0.26)');
-      haze.addColorStop(0.55, 'rgba(42,22,120,0.1)');
-      haze.addColorStop(1, 'rgba(0,0,0,0)');
+    // ---- backdrop: one opaque fill (haze behind the glass, darker to the corners) ----
+    if (w !== hazeW || h !== hazeH || view.cy !== hazeY) {
+      hazeW = w;
+      hazeH = h;
+      hazeY = view.cy;
+      haze = g.createRadialGradient(view.cx, view.cy, 0, view.cx, view.cy, Math.hypot(w, h) * 0.6);
+      haze.addColorStop(0, '#170f45');
+      haze.addColorStop(0.5, '#0b0724');
+      haze.addColorStop(1, '#030208');
     }
     g.fillStyle = haze;
     g.fillRect(0, 0, w, h);
@@ -392,7 +295,6 @@ export function makeRenderer(ctx, world, S) {
     g.scale(k, k);
     g.translate(-cam.x, -cam.y);
 
-    drawWatchers(px);
     g.drawImage(floor.canvas, -MARGIN, -MARGIN, W + 2 * MARGIN, H + 2 * MARGIN);
 
     // ---- on the floor ----
@@ -460,16 +362,17 @@ export function makeRenderer(ctx, world, S) {
     const dark = S.dark * (1 - 0.88 * clamp01(S.pulse.flash * 1.4));
     if (dark > 0.01 && me.alive) {
       shade(me);
-      g.globalAlpha = dark * 0.92;
+      g.globalAlpha = dark * 0.87;
       g.drawImage(mask.canvas, 0, 0, W, H);
       g.globalAlpha = 1;
     }
 
     // ---- architecture: light, so it shows in the dark ----
+    drawWatchers(px);
     g.fillStyle = '#0a0826';
     g.fill(gantryPath);
     drawGantry(px, beat);
-    neon(outlinePath, EDGE, wide * 1.1, 1);
+    neon(outlinePath, EDGE, wide * 1.1, 1, 1 + 0.9 * thump); // every tube in the room keeps time
     if (cover > 0.01) {
       const flick = st.dissolve > 0 ? 0.55 + 0.45 * Math.sin(t * 70) : 1; // sudden death: the cover gutters out
       g.globalAlpha = cover;
@@ -482,7 +385,10 @@ export function makeRenderer(ctx, world, S) {
       g.stroke(topsPath);
       g.globalAlpha = cover * 0.6;
       g.stroke(postsPath);
-      neon(piecesPath, VIOLET, wide, cover * flick);
+      g.strokeStyle = VIOLET;
+      g.globalAlpha = cover * 0.45;
+      g.stroke(insetPath);
+      neon(piecesPath, VIOLET, wide, cover * flick, 1 + 0.9 * thump);
       g.fillStyle = HOT;
       g.globalAlpha = cover * 0.9;
       g.fill(nodesPath);
@@ -596,6 +502,30 @@ export function makeRenderer(ctx, world, S) {
     if (S.kill) {
       const kt = S.kill.t, vc = cols[S.kill.victim];
       const r = 20 + kt * 1500, a = clamp01(1 - kt / 0.95);
+      // The glass under them gives.
+      const grow = clamp01(kt / 0.14) * 5;
+      g.lineJoin = 'miter';
+      g.lineCap = 'round';
+      g.beginPath();
+      for (const c of S.kill.cracks) {
+        g.moveTo(c[0], c[1]);
+        for (let i = 1; i <= 5 && i - 1 < grow; i++) {
+          const f = Math.min(1, grow - (i - 1));
+          g.lineTo(lerp(c[i * 2 - 2], c[i * 2], f), lerp(c[i * 2 - 1], c[i * 2 + 1], f));
+        }
+      }
+      g.save();
+      g.clip(outlinePath); // glass cracks; the void beyond it does not
+      g.globalCompositeOperation = 'lighter';
+      g.strokeStyle = vc;
+      g.globalAlpha = 0.3;
+      g.lineWidth = 8;
+      g.stroke();
+      g.strokeStyle = HOT;
+      g.globalAlpha = 0.55 + 0.45 * a;
+      g.lineWidth = Math.max(1.5, 1.1 * px);
+      g.stroke();
+      g.restore();
       latticeRing(S.kill.x, S.kill.y, r, 110, HOT, a);
       latticeRing(S.kill.x, S.kill.y, r * 0.72, 70, vc, a * 0.9);
       g.globalCompositeOperation = 'lighter';
@@ -632,10 +562,6 @@ export function makeRenderer(ctx, world, S) {
       g.globalAlpha = 1;
       g.globalCompositeOperation = 'source-over';
     }
-    // Vignette: two soft bars are cheaper than a full-screen radial, and frame a wide arena better.
-    g.fillStyle = 'rgba(2,1,8,0.5)';
-    const edge = Math.max(0, view.cx - (W * view.s) / 2 - 8);
-    if (edge > 2) { g.fillRect(0, 0, edge, h); g.fillRect(w - edge, 0, edge, h); }
   }
 
   // The scoreboard housing. Its wings carry the pulse meter: sixteen beats, then the room blinks.

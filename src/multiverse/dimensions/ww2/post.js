@@ -112,7 +112,7 @@ export function makePost(THREE, renderer) {
       renderer.getDrawingBufferSize(size);
       const w = Math.max(8, size.x | 0), h = Math.max(8, size.y | 0);
       // Multisample where there are few pixels to hide the stair-steps; retina hides them itself.
-      const samples = w * h > 4.2e6 ? 0 : w * h > 2.2e6 ? 2 : 4;
+      const samples = (globalThis.__ww2 || {}).noMsaa ? 0 : w * h > 4.2e6 ? 0 : w * h > 2.2e6 ? 2 : 4;
       if (scene.samples !== samples) { scene.samples = samples; scene.dispose(); }
       scene.setSize(w, h);
       const qw = Math.max(4, w >> 2), qh = Math.max(4, h >> 2), ew = Math.max(2, w >> 3), eh = Math.max(2, h >> 3);

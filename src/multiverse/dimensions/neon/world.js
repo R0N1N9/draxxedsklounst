@@ -29,7 +29,7 @@ const TYPES = [
   { k: 'diamond', w: 2, make: (x, y) => ngonPts(x, y, 52, 4) },
   { k: 'hex', w: 2, make: (x, y) => ngonPts(x, y, 46, 6) },
   { k: 'slab', w: 2, make: (x, y) => slabPts(x, y, 170, 18, 0) },
-  { k: 'slab', w: 2, make: (x, y) => slabPts(x, y, 170, 18, Math.PI / 2) },
+  { k: 'slab', w: 1, make: (x, y) => slabPts(x, y, 170, 18, Math.PI / 2) },
   { k: 'slab', w: 2, make: (x, y) => slabPts(x, y, 160, 18, Math.PI / 4) },
   { k: 'slab', w: 2, make: (x, y) => slabPts(x, y, 160, 18, -Math.PI / 4) },
 ];

@@ -26,17 +26,17 @@ const PAINT = {
     g.strokeStyle = col;
     g.lineWidth = s * 0.022;
     g.beginPath();
-    g.arc(c, c, s * 0.33, 0, TAU);
+    g.arc(c, c, s * 0.27, 0, TAU);
     g.stroke();
     g.lineWidth = s * 0.014;
     g.beginPath();
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       g.moveTo(c + dx * s * 0.07, c + dy * s * 0.07);
-      g.lineTo(c + dx * s * 0.42, c + dy * s * 0.42);
+      g.lineTo(c + dx * s * 0.34, c + dy * s * 0.34);
     }
     g.stroke();
     g.fillStyle = '#fff';
-    for (let i = 1; i <= 3; i++) for (const d of [-1, 1]) g.fillRect(c + d * i * s * 0.08 - s * 0.008, c + s * 0.012, s * 0.016, s * 0.03);
+    for (let i = 1; i <= 3; i++) for (const d of [-1, 1]) g.fillRect(c + d * i * s * 0.065 - s * 0.007, c + s * 0.012, s * 0.014, s * 0.028);
     g.beginPath();
     g.arc(c, c, s * 0.018, 0, TAU);
     g.fill();
@@ -45,11 +45,11 @@ const PAINT = {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillStyle = '#fff';
-    g.font = `700 ${s * 0.4}px ${SANS}`;
+    g.font = `700 ${s * 0.34}px ${SANS}`;
     g.fillText(`${ctx.score[0]}:${ctx.score[1]}`, s / 2, s * 0.47);
     g.fillStyle = col;
-    g.font = `600 ${s * 0.085}px ${MONO}`;
-    g.fillText(`ROUND ${ctx.round}`, s / 2, s * 0.74);
+    g.font = `600 ${s * 0.075}px ${MONO}`;
+    g.fillText(`ROUND ${ctx.round}`, s / 2, s * 0.7);
   },
   // Whoever did this.
   name(g, s, ctx, col) {
@@ -57,10 +57,10 @@ const PAINT = {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     g.fillStyle = '#fff';
-    g.font = `600 ${s * 0.08}px ${MONO}`;
-    g.fillText('IT WAS', s / 2, s * 0.33);
-    const px = fitText(g, who, s * 0.74, s * 0.26, SANS);
-    g.font = `700 ${px * 0.94}px ${SANS}`;
+    g.font = `600 ${s * 0.07}px ${MONO}`;
+    g.fillText('IT WAS', s / 2, s * 0.36);
+    const px = fitText(g, who, s * 0.58, s * 0.22, SANS);
+    g.font = `700 ${px * 0.92}px ${SANS}`;
     g.fillStyle = col;
     g.fillText(who, s / 2, s * 0.53);
   },
@@ -68,12 +68,12 @@ const PAINT = {
     const txt = ctx.how || 'ONE SHOT';
     g.textAlign = 'center';
     g.textBaseline = 'middle';
-    const px = fitText(g, txt, s * 0.74, s * 0.24, SANS);
-    g.font = `700 ${px * 0.94}px ${SANS}`;
+    const px = fitText(g, txt, s * 0.58, s * 0.2, SANS);
+    g.font = `700 ${px * 0.92}px ${SANS}`;
     g.fillStyle = '#fff';
     g.fillText(txt, s / 2, s * 0.5);
     g.fillStyle = col;
-    g.fillRect(s * 0.2, s * 0.66, s * 0.6, s * 0.018);
+    g.fillRect(s * 0.26, s * 0.63, s * 0.48, s * 0.016);
   },
   // Where it all started: a mountain valley, three ridges and a low sun.
   valley(g, s, ctx, col, seed) {
@@ -106,15 +106,15 @@ const PAINT = {
     g.lineWidth = s * 0.02;
     g.lineJoin = 'round';
     g.beginPath();
-    const y = s * 0.52, beat = [0, 0, -0.05, 0.04, -0.3, 0.22, -0.04, 0, 0];
-    g.moveTo(s * 0.08, y);
-    let x = s * 0.1;
-    for (let b = 0; b < 2; b++) for (const v of beat) { g.lineTo(x, y + v * s); x += s * 0.022; }
-    g.lineTo(s * 0.92, y);
+    const y = s * 0.52, beat = [0, 0, -0.04, 0.03, -0.24, 0.18, -0.03, 0, 0];
+    g.moveTo(s * 0.2, y);
+    let x = s * 0.22;
+    for (let b = 0; b < 2; b++) for (const v of beat) { g.lineTo(x, y + v * s); x += s * 0.016; }
+    g.lineTo(s * 0.8, y);
     g.stroke();
     g.fillStyle = '#fff';
     g.beginPath();
-    g.arc(s * 0.92, y, s * 0.028, 0, TAU);
+    g.arc(s * 0.8, y, s * 0.024, 0, TAU);
     g.fill();
   },
 };

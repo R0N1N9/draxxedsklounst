@@ -249,12 +249,16 @@ function wirePause() {
     const cardOpen = $('h-card').classList.contains('on') && $('h-card').querySelector('button');
     show(!locked && !cardOpen && !game.toolsOpen);
   });
-  $('tb-pause').addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); show(true); }, { passive: false });
+  $('tb-pause').addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!game.frozen && !game.suspended) show(true);
+  }, { passive: false });
   $('btn-resume').onclick = () => {
     primeGyro();
     applyInputSettings();
     show(false);
-    game.input.requestLock();
+    if (!game.frozen && !game.suspended) game.input.requestLock();
   };
   $('btn-exit').onclick = () => {
     if (game.net && game.net.close) game.net.close();

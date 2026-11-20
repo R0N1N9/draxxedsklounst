@@ -48,6 +48,11 @@ export function makeSound(ctx) {
       A.noise({ filter: 'highpass', freq: 5200, dur: 0.05, gain: 0.2, attack: 0.001, pan: p });
     },
     impact(x) { A.sfx('hit', { gain: 0.45, pitch: 1.2, pan: pan(x) }); },
+    // A rail that only just missed you.
+    whizz() {
+      A.noise({ filter: 'bandpass', freq: 5200, freqEnd: 700, q: 2.2, dur: 0.2, gain: 0.5, attack: 0.004 });
+      A.tone({ type: 'sawtooth', freq: 1400, freqEnd: 260, dur: 0.16, gain: 0.06 });
+    },
     ready() {
       A.sfx('click', { gain: 0.5 });
       A.tone({ type: 'triangle', freq: 990, freqEnd: 1480, dur: 0.09, gain: 0.07 });
@@ -71,7 +76,7 @@ export function makeSound(ctx) {
       A.sfx('drop', { gain: 0.5 });
       A.tone({ type: 'sawtooth', freq: 220, freqEnd: 40, dur: 0.7, gain: 0.12 });
     },
-    count(i) { A.tone({ type: 'triangle', freq: 660 * Math.pow(2, i / 12), dur: 0.08, gain: 0.07 }); },
+    count(i) { A.tone({ type: 'triangle', freq: 660 * Math.pow(2, (i * 2) / 12), dur: 0.08, gain: 0.07 }); },
     pulse() {
       A.sfx('bell', { gain: 0.35, pitch: 0.5 });
       A.noise({ filter: 'bandpass', freq: 400, freqEnd: 5000, q: 1.2, dur: 0.5, gain: 0.3, attack: 0.02 });
