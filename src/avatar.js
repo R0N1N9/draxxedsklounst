@@ -1026,7 +1026,7 @@ export class Avatar {
     const kit = look.kit || {};
     const hat = HATS[look.hat] ? look.hat : DEFAULT_GEAR[outfit].hat;
     const eyes = EYEWEAR[look.eyes] ? look.eyes : DEFAULT_GEAR[outfit].eyes;
-    const key = [outfit, thermal, pollo, lens, themeId, hat, eyes, look.vest, kit.scout, kit.stealth, kit.tactical].join('|');
+    const key = [outfit, thermal, pollo, lens, themeId, hat, eyes, look.vest, kit.scout, kit.stealth, kit.tactical, look.ponchoTheme].join('|');
     if (this.look === key) return;
     this.look = key;
     const wraith = outfit === 'wraith';
@@ -1075,7 +1075,9 @@ export class Avatar {
       setMat(o, mat(hex, o.userData.flat));
     });
     // Poncho camo follows the theme: woodland tones for the ghillie, high-contrast urban for the wraith.
-    const pal = T.colors ? [T.colors[4], T.colors[1], T.colors[0], T.colors[2], T.colors[3]] : (wraith ? CAMO.urban : CAMO.olive).map((h) => retint(h, theme, THEMES[THEME_DEFAULT[outfit]].base));
+    // A poncho can carry its own pattern over the uniform (Sniper Cell: urban digital over multicam black).
+    const PT = !pollo && THEMES[look.ponchoTheme] && THEMES[look.ponchoTheme].colors ? THEMES[look.ponchoTheme] : null;
+    const pal = PT ? [PT.colors[4], PT.colors[1], PT.colors[0], PT.colors[2], PT.colors[3]] : T.colors ? [T.colors[4], T.colors[1], T.colors[0], T.colors[2], T.colors[3]] : (wraith ? CAMO.urban : CAMO.olive).map((h) => retint(h, theme, THEMES[THEME_DEFAULT[outfit]].base));
     for (const o of this.ponchoMeshes) {
       if (o.userData.lining) setMat(o, ponchoLining(thermal ? 'foil' : 'dark'));
       else {

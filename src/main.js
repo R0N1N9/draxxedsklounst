@@ -224,6 +224,7 @@ $('in-toggle').onchange = (e) => store.set('toggle', (settings.scopeToggle = e.t
 
 function showPanel(id) {
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('on', p.id === id));
+  document.querySelector('.menu-card').classList.toggle('cell-open', id === 'panel-cell');
 }
 document.querySelectorAll('.back').forEach((b) => (b.onclick = () => {
   if (net) { net.close(); net = null; }
@@ -578,7 +579,8 @@ $('btn-join').onclick = async () => {
     goFullscreen();
     const o = { net, pal: PALETTES[m.pal] ? m.pal : 'dusk', oppName: String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16) };
     // The host decides the mode: a Multiverse host says so in its hello.
-    if (m.mv) startMultiverse('guest', { ...o, match: m.mv });
+    if (m.cell) startCell('guest', { net, cell: m.cell, partnerName: o.oppName });
+    else if (m.mv) startMultiverse('guest', { ...o, match: m.mv });
     else startGame('guest', o);
   });
   net.on('open', () => {
@@ -592,6 +594,82 @@ $('btn-join').onclick = async () => {
     $('join-status').textContent = e.message || 'Could not connect.';
   }
 };
+
+// ---- Sniper Cell: Infiltration (co-op stealth) ----
+const CELL_CALL = { shooter: 'Ra', spotter: 'R\u014dnin' };
+const cellSet = { role: store.get('cellRole', 'shooter'), diff: store.get('cellDiff', 'operative'), names: store.get('cellNames', {}) };
+const cellName = (role) => ((cellSet.names[role] || '').trim() || CELL_CALL[role]).replace(/[<>&"]/g, '').slice(0, 16);
+function syncCell() {
+  document.querySelectorAll('#panel-cell .cell-role').forEach((b) => b.classList.toggle('on', b.dataset.role === cellSet.role));
+  document.querySelectorAll('#cell-diff button').forEach((b) => b.classList.toggle('on', b.dataset.d === cellSet.diff));
+  $('in-cell-name').value = cellSet.names[cellSet.role] || '';
+  $('in-cell-name').placeholder = CELL_CALL[cellSet.role];
+}
+document.querySelectorAll('#panel-cell .cell-role').forEach((b) => (b.onclick = () => { cellSet.role = b.dataset.role; store.set('cellRole', cellSet.role); syncCell(); }));
+document.querySelectorAll('#cell-diff button').forEach((b) => (b.onclick = () => { cellSet.diff = b.dataset.d; store.set('cellDiff', cellSet.diff); syncCell(); }));
+$('in-cell-name').oninput = (e) => { cellSet.names[cellSet.role] = e.target.value; store.set('cellNames', cellSet.names); };
+$('btn-cell').onclick = () => { $('panel-cell').classList.remove('hosting'); syncCell(); showPanel('panel-cell'); };
+syncCell();
+
+async function startCell(mode, opts = {}) {
+  if (game || director) return;
+  showPanel('panel-loading');
+  $('loading-text').textContent = 'Inserting at Kestrel Ridge\u2026';
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+  const quality = settings.quality === 'auto' ? detectQuality() : settings.quality;
+  const { CellGame } = await import('./cell/cell.js');
+  const c = opts.cell || { role: cellSet.role, diff: cellSet.diff, seed: (Math.random() * 1e6) | 0 };
+  // The guest plays whichever role the host didn't take.
+  const role = mode === 'guest' ? (c.role === 'shooter' ? 'spotter' : 'shooter') : c.role;
+  game = new CellGame({ mode, net: opts.net || null, role, diff: c.diff, seed: c.seed, quality, settings: { ...settings }, audio, name: cellName(role), partnerName: opts.partnerName || CELL_CALL[role === 'shooter' ? 'spotter' : 'shooter'] });
+  if (opts.hello) game.hello = opts.hello;
+  window.__game = game;
+  document.body.classList.toggle('touch', game.input.touch);
+  $('menu').classList.remove('on');
+  $('touch').classList.add('active');
+  game.input.enabled = true;
+  game.input.requestLock();
+}
+$('btn-cell-solo').onclick = () => { audio.unlock(); primeGyro(); goFullscreen(); startCell('solo'); };
+$('btn-cell-join').onclick = () => { showPanel('panel-join'); $('in-code').focus(); };
+$('btn-cell-cancel').onclick = () => { if (net) { net.close(); net = null; } $('panel-cell').classList.remove('hosting'); };
+$('btn-cell-host').onclick = async () => {
+  audio.unlock();
+  primeGyro();
+  $('panel-cell').classList.add('hosting');
+  net = new Net();
+  $('cell-status').textContent = 'Setting up\u2026';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    hostCode = randomCode(5);
+    $('cell-code').textContent = hostCode;
+    try { await net.host(hostCode, { local: LOCAL }); break; } catch (e) {
+      console.warn(e);
+      if (attempt === 3) { $('cell-status').textContent = 'Could not reach the matchmaking server. Check your connection and try again.'; return; }
+      net.close();
+      net = new Net();
+    }
+  }
+  const other = cellSet.role === 'shooter' ? 'spotter' : 'shooter';
+  $('cell-status').textContent = `Waiting for your ${other}\u2026 You are the ${cellSet.role}.`;
+  const cell = { role: cellSet.role, diff: cellSet.diff, seed: (Math.random() * 1e6) | 0 };
+  const hello = { t: 'hello', name: cellName(cellSet.role), cell };
+  net.on('hello', () => net.send(hello));
+  net.on('open', () => {
+    if (game) return;
+    net.send(hello);
+    $('cell-status').textContent = 'Friend connected!';
+    goFullscreen();
+    startCell('host', { net, cell, hello, partnerName: CELL_CALL[other] });
+  });
+};
+$('btn-cell-share').onclick = async () => {
+  const link = inviteLink();
+  const text = `Join my Sniper Cell op in Draxxed Sklounst \u2014 code ${hostCode}`;
+  if (navigator.share) { try { await navigator.share(FILE_MODE ? { title: 'Sniper Cell', text } : { title: 'Sniper Cell', text, url: link }); return; } catch {} }
+  (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? text : link) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied to clipboard!'), () => prompt('Copy this link:', link));
+};
+$('btn-cell-copy').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? hostCode : inviteLink()) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied!'), () => prompt('Copy:', FILE_MODE ? hostCode : inviteLink()));
+if (params.get('cell') === 'solo') { audio.unlock(); startCell('solo', { cell: { role: params.get('role') === 'spotter' ? 'spotter' : 'shooter', diff: params.get('diff') || 'operative', seed: 7 } }); }
 
 if (params.get('join')) {
   showPanel('panel-join');

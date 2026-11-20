@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="src/multiverse/multiverse.css" />
   <link rel="stylesheet" href="src/multiverse/input.css" />
+  <link rel="stylesheet" href="src/cell/cell.css" />
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
   </script>
@@ -44,6 +45,7 @@
           <select data-setting="mode"><option value="classic">Duel</option><option value="app">Do you want to develop an app?</option></select></label>
         <label class="field" id="field-target" style="display:none"><span>Points to win</span>
           <select data-setting="mvTarget"><option value="3">First to 3</option><option value="5">First to 5</option><option value="7">First to 7</option><option value="10">First to 10</option></select></label>
+        <button id="btn-cell" class="cell-btn">SNIPER CELL: INFILTRATION <em>co-op stealth</em></button>
         <button id="btn-host" class="primary">Host a match</button>
         <button id="btn-join-open">Join with code</button>
         <button id="btn-ai-open">Vs AI</button>
@@ -97,6 +99,39 @@
             <tr><td>Bipod (prone, stopped)</td><td>X</td></tr>
           </table>
         </details>
+      </div>
+
+      <div id="panel-cell" class="panel">
+        <div class="cell-setup">
+          <p class="hint small">Night op at the Kestrel Ridge data center. Break in, upload the malware, pull the archive drive, get it to the LZ. Solo: the AI plays the other role. Co-op: you pick, your friend gets the other.</p>
+          <div class="cell-roles">
+            <button class="cell-role" data-role="shooter"><b>SHOOTER</b><i>default callsign Ra</i><span>Suppressed KR-50 bolt-action, night-vision scope, active camo, P-9 sidearm.</span></button>
+            <button class="cell-role" data-role="spotter"><b>SPOTTER</b><i>default callsign R&#333;nin</i><span>P-9 and two mags. CYBER OPS tablet, hacks, scans, supply drops, recon quad.</span></button>
+          </div>
+          <label class="field"><span>Callsign for this role</span><input id="in-cell-name" maxlength="14" autocomplete="off" /></label>
+          <div class="seg" id="cell-diff"><button data-d="recruit">Recruit</button><button data-d="operative">Operative</button><button data-d="ghost">Ghost</button></div>
+          <button id="btn-cell-solo" class="primary">Solo (AI partner)</button>
+          <button id="btn-cell-host">Host co-op</button>
+          <button id="btn-cell-join">Join with code</button>
+          <details class="controls"><summary>How to play</summary>
+            <ul>
+              <li><b>Objectives:</b> breach the fence &rarr; plant a relay in the Electrical Room &rarr; drop the Site Chief and take his badge &rarr; badge in at the vault while the spotter cracks it &rarr; hold the console through the upload (the spotter fights SENTINEL&rsquo;s trace) &rarr; pull the drive (lockdown!) &rarr; out the loading dock to the LZ.</li>
+              <li><b>Stealth:</b> guards fill a ? then ! meter when they see you. Dark, prone, still and cloaked are all harder to see. An alert guard radios the alarm 1.5 s later &mdash; drop him first. Bodies get found. Unsuppressed shots are heard 70 m away.</li>
+              <li><b>SENTINEL</b> sends fresh patrols out of the barracks and the south gate, and relaunches patrol drones. Shoot the drones down.</li>
+              <li><b>Shooter:</b> G active camo (drains, firing flickers it), F tag, 1/2 rifle/pistol, B pistol suppressor, N night vision, V request supply, TAB map + requests.</li>
+              <li><b>Spotter:</b> TAB tablet (click contacts to tag, cameras/doors to hack, 1&ndash;9 payloads, C hold crack, X hold fight trace, right-click ping), Q recon quad, F tag, B suppressor, N night vision.</li>
+              <li><b>Both:</b> E interact / silent takedown from behind / revive. A downed operator bleeds out in 16 s.</li>
+            </ul>
+          </details>
+          <button class="ghost back">Back</button>
+        </div>
+        <div class="cell-host">
+          <p class="hint">Send this to your friend:</p>
+          <div class="cell-code" id="cell-code">-----</div>
+          <div class="row"><button id="btn-cell-share" class="primary">Share invite link</button><button id="btn-cell-copy">Copy</button></div>
+          <p class="hint small" id="cell-status">Setting up&hellip;</p>
+          <button class="ghost" id="btn-cell-cancel">Cancel</button>
+        </div>
       </div>
 
       <div id="panel-host" class="panel">

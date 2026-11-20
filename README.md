@@ -107,6 +107,68 @@ Click the game view with the mouse and it switches to mouse mode: the mouse aims
 | Pause menu | Esc | II |
 | Sandbox tools | B | TOOLS |
 
+## Sniper Cell: Infiltration
+
+A night stealth mission for one or two players, built around the feel of a classic night sniping level: a dark valley, a lit compound below, a suppressed rifle with a night-vision scope and a white vapour trail on every shot. Its rules are adapted from **Cold Archive**'s co-op infiltration (agent + Overwatch, SENTINEL's alarm, bandwidth-based payloads).
+
+Pick **SNIPER CELL: INFILTRATION** on the main menu, then a role:
+
+- **Shooter** (default callsign **Ra**): a suppressed, bolt-action **KR-50 Nightjar** with Halo-style ballistics (instant hit, dead straight, no wind or sway). It has a 2× / 8× night-vision scope and 4+1 rounds, and the bolt runs while you stay on the glass. The shooter also gets **active camo** (G; drains while on, flickers when you fire), a P-9 sidearm, a chest rig with extra magazines and an urban-digital poncho.
+- **Spotter** (default callsign **Rōnin**): a P-9 with two spare magazines and a plate carrier. The spotter's real tools are the **CYBER OPS tablet** (TAB) and a **recon quadcopter** (Q).
+
+Both operators wear the Multicam Black kit. Both P-9s have a suppressor that is **on by default**; B toggles it, and an unsuppressed shot is heard 70 m away.
+
+**Play modes**
+
+- **Solo:** the AI plays the other role.
+  - AI **Ra** holds a perch and takes the shots you tag. Move him between the south cliff and the east and west knolls from the tablet.
+  - AI **Rōnin** runs the console for you: scans, tags, door and camera hacks, supply drops, EMP and medevac.
+- **Co-op:** the host picks a role and the friend who joins gets the other one. Invites, codes and `?local=1` testing work the same as in the duel.
+
+**Mission** (Kestrel Ridge data center):
+
+1. Breach the fence.
+2. Plant a relay in the Electrical Room. This opens the data floor to the console.
+3. Drop the Site Chief (violet visor) and take his badge.
+4. Badge in at the Cold Vault while the spotter holds **CRACK**.
+5. Hold the vault console through the malware upload. The spotter holds **FIGHT TRACE** against SENTINEL's sweep.
+6. Pull the archive drive. The facility locks down.
+7. Carry the drive out the loading dock to the LZ east of the fence.
+
+You win when the drive reaches the LZ. The debrief rates the run GHOST, SILENT, LETHAL, LOUD or BURNED.
+
+**SENTINEL** (the facility):
+
+- **Guards** patrol the yard, the towers and every room. Each one fills a ? → ! awareness meter. An alert guard radios the alarm 1.5 s later, unless you drop him first. Guards find bodies and hear noise.
+- **Cameras** sweep their rooms.
+- **Patrol drones** fly over the yard. They lock on, zap you and can be shot down.
+- **Reinforcements** come out of the barracks and the south gate, outside the building, and drones relaunch from the barracks pad.
+- **Alarm** levels run QUIET → ALERT → ALARM → LOCKDOWN.
+
+**CYBER OPS tablet:**
+
+- **The map:** a top-down wireframe of the whole facility. It shows rooms by security tier, doors, camera cones, every contact the network can see, both operators, pins and objectives.
+- **Clicking on the map:**
+  - Click a contact to tag it.
+  - Click a camera to hack it. A hacked camera loops for 9 s and feeds intel to the console.
+  - Click an electronic door to open it.
+  - Right-click or long-press to drop a ping.
+- **Payloads** (keys 1–9) cost bandwidth: pulse scan, jam earpieces, EMP, supply drop, cut lights, spoof cams, decoy ping, recon quad and medevac drone.
+- **Live feed:** shows your partner's bodycam or any hacked camera.
+- **For the shooter:** the same map, with a request panel.
+
+**Both operators:** E interacts (plant, loot, pick, pull the drive, revive). It is also a silent **takedown** from behind. F tags whatever is under your crosshair. N toggles night vision. A downed operator bleeds out in 16 s unless their partner, or a medevac drone, gets them up.
+
+The code is in `src/cell/`:
+
+| File | Contents |
+| --- | --- |
+| `facility.js` | Map, colliders and navigation |
+| `sentinel.js` | Guards, drones, cameras, alarm and reinforcements |
+| `ops.js` | Payloads and the AI spotter |
+| `tablet.js` | The console |
+| `cell.js` | Game loop, roles, net code, objectives and HUD |
+
 ## "Do you want to develop an app?"
 
 A second mode, chosen by the host under **Mode** on the main menu (a guest just joins as usual). It starts as the classic duel.
@@ -168,3 +230,4 @@ Resolution also scales dynamically to hold the frame rate. You can override the 
 | `src/briefmap.js` | Topographic briefing map drawn from the real terrain |
 | `src/net.js` | PeerJS / BroadcastChannel transport |
 | `src/config.js` | Gameplay tuning |
+| `src/cell/` | Sniper Cell: Infiltration (co-op stealth mode) |
