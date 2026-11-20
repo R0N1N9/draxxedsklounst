@@ -7,7 +7,12 @@ export function renderLoadout(el, loadout, onChange) {
   const draw = () => {
     const rifles = `<div class="lo-slot"><div class="lo-head"><span>Rifle</span><em>+ M18 pistol (key 2)</em></div>
       <div class="lo-opts">${RIFLES.map((k) => { const w = WEAPONS[k]; return `<button class="lo-opt${lo.rifle === k ? ' on' : ''}" data-slot="rifle" data-tool="${k}">
-        <b>${w.name} <i>${w.caliber} · ${w.mag}+1</i></b><span>${w.desc}</span></button>`; }).join('')}</div></div>`;
+        <b>${w.name} <i>${w.caliber} · ${w.mag}+1</i></b><span>${w.desc}</span></button>`; }).join('')}</div>
+      ${lo.rifle === 'mk22' ? `<div class="lo-head" style="margin-top:6px"><span>Bolt</span><em>Mk22 attachment</em></div>
+      <div class="lo-opts">
+        <button class="lo-opt${lo.bolt !== 'straight' ? ' on' : ''}" data-slot="bolt" data-tool="standard"><b>Standard bolt</b><span>Fire scoped, then come off the scope to work the bolt before the next shot.</span></button>
+        <button class="lo-opt${lo.bolt === 'straight' ? ' on' : ''}" data-slot="bolt" data-tool="straight"><b>Straight-pull bolt</b><span>Cycles while you stay scoped, and a little faster. Slightly more muzzle climb.</span></button>
+      </div>` : ''}</div>`;
     el.innerHTML = rifles + SLOTS.map((s) => {
       const opts = Object.entries(TOOLS).filter(([, t]) => t.slot === s.key);
       return `<div class="lo-slot"><div class="lo-head"><span>${s.label}</span><em>${s.keyHint === 'passive' ? 'always on' : 'key ' + s.keyHint}</em></div>

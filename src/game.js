@@ -710,7 +710,7 @@ export class Game {
     this._spawnBullet(o, v, true, id, this.roundTime);
     P.fireKick();
     this.audio.shotLocal(sup, def.slot === 'pistol');
-    if (def.kind === 'bolt' && P.ammo > 0) this.audio.bolt(0.35);
+    // (the bolt sound plays when the bolt is actually worked — see boltEvent)
     if ((P.scopeT < 0.5 || !def.scope) && !sup) this.effects.muzzle(this.viewmodel.muzzleWorld(), dir);
     this.viewmodel.fired();
     if (this.net && this.net.open) this.net.send({ t: 'shot', id, wk: def.key, sup: sup ? 1 : 0, o: o.toArray().map((x) => Math.round(x * 1000) / 1000), v: v.toArray().map((x) => Math.round(x * 100) / 100), wt: this.roundTime });
@@ -895,6 +895,10 @@ export class Game {
       if (canFire && a.scout) this.tools.useScout();
       if (canFire && a.tactical) this.tools.useTactical();
       if (canFire && a.supply) this.supply.call();
+      if (a.bipod && P.alive) {
+        const r = P.toggleBipod();
+        if (r === 'blocked') this.hud.message('', P.def.slot !== 'rifle' ? 'Bipod is on the rifle' : 'Go prone and stop moving to set the bipod', 1.4);
+      }
       const flyFrom = this.sandbox && this.sandbox.fly ? P.pos.clone() : null;
       P.update(dt, a, this.world, { canMove });
       if (flyFrom) this.sandbox.flyMove(dt, flyFrom);
@@ -916,10 +920,15 @@ export class Game {
       this._histT = this.now;
       if (P.alive) pushHist(this.selfHist, { t: this.now, p: P.pos.clone(), yaw: P.yaw, pitch: P.pitch, st: P.stance, sc: P.scopeT > 0.5 ? 1 : 0, z: P.zoom, moving: P.moving });
     }
+    if (P.boltEvent) {
+      this.audio.bolt(0.05);
+      P.boltEvent = false;
+    }
     if (P.bipodEvent) {
-      // Clack of the legs locking out, then the thud of the rifle settling.
-      this.audio.click();
+      // Hand reach (cloth), leg flick (clack), rifle settling (thud), fold (clack).
+      if (P.bipodEvent === 'flick' || P.bipodEvent === 'stow') this.audio.click();
       if (P.bipodEvent === 'deploy') this.audio.footstep(P.pos);
+      if (P.bipodEvent === 'reach') this.audio.footstep(P.pos);
       P.bipodEvent = null;
     }
     this._updateUplinks(dt, live);
@@ -1017,6 +1026,8 @@ export class Game {
       reloadEmpty: P.reloadEmpty,
       switchT: P.switchT,
       bipodT: P.def.slot === 'rifle' ? P.bipodT || 0 : 0,
+      bipodState: P.bipodState,
+      bipodU: P.bipodU || 0,
       empty: P.w.chamber === 0 && P.def.kind === 'semi',
     });
   }
@@ -1133,6 +1144,8 @@ export class Game {
     else if (this.hacking >= 0) h = `HACKING UPLINK ${this.world.uplinks[this.hacking].name}… ${Math.round((this.uplinkState[this.hacking].progress / UPLINK.hackTime) * 100)}%`;
     else if (!P.alive && !this.replay.active) h = 'You are down — next round soon';
     else if (P.ammo === 0 && P.reserve === 0) h = 'Out of ammo';
+    else if (P.boltPending && P.scoped) h = 'Unscope to cycle the bolt';
+    else if (P.stance === 2 && !P.moving && P.def.slot === 'rifle' && (P.bipodState || 'stowed') === 'stowed' && P.scoped) h = `<b>${this.input.touch ? 'BIPOD' : 'X'}</b> set bipod`;
     const enemyHack = this.uplinkState.findIndex((u) => u.enemyHacking);
     if (enemyHack >= 0 && this.phase === 'live') h = (h ? h + ' · ' : '') + `⚠ ENEMY HACKING UPLINK ${this.world.uplinks[enemyHack].name}`;
     if (h !== this._lastHint) {

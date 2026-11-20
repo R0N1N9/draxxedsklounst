@@ -45,11 +45,11 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
   - **Halo**: instant hit, no drop, wind or sway, 5×/10× zoom.
   - **Custom**: sliders for drop, bullet speed (slow to instant), wind, drag, sway and hitbox size.
   - Option: the rangefinder (F) auto-sets your zero to the measured distance.
-- **Bipod**: go prone and hold still, and the bipod legs swing down (Mk22 and DMR) and the rifle settles onto them. Scope sway fades to nothing and recoil is reduced. Move or stand and they fold back up.
+- **Bipod** (Battlefield-style, manual): go prone, stop, and press **X** (BIPOD on touch). Your support hand reaches forward and flicks the legs down, then the rifle settles. You can't fire while your hand is off the rifle. Once set, the scope is dead still and recoil is reduced. Moving, standing, switching or pressing X again folds the legs.
 - **Supply drone** (V, then a 90 s cooldown): a cargo hexacopter flies in from behind your ridge and drops a parachute crate where you aim (within 60 m) or at your feet. Walk onto it to refill both weapons. Both players see and hear it, and the AI uses it to find you.
 - **No shooting or reloading while sprinting.** Walking and standing are fine, and starting a sprint cancels a reload.
 - **Weapons**: pick your rifle in the loadout. Everyone also carries an **M18 pistol** (17+1, one spare magazine) for close range. Every weapon starts with **one in the chamber**: a reload before you're empty keeps it, while a reload from empty is slower because you have to chamber a round.
-  - **Mk22 MRAD** (default): bolt-action .300 PRC, 7+1. One-shot headshots, two body shots, slow bolt throw, 4–20× scope. Higher zoom glints more.
+  - **Mk22 MRAD** (default): bolt-action .300 PRC, 7+1. One-shot headshots, two body shots, 4–20× scope (higher zoom glints more). Battlefield-style bolt: after a scoped shot you come off the scope to work the bolt, and you can't scope back in until it's done. The **straight-pull bolt** option (Loadout) cycles while you stay scoped and slightly faster, with a bit more muzzle climb.
   - **M110A1 DMR**: semi-auto 7.62, 20+1, about 3 shots a second. Headshots still kill; three body shots. Its smaller 4–10× scope glints less.
 - **Loadout**: before the match (main menu → Loadout) and during each round's insertion (**L**), pick one tool per slot:
   - **Scout (T):** Hunter drone (the default), Spotting drone or Recon dart.
@@ -94,6 +94,7 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 | Loadout (insertion) | L | KIT |
 | Predator feed | U | FEED |
 | Supply drone | V | SUPPLY |
+| Bipod (prone, stopped) | X | BIPOD |
 | Pause menu | Esc | II |
 | Sandbox tools | B | TOOLS |
 

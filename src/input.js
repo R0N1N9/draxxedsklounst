@@ -205,6 +205,7 @@ export class Input {
     place('.tb.breath', ...arc(sx, sy, 124, 52));
     place('.tb.crouch', ...arc(sx, sy, 118, 92));
     place('.tb.prone', ...arc(sx, sy, 122, 128));
+    place('.tb.bipodb', ...arc(sx, sy, 196, 78));
   }
 
   // ---- Gyro aiming ------------------------------------------------------------
@@ -296,6 +297,7 @@ export class Input {
       loadout: p('KeyL') || p('loadout'),
       feed: p('KeyU') || p('feed'),
       supply: p('KeyV') || p('supply'),
+      bipod: p('KeyX') || p('bipod'),
       slot1: p('Digit1'),
       slot2: p('Digit2'),
       swap: p('swap'),

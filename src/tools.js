@@ -31,6 +31,7 @@ export const DEFAULT_LOADOUT = { rifle: 'mk22', scout: 'hunter', stealth: 'suppr
 export function validLoadout(lo) {
   const out = { ...DEFAULT_LOADOUT };
   if (lo && RIFLES.includes(lo.rifle)) out.rifle = lo.rifle;
+  out.bolt = lo && lo.bolt === 'straight' ? 'straight' : 'standard';
   if (lo) for (const s of SLOTS) if (TOOLS[lo[s.key]] && TOOLS[lo[s.key]].slot === s.key) out[s.key] = lo[s.key];
   return out;
 }
@@ -190,6 +191,7 @@ export class ToolSystem {
     this.loadout = validLoadout(game.settings && game.settings.loadout);
     game.player.rifleKey = this.loadout.rifle;
     game.player.equip();
+    game.player.straightPull = this.loadout.bolt === 'straight';
     this._buildRemoteDrone();
     this._buildPredator();
     this.hunterMesh = buildHunterModel(0x62d9e8);
@@ -206,6 +208,7 @@ export class ToolSystem {
     this.loadout = validLoadout(lo);
     this.g.player.rifleKey = this.loadout.rifle;
     this.g.player.equip();
+    this.g.player.straightPull = this.loadout.bolt === 'straight';
     this.resetMine();
   }
 

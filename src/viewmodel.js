@@ -187,7 +187,7 @@ function buildBipod(g, y, z, len) {
     legs.push({ splay, hinge, s });
   }
   g.add(mount);
-  return { legs, set(k) {
+  return { legs, mount, set(k) {
     const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
     for (const l of legs) {
       l.hinge.rotation.x = e * 1.72; // folded back -> pointing down and a little forward
@@ -460,6 +460,15 @@ export class ViewModel {
     if (U.slide && rack > 0) handR = handR; // right hand stays; left racks the slide
     let handL = toRoot(U.gripL);
     if (leftReach > 0) handL.lerp(new THREE.Vector3(-0.05, -0.45, -0.2), leftReach);
+    // Bipod: the support hand slides forward to the legs, flicks them, and comes back.
+    if (U.bipod && (st.bipodState === 'deploying' || st.bipodState === 'stowing')) {
+      const u = st.bipodU || 0;
+      const reach = st.bipodState === 'deploying'
+        ? smoothstep(0, 0.28, u) * (1 - smoothstep(0.72, 1, u))
+        : smoothstep(0, 0.2, u) * (1 - smoothstep(0.6, 0.95, u));
+      const legs = toRoot(U.bipod.mount).add(new THREE.Vector3(0, -0.035 - 0.06 * (st.bipodT || 0), 0.03));
+      handL.lerp(legs, reach);
+    }
     if (rack > 0 && !U.bolt) handL.lerp(toRoot(U.slide || U.gripL).add(new THREE.Vector3(0, 0.02, 0.06)), rack);
     const fR = fwd.clone().add(new THREE.Vector3(0, -0.25, 0)).normalize();
     const fL = pistol ? fwd.clone().add(new THREE.Vector3(0.4, -0.15, 0)).normalize() : fwd.clone().add(new THREE.Vector3(0.15, 0.25, 0)).normalize();
