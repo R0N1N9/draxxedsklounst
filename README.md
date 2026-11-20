@@ -207,9 +207,17 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
   - **IR strobes** on both operators' helmets and shoulders, and **IR lasers** from both weapons, show only in night vision and the ISR IR view.
 - **Weapon lights (L):** a weapon light makes you easy to see. Guards also walk over to wherever the beam lands, so it works as a distraction.
 - **Sync shots:**
-  - Mark an enemy (F), then press F on it again, or use the wheel's SYNC option, to make it a sync target.
-  - The SYNC light turns green when both rifles are on marked heads.
-  - With an AI shooter partner, your shot fires both.
+  1. Aim down sights at an enemy and **hold Q** (or SYNC) to mark it as a sync target for your ally. The wheel's SYNC option works too.
+  2. Each player puts their sights on a head that dies to one shot (no helmet). At least one of the two has to be a sync mark.
+  3. A solid **FIRE** block locks over both heads, both weapons fire on their own, and the operators call it on the radio ("On target" … "X-ray down").
+- **Downed but alive:** a body-shot kill leaves an enemy down but alive. It's out of the fight, but the reticle still goes red over it. Headshot it on the ground to finish it, and your character calls "X-ray down".
+- **Radio chatter:**
+  - Operators call fresh contacts in their field of view: "Contact, north-east, 60 meters".
+  - When your partner drops an enemy you pinged, they call "X-ray down".
+  - Switching on night vision sometimes gets a "Going dark".
+- **HUD:**
+  - The comms log fades after a few seconds; the tablet keeps the full log.
+  - **O** shows or hides the objective board, and **P** expands or compacts it.
 
 ### Roles
 

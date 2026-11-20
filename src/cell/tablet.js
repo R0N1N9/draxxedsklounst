@@ -273,13 +273,13 @@ export class Tablet {
     if (!h) return;
     if (h.kind === 'guard' && h.e.tagT > 0) {
       const on = !h.e.sync;
-      g.payload('sync', { id: h.e.id, on });
+      g.payload('sync', { id: h.e.id, on, by: g.role });
       if (g.isHost) h.e.sync = on;
       this._say(on ? 'SYNC TARGET' : 'SYNC CLEARED', true);
       return;
     }
     if (h.kind === 'guard' || h.kind === 'drone') {
-      g.payload('tag', { id: h.e.id });
+      g.payload('tag', { id: h.e.id, by: g.role });
       if (g.isHost) h.e.tagT = 12;
       this._say(h.e.chief ? 'SITE CHIEF TAGGED' : 'CONTACT TAGGED', true);
       if (g.aiShoot) g.comms('Ra: tracking.', 'amber', g.partnerName);

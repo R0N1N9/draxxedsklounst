@@ -675,6 +675,8 @@ export class Sentinel {
         e.diedAt = this.t;
         e.target = null;
         e.aiming = null;
+        // A body-shot drop leaves them down but alive: out of the fight until someone finishes it.
+        e.incap = e.kind === 'g' && part !== 'head' && how !== 'takedown' && how !== 'execute';
         if (how === 'takedown') this.stats.takedowns++; else this.stats.kills++;
         if (part === 'head') this.stats.heads++;
         this.emit({ t: 'kill', id, how, chief: e.chief });
@@ -740,6 +742,14 @@ export class Sentinel {
       else if (g.type === 'scav') { this.emit({ t: 'bark', k: 'scav', id: g.id }); this.noise({ x: g.x, y: g.y, z: g.z }, 22, true); }
       if (g.jamT <= 0 && g.type !== 'scav' && !this.commsDown) g.radioT = 1.5;
     }
+  }
+
+  // Finish a downed (incapacitated) enemy.
+  confirm(id) {
+    const e = this.byId(id);
+    if (!e || !e.incap) return false;
+    e.incap = false;
+    return true;
   }
 
   // In-person hacks from the building's rooms.
@@ -1431,7 +1441,7 @@ export class Sentinel {
     const r1 = (v) => Math.round(v * 10) / 10, r2 = (v) => Math.round(v * 100) / 100;
     return {
       g: this.guards.map((g) => [g.id, r1(g.x), r1(g.y), r1(g.z), r2(g.yaw + g.look), STATES.indexOf(g.state), r2(clamp(g.aw, 0, 1)),
-        (g.chief ? 1 : 0) | (g.badge ? 2 : 0) | (g.found ? 4 : 0) | (g.moving ? 8 : 0) | (g.tower ? 16 : 0) | (g.lower > 0 ? 32 : 0) | (g.empT > 0 ? 64 : 0) | (g.helmet ? 128 : 0) | (g.radioT > 0 ? 256 : 0) | (g.sync ? 512 : 0) | (g.stagger > 0 ? 1024 : 0),
+        (g.chief ? 1 : 0) | (g.badge ? 2 : 0) | (g.found ? 4 : 0) | (g.moving ? 8 : 0) | (g.tower ? 16 : 0) | (g.lower > 0 ? 32 : 0) | (g.empT > 0 ? 64 : 0) | (g.helmet ? 128 : 0) | (g.radioT > 0 ? 256 : 0) | (g.sync ? 512 : 0) | (g.stagger > 0 ? 1024 : 0) | (g.incap ? 2048 : 0),
         Math.ceil(g.tagT), Math.ceil(g.scanT), g.rev ? 1 : 0, TYPE_KEYS.indexOf(g.type), g.maxShield ? Math.round((g.shield / g.maxShield) * 100) : 0, g.aiming ? (g.aiming === 'shooter' ? 1 : 2) : 0]),
       d: this.drones.map((d) => [d.id, r1(d.x), r1(d.y), r1(d.z), r2(d.yaw), d.state === 'dead' ? 2 : d.state === 'hunt' ? 1 : 0, r2(clamp(d.aw, 0, 1)), d.empT > 0 ? 1 : 0, Math.ceil(d.tagT), d.rev ? 1 : 0]),
       c: this.cams.map((c) => [c.id, r2(c.yaw), (c.hacked ? 1 : 0) | (c.loopT > 0 ? 2 : 0) | (c.empT > 0 ? 4 : 0), r2(clamp(c.aw, 0, 1))]),
@@ -1460,7 +1470,7 @@ export class Sentinel {
       g.shieldPct = sh;
       g.shield = (sh / 100) * g.maxShield;
       g.state = ns; g.aw = aw; g.chief = !!(fl & 1); g.badge = !!(fl & 2); g.found = !!(fl & 4); g.moving = !!(fl & 8); g.tower = !!(fl & 16);
-      g.lower = fl & 32 ? 0.5 : 0; g.empT = fl & 64 ? 1 : 0; g.helmet = !!(fl & 128); g.radioT = fl & 256 ? 1 : 0; g.sync = !!(fl & 512); g.stagger = fl & 1024 ? 1 : 0;
+      g.lower = fl & 32 ? 0.5 : 0; g.empT = fl & 64 ? 1 : 0; g.helmet = !!(fl & 128); g.radioT = fl & 256 ? 1 : 0; g.sync = !!(fl & 512); g.stagger = fl & 1024 ? 1 : 0; g.incap = !!(fl & 2048);
       g.tagT = tag; g.scanT = scan; g.rev = !!rev; g.hp = ns === 'dead' ? 0 : 1;
       g.aiming = aim === 1 ? 'shooter' : aim === 2 ? 'spotter' : null;
     }

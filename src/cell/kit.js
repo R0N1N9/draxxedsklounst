@@ -281,13 +281,13 @@ export const KitMethods = {
     if (k === 'sync') {
       if (!enemyId) { this.hud.flash('SYNC: aim at an enemy', 'red'); return; }
       const e = this.sentinel.byId(enemyId);
-      this.payload('sync', { id: enemyId, on: true });
+      this.payload('sync', { id: enemyId, on: true, by: this.role });
       if (e && this.isHost) { e.sync = true; e.tagT = Math.max(e.tagT || 0, 60); }
       if (e) at = { x: e.x, z: e.z };
     }
     if (k === 'enemy' && enemyId) {
       const e = this.sentinel.byId(enemyId);
-      if (e) { at = { x: e.x, z: e.z }; this.payload('tag', { id: enemyId }); if (this.isHost) e.tagT = 12; }
+      if (e) { at = { x: e.x, z: e.z }; this.payload('tag', { id: enemyId, by: this.role }); if (this.isHost) e.tagT = 12; }
     }
     const label = k === 'enemy' && (this.role === 'spotter' || this.aiShoot) ? 'TAKE THE SHOT' : COMMS_LABEL[k];
     const pin = { x: at.x, z: at.z, label, by: this.role, k };

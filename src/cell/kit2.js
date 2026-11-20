@@ -115,6 +115,7 @@ export const Kit2 = {
     }
     this.partnerDrive.visible = this.obj.drive === this.partnerRole;
     this._syncTick(dt);
+    this._contactTick(dt);
     this._wlTick();
   },
 
@@ -154,12 +155,14 @@ export const Kit2 = {
   },
 
   // ---- SYNC shots -----------------------------------------------------------------------
-  // Each rifle "holds" a sync-marked head under its crosshair; when both do, the light goes
-  // green and a shot from either fires both (the AI shooter takes its shot with yours).
+  // Mark: hold Q (or SYNC) with your sights on an enemy to flag it for your ally. Then each
+  // operator puts their sights on a head that dies to one shot (no helmet). When both are on
+  // target and at least one is a sync mark, a solid FIRE marker locks over both heads and,
+  // after a beat, both weapons fire on their own. Operators call it over the radio.
   _syncAimFrom(o, dir, fovDeg, exclude) {
-    let best = 0, bs = 0.012 * (62 / fovDeg);
+    let best = 0, bs = 0.02 * (62 / fovDeg);
     for (const g of this.sentinel.guards) {
-      if (!g.sync || g.state === 'dead' || g.id === exclude) continue;
+      if (g.state === 'dead' || g.id === exclude || g.helmet) continue;
       const h = guardCapsules(g)[0].a;
       const v = h.clone().sub(o);
       if (v.length() > 400) continue;
@@ -168,43 +171,150 @@ export const Kit2 = {
     }
     return best;
   },
-  _syncTick() {
-    const P = this.player;
-    const marks = this.sentinel.guards.filter((g) => g.sync && g.state !== 'dead').length;
+  _syncTick(dt = 0.016) {
+    const P = this.player, S = this.sentinel;
+    const marks = S.guards.filter((g) => g.sync && g.state !== 'dead').length;
     this.syncMarks = marks;
-    if (!marks) { this.syncAim = 0; this.syncPartner = 0; return; }
+    this._syncCd = Math.max(0, (this._syncCd || 0) - dt);
+    if (this._syncKill) {
+      const K = this._syncKill;
+      K.t -= dt;
+      if (K.t <= 0) {
+        this._syncKill = null;
+        const g = S.byId(K.id);
+        if (g && g.state === 'dead') this._radio('me', ['X-ray down.', 'Tango down.', 'Target down.', 'He\'s down.'][Math.floor(Math.random() * 4)]);
+      }
+    }
+    if (!marks) { this.syncAim = 0; this.syncPartner = 0; this._syncT = 0; this._syncSaid = false; return; }
     const o = P.eyePos(new THREE.Vector3());
-    const live = !this.downed && !this.kia && !this.isr.active && !(this.quad && this.quad.active);
-    this.syncAim = live && P.def.slot === 'rifle' || (live && P.scopeT > 0.4) ? this._syncAimFrom(o, P.aimDir(new THREE.Vector3()), this.camera.fov, 0) : 0;
+    const live = !this.downed && !this.kia && !this.isr.active && !(this.quad && this.quad.active) && !this.tablet.visible;
+    this.syncAim = live && P.scopeT > 0.4 ? this._syncAimFrom(o, P.aimDir(new THREE.Vector3()), this.camera.fov, 0) : 0;
     if (this.aiShoot) {
-      // Ra: any other sync target in view from the perch.
+      // Ra: a sync target in view from the perch (not the one you're on).
       const perch = this.partner.pos;
-      const eye = new THREE.Vector3(perch.x, perch.y + 0.55, perch.z);
+      const eye = new THREE.Vector3(perch.x, perch.y + 1.3, perch.z);
       let pick = 0;
-      for (const g of this.sentinel.guards) {
-        if (!g.sync || g.state === 'dead' || (g.id === this.syncAim && marks > 1)) continue;
+      for (const g of S.guards) {
+        if (!g.sync || g.state === 'dead' || g.helmet || g.id === this.syncAim) continue;
         const h = guardCapsules(g)[0].a;
         if (eye.distanceTo(h) < 340 && this.fac.los(eye, h)) { pick = g.id; break; }
       }
       this.syncPartner = this.aiShoot.moveT > 0 || this.partner.seated ? 0 : pick;
     } else this.syncPartner = this.partner.sy || 0;
+    // Hold together for a beat, then everyone fires.
+    if (this.syncReady && this._syncCd <= 0) {
+      if (!this._syncSaid) { this._syncSaid = true; this._radio('me', this.role === 'shooter' ? 'On target.' : 'On mine. Sync ready.'); }
+      this._syncT = (this._syncT || 0) + dt;
+      if (this._syncT >= 0.7) { this._syncT = 0; this._syncCd = 1.5; this._autoFire = true; this._syncKill = { id: this.syncAim, t: 0.45 }; }
+    } else { this._syncT = 0; if (!this.syncReady) this._syncSaid = false; }
   },
   get syncReady() {
-    return !!(this.syncAim && this.syncPartner && (this.syncAim !== this.syncPartner || this.syncMarks === 1));
+    if (!(this.syncAim && this.syncPartner && this.syncAim !== this.syncPartner)) return false;
+    const a = this.sentinel.byId(this.syncAim), b = this.sentinel.byId(this.syncPartner);
+    return !!((a && a.sync) || (b && b.sync));
   },
-  // Called when you fire: the AI shooter fires with you on a green light.
+  // Your shot on a green sync: the AI shooter fires with you.
   _syncFire() {
     if (!this.syncReady || !this.aiShoot) return;
     const g = this.sentinel.byId(this.syncPartner);
     if (!g || g.state === 'dead') return;
     const perch = this.partner.pos;
-    const a = new THREE.Vector3(perch.x, perch.y + 0.55, perch.z);
+    const a = new THREE.Vector3(perch.x, perch.y + 1.3, perch.z);
     const h = guardCapsules(g)[0].a;
     this._trail(a, h, false);
     this.audio.shotDistant(a, this.camera.position.distanceTo(a) / 343, true);
     if (this.isHost) this._applyHit(g.id, 999, 'ai', null, 'ai', true, a.distanceTo(h));
     this.hud.flash('SYNC SHOT', 'cyan', 1);
-    this._voice('partner', 'Sync shot. Both down.');
+    setTimeout(() => this._voice('partner', 'X-ray down.'), 900);
+  },
+  // Hold Q / SYNC on an enemy: mark it as a sync target for your ally.
+  _syncMark(e) {
+    if (!e || e.kind !== 'g') return;
+    this._call('sync', { x: e.x, z: e.z }, e.id);
+    this.hud.flash('SYNC TARGET MARKED', 'cyan');
+  },
+  // A radio line heard by both operators.
+  _radio(who, text) {
+    if (who === 'me') who = this.role;
+    this._voice(who, text);
+    this.comms(text, who === 'shooter' ? '#ffb040' : '#40d0ff', who === this.role ? this.name : this.partnerName);
+    this._broadcast({ k: 'radio', who, text });
+  },
+  // HUD: SYNC tags over marked heads; a solid FIRE block over both heads when you're synced.
+  _syncHud(c, proj) {
+    const S = this.sentinel;
+    if (!this.syncMarks) return;
+    const ready = this.syncReady;
+    c.textAlign = 'center';
+    for (const g of S.guards) {
+      if (g.state === 'dead') continue;
+      const lock = ready && (g.id === this.syncAim || g.id === this.syncPartner);
+      if (!g.sync && !lock) continue;
+      const h = guardCapsules(g)[0].a;
+      const p = proj(h.x, h.y + 0.35, h.z);
+      if (p.behind) continue;
+      if (lock) {
+        const k = Math.min(1, (this._syncT || 0) / 0.7);
+        c.fillStyle = 'rgba(255,40,60,0.92)';
+        c.fillRect(p.x - 26, p.y - 34, 52, 20);
+        c.fillStyle = '#fff';
+        c.font = '700 13px JetBrains Mono, monospace';
+        c.fillText('FIRE', p.x, p.y - 19);
+        c.fillStyle = 'rgba(255,255,255,0.9)';
+        c.fillRect(p.x - 26, p.y - 13, 52 * k, 3);
+        c.strokeStyle = 'rgba(255,40,60,0.95)';
+        c.lineWidth = 2;
+        c.strokeRect(p.x - 8, p.y - 8 + 20, 16, 16);
+      } else {
+        c.strokeStyle = 'rgba(80,255,200,0.9)';
+        c.lineWidth = 1.5;
+        c.strokeRect(p.x - 9, p.y - 9, 18, 18);
+        c.fillStyle = 'rgba(80,255,200,0.9)';
+        c.font = '600 10px JetBrains Mono, monospace';
+        c.fillText(g.id === this.syncAim ? 'SYNC \u00B7 YOU' : g.id === this.syncPartner ? 'SYNC \u00B7 ALLY' : 'SYNC', p.x, p.y - 13);
+      }
+    }
+    c.lineWidth = 1;
+  },
+
+  // ---- "Contact" callouts -------------------------------------------------------------------
+  // Now and then an operator calls a fresh enemy in their field of view: direction and range,
+  // over the radio, like a squad would. Each enemy is called once.
+  _contactTick(dt) {
+    this._ctT = (this._ctT || 0) - dt;
+    this._ctCd = Math.max(0, (this._ctCd || 0) - dt);
+    if (this._ctT > 0) return;
+    this._ctT = 0.5;
+    this._called = this._called || new Set();
+    const P = this.player, S = this.sentinel;
+    const live = !this.downed && !this.kia && !this.tablet.visible && !this.isr.active && !(this.quad && this.quad.active) && !this.ended && !this.cine.active;
+    if (!live) return;
+    const o = P.eyePos(new THREE.Vector3()), dir = P.aimDir(new THREE.Vector3());
+    const half = THREE.MathUtils.degToRad(this.camera.fov * 0.55);
+    const range = P.scopeT > 0.5 ? 160 : 70;
+    const fresh = [];
+    for (const g of S.guards) {
+      if (g.state === 'dead' || this._called.has(g.id)) continue;
+      const h = new THREE.Vector3(g.x, (g.y || 0) + 1.5, g.z), v = h.clone().sub(o), d = v.length();
+      if (d > range || v.normalize().angleTo(dir) > half || !this.fac.los(o, h)) continue;
+      fresh.push({ g, d });
+    }
+    if (!fresh.length) return;
+    for (const f of fresh) this._called.add(f.g.id);
+    if (this._ctCd > 0) return;
+    this._ctCd = 14;
+    fresh.sort((a, b) => a.d - b.d);
+    const f = fresh[0];
+    const ang = Math.atan2(f.g.x - P.pos.x, -(f.g.z - P.pos.z));
+    const dirs = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+    const comp = dirs[((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8];
+    const m = Math.round(f.d / 10) * 10;
+    const what = { scav: 'scav', jugg: 'juggernaut', bulwark: 'bulwark', titan: 'titan', overseer: 'the Overseer', guard: 'tango' }[f.g.type] || 'tango';
+    const n = fresh.length;
+    const lines = n > 1
+      ? [`Contact. ${n} tangos, ${comp}, ${m} meters.`, `Multiple contacts, ${comp}, ${m} out.`]
+      : [`Contact, ${comp}, ${m} meters.`, `Got a ${what}, ${comp}, ${m} meters.`, `Eyes on a ${what}, ${comp}.`, 'Contact.'];
+    this._radio('me', lines[Math.floor(Math.random() * lines.length)]);
   },
 };
 

@@ -46,7 +46,11 @@ body.cell-spotter #touch .swp { display: none !important; }
 #cell-hud .c-feed { position: absolute; right: 18px; top: 50px; text-align: right; font-family: var(--mono); font-size: 11px; font-weight: 600; text-shadow: 0 1px 2px #000; }
 #cell-hud .c-comms { position: absolute; right: 18px; bottom: 120px; width: min(420px, 44vw); font-size: 14px; text-align: right; text-shadow: 0 1px 3px #000; }
 #cell-hud .c-line { margin-top: 3px; transition: opacity 1.5s; }
-#cell-hud .c-line.old { opacity: 0.35; }
+#cell-hud .c-line { transition: opacity 1.5s; }
+#cell-hud .c-line.old { opacity: 0; }
+#cell-hud.obj-off .c-obj { display: none; }
+#cell-hud.obj-full .c-obj-h { opacity: 1 !important; display: block !important; }
+#cell-hud .c-obj-h { max-height: 6em; overflow: hidden; }
 #cell-hud .c-line b { font-family: var(--mono); font-size: 11px; }
 .c-dim { color: rgba(232, 230, 240, 0.75); } .c-cyan { color: var(--cell); } .c-amber { color: #ffd040; } .c-red { color: #ff5068; }
 #cell-hud .c-vitals { position: absolute; left: 18px; bottom: 18px; width: 240px; }

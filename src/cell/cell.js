@@ -624,6 +624,7 @@ export class CellGame {
       case 'takedown': if (m.role === this.role) this._knife(); break;
       case 'lockdown': this._lockdownFx(); break;
       case 'ice': this.hud.flash('ICE ALERT', 'red'); break;
+      case 'confirm': if (this.isHost) this.sentinel.confirm(m.id); break;
       case 'sweepfx': this.isr.sweepFx = { x: m.x, z: m.z, r: m.r, t: 0 }; break;
       case 'vote': if (this.isHost) this._castVote(m.role, m.v); break;
       case 'heal': if (m.role === this.role) this._heal(m.hp); break;
@@ -794,12 +795,12 @@ export class CellGame {
       }
       case 'sync': {
         const e = S.byId(target.id);
-        if (e && e.hp > 0) { e.sync = target.on ?? !e.sync; e.tagT = Math.max(e.tagT, 60); }
+        if (e && e.hp > 0) { e.sync = target.on ?? !e.sync; e.tagT = Math.max(e.tagT, 60); e.tagBy = target.by || by; }
         break;
       }
       case 'tag': {
         const e = S.byId(target.id);
-        if (e && e.hp > 0) { e.tagT = HACK.tag; }
+        if (e && e.hp > 0) { e.tagT = HACK.tag; e.tagBy = target.by || by; }
         break;
       }
       case 'perch':
@@ -954,7 +955,14 @@ export class CellGame {
     // Keys for this mode.
     if (I.pressed('Tab') || I.pressed('cell-tab')) this.tablet.toggle();
     if ((I.pressed('KeyL') || I.pressed('cell-light')) && !tab) this._wlToggle();
-    if (I.pressed('KeyN') || I.pressed('cell-nv')) { this.nv = !this.nv; this.audio.click(); }
+    if (I.pressed('KeyN') || I.pressed('cell-nv')) {
+      this.nv = !this.nv;
+      this.audio.click();
+      if (this.nv && !this.isr.active && this.t - (this._darkT || -99) > 25 && Math.random() < 0.65) { this._darkT = this.t; this._radio('me', ['Going dark.', 'NODs on. Going dark.', 'Going dark.'][Math.floor(Math.random() * 3)]); }
+    }
+    // Objective board: O shows / hides it, P expands / compacts it (P is the sweep in the ISR view).
+    if (I.pressed('KeyO')) this.hud.objToggle();
+    if (I.pressed('KeyP') && !this.isr.active) this.hud.objExpand();
     // B: tap = fire mode (SMG) / suppressor (pistols); hold = suppressor on the SMG.
     const bHeld = (I.held('KeyB') || I.held('T:cell-sup')) && !tab;
     if (bHeld) { this._bT = (this._bT || 0) + dt; if (this._bT > 0.45 && !this._bDone) { this._bDone = true; this._toggleSup(); } }
@@ -966,12 +974,20 @@ export class CellGame {
     if (this.role === 'shooter' && (I.pressed('KeyG') || I.pressed('cell-ability')) && !this.downed) this._toggleCloak();
     // Recon quad: tap Q = launch / park it (it keeps marking) / take it back; hold Q (or RECALL)
     // = quick calldown, straight back to you.
-    if (this.role === 'spotter' || this.operative) {
+    // With your sights on an enemy, holding Q (or SYNC) marks it as a sync target instead.
+    {
+      const canQ = this.role === 'spotter' || this.operative;
       const qa = this.operative ? 'cell-quad' : 'cell-ability';
-      const qHeld = (I.held('KeyQ') || I.held('T:' + qa)) && !tab;
-      if (qHeld) { this._qT = (this._qT || 0) + dt; if (this._qT > 0.45 && !this._qDone && this._quadOut()) { this._qDone = true; this._recallQuad(); } }
-      else {
-        if (this._qT > 0 && !this._qDone) {
+      const syncHeld = I.held('T:cell-sync');
+      const qHeld = (I.held('KeyQ') || (canQ && I.held('T:' + qa)) || syncHeld) && !tab;
+      const aimE = !quad && P.scopeT > 0.3 && !this.downed ? this._crosshairEnemy() : null;
+      if (qHeld) {
+        this._qT = (this._qT || 0) + dt;
+        if (!this._qDone && this._qT > 0.3 && aimE && aimE.kind === 'g') { this._qDone = true; this._syncMark(aimE); }
+        else if (!this._qDone && syncHeld && this._qT > 0.3) { this._qDone = true; this.hud.flash('SYNC: aim at an enemy', 'red'); }
+        else if (canQ && !syncHeld && this._qT > 0.45 && !this._qDone && this._quadOut()) { this._qDone = true; this._recallQuad(); }
+      } else {
+        if (canQ && this._qT > 0 && !this._qDone) {
           if (quad) this._parkQuad();
           else if (this.quad && this.quad.parked) this._resumeQuad();
           else { const why = this.ops.use('quad'); if (why) this.hud.flash(why, 'red'); }
@@ -1040,7 +1056,8 @@ export class CellGame {
     if (P.def.kind === 'bolt' && P.boltEvent) { P.boltEvent = false; this.audio.bolt(0.05); }
     if (quad) this._updateQuad(dt, a);
 
-    // Fire.
+    // Fire. (A green sync pulls the trigger for you.)
+    if (this._autoFire) { this._autoFire = false; if (live && !quad && !seat) { act.fire = true; this._syncShotId = this.syncAim; } }
     const mode = P.w.mode;
     if (act.fire && live && P.w.chamber === 0 && P.w.mag === 0) { this.audio.click(); if (P.w.reserve > 0) P.startReload(); }
     else if (live && mode === 'full') { if (act.fireHeld || act.fire) { if (P.canFire()) this._fire(); } }
@@ -1124,7 +1141,9 @@ export class CellGame {
     // Hipfire spread on the pistol; the rifle is dead-on (Halo).
     if (!rifle) { const sp = (def.spread || 0.03) * (P.scopeT > 0.5 ? 0.35 : 1) * (P.moving ? 1.5 : 1); dir.x += (Math.random() - 0.5) * sp; dir.y += (Math.random() - 0.5) * sp; dir.z += (Math.random() - 0.5) * sp; dir.normalize(); }
     if (rifle && P.scopeT < 0.5) { dir.x += (Math.random() - 0.5) * 0.02; dir.y += (Math.random() - 0.5) * 0.02; dir.normalize(); }
-    if (rifle && this.syncReady) this._syncFire();
+    // A sync shot is a locked shot: straight to the head you were holding.
+    if (this._syncShotId) { const sg = this.sentinel.byId(this._syncShotId); this._syncShotId = 0; if (sg && sg.state !== 'dead') dir.copy(guardCapsules(sg)[0].a).sub(o).normalize(); }
+    if (this.syncReady) this._syncFire();
     P.fireKick();
     this.viewmodel.fired();
     this.audio.shotLocal(sup, !rifle);
@@ -1164,6 +1183,17 @@ export class CellGame {
       this.hud.flash('BLOCKED \u2014 HIT THE PORT', 'red', 0.9);
       if (this.isHost) { this.sentinel._alert(g, null, { x: P.pos.x, z: P.pos.z }); }
       else this._broadcast({ k: 'block', id: g.id, from: { x: P.pos.x, z: P.pos.z } });
+    } else if (res && res.enemy && res.enemy.state === 'dead') {
+      // A downed enemy: a headshot finishes it; a body shot just thumps the body.
+      const e = res.enemy;
+      this.effects.puff(hitP, 'dust', 0.9, 0.7);
+      if (res.part === 'head') {
+        this.audio.hitConfirm(true);
+        this.hud.hitMarker(true);
+        if (this.isHost) this.sentinel.confirm(e.id); else this._broadcast({ k: 'confirm', id: e.id });
+        e.incap = false;
+        setTimeout(() => this._radio('me', ['X-ray down.', 'X-ray down. Confirmed.', 'Tango down.'][Math.floor(Math.random() * 3)]), 500);
+      }
     } else if (res && res.enemy) {
       const e = res.enemy;
       const dmg = def.damage[res.part] || def.damage.torso;
@@ -1193,16 +1223,32 @@ export class CellGame {
     let bestT = wh ? wh.t : 1, best = wh ? { ...wh } : null;
     const S = this.sentinel;
     for (const g of S.guards) {
+      if (g.state === 'dead' && g.incap) {
+        // Downed but alive: hit the body where it lies (head end and torso).
+        if (Math.hypot(g.x - o.x, g.z - o.z) > L * bestT + 3) continue;
+        const B = g.obj.userData.body;
+        B.updateWorldMatrix(true, false);
+        const h = B.localToWorld(new THREE.Vector3(0, 1.55, 0)), m = B.localToWorld(new THREE.Vector3(0, 1.0, 0)), f = B.localToWorld(new THREE.Vector3(0, 0.15, 0));
+        let hit = null;
+        for (const [a, b, r, part] of [[h, h, 0.24, 'head'], [m, f, 0.3, 'torso']]) {
+          const q = segSegClosest(o, end, a, b);
+          if (q.d2 < r * r && (!hit || part === 'head')) hit = { s: hit ? Math.min(hit.s, q.s) : q.s, part };
+        }
+        if (hit && hit.s < bestT) { bestT = hit.s; best = { t: hit.s, point: o.clone().lerp(end, hit.s), enemy: g, part: hit.part }; }
+        continue;
+      }
       if (g.hp <= 0 && g.state === 'dead') continue;
       if (Math.hypot(g.x - o.x, g.z - o.z) > L * bestT + 3) continue;
+      // The capsules overlap at the neck, so if the ray passes through the head at all, it's a
+      // headshot (closest-approach order alone can hand it to the torso just below).
+      let hit = null;
       for (const c of guardCapsules(g)) {
         const r = segSegClosest(o, end, c.a, c.b);
         const rad = c.r * (RULES.hitbox || 1);
-        if (r.d2 < rad * rad && r.s < bestT) {
-          bestT = r.s;
-          best = { t: r.s, point: o.clone().lerp(end, r.s), enemy: g, part: c.part };
-        }
+        if (r.d2 >= rad * rad) continue;
+        if (!hit || c.part === 'head' || (hit.part !== 'head' && r.s < hit.s)) hit = { s: hit ? Math.min(hit.s, r.s) : r.s, part: c.part === 'head' || !hit ? c.part : r.s < hit.s ? c.part : hit.part };
       }
+      if (hit && hit.s < bestT) { bestT = hit.s; best = { t: hit.s, point: o.clone().lerp(end, hit.s), enemy: g, part: hit.part }; }
     }
     // Lamps and ceiling panels can be shot out.
     const lh = this.fac.lightHit(o, end);
@@ -1233,8 +1279,15 @@ export class CellGame {
   }
 
   _killFeed(e, how, by, head, dist) {
+    // Dropping something your partner pinged: call it, now and then.
+    const killer = by === 'ai' ? 'shooter' : by;
+    if (e.tagBy && e.tagBy !== killer && (!this.solo || by === 'ai') && this.t - (this._xrayT || -99) > 6 && Math.random() < 0.7) {
+      this._xrayT = this.t;
+      const line = ['X-ray down.', 'Tango down.', 'Your mark is down.', 'Got him. X-ray down.'][Math.floor(Math.random() * 4)];
+      setTimeout(() => this._radio(killer, line), 700);
+    }
     const name = by === this.role ? this.name : by === 'ai' ? this.partnerName : this.partnerName;
-    const what = how === 'takedown' ? 'TAKEDOWN' : head ? 'HEADSHOT' : 'KILL';
+    const what = how === 'takedown' ? 'TAKEDOWN' : head ? 'HEADSHOT' : e.incap ? 'DOWN' : 'KILL';
     const ev = { k: 'kill', by, what, dist: Math.round(dist || 0), chief: e.chief, name };
     this._onKillEvent(ev);
     this._broadcast(ev);
@@ -1327,6 +1380,24 @@ export class CellGame {
     this.comms(`${this.name} is back up.`, 'cyan');
   }
 
+  // Is there an enemy under the crosshair, standing or downed-but-alive? (Reticle goes red.)
+  _reticleHot() {
+    if (this._retT === this.t) return this._retV;
+    this._retT = this.t;
+    const cam = this.camera, o = cam.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    let hot = !!this._crosshairEnemy();
+    if (!hot) {
+      const bs = 0.035 * (62 / cam.fov);
+      for (const g of this.sentinel.guards) {
+        if (!(g.state === 'dead' && g.incap)) continue;
+        const p = new THREE.Vector3(g.x, (g.y || 0) + 0.3, g.z), v = p.clone().sub(o);
+        if (v.length() > 320 || v.normalize().angleTo(dir) > bs) continue;
+        if (this.fac.los(o, p)) { hot = true; break; }
+      }
+    }
+    return (this._retV = hot);
+  }
+
   // ISR ping sweep at the sensor point (spotter / lone operative, in the ISR view).
   _isrSweep() {
     const I = this.isr;
@@ -1384,14 +1455,14 @@ export class CellGame {
     if (best && best.tagT > 0 && best.kind === 'g') {
       // Second F on a marked enemy: make it a SYNC target.
       const on = !best.sync;
-      this.payload('sync', { id: best.id, on });
+      this.payload('sync', { id: best.id, on, by: this.role });
       if (this.isHost) best.sync = on;
       this.hud.flash(on ? 'SYNC TARGET' : 'SYNC CLEARED', on ? 'cyan' : 'dim');
       if (on) this._voice(this.role, 'Sync target marked.');
       return;
     }
     if (best) {
-      this.payload('tag', { id: best.id });
+      this.payload('tag', { id: best.id, by: this.role });
       if (this.isHost) best.tagT = HACK.tag;
       this.audio.ping && this.audio.ping();
       this.hud.flash(best.kind === 'd' ? 'DRONE TAGGED' : best.chief ? 'SITE CHIEF TAGGED' : 'TAGGED');
@@ -1587,7 +1658,7 @@ export class CellGame {
       return;
     }
     Q.pos.set(perch.x, terrainHeight(perch.x, perch.z), perch.z);
-    const eye = { x: perch.x, y: Q.pos.y + 0.55, z: perch.z };
+    const eye = { x: perch.x, y: Q.pos.y + 1.3, z: perch.z };
     // Candidates: anything tagged, anything with eyes on the spotter, drones locked on.
     const me = this.player.pos;
     const cands = [];
@@ -2241,7 +2312,7 @@ class CellHud {
     const bar = document.createElement('div');
     bar.className = 'cell-tbar';
     const extra = (g.role === 'spotter' || g.operative) ? [['cell-isr', 'ISR'], ['cell-sweep', 'SWEEP']] : [];
-    const common = [...extra, ['cell-light', 'LIGHT'], ['cell-drop', 'DROP'], ['cell-ping', 'PING \u25CE'], ['cell-help', 'HELP \u271A'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
+    const common = [...extra, ['cell-light', 'LIGHT'], ['cell-drop', 'DROP'], ['cell-ping', 'PING \u25CE'], ['cell-help', 'HELP \u271A'], ['cell-sync', 'SYNC'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
     const pills = g.operative
       ? [['cell-tab', 'TABLET'], ['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-quad', 'QUAD'], ['cell-recall', 'RECALL'], ...common]
       : g.role === 'shooter'
@@ -2277,13 +2348,23 @@ class CellHud {
     this.g.paused = on;
   }
 
+  objToggle() {
+    this.root.classList.toggle('obj-off');
+  }
+  objExpand() {
+    this.objFull = !this.objFull;
+    this.root.classList.toggle('obj-full', this.objFull);
+    if (this.objFull) this.el.objH.classList.remove('gone');
+    else this.el.objH.classList.add('gone');
+  }
+
   objective(i, o, announce) {
     this.el.objN.textContent = `OBJECTIVE ${i + 1} / ${OBJECTIVES.length}`;
     this.el.objT.textContent = o.title;
     this.el.objH.textContent = o.hint;
     this.el.objH.classList.remove('gone');
     clearTimeout(this._hintT);
-    this._hintT = setTimeout(() => this.el.objH.classList.add('gone'), 12000);
+    this._hintT = setTimeout(() => { if (!this.objFull) this.el.objH.classList.add('gone'); }, 12000);
     if (announce) this.flash(o.title, 'cyan', 3);
   }
 
@@ -2294,7 +2375,9 @@ class CellHud {
     d.innerHTML = (who ? `<b>${esc(who)}</b> ` : '') + esc(m);
     this.el.comms.appendChild(d);
     while (this.el.comms.children.length > 5) this.el.comms.firstChild.remove();
-    setTimeout(() => d.classList.add('old'), 9000);
+    // Lines fade out after a few seconds to keep the screen clean (the tablet keeps the full log).
+    setTimeout(() => d.classList.add('old'), 5000);
+    setTimeout(() => d.remove(), 6600);
   }
 
   feed(text, color) {
@@ -2528,11 +2611,12 @@ class CellHud {
     }
     // Scope (Halo-style ring with a range readout) or a small crosshair.
     g._neuroHud(c, proj, W, H);
+    g._syncHud(c, proj);
     if (g.isr.active) this._isrHud(c, W, H);
     else if (scoped) this._scope(c, W, H);
     else if (g.quad && g.quad.active) this._quadHud(c, W, H);
     else if (!g.downed && !g.kia) {
-      c.strokeStyle = 'rgba(220,240,255,0.75)';
+      c.strokeStyle = g._reticleHot() ? 'rgba(255,50,60,0.95)' : 'rgba(220,240,255,0.75)';
       c.lineWidth = 1.5;
       const s = P.def.slot === 'pistol' && P.scopeT > 0.5 ? 3 : 6;
       c.beginPath(); c.moveTo(W / 2 - s - 4, H / 2); c.lineTo(W / 2 - 4, H / 2); c.moveTo(W / 2 + 4, H / 2); c.lineTo(W / 2 + s + 4, H / 2); c.moveTo(W / 2, H / 2 + 4); c.lineTo(W / 2, H / 2 + s + 4); c.stroke();
@@ -2565,7 +2649,7 @@ class CellHud {
     c.rect(0, 0, W, H);
     c.arc(W / 2, H / 2, R, 0, Math.PI * 2, true);
     c.fill('evenodd');
-    c.strokeStyle = 'rgba(200,225,255,0.85)';
+    c.strokeStyle = g._reticleHot() ? 'rgba(255,60,70,0.95)' : 'rgba(200,225,255,0.85)';
     c.lineWidth = 1.5;
     c.beginPath(); c.arc(W / 2, H / 2, R, 0, Math.PI * 2); c.stroke();
     c.beginPath(); c.arc(W / 2, H / 2, R * 0.12, 0, Math.PI * 2); c.stroke();
