@@ -431,3 +431,7 @@ body.reckoning .tag { color: #f2c81e; }
 /* iPad / tablet with a mouse: the touch aim-and-fire buttons step back; stick and pills stay. */
 body.mouse-mode #touch .tb.big, body.mouse-mode #touch .tb.mid.scope { opacity: 0.25; }
 body.mouse-mode #touch { cursor: crosshair; }
+
+/* Default menu title: SNIPER (white) CELL (red), NIGHTWATCH in a filled cyan box. */
+#title .t-red { color: #ff2a3a; }
+#title .nw-box { display: table; margin-top: 10px; padding: 4px 12px 5px; background: #20e8f0; color: #04161a; font-size: 0.36em; letter-spacing: 0.34em; line-height: 1.2; vertical-align: top; box-shadow: 0 0 22px rgba(32, 232, 240, 0.35); }
