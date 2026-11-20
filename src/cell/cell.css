@@ -2,7 +2,10 @@
 :root { --cell: #00ffe0; --cell-dim: rgba(0, 255, 224, 0.45); --ra: #f2b35b; --ronin: #40d8e8; --alarm: #ff2a6d; }
 
 /* Menu */
-.cell-btn { border-color: rgba(0, 255, 224, 0.55) !important; color: var(--cell) !important; background: linear-gradient(90deg, rgba(0, 255, 224, 0.14), rgba(0, 255, 224, 0.02)) !important; letter-spacing: 0.08em; }
+/* The NIGHTWATCH button: filled cyan like the amber Duel box, WATCH in red. */
+.cell-btn { border-color: #20e8f0 !important; color: #06181c !important; background: #20e8f0 !important; letter-spacing: 0.18em; }
+.cell-btn:hover { filter: brightness(1.08); }
+.menu-card .cell-btn::after { color: #06181c; opacity: 0.7; }
 .cell-btn em { font-style: normal; color: var(--ink-dim); font-size: 0.8em; margin-left: 6px; }
 #panel-cell .cell-roles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 8px; }
 #panel-cell .cell-role { text-transform: none; letter-spacing: normal; font-weight: 500; line-height: 1.2; text-align: left; padding: 10px; border: 1px solid var(--line); background: rgba(8, 9, 15, 0.55); color: var(--ink); cursor: pointer; border-radius: 3px; min-height: 96px; }
@@ -238,7 +241,7 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 #cell-cine .cc-title b .t-w, #cell-hud .c-intro h1 .t-w { color: #fff; text-shadow: 0 0 18px rgba(255, 255, 255, 0.35); }
 #cell-cine .cc-title b .t-r, #cell-hud .c-intro h1 .t-r { color: #ff3048; text-shadow: 0 0 22px rgba(255, 48, 72, 0.55); }
 #cell-cine .cc-title b .t-c, #cell-hud .c-intro h1 .t-c { color: #00ffe0; text-shadow: 0 0 22px rgba(0, 255, 224, 0.45); }
-.cell-btn .t-w { color: #fff; } .cell-btn .t-r { color: #ff3048; }
+.cell-btn .t-r { color: #d70f22; }
 
 /* ---- detection, sync, PiP squares ---- */
 #cell-hud .c-hunt { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); font-family: var(--mono); font-size: 12px; letter-spacing: 0.16em; padding: 3px 10px; display: none; }

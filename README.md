@@ -113,7 +113,7 @@ Click the game view with the mouse and it switches to mouse mode: the mouse aims
 
 A night stealth mode for one or two players, built around the feel of a classic night sniping level: a dark valley, a lit compound below, a suppressed rifle with a night-vision scope and a white vapour trail on every shot. Its rules are adapted from **Cold Archive**'s co-op infiltration (agent + Overwatch, SENTINEL's alarm, bandwidth-based payloads). The players use the Draxxed Sklounst operator models in Multicam Black. The shooter wears a chest rig and a dark urban-digital poncho; the spotter wears a plate carrier and a cap.
 
-Pick **SNIPER CELL** on the main menu, then a mission, the **staging area** loadout, and how to play.
+Pick **NIGHTWATCH** (the cyan button) on the main menu, then a mission, the **staging area** loadout, and how to play.
 
 **Play it:** [r0n1n9.github.io/snipercellnightwatch/#nightwatch](https://r0n1n9.github.io/snipercellnightwatch/#nightwatch) opens Sniper Cell with NightWatch selected. Use `#infiltration` for the other mission.
 
