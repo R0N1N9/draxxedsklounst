@@ -4,6 +4,8 @@ import { randomCode } from './util.js';
 import { PALETTES } from './atmosphere.js';
 import { drawMap } from './briefmap.js';
 import { renderLoadout } from './loadout.js';
+import { PRESETS, RULES, applyRules, normalizeRules, rulesLabel } from './rules.js';
+import { RANGES } from './range.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -74,6 +76,8 @@ const settings = {
   gyroInvertY: store.get('gyroInvertY', false),
   mode: store.get('mode', 'classic'), // 'classic' | 'app' ("Do you want to develop an app?")
   mvTarget: store.get('mvTarget', 7),
+  autoBipod: store.get('autoBipod', true),
+  autoCycle: store.get('autoCycle', true),
 };
 
 // Generic binding for [data-setting] controls (menu + pause menu share keys).
@@ -81,6 +85,10 @@ const LIVE_KEYS = ['touchSensR', 'touchSensL', 'gyroMode', 'gyroSens', 'gyroInve
 function applyInputSettings() {
   if (!game) return;
   for (const k of LIVE_KEYS) game.input[k] = settings[k];
+  if (game.player) {
+    game.player.autoBipod = settings.autoBipod;
+    game.player.autoCycle = settings.autoCycle;
+  }
   if (settings.gyroMode !== 'off') game.input.requestGyro();
 }
 function syncSettingUI() {
@@ -113,9 +121,80 @@ function primeGyro() {
   const DM = window.DeviceMotionEvent;
   if (settings.gyroMode !== 'off' && DM && typeof DM.requestPermission === 'function') DM.requestPermission().catch(() => {});
 }
-settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); };
+settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); updateTitle(); };
+
+// Easter egg: with the Pollo Hermano skin selected, the main menu becomes The Reckoning.
+// (Main menu only, and only for your own Pollo Hermano skin.)
+function polloOn() {
+  const lo = settings.loadout || {};
+  return (lo.stealth || 'poncho') === 'poncho' && lo.skin === 'pollo';
+}
+function updateTitle() {
+  const on = polloOn();
+  $('title').innerHTML = on ? 'DRAXXED<br />SKLOUNST<span class="reckon">: THE RECKONING</span>' : 'DRAXXED<br />SKLOUNST';
+  $('tagline').textContent = on ? 'One pollo. Two hermanos. Eight hundred sauce packets.' : 'One valley. Two rifles. Eight hundred metres.';
+  document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Draxxed Sklounst';
+  document.body.classList.toggle('reckoning', on);
+}
+
+// Long range is the default distance; move old "auto" settings over once.
+{
+  const saved = store.get('rules', { preset: 'bf' });
+  if (!store.get('rangeV2', false)) { if (saved.range === 'auto' || !saved.range) saved.range = 'long'; store.set('rangeV2', true); store.set('rules', saved); }
+  settings.rules = normalizeRules(saved);
+}
+applyRules(settings.rules);
+
+// ---- Sniping style ----
+function saveRules(r) {
+  settings.rules = normalizeRules(r);
+  store.set('rules', settings.rules);
+  applyRules(settings.rules);
+  renderStyle();
+}
+function renderStyle() {
+  const r = settings.rules;
+  $('style-cur').textContent = rulesLabel(r);
+  // Shooting style bar.
+  const SUB = { sim: 'realistic', bf: 'default', cod: 'arcade', halo: 'hitscan' };
+  const styleBtns = Object.entries(PRESETS).map(([k, p]) => `<button class="${r.preset === k ? 'on' : ''}" data-preset="${k}" title="Like ${p.feel}"><b>${p.short}</b><i>${SUB[k] || ''}</i></button>`);
+  styleBtns.push(`<button class="${r.preset === 'custom' ? 'on' : ''}" data-preset="custom"><b>CUSTOM</b><i>your mix</i></button>`);
+  $('style-presets').innerHTML = styleBtns.join('');
+  $('style-desc').textContent = PRESETS[r.preset] ? `Like ${PRESETS[r.preset].feel}. ${PRESETS[r.preset].desc}` : 'Set drop, bullet speed, wind, drag, sway and hitbox size yourself.';
+  $('style-custom').style.display = r.preset === 'custom' ? '' : 'none';
+  document.querySelectorAll('[data-sr]').forEach((el) => { el.value = String(r[el.dataset.sr]); });
+  document.querySelectorAll('[data-sv]').forEach((el) => { el.textContent = `${Math.round(r[el.dataset.sv] * 100)}%`; });
+  $('style-autozero').checked = !!r.autoZero;
+  const def = (PRESETS[r.preset] && PRESETS[r.preset].range) || 'long';
+  const cur = RANGES[r.range] ? r.range : def;
+  if ($('brief-range')) $('brief-range').textContent = RANGES[cur].dist.toUpperCase();
+  if ($('brief-range-l')) $('brief-range-l').textContent = `${RANGES[cur].name.toLowerCase()} range`;
+  // Shooting distance bar: each range labelled with the game it plays like.
+  const sel = RANGES[r.range] ? r.range : 'auto';
+  const GAME = { close: 'Halo', medium: 'Call of Duty', long: 'Battlefield', extreme: 'ARMA / Sniper Elite' };
+  $('style-range').innerHTML = [`<button class="${sel === 'auto' ? 'on' : ''}" data-range="auto"><b>AUTO</b><i>${RANGES[def].name}</i></button>`,
+    ...Object.entries(RANGES).map(([k, g]) => `<button class="${sel === k ? 'on' : ''}" data-range="${k}"><b>${g.name.toUpperCase()}</b><i>${g.dist}</i></button>`)].join('');
+  $('range-desc').textContent = sel === 'auto' ? `Follows the style: ${RANGES[def].name} (${RANGES[def].dist}, like ${GAME[def]}). ${RANGES[def].desc}` : `Like ${GAME[sel]} (${RANGES[sel].dist}). ${RANGES[sel].desc}`;
+}
+$('style-presets').onclick = (e) => {
+  const b = e.target.closest('[data-preset]');
+  if (!b) return;
+  const k = b.dataset.preset;
+  saveRules(k === 'custom' ? { ...settings.rules, preset: 'custom', zooms: null } : { preset: k, autoZero: settings.rules.autoZero, range: settings.rules.range });
+};
+$('style-range').onclick = (e) => {
+  const b = e.target.closest('[data-range]');
+  if (b) saveRules({ ...settings.rules, range: b.dataset.range });
+};
+document.querySelectorAll('[data-sr]').forEach((el) => el.addEventListener('input', () => {
+  saveRules({ ...settings.rules, preset: 'custom', [el.dataset.sr]: +el.value });
+}));
+$('style-autozero').onchange = (e) => saveRules({ ...settings.rules, autoZero: e.target.checked });
+$('btn-style').onclick = () => { renderStyle(); showPanel('panel-style'); };
+renderStyle();
 
 // ---- Menu wiring ----
+updateTitle();
 $('in-name').value = settings.name;
 $('in-pal').value = settings.pal;
 $('in-quality').value = settings.quality;
@@ -221,6 +300,7 @@ async function startMultiverse(mode, opts = {}) {
     first: opts.first,
     dev: { ...DEV, ...(opts.dev || {}) },
     valley: { build: (o) => buildValley(o.mode, { ...o, pal: opts.pal, code: opts.code }) },
+    hello: () => ({ rules: { ...RULES } }),
   });
   window.__mv = director;
   try {
@@ -244,7 +324,7 @@ function wirePause() {
   };
   document.addEventListener('pointerlockchange', () => {
     // Frozen = another dimension (or a transition) is on screen; the director handles pausing there.
-    if (touch || game.frozen || game.suspended) return;
+    if ((touch && !game.input.mouseMode) || game.frozen || game.suspended) return;
     const locked = document.pointerLockElement === game.renderer.domElement;
     const cardOpen = $('h-card').classList.contains('on') && $('h-card').querySelector('button');
     show(!locked && !cardOpen && !game.toolsOpen);
@@ -262,7 +342,10 @@ function wirePause() {
   };
   $('btn-exit').onclick = () => {
     if (game.net && game.net.close) game.net.close();
-    location.href = location.pathname;
+    // Back to a clean menu: drop any ?host/?join query, else just reload (works for files
+    // opened straight from a phone's Files app too).
+    if (location.search) location.replace(location.href.split('?')[0].split('#')[0]);
+    else location.reload();
   };
   $('in-sens2').value = settings.sensitivity;
   $('sens-val2').textContent = (+settings.sensitivity).toFixed(2);
@@ -287,7 +370,7 @@ function wirePause() {
 // Loadout (menu)
 $('btn-loadout').onclick = () => {
   showPanel('panel-loadout');
-  renderLoadout($('menu-loadout'), settings.loadout, (lo) => settings.saveLoadout(lo));
+  renderLoadout($('menu-loadout'), settings.loadout, (lo) => settings.saveLoadout(lo), () => updateTitle());
 };
 
 // Vs AI
@@ -450,6 +533,7 @@ $('btn-join').onclick = async () => {
   net.on('hello', (m) => {
     if (gotHello) return;
     gotHello = true;
+    if (m.rules) applyRules(m.rules);
     $('join-status').textContent = 'Connected!';
     goFullscreen();
     const o = { net, pal: PALETTES[m.pal] ? m.pal : 'dusk', oppName: String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16) };

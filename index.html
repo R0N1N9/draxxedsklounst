@@ -34,8 +34,8 @@
     <div class="menu-card">
       <div class="brand">
         <div class="kicker"><span>// TACTICAL DUEL</span><span>v1.0</span></div>
-        <h1>DRAXXED<br />SKLOUNST</h1>
-        <p class="tag">One valley. Two rifles. Eight hundred metres.</p>
+        <h1 id="title">DRAXXED<br />SKLOUNST</h1>
+        <p class="tag" id="tagline">One valley. Two rifles. Eight hundred metres.</p>
       </div>
 
       <label class="field callsign"><span>Callsign</span><input id="in-name" maxlength="14" placeholder="Ghost" autocomplete="off" /></label>
@@ -48,6 +48,7 @@
         <button id="btn-join-open">Join with code</button>
         <button id="btn-ai-open">Vs AI</button>
         <button id="btn-loadout">Loadout</button>
+        <button id="btn-style">Sniping style <em id="style-cur" class="cur"></em></button>
         <div class="row">
           <button id="btn-practice" class="ghost">Practice range</button>
           <button id="btn-sandbox" class="ghost">Sandbox</button>
@@ -67,6 +68,8 @@
           <label class="field"><span>Gyro aim <em>(phones &amp; tablets)</em></span><select data-setting="gyroMode"><option value="off">Off</option><option value="scoped">When scoped</option><option value="always">Always</option></select></label>
           <label class="field"><span>Gyro sensitivity <em data-v="gyroSens"></em></span><input data-setting="gyroSens" type="range" min="0.2" max="3" step="0.05" /></label>
           <label class="check"><input data-setting="gyroInvertY" type="checkbox" /> Invert gyro up/down</label>
+          <label class="check"><input data-setting="autoBipod" type="checkbox" /> Auto-set bipod when prone &amp; still</label>
+          <label class="check"><input data-setting="autoCycle" type="checkbox" /> Auto-unscope to cycle the bolt</label>
 
         </details>
         <details class="controls">
@@ -90,6 +93,8 @@
             <tr><td>Rifle / pistol</td><td>1 / 2 (or wheel)</td></tr>
             <tr><td>Tools / loadout</td><td>T · G / L</td></tr>
             <tr><td>Predator feed</td><td>U</td></tr>
+            <tr><td>Supply drone (ammo)</td><td>V</td></tr>
+            <tr><td>Bipod (prone, stopped)</td><td>X</td></tr>
           </table>
         </details>
       </div>
@@ -116,6 +121,27 @@
       <div id="panel-loadout" class="panel">
         <p class="hint small">One tool per slot. You can also change it during each round's insertion (L).</p>
         <div id="menu-loadout" class="lo-body"></div>
+        <button class="primary back">Done</button>
+      </div>
+
+      <div id="panel-style" class="panel">
+        <p class="hint small">How bullets fly, and how far apart you start. Mix and match. When you host, your choice applies to both players.</p>
+        <div class="lo-head"><span>Shooting style</span><em>bullet physics</em></div>
+        <div class="seg seg-style" id="style-presets"></div>
+        <p class="hint small seg-desc" id="style-desc"></p>
+        <div id="style-custom" class="style-custom">
+          <label class="field"><span>Bullet drop <em data-sv="gravity"></em></span><input data-sr="gravity" type="range" min="0" max="1.5" step="0.05" /></label>
+          <label class="field"><span>Bullet speed / travel time</span><select data-sr="speed"><option value="0.75">Slow (long flight)</option><option value="1">Normal</option><option value="1.6">Fast</option><option value="40">Instant (hitscan)</option></select></label>
+          <label class="field"><span>Wind <em data-sv="wind"></em></span><input data-sr="wind" type="range" min="0" max="2" step="0.05" /></label>
+          <label class="field"><span>Air drag <em data-sv="drag"></em></span><input data-sr="drag" type="range" min="0" max="2" step="0.05" /></label>
+          <label class="field"><span>Scope sway <em data-sv="sway"></em></span><input data-sr="sway" type="range" min="0" max="1.5" step="0.05" /></label>
+          <label class="field"><span>Hitbox size <em data-sv="hitbox"></em></span><input data-sr="hitbox" type="range" min="1" max="1.5" step="0.05" /></label>
+        </div>
+        <div class="lo-head" style="margin-top:4px"><span>Shooting distance</span><em>where both sides start</em></div>
+        <div class="seg seg-style" id="style-range"></div>
+        <p class="hint small seg-desc" id="range-desc"></p>
+        <label class="check"><input id="style-autozero" type="checkbox" /> Rangefinder (F) auto-sets your zero</label>
+        <p class="hint small">Easier hits anywhere: go prone and stay still to drop the bipod (no scope sway), range with F so your zero matches, and use 16–20× on the Mk22.</p>
         <button class="primary back">Done</button>
       </div>
 
@@ -147,7 +173,7 @@
       <div class="brief-head"><span>// AO BRIEFING — VARGA VALLEY</span><span id="brief-coord">GRID 34T · 1:12 000</span></div>
       <div class="map-wrap"><canvas id="map"></canvas><div class="sweep"></div></div>
       <div class="brief-stats">
-        <div><b>~790 M</b><span>ridge to ridge</span></div>
+        <div><b id="brief-range">~800 M</b><span id="brief-range-l">engagement range</span></div>
         <div><b>3</b><span>uplinks</span></div>
         <div><b>FT4</b><span>rounds to win</span></div>
         <div><b>1</b><span>life per round</span></div>
@@ -201,6 +227,7 @@
     <div class="tb mid breath" data-act="breath" data-toggle="breath"><i>≋</i><span>BREATH</span></div>
     <div class="tb sm crouch" data-act="crouch"><i>▾</i><span>CROUCH</span></div>
     <div class="tb sm prone" data-act="prone"><i>▁</i><span>PRONE</span></div>
+    <div class="tb sm bipodb" data-act="bipod"><i>⋀</i><span>BIPOD</span></div>
     <!-- Right thumb -->
     <div class="tb big fire fire-r" data-act="fire"><i>◉</i><span>FIRE</span></div>
     <div class="tb mid scope" data-act="scope" data-toggle="scope"><i>⊕</i><span>SCOPE</span></div>
@@ -214,7 +241,7 @@
     <div class="tb sm swp" data-act="swap"><i>⇄</i><span id="pill-swap">PISTOL</span></div>
     <!-- Top rows: tools, kit, feed, menu -->
     <div class="tbar tbar-r">
-      <div class="pill tool" data-act="scout" id="pill-scout">TOOL</div><div class="pill tool" data-act="tactical" id="pill-tact">TOOL</div>
+      <div class="pill tool" data-act="scout" id="pill-scout">TOOL</div><div class="pill tool" data-act="tactical" id="pill-tact">TOOL</div><div class="pill tool" data-act="supply" id="pill-supply">SUPPLY</div>
     </div>
     <div class="tbar tbar-l">
       <div class="pill" id="tb-pause">❚❚ MENU</div><div class="pill" data-act="loadout">KIT</div><div class="pill" data-act="feed" id="pill-feed">FEED</div>
@@ -229,6 +256,7 @@
       <h2>// PAUSED</h2>
       <p class="hint small" id="pause-note"></p>
       <button id="btn-resume" class="primary">Resume</button>
+      <button id="btn-exit">Exit to main menu</button>
       <label class="field"><span>Sensitivity <em id="sens-val2">1.0</em></span><input id="in-sens2" type="range" min="0.3" max="2.5" step="0.05" value="1" /></label>
       <label class="check"><input id="in-invert2" type="checkbox" /> Invert look</label>
       <label class="check"><input id="in-toggle2" type="checkbox" /> Toggle scope</label>
@@ -237,8 +265,9 @@
       <label class="field"><span>Gyro aim <em>(phones &amp; tablets)</em></span><select data-setting="gyroMode"><option value="off">Off</option><option value="scoped">When scoped</option><option value="always">Always</option></select></label>
       <label class="field"><span>Gyro sensitivity <em data-v="gyroSens"></em></span><input data-setting="gyroSens" type="range" min="0.2" max="3" step="0.05" /></label>
       <label class="check"><input data-setting="gyroInvertY" type="checkbox" /> Invert gyro up/down</label>
+          <label class="check"><input data-setting="autoBipod" type="checkbox" /> Auto-set bipod when prone &amp; still</label>
+          <label class="check"><input data-setting="autoCycle" type="checkbox" /> Auto-unscope to cycle the bolt</label>
 
-      <button id="btn-exit">Exit to main menu</button>
     </div>
   </div>
 

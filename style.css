@@ -372,3 +372,53 @@ body.touch #h-hint { bottom: 30%; }
 #touch .tb.sm.zdn, #touch .tb.sm.zup, #touch .tb.sm.rng, #touch .tb.sm.swp { border-color: rgba(98, 217, 232, 0.5); }
 #touch .tb.sm.swp span { font-size: 7px; }
 .tbar-r { width: auto; }
+
+/* Sniping style */
+.style-opts { grid-template-columns: 1fr !important; }
+.style-custom { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
+#btn-style em.cur { font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: 0.15em; color: var(--amber); margin-left: 8px; }
+#touch .tb.sm.bipodb { border-color: rgba(98, 217, 232, 0.5); }
+
+/* Operator preview in the loadout */
+.lo-op { display: flex; gap: 12px; align-items: stretch; }
+.lo-prev { position: relative; flex: 0 0 44%; min-height: 240px; max-height: 300px; border: 1px solid var(--line); background: radial-gradient(ellipse at 50% 70%, rgba(242, 179, 91, 0.1), rgba(13, 14, 23, 0.6) 70%); }
+.lo-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+.lo-cap { position: absolute; left: 8px; bottom: 6px; z-index: 1; font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; color: var(--amber); pointer-events: none; }
+.lo-cap i { font-style: normal; color: #9fd8e0; }
+
+.lo-outfits .lo-opts { grid-template-columns: 1fr; }
+.lo-list { display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 520px) { .lo-op { flex-direction: column; } .lo-prev { flex-basis: auto; height: 230px; } }
+#menu-loadout .lo-op { flex-direction: column; }
+#menu-loadout .lo-prev { flex-basis: auto; height: 260px; }
+.lo-side { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+.lo-lens { display: flex; flex-wrap: wrap; gap: 7px; }
+.lo-sw { appearance: none; width: 30px !important; height: 30px; min-height: 0 !important; padding: 0 !important; border-radius: 50% !important; border: 2px solid rgba(232, 230, 240, 0.25) !important; background: radial-gradient(circle at 35% 35%, rgba(255,255,255,.45), transparent 45%), var(--c) !important; cursor: pointer; position: relative; flex: none; }
+.lo-sw::after { content: none !important; }
+.lo-sw.on { border-color: var(--amber) !important; box-shadow: 0 0 0 2px rgba(242, 179, 91, 0.35), 0 0 12px var(--c); }
+.lo-custom { display: inline-block; background: conic-gradient(#e0283a, #f2d23c, #3cf28a, #38d6f2, #8a5cff, #f23ca8, #e0283a) !important; }
+.lo-custom.on { background: radial-gradient(circle at 35% 35%, rgba(255,255,255,.45), transparent 45%), var(--c) !important; }
+.lo-custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; border: 0; padding: 0; }
+.lo-camo { border-radius: 6px !important; }
+.lo-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.lo-chip { appearance: none; min-height: 0 !important; padding: 6px 11px !important; font-family: var(--mono) !important; font-size: 11px !important; letter-spacing: 0.12em !important; text-transform: uppercase; border: 1px solid var(--line) !important; background: rgba(232, 230, 240, 0.04) !important; color: var(--ink-dim) !important; cursor: pointer; border-radius: 2px; }
+.lo-chip::after { content: none !important; }
+.lo-chip.on { border-color: var(--amber) !important; color: var(--amber) !important; background: rgba(242, 179, 91, 0.12) !important; }
+/* Pause menu fits any screen: the card scrolls instead of running off the bottom. */
+#pause .menu-card { max-height: calc(100dvh - 32px); overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+/* Pollo Hermano easter egg */
+#title .reckon { display: block; font-size: 0.42em; letter-spacing: 0.32em; color: #f2c81e; margin-top: 6px; text-shadow: 0 0 18px rgba(242, 200, 30, 0.45); }
+body.reckoning .tag { color: #f2c81e; }
+.lo-opt.pollo.on { border-color: #f2c81e !important; background: rgba(242, 200, 30, 0.14) !important; }
+/* Sniping style / distance bars */
+.seg-style { display: flex; gap: 4px; flex-wrap: nowrap; }
+.seg-style button { flex: 1 1 0; min-width: 0; display: flex !important; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px !important; text-align: center !important; letter-spacing: 0.08em !important; }
+.seg-style button::after { content: none !important; }
+.seg-style button b { font-size: 13px; }
+.seg-style button i { font-style: normal; font-family: var(--mono); font-size: 9px; letter-spacing: 0.04em; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; text-transform: none; }
+.seg-style button.on { border-color: var(--amber) !important; background: rgba(242, 179, 91, 0.14) !important; color: var(--amber) !important; }
+.seg-desc { margin: 0 0 4px; min-height: 2.4em; }
+/* iPad / tablet with a mouse: the touch aim-and-fire buttons step back; stick and pills stay. */
+body.mouse-mode #touch .tb.big, body.mouse-mode #touch .tb.mid.scope { opacity: 0.25; }
+body.mouse-mode #touch { cursor: crosshair; }

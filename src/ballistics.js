@@ -42,8 +42,11 @@ const calm = { at: (t, out) => out.set(0, 0) };
 
 // Elevation (radians above line of sight) needed to hit at a given distance in calm air.
 const zeroCache = new Map();
+export function clearZeroCache() {
+  zeroCache.clear();
+}
 export function zeroAngle(dist, muzzle = BALLISTICS.muzzle) {
-  const key = dist + ':' + muzzle;
+  const key = dist + ':' + muzzle + ':' + BALLISTICS.gravity + ':' + BALLISTICS.drag;
   if (zeroCache.has(key)) return zeroCache.get(key);
   let ang = 0;
   const p = new THREE.Vector3(), v = new THREE.Vector3();

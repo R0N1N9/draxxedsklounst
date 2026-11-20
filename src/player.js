@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { PLAYER, WEAPON, MAP } from './config.js';
+import { PLAYER, WEAPON, MAP, VEST } from './config.js';
 import { clamp, lerp, noise2 } from './util.js';
 import { zeroAngle } from './ballistics.js';
-import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
+import { WEAPONS, SUPPRESSOR_FACTOR, SCOPE40 } from './weapons.js';
+import { RULES } from './rules.js';
 
 const HEIGHTS = [1.8, 1.25, 0.55];
 const EYES = [PLAYER.eyeStand, PLAYER.eyeCrouch, PLAYER.eyeProne];
@@ -27,7 +28,8 @@ export class LocalPlayer {
     this.rifleKey = WEAPONS[rifleKey] && WEAPONS[rifleKey].slot === 'rifle' ? rifleKey : 'mk22';
     const mk = (key) => {
       const d = WEAPONS[key];
-      return { def: d, mag: d.mag, chamber: 1, reserve: d.mag * d.spareMags, zoomIdx: d.zooms.length - 1, zero: d.fixedZero || 400 };
+      const z = d.zooms.indexOf(12);
+      return { def: d, mag: d.mag, chamber: 1, reserve: d.mag * this._spare(d), zoomIdx: z >= 0 ? z : d.zooms.length - 1, zero: d.fixedZero || 400 };
     };
     this.arms = [mk(this.rifleKey), mk('m18')];
     this.slot = 0;
@@ -37,6 +39,12 @@ export class LocalPlayer {
     this.reloadT = 0;
     this.reloadDur = 1;
     this.reloadEmpty = false;
+    this.boltPending = false;
+    this.bipodState = 'stowed';
+    this.bipodT = 0;
+    this.bipodU = 0;
+    this.autoCycle = true; // drop out of the scope to work the bolt once you let go of fire
+    this.autoBipod = true; // set the bipod by itself once you've been prone and still a moment
   }
 
   get w() {
@@ -73,14 +81,112 @@ export class LocalPlayer {
   // Muzzle velocity of the weapon in hand (suppressor only fits the rifle).
   get muzzle() {
     const d = this.def;
-    return d.slot === 'rifle' && this.suppressed ? Math.round(d.muzzle * SUPPRESSOR_FACTOR) : d.muzzle;
+    return Math.round((d.slot === 'rifle' && this.suppressed ? d.muzzle * SUPPRESSOR_FACTOR : d.muzzle) * RULES.speed);
+  }
+
+  // Zoom steps: the sniping style can override them (e.g. Halo's 5× / 10×).
+  get zooms() {
+    if (this.def.key === 'mk22' && this.scope40) return SCOPE40.zooms;
+    return this.def.scope && RULES.zooms ? RULES.zooms : this.def.zooms;
+  }
+
+  // Prone and still: the bipod is down and the scope doesn't move at all.
+  // Bipod: legs swing down over ~0.45 s once you're prone and still with the rifle.
+  // `bipodT` is the deploy progress (0 stowed, 1 planted); sway fades out with it.
+  get bipod() {
+    return this.bipodState === 'deployed';
+  }
+
+  // Manual bipod (Battlefield-style): prone + stopped, then deploy by hand (X).
+  //   bipodState: 'stowed' | 'deploying' | 'deployed' | 'stowing'
+  //   bipodU:     progress of the current hand animation (0..1)
+  //   bipodT:     how far the legs are out (0 folded .. 1 planted) — drives sway and visuals
+  // Moving, standing, switching or reloading folds the legs back up.
+  get canBipod() {
+    return this.stance === 2 && !this.moving && this.def.slot === 'rifle' && this.switchT <= 0 && this.reloadT <= 0 && this.alive;
+  }
+
+  get bipodBusy() {
+    return this.bipodState === 'deploying' || this.bipodState === 'stowing';
+  }
+
+  toggleBipod() {
+    const s = this.bipodState || 'stowed';
+    if (s === 'stowed') {
+      if (!this.canBipod) return 'blocked';
+      this.bipodState = 'deploying';
+      this.bipodU = 0;
+      this.bipodEvent = 'reach';
+      return 'deploying';
+    }
+    if (s === 'deployed') {
+      this._bipodHold = true; // folded by hand: don't auto-set again until you move or get up
+      this.bipodState = 'stowing';
+      this.bipodU = 0;
+      this.bipodEvent = 'reach';
+      return 'stowing';
+    }
+    return s;
+  }
+
+  _updateBipod(dt) {
+    const s = this.bipodState || 'stowed';
+    const keepOut = this.stance === 2 && !this.moving && this.def.slot === 'rifle' && this.switchT <= 0 && this.alive;
+    if ((s === 'deployed' || s === 'deploying') && !keepOut) {
+      // Moving or getting up folds the legs (quick, no hand needed).
+      this.bipodState = 'stowing';
+      this.bipodU = 1 - (this.bipodT || 0);
+      this.bipodEvent = 'stow';
+    }
+    if (!keepOut) {
+      this._bipodHold = false;
+      this._stillT = 0;
+    }
+    // Auto-set: prone and still for half a second, hand still does the full animation.
+    if (this.bipodState === 'stowed' && this.autoBipod && !this._bipodHold && this.canBipod && !this.boltPending && this.cycleT <= 0) {
+      this._stillT = (this._stillT || 0) + dt;
+      if (this._stillT >= 0.5) {
+        this._stillT = 0;
+        this.toggleBipod();
+      }
+    } else if (this.bipodState !== 'stowed') this._stillT = 0;
+    const st = this.bipodState || 'stowed';
+    if (st === 'deploying') {
+      this.bipodU = Math.min(1, (this.bipodU || 0) + dt / 0.9);
+      // Hand reaches forward (0–0.3), flicks the legs down (0.3–0.7), returns (0.7–1).
+      this.bipodT = clamp((this.bipodU - 0.3) / 0.4, 0, 1);
+      if (this.bipodU >= 1) {
+        this.bipodState = 'deployed';
+        this.bipodT = 1;
+        this.bipodEvent = 'deploy';
+      } else if (this.bipodU > 0.3 && !this._flicked) {
+        this._flicked = true;
+        this.bipodEvent = 'flick';
+      }
+    } else if (st === 'stowing') {
+      this.bipodU = Math.min(1, (this.bipodU || 0) + dt / 0.55);
+      this.bipodT = 1 - clamp(this.bipodU / 0.75, 0, 1);
+      if (this.bipodU >= 1) {
+        this.bipodState = 'stowed';
+        this.bipodT = 0;
+      }
+    } else {
+      this._flicked = false;
+      this.bipodU = 0;
+    }
+    if (this.bipodState === 'stowed') this._flicked = false;
+  }
+
+  // Spare magazines for a weapon: the chest rig carries extra.
+  _spare(d) {
+    return d.spareMags + (this.vest === 'rig' ? VEST.rigExtraMags[d.slot] || 0 : 0);
   }
 
   refill() {
     for (const w of this.arms) {
       w.mag = w.def.mag;
       w.chamber = 1;
-      w.reserve = w.def.mag * w.def.spareMags;
+      w.reserve = w.def.mag * this._spare(w.def);
     }
   }
 
@@ -91,6 +197,7 @@ export class LocalPlayer {
     this.reloadDur = this.reloadEmpty ? w.def.reloadEmpty : w.def.reload;
     this.reloadT = this.reloadDur;
     this.cycleT = 0;
+    this.boltPending = false;
     return true;
   }
 
@@ -100,6 +207,7 @@ export class LocalPlayer {
     this.switchT = 0.7;
     this.reloadT = 0;
     this.cycleT = 0;
+    this.boltPending = false;
   }
 
   reset(spawn, yaw) {
@@ -129,7 +237,7 @@ export class LocalPlayer {
   }
 
   get zoom() {
-    return this.def.zooms[Math.min(this.zoomIdx, this.def.zooms.length - 1)];
+    return this.zooms[Math.min(this.zoomIdx, this.zooms.length - 1)];
   }
 
   fov() {
@@ -146,7 +254,8 @@ export class LocalPlayer {
 
   // Sway offset in radians (yaw, pitch).
   sway(out = { x: 0, y: 0 }) {
-    let amp = SWAY[this.stance] * 0.001 * this.def.sway;
+    let amp = SWAY[this.stance] * 0.001 * this.def.sway * RULES.sway * (this.def.key === 'mk22' && this.scope40 ? SCOPE40.sway : 1);
+    amp *= 1 - (this.bipodT || 0);
     if (this.moving) amp *= 2.4;
     if (this.wounded) amp *= 1.6;
     if (this.holding) amp *= 0.12;
@@ -172,7 +281,7 @@ export class LocalPlayer {
   }
 
   canFire() {
-    return this.alive && !this.sprinting && this.cycleT <= 0 && this.reloadT <= 0 && this.switchT <= 0 && this.w.chamber > 0;
+    return this.alive && !this.sprinting && !this.bipodBusy && !this.boltPending && this.cycleT <= 0 && this.reloadT <= 0 && this.switchT <= 0 && this.w.chamber > 0;
   }
 
   update(dt, a, world, opts) {
@@ -194,14 +303,19 @@ export class LocalPlayer {
     }
 
     // --- Scope
-    const wantScope = a.scope && this.alive && this.reloadT <= 0 && this.switchT <= 0;
+    const cyclingBolt = this.def.kind === 'bolt' && this.cycleT > 0 && !this.straightPull;
+    // Auto-cycle: after a scoped shot with a standard bolt, come off the scope as soon as the
+    // trigger finger lifts. Toggle/held scope comes back in by itself once the bolt is home.
+    const autoOff = this.autoCycle && this.boltPending && this.def.kind === 'bolt' && !this.straightPull && !a.fireHeld;
+    const wantScope = a.scope && this.alive && this.reloadT <= 0 && this.switchT <= 0 && !cyclingBolt && !autoOff;
     // Weapon select: 1 / 2, or the wheel when not scoped.
     if (a.slot1) this.switchTo(0);
     if (a.slot2) this.switchTo(1);
     if (a.swap || (!this.scoped && (a.zoomIn || a.zoomOut) && !a.touchZoom)) this.switchTo(1 - this.slot);
     this.scoped = wantScope;
     this.scopeT = clamp(this.scopeT + (wantScope ? dt / 0.18 : -dt / 0.12), 0, 1);
-    if (a.zoomIn && this.scoped) this.zoomIdx = Math.min(this.zoomIdx + 1, this.def.zooms.length - 1);
+    if (this.zoomIdx > this.zooms.length - 1) this.zoomIdx = this.zooms.length - 1;
+    if (a.zoomIn && this.scoped) this.zoomIdx = Math.min(this.zoomIdx + 1, this.zooms.length - 1);
     if (a.zoomOut && this.scoped) this.zoomIdx = Math.max(this.zoomIdx - 1, 0);
     if (a.zeroUp) this.zero = Math.min(this.zero + WEAPON.zeroStep, WEAPON.zeroMax);
     if (a.zeroDown) this.zero = Math.max(this.zero - WEAPON.zeroStep, WEAPON.zeroMin);
@@ -224,8 +338,15 @@ export class LocalPlayer {
       if (before > 0.35 && this.switchT <= 0.35 && this.pendingSlot >= 0) {
         this.slot = this.pendingSlot;
         this.pendingSlot = -1;
+        const w = this.w;
+        if (w.chamber === 0 && w.mag > 0) { w.mag--; w.chamber = 1; }
       }
       if (this.switchT < 0) this.switchT = 0;
+    }
+    if (this.boltPending && (!this.scoped || this.straightPull || this.def.kind !== 'bolt')) {
+      this.boltPending = false;
+      this.cycleT = this.def.kind === 'bolt' && this.straightPull ? this.def.cycle * 0.8 : this.def.cycle;
+      if (this.def.kind === 'bolt' && this.w.mag > 0) this.boltEvent = true;
     }
     if (this.cycleT > 0) {
       this.cycleT -= dt;
@@ -307,6 +428,7 @@ export class LocalPlayer {
 
     this.speed = Math.hypot(this.vel.x, this.vel.z);
     this.moving = this.speed > 0.4;
+    this._updateBipod(dt);
     const targetEye = EYES[this.stance];
     this.eye += (targetEye - this.eye) * Math.min(1, dt * 10);
     this.bobPhase = (this.bobPhase || 0) + dt * this.speed * 1.9;
@@ -316,10 +438,16 @@ export class LocalPlayer {
   fireKick() {
     const w = this.w, d = w.def;
     w.chamber = 0;
-    this.cycleT = d.cycle;
+    if (d.kind === 'bolt') {
+      // Battlefield-style: the bolt is worked once you come off the scope —
+      // unless you run a straight-pull bolt, which cycles while you stay on target.
+      this.boltPending = true;
+      this.cycleT = 0;
+    } else this.cycleT = d.cycle;
     // Semi-autos chamber the next round straight away.
     if (d.kind === 'semi' && w.mag > 0) { w.mag--; w.chamber = 1; }
-    this.recoil = d.recoil * (this.stance === 2 ? 0.6 : 1);
+    const climb = d.kind === 'bolt' && this.straightPull ? 1.15 : 1;
+    this.recoil = d.recoil * climb * (this.bipod ? 0.35 : this.stance === 2 ? 0.6 : 1);
     if (d.kind === 'bolt') this.holding = false;
   }
 }

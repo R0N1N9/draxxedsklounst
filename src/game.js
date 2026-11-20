@@ -5,31 +5,38 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
-import { BALLISTICS, ROUND, WEAPON, UPLINK, NET, DAMAGE, PLAYER } from './config.js';
+import { BALLISTICS, ROUND, WEAPON, UPLINK, NET, DAMAGE, PLAYER, VEST } from './config.js';
 import { PALETTES, applyPalette, withHaze, hazeUniforms } from './atmosphere.js';
 import { World } from './world.js';
 import { Wind, stepProjectile } from './ballistics.js';
 import { LocalPlayer } from './player.js';
 import { Avatar, worldCapsules, scopePoint } from './avatar.js';
 import { Effects } from './effects.js';
+import { glowTexture } from './textures.js';
 import { Hud } from './hud.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
 import { Replay, sampleHist, pushHist } from './killcam.js';
 import { segSegClosest, clamp, mulberry32 } from './util.js';
 import { crestAt } from './terrain.js';
+import { spawnPoint } from './range.js';
+import { Chickens, buildChicken, animateChicken } from './chicken.js';
+import { Reckoning } from './reckoning.js';
 import { BotPeer } from './bot.js';
 import { Sandbox } from './sandbox.js';
 import { ToolSystem, setThermal } from './tools.js';
 import { LoadoutPanel } from './loadout.js';
 import { ViewModel } from './viewmodel.js';
 import { WEAPONS } from './weapons.js';
+import { Supply } from './supply.js';
+import { RULES, rulesLabel } from './rules.js';
 import { PALETTES as PALS } from './atmosphere.js';
 
 const ACCENTS = ['#e0a040', '#40c8d8'];
-const ZOOM_GLINT = { 4: 0.32, 8: 0.68, 12: 1.0 };
+// Higher magnification = bigger objective = more glint.
+const ZOOM_GLINT = { 4: 0.32, 5: 0.4, 8: 0.68, 10: 0.85, 12: 1.0, 16: 1.15, 20: 1.3, 30: 1.5, 40: 1.7 };
 const UAV_INTERVAL = 60;
-const PART_NAMES = { head: 'HEADSHOT', torso: 'BODY SHOT', legs: 'LEG SHOT' };
+const PART_NAMES = { head: 'HEADSHOT', torso: 'BODY SHOT', legs: 'LEG SHOT', chicken: 'FLICKED BY THE OVERLORD' };
 
 // Final look: silhouette ink lines from depth, split-tone grade, vignette, grain, damage tint.
 const GradeShader = {
@@ -200,6 +207,9 @@ export class Game {
 
     this.targets = [];
     this.tools = new ToolSystem(this);
+    this.supply = new Supply(this);
+    this.chickens = new Chickens(this);
+    this.reckoning = new Reckoning(this);
     this.loadoutPanel = new LoadoutPanel(this, settings.saveLoadout);
     if (this.offline) this.net = new BotPeer(this, { difficulty: this.difficulty, behaviour: this.offline === 'sandbox' ? 'passive' : 'hostile' });
     if (mode === 'practice') this._setupPractice();
@@ -315,8 +325,11 @@ export class Game {
   _setupNet() {
     const n = this.net;
     this.tools.bindNet(n);
+    n.on('supply', (m) => this.supply.onRemote(m));
+    n.on('supplytaken', (m) => this.supply.onRemoteTaken(m));
+    n.on('chickhit', (m) => this.chickens.onRemoteHit(m));
     n.on('open', () => {
-      n.send({ t: 'hello', name: this.name, pal: this.paletteKey });
+      n.send({ t: 'hello', name: this.name, pal: this.paletteKey, rules: { ...RULES } });
       if (this.offline === 'sandbox') {
         this.sides = [-1, 1];
         this.remoteAlive = true;
@@ -491,18 +504,20 @@ export class Game {
 
   _resetForRound() {
     const side = this.sides[this.me];
-    const sp = this.world.spawns[String(side)][this.spawnIdx[this.me]];
+    const sp = spawnPoint(this.world, side, this.spawnIdx[this.me]);
     this.player.reset(sp, side < 0 ? Math.PI : 0);
     this.player.zero = 400;
     this.input.resetScope();
     this.uplinkState.forEach((u) => { u.progress = 0; u.enemyHacking = false; });
     this.hacking = -1;
-    this.bullets.forEach((b) => b.tracer && this.effects.killTracer(b.tracer));
+    this.bullets.forEach((b) => { if (b.tracer) this.effects.killTracer(b.tracer); if (b.chick) this.scene.remove(b.chick); });
     this.bullets.length = 0;
     this.pings.length = 0;
     this.hud.clearMarkers();
     this.hud.card('');
     this.tools.reset();
+    this.supply.reset();
+    this.chickens.reset();
     this.remoteHp = 100;
     this.remoteAlive = true;
     this.remoteDeadLock = false;
@@ -512,14 +527,14 @@ export class Game {
     this.killShown = null;
     if (this.replay.active) this.replay.stop();
     this.roundTime = 0;
-    this.hud.message(`ROUND ${this.round}`, `Insertion — weapons cold · ${side < 0 ? 'South' : 'North'} ridge`, 4);
+    this.hud.message(`ROUND ${this.round}`, `Insertion — weapons cold · ${side < 0 ? 'South' : 'North'} ridge · ${rulesLabel()} rules`, 4);
   }
 
   _onRoundResult(r) {
     this.result = r;
     const won = r.winner === this.me, draw = r.winner < 0;
     let reason = '';
-    if (r.reason === 'kill') reason = `${PART_NAMES[r.part] || 'KILL'} · ${Math.round(r.dist)} m`;
+    if (r.reason === 'kill') reason = r.part === 'chicken' ? 'Pecked · eaten · flicked off the map' : `${PART_NAMES[r.part] || 'KILL'} · ${Math.round(r.dist)} m`;
     else if (r.reason === 'time') reason = draw ? `Time — uplinks tied ${r.up[0]}–${r.up[1]}` : `Time — uplinks ${Math.max(...r.up)}–${Math.min(...r.up)}`;
     this.pendingCard = `<h2 class="${won ? 'win' : draw ? '' : 'lose'}">${draw ? 'ROUND DRAWN' : won ? 'ROUND WON' : 'ROUND LOST'}</h2><p>${reason}</p><div class="sc"><span class="me">${this.name} ${this.scores[this.me]}</span><span class="dash">—</span><span class="them">${this.scores[1 - this.me]} ${this.oppName}</span></div>`;
     if (!this.replay.active && !(r.reason === 'kill')) this._showPendingCard();
@@ -569,15 +584,22 @@ export class Game {
     this.remoteWpn = m.w | 0;
     this.remoteRifle = m.rt || 'mk22';
     this.tools.onRemoteState(m);
+    this.chickens.onRemote(m.ck);
   }
 
   _onRemoteShot(m) {
     const o = new THREE.Vector3(...m.o), v = new THREE.Vector3(...m.v);
-    this.remoteShots.set(m.id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: m.wt });
-    this._spawnBullet(o, v, false, m.id, m.wt);
+    this.remoteShots.set(m.id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: m.wt, ch: !!m.ch });
+    this._spawnBullet(o, v, false, m.id, m.wt, !!m.ch);
     const dir = v.clone().normalize();
-    if (!m.sup) this.effects.muzzle(o, dir);
     const d = o.distanceTo(this.camera.position);
+    if (m.ch) {
+      // Pollo Hermano: a chicken, flung.
+      this.effects.puff(o.clone().addScaledVector(dir, 1), 'feather', 1.2, 0.8);
+      this.audio.chicken(o, 'squawk', d / 343);
+      return;
+    }
+    if (!m.sup) this.effects.muzzle(o, dir);
     this.audio.shotDistant(o, d / 343, !!m.sup || m.wk === 'm18');
     // Prone shots kick up a dust cloud: another tell (not with a suppressor).
     const last = this.remoteHist[this.remoteHist.length - 1];
@@ -588,12 +610,30 @@ export class Game {
     const P = this.player;
     if (!P.alive) return;
     if (!(this.sandbox && this.sandbox.god)) P.hp -= m.dmg;
+    if (m.peck) {
+      this.audio.chicken(null, 'peck');
+      if (this.now - (this._peckMsgT || -9) > 3) {
+        this._peckMsgT = this.now;
+        this.hud.message('PECKED', 'Switching to your pistol is always faster than reloading.', 2.6);
+      }
+      this.hud.damage(0);
+    }
     const shot = this.remoteShots.get(m.id);
     if (shot) {
       const dx = shot.o.x - P.pos.x, dz = shot.o.z - P.pos.z;
       const right = dx * Math.cos(P.yaw) - dz * Math.sin(P.yaw);
       const fwd = -dx * Math.sin(P.yaw) - dz * Math.cos(P.yaw);
       this.hud.damage(Math.atan2(right, fwd));
+    }
+    if (P.hp <= 0 && m.peck) {
+      // Death by chicken: the Reckoning instead of a killcam.
+      P.alive = false;
+      P.hp = 0;
+      this.net.send({ t: 'died', id: m.id, part: m.part, dist: 0, ip: m.ip, peck: 1, p: P.pos.toArray().map((x) => Math.round(x * 10) / 10) });
+      this._sendState(true);
+      if (this.mode === 'host') this._hostEndRound(1 - this.me, 'kill', { part: 'chicken', dist: 0 });
+      this._playReckoning(P.pos.clone(), this.tools.myLook(), () => (this.offline === 'sandbox' ? this._sandboxRespawn() : this._showPendingCard()));
+      return;
     }
     if (P.hp <= 0) {
       P.alive = false;
@@ -603,6 +643,7 @@ export class Game {
       if (this.mode === 'host') this._hostEndRound(1 - this.me, 'kill', { part: m.part, dist: m.dist });
       if (!shot && this.offline === 'sandbox') setTimeout(() => this._sandboxRespawn(), 2500);
       if (shot) {
+        this._ghostLooks(false);
         this.replay.start({
           mode: 'victim',
           shooterHist: this.remoteHist.slice(),
@@ -613,7 +654,7 @@ export class Game {
         });
         this._replayLabel(`KILLED BY ${this.oppName.toUpperCase()}`, `${PART_NAMES[m.part]} · ${Math.round(m.dist)} m`);
       }
-    } else {
+    } else if (!m.peck) {
       P.wounded = true;
       this.hud.message('HIT', `${PART_NAMES[m.part] || ''} — you're wounded. Move!`, 2);
     }
@@ -641,14 +682,31 @@ export class Game {
   _onRemoteDied(m) {
     this.remoteAlive = false;
     this.remoteDeadLock = true;
+    if (m.peck) {
+      if (this.mode === 'host') this._hostEndRound(this.me, 'kill', { part: 'chicken', dist: 0 });
+      const at = Array.isArray(m.p) ? new THREE.Vector3(...m.p) : (sampleHist(this.remoteHist, this.now - NET.interpDelay) || { p: new THREE.Vector3() }).p.clone();
+      this._playReckoning(at, this.tools.remoteLook(), () => this._showPendingCard());
+      return;
+    }
     if (this.mode === 'host') this._hostEndRound(this.me, 'kill', { part: m.part, dist: m.dist });
     if (this.killShown !== m.id) this._startKillerReplay(m.id, new THREE.Vector3(...m.ip), m.part, m.dist);
+  }
+
+  // Swap the Reckoning cinematic in for the killcam (same interface), then swap back.
+  _playReckoning(victimPos, look, onDone) {
+    if (this.replay !== this.reckoning) {
+      if (this.replay.active) this.replay.stop();
+      this._killcam = this.replay;
+    }
+    this.replay = this.reckoning;
+    this.reckoning.start({ victimPos, victimLook: look, ghost: this.ghostB, onStop: () => (this.replay = this._killcam), onDone });
   }
 
   _startKillerReplay(id, impact, part, dist) {
     const shot = this.myShots.get(id);
     if (!shot || this.replay.active) return;
     this.killShown = id;
+    this._ghostLooks(true);
     this.replay.start({
       mode: 'killer',
       shooterHist: this.selfHist.slice(),
@@ -658,6 +716,13 @@ export class Game {
       onDone: () => this._showPendingCard(),
     });
     this._replayLabel(`${PART_NAMES[part]}`, `${Math.round(dist)} m`);
+  }
+
+  // Replay ghosts wear the right outfits: A is the shooter, B the victim.
+  _ghostLooks(shooterIsMe) {
+    const me = this.tools.myLook(), them = this.tools.remoteLook();
+    this.ghostA.setLook(shooterIsMe ? me : them);
+    this.ghostB.setLook(shooterIsMe ? them : me);
   }
 
   _replayLabel(a, b) {
@@ -694,15 +759,35 @@ export class Game {
       w: P.slot,
       rt: P.rifleKey,
       ...this.tools.stateFields(),
+      ck: this.chickens.stateField(),
     });
   }
 
   // -------------------------------------------------------------------------
   // Shooting
   // -------------------------------------------------------------------------
-  _spawnBullet(o, v, local, id, windT0) {
+  _spawnBullet(o, v, local, id, windT0, chick = false) {
     const tracer = this.effects.addTracer(o, v, !local);
-    this.bullets.push({ p: o.clone(), v: v.clone(), prev: o.clone(), age: 0, local, id, windT0, tracer, crackDone: false });
+    let chickMesh = null;
+    if (chick) {
+      // The "bullet" is a yellow chicken, wings out, beak first, with a bright yellow trail
+      // and glow so it reads at range like a tracer.
+      tracer.mesh.visible = false;
+      tracer.faint = false;
+      tracer.rgb = [1.6, 1.25, 0.2];
+      chickMesh = new THREE.Group();
+      const c = buildChicken();
+      c.rotation.y = Math.PI; // its beak (-Z) along the group's +Z, which lookAt points forward
+      c.position.y = -0.27;
+      chickMesh.add(c);
+      chickMesh.userData.c = c;
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffd23a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+      glow.scale.setScalar(1.3);
+      chickMesh.add(glow);
+      chickMesh.position.copy(o);
+      this.scene.add(chickMesh);
+    }
+    this.bullets.push({ p: o.clone(), v: v.clone(), prev: o.clone(), age: 0, local, id, windT0, tracer, crackDone: false, chick: chickMesh });
   }
 
   _fire() {
@@ -710,18 +795,20 @@ export class Game {
     const o = P.eyePos(new THREE.Vector3());
     const dir = P.muzzleDir(new THREE.Vector3());
     const def = P.def;
-    const sup = this.tools.has('suppressor') && def.slot === 'rifle';
+    const chick = !!P.pollo && def.slot === 'rifle';
+    const sup = (this.tools.has('suppressor') && def.slot === 'rifle') || chick;
     const v = dir.clone().multiplyScalar(P.muzzle);
     const id = ++this.shotId * 2 + this.me;
-    this.myShots.set(id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: this.roundTime, wk: def.key });
+    this.myShots.set(id, { o: o.clone(), v: v.clone(), t0: this.now, windT0: this.roundTime, wk: def.key, ch: chick });
     // Start the visible bullet slightly ahead so it doesn't spawn inside the camera.
-    this._spawnBullet(o, v, true, id, this.roundTime);
+    this._spawnBullet(o, v, true, id, this.roundTime, chick);
     P.fireKick();
-    this.audio.shotLocal(sup, def.slot === 'pistol');
-    if (def.kind === 'bolt' && P.ammo > 0) this.audio.bolt(0.35);
+    if (chick) this.audio.chicken(null, 'squawk');
+    else this.audio.shotLocal(sup, def.slot === 'pistol');
+    // (the bolt sound plays when the bolt is actually worked — see boltEvent)
     if ((P.scopeT < 0.5 || !def.scope) && !sup) this.effects.muzzle(this.viewmodel.muzzleWorld(), dir);
     this.viewmodel.fired();
-    if (this.net && this.net.open) this.net.send({ t: 'shot', id, wk: def.key, sup: sup ? 1 : 0, o: o.toArray().map((x) => Math.round(x * 1000) / 1000), v: v.toArray().map((x) => Math.round(x * 100) / 100), wt: this.roundTime });
+    if (this.net && this.net.open) this.net.send({ t: 'shot', id, wk: def.key, ch: chick ? 1 : 0, sup: sup ? 1 : 0, o: o.toArray().map((x) => Math.round(x * 1000) / 1000), v: v.toArray().map((x) => Math.round(x * 100) / 100), wt: this.roundTime });
   }
 
   _targetsForHit() {
@@ -732,6 +819,7 @@ export class Game {
       worldCapsules(t.pos, t.yaw, 0).forEach((c) => { c.owner = t; list.push(c); });
     }
     if (this.mode !== 'practice') this.tools.hitCapsules(list);
+    if (this.mode !== 'practice') this.chickens.hitCapsules(list);
     if (this.mode !== 'practice' && this.remoteAlive && this.remoteHist.length) {
       const s = sampleHist(this.remoteHist, this.now - NET.interpDelay);
       if (s) worldCapsules(s.p, s.yaw, s.st).forEach((c) => { c.owner = 'remote'; list.push(c); });
@@ -766,9 +854,15 @@ export class Game {
           this._onLocalHit(b, hit.cap, ip);
           dead = true;
         } else if (wh) {
-          this.effects.impact(wh.point, wh.normal, wh.mat);
           const d = wh.point.distanceTo(listener);
-          this.audio.impact(wh.point, wh.mat, d / 343);
+          if (b.chick) {
+            // Chicken down... and back up. Ours gets up and goes hunting.
+            this.effects.puff(wh.point.clone().add(new THREE.Vector3(0, 0.3, 0)), 'feather', 1.6, 1.2);
+            if (b.local) this.chickens.spawn(wh.point.clone());
+          } else {
+            this.effects.impact(wh.point, wh.normal, wh.mat);
+            this.audio.impact(wh.point, wh.mat, d / 343);
+          }
           dead = true;
         }
         // Supersonic crack for enemy rounds passing near you.
@@ -777,16 +871,26 @@ export class Game {
           if (r.d2 < 30 * 30 && r.s < 0.999) {
             b.crackDone = true;
             const d = Math.sqrt(r.d2);
-            this.audio.crack(b.prev.clone().lerp(b.p, r.s), d / 343, clamp(1 - d / 30, 0, 1));
-            if (d < 6) this.hud.message('', 'Rounds incoming!', 1.2);
+            if (b.chick) this.audio.chicken(b.prev.clone().lerp(b.p, r.s), 'squawk', d / 343);
+            else this.audio.crack(b.prev.clone().lerp(b.p, r.s), d / 343, clamp(1 - d / 30, 0, 1));
+            if (d < 6) this.hud.message('', b.chick ? 'Incoming chicken!' : 'Rounds incoming!', 1.2);
           }
         }
         if (b.age > BALLISTICS.maxLife || b.p.y < -200) dead = true;
       }
       this.effects.moveTracer(b.tracer, b.p, b.v);
+      if (b.chick) {
+        b.chick.position.copy(b.p);
+        b.chick.lookAt(b.p.x + b.v.x, b.p.y + b.v.y, b.p.z + b.v.z);
+        // Keep it a readable size on screen at any range (real size up close or in a big scope).
+        const dcam = b.p.distanceTo(this.camera.position);
+        b.chick.scale.setScalar(Math.max(1, dcam * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * 0.06));
+        animateChicken(b.chick.userData.c, this.now * 1.7 + b.id, { flap: 1 });
+      }
       if (this.sandbox && b.local) this.sandbox.trace(b, dead);
       if (dead) {
         this.effects.killTracer(b.tracer);
+        if (b.chick) this.scene.remove(b.chick);
         this.bullets.splice(i, 1);
       }
     }
@@ -796,6 +900,13 @@ export class Game {
     const shot = this.myShots.get(b.id);
     const dist = shot ? shot.o.distanceTo(ip) : 0;
     const head = cap.part === 'head';
+    if (cap.owner === 'chicken') {
+      this.chickens.shot(cap.ref);
+      this.effects.puff(ip, 'feather', 1.4, 1.2);
+      this.hud.hitMarker(false);
+      this.hud.message('', 'Chicken down', 1);
+      return;
+    }
     if (cap.owner === 'decoy' || cap.owner === 'dart' || cap.owner === 'drone' || cap.owner === 'hunter') {
       this.tools.onToolHit(cap, shot ? shot.o : ip);
       return;
@@ -810,12 +921,14 @@ export class Game {
       this.practiceStats.hits++;
       if (head) this.practiceStats.best = Math.max(this.practiceStats.best, Math.round(dist));
       if (head && dist > 250 && !this.replay.active && shot) {
+        this._ghostLooks(true);
         this.replay.start({ mode: 'practice', shooterHist: this.selfHist.slice(), victimHist: [], shot, impact: ip, onDone: () => {} });
         this._replayLabel('HEADSHOT', `${Math.round(dist)} m`);
       }
       return;
     }
-    const dmg = (WEAPONS[shot && shot.wk] || WEAPONS.mk22).damage[cap.part];
+    let dmg = (WEAPONS[shot && shot.wk] || WEAPONS.mk22).damage[cap.part];
+    if (cap.part === 'torso' && this.tools.remote.vs === 'plate') dmg = Math.round(dmg * VEST.plateTorso);
     this.net.send({ t: 'hit', id: b.id, part: cap.part, dmg, dist: Math.round(dist), ip: ip.toArray().map((x) => Math.round(x * 100) / 100) });
     this.audio.hitConfirm(head, 0);
     this.hud.hitMarker(head);
@@ -845,6 +958,11 @@ export class Game {
     P.range = dist;
     P.rangeShow = 5;
     this.audio.click();
+    // Auto-zero: dial the scope to the measured range so the crosshair is the hit point.
+    if (RULES.autoZero && dist && P.def.scope && RULES.gravity > 0) {
+      P.zero = Math.round(clamp(dist, 50, 1500) / 5) * 5;
+      this.hud.message('', `Zero set ${P.zero} m`, 1.2);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -898,6 +1016,11 @@ export class Game {
     } else if (!replaying && P.alive) {
       if (canFire && a.scout) this.tools.useScout();
       if (canFire && a.tactical) this.tools.useTactical();
+      if (canFire && a.supply) this.supply.call();
+      if (a.bipod && P.alive) {
+        const r = P.toggleBipod();
+        if (r === 'blocked') this.hud.message('', P.def.slot !== 'rifle' ? 'Bipod is on the rifle' : 'Go prone and stop moving to set the bipod', 1.4);
+      }
       const flyFrom = this.sandbox && this.sandbox.fly ? P.pos.clone() : null;
       P.update(dt, a, this.world, { canMove });
       if (flyFrom) this.sandbox.flyMove(dt, flyFrom);
@@ -919,9 +1042,22 @@ export class Game {
       this._histT = this.now;
       if (P.alive) pushHist(this.selfHist, { t: this.now, p: P.pos.clone(), yaw: P.yaw, pitch: P.pitch, st: P.stance, sc: P.scopeT > 0.5 ? 1 : 0, z: P.zoom, moving: P.moving });
     }
+    if (P.boltEvent) {
+      this.audio.bolt(0.05);
+      P.boltEvent = false;
+    }
+    if (P.bipodEvent) {
+      // Hand reach (cloth), leg flick (clack), rifle settling (thud), fold (clack).
+      if (P.bipodEvent === 'flick' || P.bipodEvent === 'stow') this.audio.click();
+      if (P.bipodEvent === 'deploy') this.audio.footstep(P.pos);
+      if (P.bipodEvent === 'reach') this.audio.footstep(P.pos);
+      P.bipodEvent = null;
+    }
     this._updateUplinks(dt, live);
     this._updateBullets(dt);
     this.tools.update(dt);
+    this.supply.update(dt);
+    this.chickens.update(dt);
     this._updatePractice(dt);
     this._updateRemote(dt);
     this._updatePings();
@@ -998,6 +1134,7 @@ export class Game {
   }
 
   _updateViewmodel(dt, replaying) {
+    this.viewmodel.setLook(this.tools.myLook());
     const P = this.player;
     const scopedRifle = P.def.scope && P.scopeT > 0.6;
     this.viewmodel.visible = !replaying && P.alive && !scopedRifle && !this.tools.thermalActive();
@@ -1012,7 +1149,12 @@ export class Game {
       reloadDur: P.reloadDur,
       reloadEmpty: P.reloadEmpty,
       switchT: P.switchT,
-      empty: P.w.chamber === 0 && P.def.kind === 'semi',
+      bipodT: P.def.slot === 'rifle' ? P.bipodT || 0 : 0,
+      bipodState: P.bipodState,
+      bipodU: P.bipodU || 0,
+      empty: (P.w.chamber === 0 && P.def.kind === 'semi') || (P.pollo && P.w.chamber === 0 && P.w.mag === 0),
+      pollo: !!P.pollo,
+      boltPending: !!P.boltPending,
     });
   }
 
@@ -1023,6 +1165,7 @@ export class Game {
     this.remote.setVisible(visible && this.remoteAlive);
     if (!s) return;
     s.w = this.remoteWpn;
+    this.remote.setLook(this.tools.remoteLook());
     this.remote.update(dt, s);
     // Scope glint: bright when they're scoped in and pointing at you.
     let glint = 0;
@@ -1128,6 +1271,8 @@ export class Game {
     else if (this.hacking >= 0) h = `HACKING UPLINK ${this.world.uplinks[this.hacking].name}… ${Math.round((this.uplinkState[this.hacking].progress / UPLINK.hackTime) * 100)}%`;
     else if (!P.alive && !this.replay.active) h = 'You are down — next round soon';
     else if (P.ammo === 0 && P.reserve === 0) h = 'Out of ammo';
+    else if (P.boltPending && P.scoped) h = P.autoCycle ? 'Release fire to cycle the bolt' : 'Unscope to cycle the bolt';
+    else if (P.stance === 2 && !P.moving && P.def.slot === 'rifle' && (P.bipodState || 'stowed') === 'stowed' && P.scoped) h = `<b>${this.input.touch ? 'BIPOD' : 'X'}</b> set bipod`;
     const enemyHack = this.uplinkState.findIndex((u) => u.enemyHacking);
     if (enemyHack >= 0 && this.phase === 'live') h = (h ? h + ' · ' : '') + `⚠ ENEMY HACKING UPLINK ${this.world.uplinks[enemyHack].name}`;
     if (h !== this._lastHint) {

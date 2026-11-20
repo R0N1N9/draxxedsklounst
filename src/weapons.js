@@ -10,16 +10,16 @@ export const WEAPONS = {
     mag: 7,
     spareMags: 3,
     muzzle: 720,
-    damage: { head: 200, torso: 72, legs: 40 },
+    damage: { head: 200, torso: 110, legs: 50 }, // body shot kills unless plated (110 × 0.65 = 72); 2 leg hits kill
     cycle: 1.35, // bolt throw
     reload: 3.0,
     reloadEmpty: 3.8,
-    zooms: [4, 8, 12],
+    zooms: [4, 8, 12, 16, 20],
     scope: true,
     glint: 1,
     recoil: 0.024,
     sway: 1,
-    desc: 'Bolt-action .300 PRC, 7+1. One-shot headshots, two body shots. Slow bolt throw. 4/8/12× scope.',
+    desc: 'Bolt-action .300 PRC, 7+1. One-shot headshots and body shots (two body shots on plates). Slow bolt throw. 4–20× scope.',
   },
   dmr: {
     key: 'dmr',
@@ -35,12 +35,12 @@ export const WEAPONS = {
     cycle: 0.33,
     reload: 2.6,
     reloadEmpty: 3.2,
-    zooms: [4, 8],
+    zooms: [4, 8, 10],
     scope: true,
     glint: 0.7,
     recoil: 0.017,
     sway: 1.15,
-    desc: 'Semi-auto 7.62, 20+1, about 3 shots a second. Headshots still kill; three body shots. Smaller 4/8× scope glints less.',
+    desc: 'Semi-auto 7.62, 20+1, about 3 shots a second. Headshots still kill; three body shots. Smaller 4–10× scope glints less.',
   },
   m18: {
     key: 'm18',
@@ -69,3 +69,6 @@ export const WEAPONS = {
 
 export const RIFLES = ['mk22', 'dmr'];
 export const SUPPRESSOR_FACTOR = 0.88;
+
+// Mk22 long-range scope attachment: 5–40×, glints harder, a little more sway.
+export const SCOPE40 = { zooms: [5, 10, 20, 30, 40], sway: 1.15 }; // glint comes from the zoom level (30×/40× glint hardest)

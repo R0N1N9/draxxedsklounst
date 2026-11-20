@@ -2,6 +2,8 @@
 // Units are metres; the camera looks down -Z.
 import * as THREE from 'three';
 import { clamp, smoothstep } from './util.js';
+import { retint, THEMES, themeOf, camoMaterial } from './avatar.js';
+import { buildChicken, animateChicken } from './chicken.js';
 
 const C = {
   fde: '#7d6c52',
@@ -97,15 +99,15 @@ function buildMk22() {
   bolt.add(m(new THREE.SphereGeometry(0.011, 10, 8), C.black, 0.048, 0, 0.03));
   bolt.position.set(0, 0.03, -0.02);
   g.add(bolt);
-  // Folded bipod under the handguard.
-  for (const s of [-1, 1]) g.add(cylZ(0.005, 0.005, 0.2, C.black, s * 0.016, -0.03, -0.55, 6));
-  g.add(box(0.04, 0.02, 0.03, C.black, 0, -0.025, -0.66));
+  // Folding bipod under the front of the handguard (animated).
+  const bipod = buildBipod(g, -0.03, -0.66, 0.2);
   scope(g, { y: 0.085, z0: -0.03, len: 0.3, tube: 0.017, obj: 0.029, eye: 0.022 });
   g.userData = {
     gripR: anchor(0, -0.075, 0.015),
     gripL: anchor(-0.005, -0.03, -0.42),
     muzzle: anchor(0, 0.01, -1.12),
     bolt,
+    bipod,
     boltKnob: anchor(0.048, 0.03, 0.01),
     mag: magG,
     magHome: magG.position.clone(),
@@ -152,7 +154,9 @@ function buildDmr() {
   g.add(box(0.03, 0.03, 0.08, C.tan, 0, 0.04, 0.17));
   g.add(box(0.04, 0.11, 0.025, C.black, 0, -0.01, 0.285));
   scope(g, { y: 0.09, z0: -0.04, len: 0.24, tube: 0.015, obj: 0.023, eye: 0.019 });
+  const bipod = buildBipod(g, -0.012, -0.56, 0.18);
   g.userData = {
+    bipod,
     gripR: anchor(0, -0.085, 0.02),
     gripL: anchor(-0.004, -0.008, -0.38),
     muzzle: anchor(0, 0.02, -0.9),
@@ -162,6 +166,36 @@ function buildDmr() {
   };
   for (const k of ['gripR', 'gripL', 'muzzle']) g.add(g.userData[k]);
   return g;
+}
+
+// Bipod: a clamp with two legs hinged at the front, folded back along the handguard.
+// Deploy progress k swings each leg down (and slightly forward) and splays them apart.
+function buildBipod(g, y, z, len) {
+  const mount = new THREE.Group();
+  mount.position.set(0, y, z);
+  mount.add(box(0.045, 0.02, 0.035, C.black, 0, 0, 0));
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const splay = new THREE.Group();
+    splay.position.x = s * 0.017;
+    const hinge = new THREE.Group();
+    const leg = new THREE.Group();
+    leg.add(cylZ(0.0055, 0.0055, len * 0.6, C.black, 0, 0, len * 0.3, 6));
+    leg.add(cylZ(0.0042, 0.0042, len * 0.45, C.blackHi, 0, 0, len * 0.78, 6)); // telescoping lower leg
+    leg.add(m(new THREE.SphereGeometry(0.009, 8, 6), C.black, 0, 0, len)); // rubber foot
+    hinge.add(leg);
+    splay.add(hinge);
+    mount.add(splay);
+    legs.push({ splay, hinge, s });
+  }
+  g.add(mount);
+  return { legs, mount, set(k) {
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    for (const l of legs) {
+      l.hinge.rotation.x = e * 1.72; // folded back -> pointing down and a little forward
+      l.splay.rotation.z = l.s * e * 0.32;
+    }
+  } };
 }
 
 function buildPistol() {
@@ -257,6 +291,26 @@ class Arm {
     thumb.rotation.y = side * 0.6;
     this.hand.add(thumb);
     for (const o of [this.upper.mesh, this.upper.capA, this.upper.capB, this.fore.mesh, this.fore.capB, this.cuff, this.hand]) root.add(o);
+    this.sleeves = [this.upper.mesh, this.upper.capA, this.upper.capB, this.fore.mesh, this.fore.capB];
+    // Poncho fabric bunched over the left upper arm (the flap is thrown over that shoulder).
+    if (side < 0) {
+      this.drape = segment(0.085, 0.066, C.sleeve);
+      this.drape.capA.visible = false;
+      for (const o of [this.drape.mesh, this.drape.capB]) root.add(o);
+    }
+  }
+
+  setLook(wraith, poncho, themeId) {
+    const T = THEMES[themeId], theme = T.base;
+    const sl = T.colors ? camoMaterial(themeId, 0.85, 0.14) : mat(retint(C.sleeve, theme)), gl = mat(wraith ? '#1b1c1e' : C.glove);
+    for (const o of this.sleeves) o.material = sl;
+    this.cuff.material = mat(retint(C.sleeveDark, theme));
+    this.hand.traverse((o) => { if (o.isMesh && o.material !== mat(C.glovePad)) o.material = gl; });
+    if (this.drape) {
+      const dm = T.colors ? camoMaterial(themeId, 1, 0.14) : mat(retint('#4d5338', theme));
+      this.drape.mesh.material = this.drape.capB.material = dm;
+      this.drape.mesh.visible = this.drape.capB.visible = poncho;
+    }
   }
 
   pose(shoulder, handPos, handFwd, pole) {
@@ -265,6 +319,7 @@ class Arm {
     const wrist = handPos.clone().addScaledVector(handFwd, -0.075);
     const elbow = solveElbow(shoulder, wrist, a, b, pole);
     placeSeg(this.upper, shoulder, elbow);
+    if (this.drape) placeSeg(this.drape, shoulder, shoulder.clone().lerp(elbow, 0.62));
     placeSeg(this.fore, elbow, wrist);
     this.cuff.position.copy(wrist).addScaledVector(handFwd, -0.03);
     this.cuff.quaternion.setFromUnitVectors(UP, handFwd);
@@ -275,11 +330,27 @@ class Arm {
   }
 }
 
+// Pollo Hermano: a chicken held by the beak (left hand) and pulled back by the feet (right).
+function buildPolloSling() {
+  const g = new THREE.Group();
+  const c = buildChicken({ plain: true });
+  c.scale.setScalar(0.55);
+  c.position.set(0, -0.255, -0.29);
+  c.userData.legs.forEach((L) => (L.rotation.x = -1.7));
+  g.add(c);
+  const beak = anchor(0, -0.01, -0.1);
+  c.userData.head.add(beak);
+  const feet = anchor(0, -0.15, 0);
+  c.userData.legs[0].add(feet);
+  g.userData = { gripL: beak, gripR: feet, muzzle: beak, sight: 0.085, chick: c };
+  return g;
+}
+
 export class ViewModel {
   constructor(camera) {
     this.root = new THREE.Group();
     camera.add(this.root);
-    this.models = { mk22: buildMk22(), dmr: buildDmr(), m18: buildPistol() };
+    this.models = { mk22: buildMk22(), dmr: buildDmr(), m18: buildPistol(), pollo: buildPolloSling() };
     this.holder = new THREE.Group();
     this.holder.scale.setScalar(0.82);
     this.root.add(this.holder);
@@ -303,6 +374,17 @@ export class ViewModel {
     this.root.visible = v;
   }
 
+  // look: { outfit, poncho } — sleeves/gloves follow the outfit, poncho drapes the left arm.
+  setLook(look) {
+    const wraith = look.outfit === 'wraith', poncho = !!look.poncho;
+    const theme = themeOf(look.theme, look.outfit);
+    const key = wraith + ':' + poncho + ':' + theme;
+    if (this._look === key) return;
+    this._look = key;
+    this.armR.setLook(wraith, false, theme);
+    this.armL.setLook(wraith, poncho, theme);
+  }
+
   muzzleWorld(out = new THREE.Vector3()) {
     const g = this.models[this.current];
     if (!g) return out.set(0, 0, 0);
@@ -317,12 +399,13 @@ export class ViewModel {
   update(dt, st) {
     this.t += dt;
     const def = st.def;
-    if (this.current !== def.key) {
+    const key = st.pollo && def.slot === 'rifle' ? 'pollo' : def.key;
+    if (this.current !== key) {
       if (this.current) this.models[this.current].visible = false;
-      this.current = def.key;
-      this.models[def.key].visible = true;
+      this.current = key;
+      this.models[key].visible = true;
     }
-    const g = this.models[def.key];
+    const g = this.models[key];
     const U = g.userData;
     const pistol = def.slot === 'pistol';
     this.kick = Math.max(0, this.kick - dt * (pistol ? 9 : 5));
@@ -359,6 +442,15 @@ export class ViewModel {
     const k = this.kick * this.kick;
     pos.z += k * (pistol ? 0.04 : 0.07);
     rot.x += k * (pistol ? 0.22 : 0.09);
+
+    // Bipod: legs swing down, then the rifle settles onto them with a small dip.
+    const bk = st.bipodT || 0;
+    if (U.bipod) U.bipod.set(bk);
+    if (bk > 0) {
+      pos.y -= 0.018 * bk + Math.sin(clamp((bk - 0.55) / 0.45, 0, 1) * Math.PI) * 0.012;
+      rot.x -= 0.02 * bk;
+      pos.y -= breathe * 0.0025 * bk; // planted: the breathing bob all but stops
+    }
 
     // Weapon switch: drop out, swap (handled by the player state), come back up.
     if (st.switchT > 0) {
@@ -399,6 +491,19 @@ export class ViewModel {
       boltReach = smoothstep(0.02, 0.15, u) * (1 - smoothstep(0.85, 0.98, u));
       if (u > 0) rot.z -= 0.08 * boltReach;
     }
+    // Pollo: stretch the chicken as you draw; it's gone once flung until you grab the next one.
+    if (U.chick) {
+      const C = U.chick.userData;
+      const draw = 0.15 + 0.85 * smoothstep(0, 1, st.scopeT);
+      animateChicken(U.chick, this.t, { flap: draw > 0.5 ? 0.5 : 0.15 });
+      C.body.scale.z = 1 + 0.45 * draw;
+      U.chick.userData.legs.forEach((L) => (L.rotation.x = -1.5 - 0.35 * draw));
+      let grab = 1;
+      if (st.boltPending || st.empty) grab = 0;
+      else if (st.cycleT > 0) grab = smoothstep(0.55, 0.95, 1 - st.cycleT / def.cycle);
+      U.chick.visible = grab > 0.02;
+      U.chick.scale.setScalar(0.55 * (0.2 + 0.8 * grab));
+    }
     // Pistol slide: recoil cycle and empty-reload rack.
     if (U.slide) {
       const back = Math.max(this.kick, rack, st.empty ? 1 : 0);
@@ -419,6 +524,15 @@ export class ViewModel {
     if (U.slide && rack > 0) handR = handR; // right hand stays; left racks the slide
     let handL = toRoot(U.gripL);
     if (leftReach > 0) handL.lerp(new THREE.Vector3(-0.05, -0.45, -0.2), leftReach);
+    // Bipod: the support hand slides forward to the legs, flicks them, and comes back.
+    if (U.bipod && (st.bipodState === 'deploying' || st.bipodState === 'stowing')) {
+      const u = st.bipodU || 0;
+      const reach = st.bipodState === 'deploying'
+        ? smoothstep(0, 0.28, u) * (1 - smoothstep(0.72, 1, u))
+        : smoothstep(0, 0.2, u) * (1 - smoothstep(0.6, 0.95, u));
+      const legs = toRoot(U.bipod.mount).add(new THREE.Vector3(0, -0.035 - 0.06 * (st.bipodT || 0), 0.03));
+      handL.lerp(legs, reach);
+    }
     if (rack > 0 && !U.bolt) handL.lerp(toRoot(U.slide || U.gripL).add(new THREE.Vector3(0, 0.02, 0.06)), rack);
     const fR = fwd.clone().add(new THREE.Vector3(0, -0.25, 0)).normalize();
     const fL = pistol ? fwd.clone().add(new THREE.Vector3(0.4, -0.15, 0)).normalize() : fwd.clone().add(new THREE.Vector3(0.15, 0.25, 0)).normalize();

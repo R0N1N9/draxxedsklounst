@@ -115,7 +115,7 @@ export function withHaze(material, extra = null) {
     vs = vs.replace('#include <fog_vertex>', HAZE_V);
     shader.vertexShader = vs;
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <fog_pars_fragment>', HAZE_PARS_F)
+      .replace('#include <fog_pars_fragment>', HAZE_PARS_F + (extra?.parsFragment || ''))
       .replace('#include <fog_fragment>', (extra?.fragment || '') + HAZE_F);
   };
   material.customProgramCacheKey = () => 'haze' + (extra?.key || '');

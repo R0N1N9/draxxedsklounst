@@ -230,6 +230,7 @@ export class Director {
     const tp = (this.transport = new Mux(this.o.net));
     const hello = () => tp.send({
       t: 'hello', name: this.players[this.me].name, pal: this.o.settings && this.o.settings.pal,
+      ...(this.authority && this.o.hello ? this.o.hello() : {}), // the host's valley rules ride along, as in the classic game
       ...(this.authority ? { mv: { seed: this.matchSeed, target: this.target, first: this.first, v: 1 } } : { mvAck: 1 }),
     });
     tp.on('hello', (m) => {

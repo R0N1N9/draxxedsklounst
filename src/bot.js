@@ -3,13 +3,15 @@
 // messages (state, shots, hits, deaths, uplink captures). That keeps the AI honest and
 // means vs-AI matches exercise the real multiplayer code paths.
 import * as THREE from 'three';
-import { BALLISTICS, DAMAGE, PLAYER, UPLINK, WEAPON } from './config.js';
+import { BALLISTICS, DAMAGE, PLAYER, UPLINK, WEAPON, VEST } from './config.js';
 import { stepProjectile } from './ballistics.js';
 import { worldCapsules } from './avatar.js';
 import { segSegClosest, clamp } from './util.js';
 import { crestAt, DAM_X } from './terrain.js';
-import { randomLoadout, TOOLS, HunterFlight } from './tools.js';
+import { spawnPoint, frontZ, rangeBand, forwardStep } from './range.js';
+import { randomLoadout, TOOLS, HunterFlight, hunterRange } from './tools.js';
 import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
+import { RULES } from './rules.js';
 
 export const DIFFICULTY = {
   easy: { name: 'RECRUIT', err: 3.0e-3, react: 3.0, settle: 2.6, detect: 0.45, lead: 0.5, wind: 0.3, prone: false },
@@ -18,7 +20,7 @@ export const DIFFICULTY = {
 };
 const EYE = [PLAYER.eyeStand, PLAYER.eyeCrouch, PLAYER.eyeProne];
 const BODY_H = [1.8, 1.25, 0.55];
-const ZOOM_GLINT = { 4: 0.35, 8: 0.7, 12: 1 };
+const ZOOM_GLINT = { 4: 0.35, 5: 0.4, 8: 0.7, 10: 0.85, 12: 1, 16: 1.15, 20: 1.3, 30: 1.5, 40: 1.7 };
 const CALM = { at: (t, out) => out.set(0, 0) };
 
 function gauss() {
@@ -104,6 +106,10 @@ export class BotPeer {
         this.state = 'idle';
         this.scoped = false;
         break;
+      case 'supply':
+        // A cargo drone dropping near the player gives their position away.
+        if (this.behaviour === 'hostile' && m.p) this._learn(new THREE.Vector3(...m.p), 0.5);
+        break;
       case 'uav':
         if (this.jammer) this.jammer = false;
         if (this.player && this.player.al && !this.player.jm && this.behaviour === 'hostile') this._learn(this.player.p, 0.7);
@@ -147,7 +153,7 @@ export class BotPeer {
     this.phase = m.phase;
     if (m.fresh) {
       this.side = m.sides[1];
-      const sp = this.g.world.spawns[String(this.side)][m.spawns[1]];
+      const sp = spawnPoint(this.g.world, this.side, m.spawns[1]);
       this._spawnAt(sp);
     }
     if (m.phase === 'end' || m.phase === 'match') {
@@ -194,7 +200,7 @@ export class BotPeer {
 
   get muzzle() {
     const d = this.wdef;
-    return !this.pistol && this.loadout && this.loadout.stealth === 'suppressor' ? Math.round(d.muzzle * SUPPRESSOR_FACTOR) : d.muzzle;
+    return Math.round((!this.pistol && this.loadout && this.loadout.stealth === 'suppressor' ? d.muzzle * SUPPRESSOR_FACTOR : d.muzzle) * RULES.speed);
   }
 
   // Sandbox: (re)spawn on a ridge without a round message.
@@ -218,7 +224,7 @@ export class BotPeer {
       const dtp = Math.max(this.t - this.player.t, 1e-3);
       this.playerVel.lerp(p.clone().sub(this.player.p).divideScalar(dtp), 0.3);
     }
-    this.player = { p, yaw: m.y, pitch: m.pi, st: m.st, sc: m.sc, z: m.z, al: m.al, mv: m.mv, t: this.t, kf: m.kf, tp: m.tp, jm: m.jm };
+    this.player = { p, yaw: m.y, pitch: m.pi, st: m.st, sc: m.sc, z: m.z, al: m.al, mv: m.mv, t: this.t, kf: m.kf, tp: m.tp, jm: m.jm, vs: m.vs, ck: Array.isArray(m.ck) ? m.ck : [] };
   }
 
   _onPlayerShot(m) {
@@ -240,15 +246,41 @@ export class BotPeer {
     }
   }
 
+  // Pollo Hermano: enemy chickens near the bot get shot with the pistol.
+  _fightChickens(dt) {
+    this.chickT = (this.chickT || 0) - dt;
+    if (!this.alive || this.chickT > 0 || !this.player || !this.player.ck.length) return;
+    const eye = this._eye();
+    let best = null, bd = 30;
+    for (const c of this.player.ck) {
+      if ((this.shotChicks ||= new Set()).has(c[0])) continue;
+      const d = Math.hypot(c[1] - eye.x, c[3] - eye.z);
+      if (d < bd) { bd = d; best = c; }
+    }
+    if (!best) { this.chickSeen = null; return; }
+    // Takes a moment to notice, then pistol shots every second or so (not every one hits).
+    if (!this.chickSeen) { this.chickSeen = this.t; this.chickT = 1.4 + Math.random() * 1.4; return; }
+    this.chickT = 0.9 + Math.random() * 0.7;
+    const tgt = new THREE.Vector3(best[1], best[2] + 0.3, best[3]);
+    const v = tgt.clone().sub(eye).normalize().multiplyScalar(WEAPONS.m18.muzzle);
+    const id = ++this.shotId * 2 + 1;
+    this._emit({ t: 'shot', id, wk: 'm18', sup: 0, o: eye.toArray(), v: v.toArray(), wt: this.g.roundTime });
+    if (Math.random() < 0.55) {
+      this.shotChicks.add(best[0]);
+      this._emit({ t: 'chickhit', id: best[0] });
+    }
+  }
+
   _onHit(m) {
     if (!this.alive) return;
     this.hp -= m.dmg;
+    if (m.peck && this.hp > 0) return; // pecked: it deals with the chicken instead of running
     if (this.hp <= 0) {
       this.hp = 0;
       this.alive = false;
       this.scoped = false;
       this.state = 'dead';
-      this._emit({ t: 'died', id: m.id, part: m.part, dist: m.dist, ip: m.ip });
+      this._emit({ t: 'died', id: m.id, part: m.part, dist: m.dist, ip: m.ip, peck: m.peck ? 1 : 0, p: this.pos.toArray() });
       this._sendState();
       if (this.phase === 'sandbox') this.respawnT = this.t + 4;
     } else {
@@ -271,15 +303,16 @@ export class BotPeer {
 
   _pickNest() {
     const forward = Math.random() < 0.3;
+    const [x0, x1] = rangeBand(this.side), step = forwardStep();
     for (let tries = 0; tries < 12; tries++) {
-      const x = clamp(this.pos.x + (Math.random() - 0.5) * 300, -620, 620);
-      const z = this.side * (crestAt(x) - (forward ? 40 + Math.random() * 40 : 6 + Math.random() * 8));
+      const x = clamp(this.pos.x + (Math.random() - 0.5) * 300, x0, x1);
+      const z = this.side * (frontZ(x) - (forward ? step * (0.7 + Math.random() * 0.7) : Math.random() * 8));
       const n = this.g.world.terrain.normalAt(x, z);
       if (n.y < 0.8) continue;
       this.nest = new THREE.Vector3(x, this.g.world.heightAt(x, z), z);
       return;
     }
-    const x = this.pos.x, z = this.side * (crestAt(x) - 8);
+    const x = clamp(this.pos.x, x0, x1), z = this.side * frontZ(x);
     this.nest = new THREE.Vector3(x, this.g.world.heightAt(x, z), z);
   }
 
@@ -418,7 +451,8 @@ export class BotPeer {
         } else if (hit && (!wh || hit.s <= wh.t)) {
           const ip = b.prev.clone().lerp(b.p, hit.s);
           const part = hit.c.part;
-          const dmg = b.def.damage[part];
+          let dmg = b.def.damage[part];
+          if (part === 'torso' && this.player && this.player.vs === 'plate') dmg = Math.round(dmg * VEST.plateTorso);
           this._emit({ t: 'hit', id: b.id, part, dmg, dist: Math.round(b.o.distanceTo(ip)), ip: ip.toArray() });
           dead = true;
         } else if (wh) dead = true;
@@ -535,13 +569,17 @@ export class BotPeer {
     if (this.hunter) {
       const h = this.hunter;
       h.update(dt, (pos) => {
-        if (!P || !P.al || P.tp) return null;
-        if (Math.hypot(P.p.x - pos.x, P.p.z - pos.z) > 160) return null;
+        if (!P || !P.al) return null;
+        if (Math.hypot(P.p.x - pos.x, P.p.z - pos.z) > hunterRange(P.tp, P.mv)) return null;
         const head = P.p.clone().add(new THREE.Vector3(0, 1, 0));
         if (this.g.world.raycast(pos, head, true) || T.smokeBlocks(pos, head)) return null;
         return P.p;
       });
-      if (h.locked && P) this._learn(P.p, 0.9 * dt * 3);
+      if (h.locked && P) {
+        // Poncho: rough, slow fix.
+        if (P.tp) this._learn(P.p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 16, 0, (Math.random() - 0.5) * 16)), 0.25 * dt);
+        else this._learn(P.p, 0.9 * dt * 3);
+      }
       if (h.life <= 0) this.hunter = null;
     }
     this.toolT -= dt;
@@ -581,6 +619,7 @@ export class BotPeer {
       if (this.behaviour !== 'off') this.sandboxSpawn(this.side);
     }
     this._updateBullets(dt);
+    this._fightChickens(dt);
     this.boltT = Math.max(0, this.boltT - dt);
     if (!this.alive) { this.moving = false; return; }
     const live = this.phase === 'live' || this.phase === 'sandbox';
@@ -756,6 +795,13 @@ export class BotPeer {
       rt: (this.loadout && this.loadout.rifle) || 'mk22',
       kf: this.loadout && this.loadout.stealth === 'killflash' ? 1 : 0,
       tp: this.loadout && this.loadout.stealth === 'poncho' ? 1 : 0,
+      lk: this.loadout && this.loadout.outfit === 'wraith' ? 1 : 0,
+      lc: (this.loadout && this.loadout.lens) || '#e0283a',
+      th: (this.loadout && this.loadout.theme) || '',
+      hw: (this.loadout && this.loadout.hat) || '',
+      vs: (this.loadout && this.loadout.vest) || 'plate',
+      ew: (this.loadout && this.loadout.eyes) || '',
+      ko: this.loadout ? `${this.loadout.scout},${this.loadout.stealth},${this.loadout.tactical}` : '',
       jm: this.jammer ? 1 : 0,
       dr: this.drone && this.alive ? this.drone.pos.toArray() : 0,
       hd: this.hunter ? [this.hunter.pos.x, this.hunter.pos.y, this.hunter.pos.z, this.hunter.heading, this.hunter.locked ? 1 : 0, this.hunter.bank] : 0,
