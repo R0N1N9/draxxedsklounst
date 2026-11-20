@@ -358,7 +358,11 @@ export default {
     };
     inst.dbg = { game, view, sea, world, fx, Q, SET, LOG }; // test scripts only
     LOG.push(`create ${Math.round(performance.now() - tC0)}ms`);
-    view.log = (m) => { if (LOG.length < 80) LOG.push(`${Math.round(performance.now() - tC0)} ${m}`); };
+    view.log = (m) => { if (LOG.length < 80) LOG.push(`${Math.round(performance.now() - tC0)} ${m} js${Math.round(jsMs)} g${renderer.info.memory.geometries} t${renderer.info.memory.textures} p${renderer.info.programs.length}`); jsMs = 0; };
+    let jsMs = 0;
+    const up0 = inst.update, rn0 = inst.render;
+    inst.update = (dt) => { const a = performance.now(); up0(dt); jsMs += performance.now() - a; };
+    inst.render = () => { const a = performance.now(); rn0(); jsMs += performance.now() - a; };
     post.resize();
     return inst;
   },

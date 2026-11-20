@@ -64,7 +64,7 @@ export function makeBot(ctx, W, G) {
       if (r.h - p.y > LEAP_UP) continue;
       const s = r.spots[(Math.random() * r.spots.length) | 0], d = Math.hypot(s.x - p.x, s.z - p.z);
       if (d > LEAP_MAX - 1 || d < LEAP_MIN + 1) continue;
-      const sc = Math.hypot(s.x - e.x, s.z - e.z) + Math.random() * 14 + (mine ? 0 : cross ? -6 : 30) + (Math.hypot(s.x - e.x, s.z - e.z) < 14 ? 40 : 0);
+      const sc = Math.hypot(s.x - e.x, s.z - e.z) + Math.random() * 14 + (mine ? 0 : cross ? -6 : 30) + (Math.hypot(s.x - e.x, s.z - e.z) < 14 ? 40 : 0) + (mine && cur.row - r.row > 1 ? 16 : 0); // (one terrace at a time, mostly)
       if (sc < bs) { bs = sc; best = s; }
     }
     return best;

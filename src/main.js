@@ -135,12 +135,20 @@ function updateTitle() {
   $('tagline').textContent = on ? 'One pollo. Two hermanos. Eight hundred sauce packets.' : 'One valley. Two rifles. Eight hundred metres.';
   document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Draxxed Sklounst';
   document.body.classList.toggle('reckoning', on);
+  $('in-name').placeholder = on ? 'Pollo' : 'Ghost';
 }
 
-// Long range is the default distance; move old "auto" settings over once.
+// Halo at close range is the default. Settings saved before that carry over once: an old
+// "auto" distance becomes long, and the old default pair (Battlefield at long range) becomes
+// the new one — anything else was a deliberate choice and is left alone.
 {
-  const saved = store.get('rules', { preset: 'bf' });
+  const fresh = store.get('rules', null) === null;
+  const saved = store.get('rules', { preset: 'halo', range: 'close' });
   if (!store.get('rangeV2', false)) { if (saved.range === 'auto' || !saved.range) saved.range = 'long'; store.set('rangeV2', true); store.set('rules', saved); }
+  if (!store.get('rulesV3', false)) {
+    if (!fresh && saved.preset === 'bf' && saved.range === 'long') { saved.preset = 'halo'; saved.range = 'close'; store.set('rules', saved); }
+    store.set('rulesV3', true);
+  }
   settings.rules = normalizeRules(saved);
 }
 applyRules(settings.rules);
@@ -156,7 +164,7 @@ function renderStyle() {
   const r = settings.rules;
   $('style-cur').textContent = rulesLabel(r);
   // Shooting style bar.
-  const SUB = { sim: 'realistic', bf: 'default', cod: 'arcade', halo: 'hitscan' };
+  const SUB = { sim: 'realistic', bf: 'ballistic', cod: 'arcade', halo: 'hitscan' };
   const styleBtns = Object.entries(PRESETS).map(([k, p]) => `<button class="${r.preset === k ? 'on' : ''}" data-preset="${k}" title="Like ${p.feel}"><b>${p.short}</b><i>${SUB[k] || ''}</i></button>`);
   styleBtns.push(`<button class="${r.preset === 'custom' ? 'on' : ''}" data-preset="custom"><b>CUSTOM</b><i>your mix</i></button>`);
   $('style-presets').innerHTML = styleBtns.join('');
@@ -172,8 +180,9 @@ function renderStyle() {
   // Shooting distance bar: each range labelled with the game it plays like.
   const sel = RANGES[r.range] ? r.range : 'auto';
   const GAME = { close: 'Halo', medium: 'Call of Duty', long: 'Battlefield', extreme: 'ARMA / Sniper Elite' };
-  $('style-range').innerHTML = [`<button class="${sel === 'auto' ? 'on' : ''}" data-range="auto"><b>AUTO</b><i>${RANGES[def].name}</i></button>`,
-    ...Object.entries(RANGES).map(([k, g]) => `<button class="${sel === k ? 'on' : ''}" data-range="${k}"><b>${g.name.toUpperCase()}</b><i>${g.dist}</i></button>`)].join('');
+  // Same order as the styles above, so each distance sits under the style it suits (AUTO under CUSTOM).
+  $('style-range').innerHTML = [...['close', 'medium', 'long', 'extreme'].map((k) => `<button class="${sel === k ? 'on' : ''}" data-range="${k}"><b>${RANGES[k].name.toUpperCase()}</b><i>${RANGES[k].dist}</i></button>`),
+    `<button class="${sel === 'auto' ? 'on' : ''}" data-range="auto"><b>AUTO</b><i>${RANGES[def].name}</i></button>`].join('');
   $('range-desc').textContent = sel === 'auto' ? `Follows the style: ${RANGES[def].name} (${RANGES[def].dist}, like ${GAME[def]}). ${RANGES[def].desc}` : `Like ${GAME[sel]} (${RANGES[sel].dist}). ${RANGES[sel].desc}`;
 }
 $('style-presets').onclick = (e) => {
@@ -227,7 +236,7 @@ let game = null;
 let director = null;
 
 function callsign() {
-  return (settings.name || 'Ghost').replace(/[<>&"]/g, '');
+  return (settings.name || (polloOn() ? 'Pollo' : 'Ghost')).replace(/[<>&"]/g, '');
 }
 
 // Briefing map (drawn from the real terrain).

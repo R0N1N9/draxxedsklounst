@@ -201,7 +201,7 @@ export function makeBot(ctx, w, S, p) {
     if (p.ground && cmd.mx && !p.lad && b.jumpT <= 0) {
       const dir = Math.sign(cmd.mx);
       for (const q of w.solids) {
-        if (q.k !== 'rock') continue;
+        if (q.k !== 'rock' || q.h <= 0) continue;
         const dx = dir > 0 ? q.x - (p.x + PW) : p.x - PW - (q.x + q.w);
         if (dx > -4 && dx < 40 && p.y > q.y + 4 && p.y - q.y < 90) { cmd.jump = true; b.jumpT = 0.5; break; }
       }
