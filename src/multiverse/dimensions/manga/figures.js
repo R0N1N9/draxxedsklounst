@@ -9,6 +9,7 @@ import { FIG } from './world.js';
 
 const TAU = Math.PI * 2;
 const HALO = 2.6; // keyline width on screen, px
+export const SC = 1.15; // drawn over life size: two snipers across a whole street must still read on a tablet
 
 // scratch points for tapered limbs: no allocation per frame
 const T = new Float32Array(16);
@@ -56,7 +57,7 @@ export function drawUmbrella(g, col, hw) {
 // o: x, z, sx, sy (screen position of the feet), S, f (+1/-1), a (screen aim angle), ph (walk phase), spd (0..1),
 //    focus (0..1), recoil (0..1), stun, col, t (clock), wind (-1..1), umb (draw the umbrella), ghost, sil (flat silhouette)
 export function drawSniper(g, o) {
-  const S = o.S, f = o.f, t = o.t;
+  const S = o.S * SC, f = o.f, t = o.t;
   g.save();
   g.translate(o.sx, o.sy);
   g.scale(f * S, S);
@@ -262,44 +263,67 @@ export function drawShadow(g, sx, sy, S, k = 1) {
 
 export const FIG_H = FIG;
 
-// The victim of the splash page: a silhouette caught mid-air, arms flung wide, coat and scarf whipping away.
-// (sx, sy) = the feet; `dir` = +1 when the blow came from the left (the body is thrown to the right).
-export function drawFlung(g, sx, sy, S, dir, col, rot, t) {
+// The victim of the splash page: a silhouette hurled backwards by the shot, arms flung, coat and scarf whipping away.
+// Drawn in its own flight pose (not the standing figure): (cx, cy) = the chest, where the shot landed, S px per figure
+// unit, dir = +1 when the blow came from the left (the body flies to the right), rot = a little extra tilt.
+// Every limb is its own path, so the white keyline never cuts holes where two shapes overlap.
+const flingParts = [];
+export function drawFlung(g, cx, cy, S, dir, col, rot, t) {
   g.save();
-  g.translate(sx, sy);
-  g.rotate(rot);
+  g.translate(cx, cy);
+  g.rotate((rot - 0.5) * dir * 0.5); // 0.5 is the pose as drawn; more or less tips it
   g.scale(dir * S, S);
   g.lineJoin = 'round';
   g.lineCap = 'round';
-  const hw = (HALO * 2.4) / S;
-  // scarf streaming forward over the shoulder, in the identity colour
-  for (let i = 0; i < 7; i++) { const u = i / 6; T[i * 2] = -0.1 - u * 2.6; T[i * 2 + 1] = -2.6 - u * 0.9 + Math.sin(t * 9 - u * 5) * 0.2 * u; }
+  const hw = (HALO * 3.4) / S, flap = Math.sin(t * 12) * 0.1;
+  const parts = flingParts;
+  parts.length = 0;
+  const add = (fn) => { const p = new Path2D(); fn(p); parts.push(p); };
+  const limb = (a, w0, w1) => add((p) => { for (let i = 0; i < a.length; i++) T[i] = a[i]; taperInto(p, T, a.length >> 1, w0, w1); });
+  // scarf streaming back toward the shooter, in the identity colour (drawn first, under the body)
+  for (let i = 0; i < 8; i++) { const u = i / 7; T[i * 2] = 0.5 - u * 3.2; T[i * 2 + 1] = -0.5 - u * 0.5 + Math.sin(t * 9 - u * 5) * 0.28 * u; }
+  const sc = new Path2D();
+  taperInto(sc, T, 8, 0.5, 0.12);
+  g.strokeStyle = C.white; g.lineWidth = hw; g.stroke(sc);
+  g.fillStyle = col; g.fill(sc);
+  g.strokeStyle = C.ink; g.lineWidth = 0.07; g.stroke(sc);
+  // legs: one kicked out, one trailing; boots
+  limb([-0.65, 0.7, -0.95, 1.4, -1.85, 1.5], 0.66, 0.46);
+  limb([-0.45, 0.75, -0.3, 1.45, -0.7, 2.15], 0.66, 0.46);
+  add((p) => { p.moveTo(-1.8, 1.2); p.lineTo(-2.25, 1.5); p.lineTo(-2.0, 1.85); p.lineTo(-1.5, 1.8); p.closePath(); });
+  add((p) => { p.moveTo(-0.55, 2.0); p.lineTo(-0.95, 2.5); p.lineTo(-0.5, 2.7); p.lineTo(-0.15, 2.3); p.closePath(); });
+  // arms flung wide
+  limb([0.15, -0.35, 0.55, -1.0, 0.0, -1.7 + flap], 0.46, 0.32);
+  limb([0.25, 0.05, 1.0, 0.25, 1.75, -0.05 + flap], 0.46, 0.32);
+  add((p) => { p.moveTo(0.22, -1.7 + flap); p.arc(-0.05, -1.75 + flap, 0.23, 0, TAU); });
+  add((p) => { p.moveTo(1.98, -0.05 + flap); p.arc(1.8, -0.08 + flap, 0.23, 0, TAU); });
+  // the raincoat: a long belted shape along the torso, its tails flaring back
+  limb([0.62, -0.5, 0.0, 0.05, -0.75, 0.7], 0.84, 1.0);
+  add((p) => { p.moveTo(-0.45, 0.35); p.lineTo(-1.1, 0.55 + flap); p.lineTo(-1.75, 1.0); p.lineTo(-1.1, 1.0); p.lineTo(-0.5, 1.15); p.lineTo(-0.1, 0.85); p.closePath(); });
+  add((p) => { p.ellipse(0.5, -0.5, 0.5, 0.27, -0.75, 0, TAU); }); // the high collar
+  // the head, thrown back, with hair whipping off it
+  add((p) => { p.moveTo(1.4, -0.85); p.arc(0.98, -0.85, 0.44, 0, TAU); });
+  add((p) => { p.moveTo(0.75, -1.15); p.lineTo(0.15, -1.55); p.lineTo(0.62, -0.9); p.lineTo(0.0, -1.0); p.lineTo(0.62, -0.7); p.closePath(); });
+  g.strokeStyle = C.white; g.lineWidth = hw;
+  for (const p of parts) g.stroke(p);
+  g.fillStyle = C.ink;
+  for (const p of parts) g.fill(p);
+  // gouache keeps the silhouette from going to mud: the belt, the edge of the coat, a glint on the hair
+  g.strokeStyle = C.white; g.lineWidth = 0.07;
   g.beginPath();
-  taperInto(g, T, 7, 0.4, 0.12);
-  g.strokeStyle = C.white; g.lineWidth = hw; g.stroke();
-  g.fillStyle = col; g.fill();
-  g.strokeStyle = C.ink; g.lineWidth = 0.07; g.stroke();
-  g.beginPath();
-  // head thrown back, torso arched
-  g.arc(-0.35, -3.1, 0.44, 0, TAU);
-  const P = (a, n, w0, w1) => { for (let i = 0; i < n; i++) { T[i * 2] = a[i * 2]; T[i * 2 + 1] = a[i * 2 + 1]; } taperInto(g, T, n, w0, w1); };
-  P([-0.2, -2.7, 0.2, -2.0, 0.5, -1.35], 3, 1.0, 0.85); // torso
-  P([-0.1, -2.5, -1.2, -3.1, -2.3, -3.2], 3, 0.42, 0.28); // rear arm flung up
-  P([0.2, -2.4, 1.3, -2.8, 2.2, -2.2], 3, 0.42, 0.28); // front arm
-  P([0.45, -1.4, 1.2, -0.75, 1.0, 0.0], 3, 0.6, 0.42); // leg planted
-  P([0.4, -1.4, -0.2, -0.7, -1.3, -0.95], 3, 0.6, 0.42); // leg kicked back
-  g.moveTo(0.9, 0.15); g.quadraticCurveTo(1.0, -0.4, 1.5, -0.2); g.lineTo(1.5, 0.15); g.closePath();
-  g.moveTo(-0.1, -2.35); g.lineTo(0.9, -2.2); g.lineTo(1.4, -0.9); g.lineTo(-1.5, -0.6); g.lineTo(-0.9, -1.9); g.closePath(); // coat
-  g.strokeStyle = C.white; g.lineWidth = hw; g.stroke();
-  g.fillStyle = C.ink; g.fill();
+  g.moveTo(-0.35, 0.18); g.lineTo(-0.05, 0.62);
+  g.moveTo(0.78, -0.2); g.quadraticCurveTo(0.2, 0.15, -0.55, 0.85);
+  g.moveTo(-1.0, 0.7 + flap); g.lineTo(-1.5, 0.98);
+  g.moveTo(0.82, -1.15); g.quadraticCurveTo(1.0, -1.3, 1.2, -1.15);
+  g.stroke();
   // the rifle spinning away on its own
   g.save();
-  g.translate(-2.3, -3.9);
+  g.translate(2.0, -3.1);
   g.rotate(-0.5 - t * 3);
-  g.beginPath();
-  g.rect(-1.4, -0.14, 2.9, 0.28); g.rect(0.2, -0.36, 0.9, 0.2);
-  g.strokeStyle = C.white; g.lineWidth = hw * 0.7; g.stroke();
-  g.fill();
+  const rf = new Path2D();
+  rf.rect(-1.3, -0.14, 2.7, 0.28); rf.rect(0.2, -0.36, 0.9, 0.2);
+  g.strokeStyle = C.white; g.lineWidth = hw * 0.7; g.stroke(rf);
+  g.fillStyle = C.ink; g.fill(rf);
   g.restore();
   g.restore();
 }

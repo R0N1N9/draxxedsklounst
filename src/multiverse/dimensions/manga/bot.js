@@ -3,7 +3,7 @@
 // shot, back behind the wall) or a HUNTER (zig-zag in, hip-fire inside 25 m, use the blink and the decoy).
 // Skill scales reaction time, aim error, how well it leads a moving target, how often it dodges.
 import { clamp, angDiff, gauss } from '../../kit.js';
-import { WX, WZ, DY, R_BODY, BULLET_V, lineClear, aimAngleOf, trainPhase, XING } from './world.js';
+import { WX, WZ, DY, R_BODY, BULLET_V, SPAWN, lineClear, aimAngleOf, trainPhase, XING } from './world.js';
 
 const RND = Math.random;
 const dist = Math.hypot;
@@ -35,10 +35,23 @@ export function makeBot(ctx, world, env) {
     return best || { x: clamp(p.x + dir * 12, 6, WX - 6), z: 4 + RND() * 12 };
   }
 
+  // Sizing the street up: hop between pieces of cover on my own side of the middle, so the two snipers stay far apart
+  function feelSpot(p, e) {
+    const home = SPAWN[p.i].x, dir = e.x >= p.x ? 1 : -1, opts = [];
+    for (const c of world.cover) {
+      if (!c.tall || c.kind === 'pole' || c.kind === 'pillar') continue;
+      const sx = c.x + c.w / 2 - dir * (c.w / 2 + 1.6), sz = clamp(c.z + c.d / 2, 2, WZ - 2), off = (sx - home) * dir;
+      if (off < -5 || off > 22 || !free(sx, sz) || Math.abs(sx - XING.x) < XING.w) continue;
+      if (dist(sx - p.x, sz - p.z) < 5) continue;
+      opts.push({ x: sx, z: sz });
+    }
+    return opts.length ? opts[Math.floor(RND() * opts.length)] : { x: clamp(home + dir * 8, 6, WX - 6), z: 4 + RND() * 12 };
+  }
+
   function pickGoal(p, e) {
     const dir = e.x >= p.x ? 1 : -1, d = Math.abs(e.x - p.x);
     if (b.stage === 'feel') {
-      const g = coverSpot(p, e, false);
+      const g = feelSpot(p, e);
       b.gx = g.x; b.gz = g.z;
     } else if (b.mode === 'sniper') {
       const g = coverSpot(p, e, true);
@@ -50,7 +63,7 @@ export function makeBot(ctx, world, env) {
       b.gz = RND() < 0.6 ? g.z : clamp(p.z + b.side * (4 + RND() * 5), 2, WZ - 2);
       b.side = -b.side;
     }
-    b.goalT = 1.5 + RND() * 2.5;
+    b.goalT = (b.stage === 'feel' ? 2.5 : 1.5) + RND() * 2.5;
   }
 
   return function think(p, e, dt) {
@@ -159,13 +172,13 @@ export function makeBot(ctx, world, env) {
     c.mx = mx; c.mz = mz;
 
     // ---- trigger discipline ----
-    const wantFocus = see && d > 22 && !threat && (b.mode === 'sniper' || d > 34) && (b.stage === 'play' || b.seen > 0.8);
+    const wantFocus = see && d > 22 && !threat && b.stage === 'play' && (b.mode === 'sniper' || d > 34); // while feeling the street out it keeps moving
     if (wantFocus) { c.alt = true; c.mx *= 0.3; c.mz *= 0.3; }
     const react = 0.75 - 0.55 * s;
     const tol = Math.max(0.012, Math.atan2(R_BODY * (0.55 + 0.25 * s), d) * (d < 20 ? 1.15 : 1));
     const need = d > 22 ? 0.55 + (1 - s) * 0.3 : 0; // how settled the aim must be before a long shot
-    // nobody opens fire in the first seconds: both snipers size the street up (close range excepted)
-    const settled = b.t > 5.5 + (1 - s) * 3 + RND() * 0.001 && (b.stage === 'play' || d < 30);
+    // nobody opens fire for the first ten seconds: both snipers size the street up, so a round is never over before it began
+    const settled = b.t > 10.3 + (1 - s) * 2.5 && (b.stage === 'play' || d < 30);
     if (settled && see && b.seen > react && p.reload <= 0 && p.stun <= 0 && p.fz >= need && Math.abs(angDiff(p.a, want)) < tol * 1.1) {
       b.hesitate -= dt;
       if (b.hesitate <= 0) {

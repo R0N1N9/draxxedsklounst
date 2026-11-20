@@ -11,7 +11,7 @@ import { rand, randInt, hashSeed, resolveCircleRects, raycastRects } from '../..
 export const WX = 96, WZ = 20, DY = 0.55, FIG = 3.4;
 export const R_BODY = 0.85;       // hit radius on the ground plane
 export const R_WALK = 0.8;        // collision radius against cover
-export const V_X = 6.8, V_Z = 5.2, BULLET_V = 130, CHEST = 2.1;
+export const V_X = 6.8, V_Z = 5.2, BULLET_V = 130, CHEST = 2.35; // CHEST: the height of the rifle on screen (the figures are drawn 15% over life size)
 export const XING = { x: WX / 2, w: 9.4, rails: [WX / 2 - 1.5, WX / 2 + 1.5] };
 export const SPAWN = [{ x: 14, z: 10 }, { x: WX - 14, z: 10 }];
 export const TRAIN = { v: 52, len: 46, w: 5.4, warn: 3.4 };
@@ -127,6 +127,10 @@ export function lineClear(world, ax, az, bx, bz) {
 export function pushOut(world, pos, r) {
   return resolveCircleRects(pos, r, world.walk);
 }
+// a blink leaps over low cover (scooters, benches) but not over walls, crates or the train
+export function pushOutTall(world, pos, r) {
+  return resolveCircleRects(pos, r, world.shield);
+}
 
 // Sudden death: the page's panels close in from both ends.
 export function limits(t, sudden, suddenAt, out) {
@@ -142,13 +146,14 @@ export const seedHash = hashSeed;
 export function makeView() {
   return {
     W: 0, H: 0, dpr: 1, px: 0, py: 0, pw: 0, ph: 0, S: 12, cx: WX / 2, ox: 0, oy: 0, baseY: 0, y0: 0,
-    layout(W, H, dpr, cx, vis) {
+    // touch: the street sits higher on the page so that neither sniper hides under the thumbs' buttons; the canal fills the rest
+    layout(W, H, dpr, cx, vis, touch) {
       const m = Math.max(6, Math.min(13, Math.min(W, H) * 0.017));
       this.W = W; this.H = H; this.dpr = dpr;
       this.px = m; this.py = m; this.pw = W - 2 * m; this.ph = H - 2 * m;
       this.S = this.pw / vis;
       this.cx = cx;
-      this.baseY = this.py + this.ph * (H < 520 ? 0.6 : 0.69);
+      this.baseY = this.py + this.ph * (touch ? (H < 520 ? 0.5 : 0.54) : H < 520 ? 0.6 : 0.69);
       this.ox = this.px + this.pw / 2 - cx * this.S;
       this.oy = this.baseY - (WZ / 2) * DY * this.S;
       this.y0 = this.oy;

@@ -3,7 +3,7 @@
 // kill, and the small in-world marks (aim line, reticle, pointers, captions).
 import { clamp, ease, damp, TAU } from '../../kit.js';
 import { C, drawSfx, radialLines, inkFrame, taperInto } from './ink.js';
-import { drawSniper, drawUmbrella, drawFlung } from './figures.js';
+import { drawSniper, drawUmbrella, drawFlung, SC } from './figures.js';
 
 const FONT = '"Arial Narrow", "Futura", "Avenir Next Condensed", "Rajdhani", Impact, sans-serif';
 
@@ -252,12 +252,13 @@ export class Panels {
 // ---------------------------------------------------------------------------
 // the kill: a full-bleed splash page
 // ---------------------------------------------------------------------------
-// s: t (seconds since the hit), sgn (+1 when the shooter stands left of the victim), a (screen angle shooter -> victim),
-//    wcol / lcol (identity colours), word, seed, tones
+// s: t (seconds since the hit), sgn (+1 when the shooter stands left of the victim), wcol / lcol (identity colours),
+//    word, seed, tones, touch (the thumbs' buttons sit at the right edge: compose with the shooter on the left).
+// The top fifth of the page is kept calm: the core lays its kill banner there.
 export function drawSplash(g, v, s) {
   const { px, py, pw, ph } = v, t = s.t;
   if (t < 0.09) return;
-  const q = clamp((t - 0.09) / 0.2, 0, 1), pop = ease.outBack(q), sgn = s.sgn;
+  const q = clamp((t - 0.09) / 0.2, 0, 1), pop = ease.outBack(q), sgn = s.touch ? 1 : s.sgn, aim = sgn > 0 ? 0.06 : Math.PI - 0.06;
   g.save();
   g.beginPath();
   g.rect(px, py, pw, ph);
@@ -266,81 +267,102 @@ export function drawSplash(g, v, s) {
   g.translate(sh, -sh * 0.6);
   g.fillStyle = C.paper;
   g.fillRect(px - 20, py - 20, pw + 40, ph + 40);
-  const cx = px + pw * 0.5 + sgn * pw * 0.04, cy = py + ph * 0.52, R = ph * 0.6;
+  const cx = px + pw * (0.5 + sgn * 0.04), cy = py + ph * 0.6, R = ph * 0.43;
   // tone at the page edges
   s.tones.use(g, 'd1', 1);
   g.fillRect(px, py, pw, ph);
   g.fillStyle = C.paper;
-  g.beginPath(); g.ellipse(cx, cy, R * 1.45, R * 1.15, 0, 0, TAU); g.fill();
+  g.beginPath(); g.ellipse(cx, cy, R * 1.7, R * 1.3, 0, 0, TAU); g.fill();
   // focus lines beyond the burst
   g.fillStyle = C.ink;
-  radialLines(g, cx, cy, R * 0.9, R * 3.2, 90, R * 0.03, s.seed, 0.9, t * 0.04);
+  radialLines(g, cx, cy, R * 0.95, R * 3.4, 90, R * 0.03, s.seed, 0.9, t * 0.04);
   g.fill();
   // the burst: black spikes, a white spotlight inside them, white speed lines over the black ring
   const spikes = (R0, ph0) => {
     g.beginPath();
     const n = 30;
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * TAU + ph0, hsh = ((i * 2654435761 + s.seed) >>> 0) % 100 / 100, r = (i & 1 ? 0.55 : 1.0 + hsh * 0.24) * R0 * pop;
-      g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.92);
+      const a = (i / n) * TAU + ph0, hsh = ((i * 2654435761 + s.seed) >>> 0) % 100 / 100, r = (i & 1 ? 0.55 : 1.0 + hsh * 0.24) * R0 * pop, sn = Math.sin(a);
+      g.lineTo(cx + Math.cos(a) * r, cy + sn * r * (sn < 0 ? 0.6 : 0.95)); // shorter upward: the banner strip stays clear
     }
     g.closePath();
   };
-  spikes(R * 0.78, 0);
+  spikes(R * 0.8, 0);
   g.fillStyle = C.ink;
   g.fill();
   g.fillStyle = C.white;
-  radialLines(g, cx, cy, R * 0.6, R * 0.86 * pop, 64, R * 0.03, s.seed + 3, 0.9, -t * 0.05);
+  radialLines(g, cx, cy, R * 0.6, R * 0.88 * pop, 64, R * 0.03, s.seed + 3, 0.9, -t * 0.05);
   g.fill();
-  spikes(R * 0.64, 0.06);
+  spikes(R * 0.66, 0.06);
   g.fillStyle = C.paper;
   g.fill();
   g.strokeStyle = C.ink;
   g.lineWidth = 2;
   g.stroke();
   g.fillStyle = C.ink;
-  radialLines(g, cx, cy, R * 0.36, R * 0.64 * pop, 40, R * 0.012, s.seed + 9, 0.9, t * 0.04);
+  radialLines(g, cx, cy, R * 0.36, R * 0.66 * pop, 40, R * 0.012, s.seed + 9, 0.9, t * 0.04);
   g.fill();
 
-  // the shooter, far side, frozen
-  const bx = sgn > 0 ? px + pw * 0.13 : px + pw * 0.87, by = py + ph * 0.9, Ss = ph * 0.2 / 3.4;
-  const mx = bx + Math.cos(s.a) * 3.6 * Ss, my = by - 2.06 * Ss + Math.sin(s.a) * 3.6 * Ss;
-  drawSniper(g, { sx: bx, sy: by, S: Ss, f: sgn > 0 ? 1 : -1, a: s.a, ph: 0, spd: 0, focus: 1, recoil: 1, stun: false, col: s.wcol, t, wind: 0, umb: true, sil: true, x: 0, z: 0 });
-  // the bullet's last streak
+  // the shooter, far side, frozen: a small black figure with the muzzle still flaring
+  const Sh = ph * 0.2 / 3.9, bx = sgn > 0 ? px + pw * 0.11 : px + pw * 0.89, by = py + ph * 0.7;
+  const gy = by - 2.06 * SC * Sh, mx = bx + Math.cos(aim) * 3.4 * SC * Sh, my = gy + Math.sin(aim) * 3.4 * SC * Sh;
+  // the bullet's last streak, from the muzzle to the chest
   if (q > 0) {
     const ex = mx + (cx - mx) * pop, ey = my + (cy - my) * pop;
     g.lineCap = 'round';
     g.strokeStyle = C.paper;
-    g.lineWidth = 9;
+    g.lineWidth = 11;
     g.beginPath(); g.moveTo(mx, my); g.lineTo(ex, ey); g.stroke();
     g.strokeStyle = C.ink;
-    g.lineWidth = 3.5;
+    g.lineWidth = 4;
     g.beginPath(); g.moveTo(mx, my); g.lineTo(ex, ey); g.stroke();
   }
-  // the victim, thrown back
-  const vs = ph * 0.5 / 3.4, ease1 = ease.outCubic(clamp((t - 0.1) / 0.7, 0, 1)), vx = cx + sgn * pw * 0.03 * ease1, vy = py + ph * 0.8 - ease1 * ph * 0.025;
-  drawFlung(g, vx, vy, vs, sgn, s.lcol, sgn * (0.12 + 0.1 * ease1), t);
-  const vf = vs;
-  // the umbrella, knocked clean off, tumbling away
-  const ut = Math.max(0, t - 0.1), ux = vx + sgn * vs * 0.5 + sgn * ut * pw * 0.3, uy = vy - vs * 3.6 - ut * ph * 0.42 + ut * ut * ph * 0.34;
-  if (uy < py + ph + 200) {
+  drawSniper(g, { sx: bx, sy: by, S: Sh, f: sgn > 0 ? 1 : -1, a: aim, ph: 0, spd: 0, focus: 1, recoil: 1, stun: false, col: s.wcol, t, wind: 0, umb: true, sil: true, x: 0, z: 0 });
+  if (t < 0.45) { // the muzzle flash
+    const k = 1 - t / 0.45, Rf = Sh * (1.4 + 2.2 * k);
+    g.save();
+    g.translate(mx, my);
+    g.rotate(aim);
+    g.beginPath();
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU, r = (i & 1 ? 0.35 : 1) * Rf * (i % 4 === 0 ? 1.6 : 1); g.lineTo(Math.cos(a) * r, Math.sin(a) * r * 0.7); }
+    g.closePath();
+    g.fillStyle = C.white; g.fill();
+    g.strokeStyle = C.ink; g.lineWidth = 2.5; g.stroke();
+    g.restore();
+  }
+
+  // the victim, hurled back from the point of impact
+  const ease1 = ease.outCubic(clamp((t - 0.1) / 0.8, 0, 1)), vs = ph * 0.44 / 3.4, vx = cx + sgn * pw * 0.05 * ease1, vy = cy - ph * 0.03 * ease1;
+  drawFlung(g, vx, vy, vs, sgn, s.lcol, 0.5 + 0.45 * ease1, t);
+  // the umbrella, knocked clean off, tumbling away across the lower page (never up into the banner)
+  const ut = Math.max(0, t - 0.1), us = vs * 0.55, ux = vx + sgn * (vs * 0.9 + ut * pw * 0.62), uy = vy - vs * 1.2 - ut * ph * 0.26 + ut * ut * ph * 1.0;
+  if (uy < py + ph + us * 3) {
     g.save();
     g.translate(ux, uy);
     g.rotate(sgn * ut * 7);
     g.lineJoin = 'round';
-    g.scale(vs * 0.85, vs * 0.85);
-    drawUmbrella(g, s.lcol, 3 / vs);
+    g.scale(us, us);
+    drawUmbrella(g, s.lcol, 3 / us);
     g.restore();
     g.strokeStyle = C.ink; // its speed lines
     g.lineWidth = 2;
     g.beginPath();
-    for (let i = -1; i <= 1; i++) { g.moveTo(ux - sgn * (vs * 2 + i * 6), uy - i * vs * 0.5); g.lineTo(ux - sgn * (vs * 5 + i * 10 + ut * pw * 0.08), uy - i * vs * 0.5 + ut * ph * 0.15); }
+    for (let i = -1; i <= 1; i++) { g.moveTo(ux - sgn * (us * 2 + i * 6), uy - i * us * 0.5); g.lineTo(ux - sgn * (us * 5 + i * 10 + ut * pw * 0.08), uy - i * us * 0.5 - ut * ph * 0.05); }
     g.stroke();
   }
-  // the one enormous sound effect, lettered across the lower page over the figure's feet
+  // the point of impact: a white star on the chest
+  if (t < 0.5) {
+    const k = 1 - t / 0.5, Ri = R * (0.12 + 0.3 * k * k);
+    g.beginPath();
+    for (let i = 0; i < 16; i++) { const a = (i / 16) * TAU + 0.2, r = (i & 1 ? 0.3 : 1) * Ri * (0.85 + 0.3 * (((i * 7) % 5) / 5)); g.lineTo(vx + Math.cos(a) * r, vy + Math.sin(a) * r); }
+    g.closePath();
+    g.fillStyle = C.white; g.fill();
+    g.strokeStyle = C.ink; g.lineWidth = 3; g.stroke();
+  }
+  // the one enormous sound effect, lettered across the lower page
   if (t > 0.16) {
-    const k = ease.outBack(clamp((t - 0.16) / 0.2, 0, 1)), n = s.word.length, sz = Math.min(ph * 0.5, (pw * 0.8) / (n * 0.9)) * k;
-    drawSfx(g, s.word, px + pw * 0.5 + sgn * pw * 0.05, py + ph * 0.72, sz, -0.1 * sgn, { w: sz * 0.125, fill: C.ink, line: C.white, lineW: sz * 0.1, shadow: sz * 0.04 });
+    const k = ease.outBack(clamp((t - 0.16) / 0.2, 0, 1)), n = s.word.length, sz = Math.min(ph * 0.46, (pw * 0.8) / (n * 0.9)) * k;
+    drawSfx(g, s.word, px + pw * 0.5 + sgn * pw * 0.05, py + ph * 0.77, sz, -0.1 * sgn, { w: sz * 0.125, fill: C.ink, line: C.white, lineW: sz * 0.1, shadow: sz * 0.04 });
   }
   if (t < 0.22) { g.fillStyle = `rgba(255,253,246,${1 - t / 0.22})`; g.fillRect(px, py, pw, ph); }
   g.restore();

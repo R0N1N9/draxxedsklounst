@@ -44,8 +44,8 @@ export function startleCats(L, x) {
 }
 
 // lanterns hang on strings along the shopfronts and swing with the wind: they move a beat before a gust bites
-export function drawLanterns(g, v, L, t, wind) {
-  const S = v.S, zk = DY * S, base = v.y0 - 0.5 * zk, y = base - 6.6 * S;
+export function drawLanterns(g, v, L, t, wind, sprites, Sq) {
+  const S = v.S, zk = DY * S, base = v.y0 - 0.5 * zk, y = base - 6.6 * S, dpr = v.dpr, k = S / Sq;
   g.lineCap = 'round';
   g.strokeStyle = C.ink;
   g.lineWidth = 1.4;
@@ -54,33 +54,42 @@ export function drawLanterns(g, v, L, t, wind) {
   for (let i = 0; i < L.lanterns.length; i++) {
     const a = L.lanterns[i], x = v.sx(a.x);
     if (x < v.px - 30 || x > v.px + v.pw + 30) { first = true; continue; }
-    const sag = 0.5 * S * (1 + Math.sin(a.ph)) * 0.5;
     if (first) { g.moveTo(x, y); first = false; } else g.quadraticCurveTo((x + v.sx(L.lanterns[i - 1].x)) / 2, y + S * 0.9, x, y);
   }
   g.stroke();
   for (let i = 0; i < L.lanterns.length; i++) {
     const a = L.lanterns[i], x = v.sx(a.x);
     if (x < v.px - 30 || x > v.px + v.pw + 30) continue;
-    const ang = 0.05 * Math.sin(t * 1.6 + a.ph) + wind * 0.55 + Math.sin(t * 7 + a.ph) * Math.abs(wind) * 0.06, r = (a.big ? 0.9 : 0.62) * S;
+    const ang = 0.05 * Math.sin(t * 1.6 + a.ph) + wind * 0.55 + Math.sin(t * 7 + a.ph) * Math.abs(wind) * 0.06, rr = a.big ? 0.9 : 0.62, r = rr * Sq;
+    // the lantern itself never changes: it is inked once per zoom level and swung on its string
+    const sp = sprites.get(a.big ? 'lanB' : 'lanS', Sq, dpr, { x0: -r * 0.9, y0: -0.4 * Sq - 2, x1: r * 0.9, y1: 0.25 * Sq + 2 * r + 3 }, (q, s) => paintLantern(q, s, rr));
     g.save();
     g.translate(x, y + 0.4 * S);
     g.rotate(ang);
-    g.strokeStyle = C.ink;
-    g.lineWidth = 1.4;
-    g.beginPath(); g.moveTo(0, -0.4 * S); g.lineTo(0, 0.25 * S); g.stroke();
-    g.fillStyle = C.white;
-    g.beginPath(); g.ellipse(0, 0.25 * S + r, r * 0.82, r, 0, 0, TAU); g.fill();
-    g.lineWidth = 2;
-    g.stroke();
-    g.lineWidth = 1;
-    g.beginPath();
-    for (const k of [-0.5, 0, 0.5]) { g.moveTo(r * 0.82 * k, 0.25 * S + r - r * Math.sqrt(1 - k * k) * 0.98); g.quadraticCurveTo(r * 0.95 * k * 1.15, 0.25 * S + r, r * 0.82 * k, 0.25 * S + r + r * Math.sqrt(1 - k * k) * 0.98); }
-    g.stroke();
-    g.fillStyle = C.ink;
-    g.fillRect(-r * 0.45, 0.2 * S, r * 0.9, 0.14 * S);
-    g.fillRect(-r * 0.45, 0.25 * S + 2 * r - 0.06 * S, r * 0.9, 0.14 * S);
+    g.scale(k, k);
+    g.drawImage(sp.cv, sp.ox, sp.oy, sp.cv.width / dpr, sp.cv.height / dpr);
     g.restore();
   }
+}
+
+// one paper lantern hanging from the origin, S px per unit
+function paintLantern(g, S, rr) {
+  const r = rr * S;
+  g.lineCap = 'round';
+  g.strokeStyle = C.ink;
+  g.lineWidth = 1.4;
+  g.beginPath(); g.moveTo(0, -0.4 * S); g.lineTo(0, 0.25 * S); g.stroke();
+  g.fillStyle = C.white;
+  g.beginPath(); g.ellipse(0, 0.25 * S + r, r * 0.82, r, 0, 0, TAU); g.fill();
+  g.lineWidth = 2;
+  g.stroke();
+  g.lineWidth = 1;
+  g.beginPath();
+  for (const k of [-0.5, 0, 0.5]) { g.moveTo(r * 0.82 * k, 0.25 * S + r - r * Math.sqrt(1 - k * k) * 0.98); g.quadraticCurveTo(r * 0.95 * k * 1.15, 0.25 * S + r, r * 0.82 * k, 0.25 * S + r + r * Math.sqrt(1 - k * k) * 0.98); }
+  g.stroke();
+  g.fillStyle = C.ink;
+  g.fillRect(-r * 0.45, 0.2 * S, r * 0.9, 0.14 * S);
+  g.fillRect(-r * 0.45, 0.25 * S + 2 * r - 0.06 * S, r * 0.9, 0.14 * S);
 }
 
 export function drawCats(g, v, L, t, backWall) {

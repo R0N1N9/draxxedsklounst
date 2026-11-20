@@ -20,6 +20,7 @@ export function makeSet(seed) {
 // The sky (ink, a gradation tone glowing up from the rooftops, the moon and its stippled rings) never changes
 // for a given page size, so it is painted once into an off-screen canvas and blitted.
 const skyCache = { c: null, key: '' };
+export function disposeStage() { if (skyCache.c) skyCache.c.width = skyCache.c.height = 0; skyCache.c = null; skyCache.key = ''; }
 function drawSky(g, v, tones) {
   const { px, py, pw, ph } = v, k = Math.min(1, 4000 / ((pw + 28) * v.dpr)), key = `${pw}|${ph}|${v.dpr}`;
   if (skyCache.key !== key) {
@@ -50,11 +51,21 @@ function drawSky(g, v, tones) {
     q.beginPath(); q.arc(mx - mr * 0.25, my + mr * 0.1, mr * 0.28, 0.5, 4); q.moveTo(mx + mr * 0.5, my - mr * 0.3); q.arc(mx + mr * 0.35, my - mr * 0.3, mr * 0.15, 0, 5); q.stroke();
     skyCache.key = key;
   }
-  g.drawImage(skyCache.c, px - 14, py - 14, pw + 28, ph + 28);
+  // below the far kerb the street plates cover everything, so only the upper part of the sky is blitted
+  const keep = clamp((v.y0 + 6 - (py - 14)) / (ph + 28), 0.2, 1), sch = skyCache.c.height * keep;
+  g.drawImage(skyCache.c, 0, 0, skyCache.c.width, sch, px - 14, py - 14, pw + 28, (ph + 28) * keep);
 }
 
-export function drawBackdrop(g, v, tones, sc, set, st) {
-  const { px, py, pw, ph, S } = v, t = st.t;
+// Bake what the first frame needs (done while the world is being built, in the window the transition hides).
+export function primePlates(v, env, plates, lv) {
+  const nul = { drawImage() {} };
+  plates.draw(nul, v, MID_PLATE, lv, env);
+  plates.draw(nul, v, WALL_PLATE, lv, env);
+  plates.draw(nul, v, GROUND_PLATE, lv, env);
+}
+
+export function drawBackdrop(g, v, env, st, plates, lv) {
+  const { px, py, pw, ph, S } = v, t = st.t, { tones, sc, set } = env;
   drawSky(g, v, tones);
   // ink clouds sliding across
   g.lineCap = 'round';
@@ -73,28 +84,10 @@ export function drawBackdrop(g, v, tones, sc, set, st) {
     g.quadraticCurveTo(x, y + h * 0.6, x + w * 0.46, y + h * 0.05);
     g.stroke();
   }
-  // layers
+  // the far skyline is a handful of plain silhouettes: cheaper to draw than to bake
   layer(g, v, tones, sc.far, FAR);
-  layer(g, v, tones, sc.mid, MID);
-  // haze between the skyline and the wall: a gradation tone growing darker toward the street
-  // the shopfront wall, in the plane of the street
-  const zk = DY * S;
-  for (const it of sc.back) {
-    const x0 = v.sx(it.x);
-    if (x0 > px + pw || x0 + (it.w + 1) * S < px) continue;
-    g.save();
-    g.translate(x0, v.y0 - 0.3 * zk);
-    g.scale(S, S);
-    drawSheet(g, it.sh, tones, S);
-    g.restore();
-  }
-  // lamps and windows spill light: stippled glows on the wall
-  if (!tones.lite) for (const l of sc.lamps) {
-    const x = v.sx(l.x), y = v.y0 - l.y * S;
-    if (x < px - 100 || x > px + pw + 100) continue;
-    const fl = 1 - 0.1 * Math.sin(t * 9 + l.x * 3) * (st.flick || 0);
-    for (const [k, tn] of [[1.0, 'v1'], [0.7, 'v2'], [0.42, 'v3']]) { tones.use(g, tn, 1); g.beginPath(); g.arc(x, y, l.r * 0.55 * S * k * fl, 0, TAU); g.fill(); }
-  }
+  plates.draw(g, v, MID_PLATE, lv, env);
+  plates.draw(g, v, WALL_PLATE, lv, env);
 }
 
 function layer(g, v, tones, items, L) {
@@ -112,77 +105,163 @@ function layer(g, v, tones, items, L) {
 }
 
 // ---------------------------------------------------------------------------
+// plates (see plates.js): the mid blocks, the shopfront wall with its lamp glows, and the street itself.
+// Each paints a strip of "layer space": x = layer unit * the scale it is baked at, y = relative to the far kerb.
+// ---------------------------------------------------------------------------
+const unlit = (env, fn) => { const t = env.tones, was = t.lite; t.lite = false; fn(); t.lite = was; }; // a bake always keeps the tone
+
+// extent of a list of sheets in layer units, remembered on the array
+function extent(items, wOf) {
+  if (items.ext) return items.ext;
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (const it of items) {
+    x0 = Math.min(x0, it.x + it.sh.x0); x1 = Math.max(x1, it.x + it.sh.x1);
+    y0 = Math.min(y0, it.sh.y0); y1 = Math.max(y1, it.sh.y1);
+  }
+  return (items.ext = { x0, x1, y0, y1 });
+}
+
+const MID_PLATE = {
+  name: 'mid',
+  shift: (v) => v.px + v.pw / 2 - v.cx * MID.par * v.S * MID.k,
+  xr(Sq, env) { const e = extent(env.sc.mid), s = Sq * MID.k; return [e.x0 * s - 24, e.x1 * s + 24]; },
+  band(Sq, env) { const e = extent(env.sc.mid), s = Sq * MID.k, base = -MID.up * Sq; return [base + e.y0 * s - 4, base + e.y1 * s + 6]; },
+  paint(q, Sq, x0, x1, env) {
+    unlit(env, () => {
+      const s = Sq * MID.k, base = -MID.up * Sq;
+      for (const it of env.sc.mid) {
+        if (it.x * s + it.sh.x1 * s + 20 < x0 || it.x * s + it.sh.x0 * s - 20 > x1) continue;
+        q.save();
+        q.translate(it.x * s, base);
+        q.scale(s, s);
+        drawSheet(q, it.sh, env.tones, s);
+        q.restore();
+      }
+    });
+  },
+};
+
+const WALL_PLATE = {
+  name: 'wall',
+  shift: (v) => v.ox,
+  xr(Sq, env) { const w = env.sc.back; return [(w[0].x - 2) * Sq, (w[w.length - 1].x + w[w.length - 1].w + 2) * Sq]; },
+  band(Sq, env) {
+    let top = 0;
+    for (const it of env.sc.back) top = Math.min(top, it.sh.y0);
+    for (const l of env.sc.lamps) top = Math.min(top, -l.y - l.r * 0.55);
+    return [top * Sq - 0.3 * DY * Sq - 4, 4];
+  },
+  paint(q, Sq, x0, x1, env) {
+    unlit(env, () => {
+      const { sc, tones } = env, zk = DY * Sq;
+      for (const it of sc.back) {
+        if (it.x * Sq > x1 || (it.x + it.w + 1) * Sq < x0) continue;
+        q.save();
+        q.translate(it.x * Sq, -0.3 * zk);
+        q.scale(Sq, Sq);
+        drawSheet(q, it.sh, tones, Sq);
+        q.restore();
+      }
+      // lamps and windows spill light: stippled glows on the wall
+      for (const l of sc.lamps) {
+        const x = l.x * Sq, y = -l.y * Sq, rr = l.r * 0.55 * Sq;
+        if (x + rr < x0 || x - rr > x1) continue;
+        for (const [k, tn] of [[1.0, 'v1'], [0.7, 'v2'], [0.42, 'v3']]) { tones.use(q, tn, 1); q.beginPath(); q.arc(x, y, rr * k, 0, TAU); q.fill(); }
+      }
+    });
+  },
+};
+
+// ---------------------------------------------------------------------------
 // the street
 // ---------------------------------------------------------------------------
-export function drawGround(g, v, tones, sc, set, world, st) {
+const wallOf = (S) => Math.max(8, 2.4 * S);
+
+const GROUND_PLATE = {
+  name: 'ground',
+  shift: (v) => v.ox,
+  xr: (Sq) => [-40 * Sq, (WX + 40) * Sq],
+  band: (Sq) => [-2, WZ * DY * Sq + wallOf(Sq) + 4],
+  paint(q, S, x0, x1, env) {
+    unlit(env, () => {
+      const { sc, set, tones } = env, zk = DY * S, xa = -40 * S, xb = (WX + 40) * S, L = Math.max(x0, xa), R = Math.min(x1, xb), w = R - L;
+      if (w <= 0) return;
+      // pavement, road, front kerb
+      q.fillStyle = C.paper;
+      q.fillRect(L, 0, w, WZ * zk);
+      tones.use(q, 'd1', 1); // (the tone lattice is anchored to the origin of layer space: the street's own origin)
+      q.fillRect(L, 0, w, 2 * zk);
+      q.fillRect(L, 18.4 * zk, w, 1.6 * zk);
+      tones.use(q, 'd2', 1);
+      q.fillRect(L, 2 * zk, w, 16.4 * zk);
+      // the pools of light under the lamps: clean paper, so a black figure standing in one is a strong shape
+      for (const l of sc.lamps) {
+        if (l.pole && l.y < 5) continue;
+        const x = l.x * S, zc = l.pole ? 17.2 : Math.min(9.5, 2.6 + l.r * 0.65), rx = l.r * 1.25 * S, ry = Math.max(rx * 0.22, l.r * 0.5 * zk);
+        if (x + rx < x0 || x - rx > x1) continue;
+        q.fillStyle = C.paper;
+        q.beginPath(); q.ellipse(x, zc * zk, rx, ry, 0, 0, TAU); q.fill();
+        q.fillStyle = C.white;
+        q.beginPath(); q.ellipse(x, zc * zk, rx * 0.6, ry * 0.6, 0, 0, TAU); q.fill();
+        q.strokeStyle = C.ink;
+        q.lineWidth = 1;
+        q.beginPath();
+        for (let i = -3; i <= 3; i++) { const sx = x + i * rx * 0.22; q.moveTo(sx, zc * zk - ry * 0.45 * (1 - Math.abs(i) / 4)); q.lineTo(sx + 0.4, zc * zk + ry * 0.45 * (1 - Math.abs(i) / 4)); }
+        q.stroke();
+      }
+      // kerbs and long asphalt streaks
+      q.lineCap = 'round';
+      q.strokeStyle = C.ink;
+      q.lineWidth = 2.6;
+      q.beginPath(); q.moveTo(L, 2 * zk); q.lineTo(R, 2 * zk); q.moveTo(L, WZ * zk); q.lineTo(R, WZ * zk); q.stroke();
+      q.lineWidth = 1;
+      q.beginPath();
+      for (const s of set.streaks) { const x = s.x * S; if (x + s.l * S * 0.5 < x0 || x > x1) continue; q.moveTo(x, s.z * zk); q.lineTo(x + s.l * S * 0.5, s.z * zk); }
+      q.moveTo(L, 18.4 * zk); q.lineTo(R, 18.4 * zk);
+      q.stroke();
+      q.strokeStyle = C.white; // wet kerb highlight
+      q.lineWidth = 1.6;
+      q.beginPath(); q.moveTo(L, 2 * zk + 3.5); q.lineTo(R, 2 * zk + 3.5); q.stroke();
+      // centre line: white dashes on the grey road (the dash phase is anchored to the far end of the street)
+      q.lineWidth = Math.max(2, S * 0.16);
+      q.setLineDash([S * 3, S * 2.4]);
+      q.lineDashOffset = L - xa;
+      q.beginPath(); q.moveTo(L, 10.3 * zk); q.lineTo(R, 10.3 * zk); q.stroke();
+      q.setLineDash([]);
+      q.lineDashOffset = 0;
+      paintCrossing(q, S, tones);
+      // the canal wall in front of the street
+      const wall = wallOf(S), wy = WZ * zk;
+      q.fillStyle = C.paper2;
+      q.fillRect(L, wy, w, wall);
+      tones.use(q, 'd1', 1);
+      q.fillRect(L, wy, w, wall);
+      q.strokeStyle = C.ink;
+      q.lineWidth = 1;
+      q.beginPath();
+      for (let y = wy + wall * 0.34; y < wy + wall; y += wall * 0.34) { q.moveTo(L, y); q.lineTo(R, y); }
+      const bs = 2.2 * S;
+      for (let r = 0; r < 3; r++) for (let x = Math.floor(L / bs) * bs - bs + (r & 1 ? bs / 2 : 0); x < R + bs; x += bs) { q.moveTo(x, wy + wall * 0.34 * r); q.lineTo(x, wy + wall * 0.34 * (r + 1)); }
+      q.stroke();
+      q.fillStyle = C.ink;
+      q.fillRect(L, wy - 1, w, 4.4);
+    });
+  },
+};
+
+// The street itself is baked; what moves is drawn over it: the flashing edge of the danger lane, the black
+// canal water with its ripples and the lamp reflections sliding across.
+export function drawGround(g, v, env, st, plates, lv) {
   const { px, py, pw, ph, S } = v, zk = DY * S, t = st.t;
-  const xa = v.sx(-40), xb = v.sx(WX + 40), ya = v.y0, yb = v.sy(WZ), yEnd = py + ph;
+  plates.draw(g, v, GROUND_PLATE, lv, env);
   g.save();
   g.beginPath();
   g.rect(px, py, pw, ph);
   g.clip();
-  // pavement, road, front kerb
-  g.fillStyle = C.paper;
-  g.fillRect(xa, ya, xb - xa, yb - ya);
-  g.save();
-  g.translate(v.ox, v.oy);
-  tones.use(g, 'd1', 1);
-  g.fillRect(xa - v.ox, 0, xb - xa, 2 * zk);
-  g.fillRect(xa - v.ox, 18.4 * zk, xb - xa, 1.6 * zk);
-  tones.use(g, 'd2', 1);
-  g.fillRect(xa - v.ox, 2 * zk, xb - xa, 16.4 * zk);
-  g.restore();
-  // the pools of light under the lamps: clean paper, so a black figure standing in one is a strong shape
-  for (const l of sc.lamps) {
-    if (l.pole && l.y < 5) continue;
-    const x = v.sx(l.x);
-    if (x < px - 200 || x > px + pw + 200) continue;
-    const zc = l.pole ? 17.2 : Math.min(9.5, 2.6 + l.r * 0.65), rx = l.r * 1.25 * S, ry = Math.max(rx * 0.22, l.r * 0.5 * zk);
-    g.fillStyle = C.paper;
-    g.beginPath(); g.ellipse(x, v.sy(zc), rx, ry, 0, 0, TAU); g.fill();
-    g.fillStyle = C.white;
-    g.beginPath(); g.ellipse(x, v.sy(zc), rx * 0.6, ry * 0.6, 0, 0, TAU); g.fill();
-    g.strokeStyle = C.ink;
-    g.lineWidth = 1;
-    g.beginPath();
-    for (let i = -3; i <= 3; i++) { const sx = x + i * rx * 0.22; g.moveTo(sx, v.sy(zc) - ry * 0.45 * (1 - Math.abs(i) / 4)); g.lineTo(sx + 0.4, v.sy(zc) + ry * 0.45 * (1 - Math.abs(i) / 4)); }
-    g.stroke();
-  }
-  // kerbs and long asphalt streaks
-  g.lineCap = 'round';
-  g.strokeStyle = C.ink;
-  g.lineWidth = 2.6;
-  g.beginPath(); g.moveTo(xa, v.sy(2)); g.lineTo(xb, v.sy(2)); g.moveTo(xa, yb); g.lineTo(xb, yb); g.stroke();
-  g.lineWidth = 1;
-  g.beginPath();
-  for (const s of set.streaks) { const x = v.sx(s.x), y = v.sy(s.z); g.moveTo(x, y); g.lineTo(x + s.l * S * 0.5, y); }
-  g.moveTo(xa, v.sy(18.4)); g.lineTo(xb, v.sy(18.4));
-  g.stroke();
-  g.strokeStyle = C.white; // wet kerb highlight
-  g.lineWidth = 1.6;
-  g.beginPath(); g.moveTo(xa, v.sy(2) + 3.5); g.lineTo(xb, v.sy(2) + 3.5); g.stroke();
-  // centre line: white dashes on the grey road
-  g.lineWidth = Math.max(2, S * 0.16);
-  g.setLineDash([S * 3, S * 2.4]);
-  g.beginPath(); g.moveTo(xa, v.sy(10.3)); g.lineTo(xb, v.sy(10.3)); g.stroke();
-  g.setLineDash([]);
-  drawCrossing(g, v, tones, st);
-  // the canal wall and water in front of the street
-  const wall = Math.max(8, 2.4 * S), wy = yb;
-  g.fillStyle = C.paper2;
-  g.fillRect(px, wy, pw, wall);
-  tones.use(g, 'd1', 1);
-  g.fillRect(px, wy, pw, wall);
-  g.strokeStyle = C.ink;
-  g.lineWidth = 1;
-  g.beginPath();
-  for (let y = wy + wall * 0.34; y < wy + wall; y += wall * 0.34) { g.moveTo(px, y); g.lineTo(px + pw, y); }
-  const bs = 2.2 * S;
-  for (let r = 0; r < 3; r++) for (let x = (v.ox % bs) + (r & 1 ? bs / 2 : 0); x < px + pw + bs; x += bs) { g.moveTo(x, wy + wall * 0.34 * r); g.lineTo(x, wy + wall * 0.34 * (r + 1)); }
-  g.stroke();
+  drawCrossingEdges(g, v, st);
+  const wall = wallOf(S), wy = v.sy(WZ), yEnd = py + ph;
   g.fillStyle = C.ink;
   g.fillRect(px, wy + wall, pw, yEnd - wy - wall);
-  g.fillRect(px, wy - 1, pw, 4.4);
   g.strokeStyle = C.white;
   g.lineWidth = 1.4;
   g.beginPath();
@@ -190,39 +269,52 @@ export function drawGround(g, v, tones, sc, set, world, st) {
     const h = (i * 0.6180339 + 0.13) % 1, y = wy + wall + 8 + h * (yEnd - wy - wall - 12), x0 = px + ((i * 97.3 + t * (8 + h * 14)) % (pw + 80)) - 40;
     g.moveTo(x0, y); g.lineTo(x0 + 14 + h * 40, y);
   }
+  // the lamps of the shopfronts, smeared across the water
+  for (const l of env.sc.lamps) {
+    if (l.pole) continue;
+    const x = v.sx(l.x);
+    if (x < px - 20 || x > px + pw + 20) continue;
+    for (let k = 0; k < 6; k++) {
+      const y = wy + wall + 10 + k * (yEnd - wy - wall - 14) / 6, w = (6 - k) * 0.55 * S * 0.5 + 4, off = Math.sin(t * 1.7 + k * 1.3 + l.x) * 3;
+      g.moveTo(x - w + off, y); g.lineTo(x + w + off, y);
+    }
+  }
   g.stroke();
   g.restore();
+  void zk;
 }
 
-function drawCrossing(g, v, tones, st) {
-  const S = v.S, zk = DY * S, xl = v.sx(XING.x - XING.w / 2), xr = v.sx(XING.x + XING.w / 2), y0 = v.sy(2), y1 = v.sy(18.4);
-  g.fillStyle = C.paper;
-  g.fillRect(xl, y0, xr - xl, y1 - y0);
-  g.save();
-  g.translate(v.ox, v.oy);
-  tones.use(g, 'h1', 1);
-  g.fillRect(xl - v.ox, 2 * zk, xr - xl, 16.4 * zk);
-  g.restore();
+function paintCrossing(q, S, tones) {
+  const zk = DY * S, xl = (XING.x - XING.w / 2) * S, xr = (XING.x + XING.w / 2) * S, y0 = 2 * zk, y1 = 18.4 * zk;
+  q.fillStyle = C.paper;
+  q.fillRect(xl, y0, xr - xl, y1 - y0);
+  tones.use(q, 'h1', 1);
+  q.fillRect(xl, y0, xr - xl, y1 - y0);
   // rails and sleepers
-  g.strokeStyle = C.ink;
-  g.lineCap = 'butt';
-  g.lineWidth = 1.2;
-  g.beginPath();
-  for (let z = 2.2; z < 18.4; z += 0.9) { g.moveTo(v.sx(XING.rails[0] - 0.9), v.sy(z)); g.lineTo(v.sx(XING.rails[1] + 0.9), v.sy(z)); }
-  g.stroke();
-  g.lineWidth = Math.max(2.2, S * 0.22);
-  g.beginPath();
-  for (const rx of XING.rails) { g.moveTo(v.sx(rx), y0); g.lineTo(v.sx(rx), y1); }
-  g.stroke();
-  g.strokeStyle = C.white;
-  g.lineWidth = 1.1;
-  g.beginPath();
-  for (const rx of XING.rails) { g.moveTo(v.sx(rx) - 1.2, y0); g.lineTo(v.sx(rx) - 1.2, y1); }
-  g.stroke();
-  // the edges of the danger lane: bold ink, flashing while the bell rings
+  q.strokeStyle = C.ink;
+  q.lineCap = 'butt';
+  q.lineWidth = 1.2;
+  q.beginPath();
+  for (let z = 2.2; z < 18.4; z += 0.9) { q.moveTo((XING.rails[0] - 0.9) * S, z * zk); q.lineTo((XING.rails[1] + 0.9) * S, z * zk); }
+  q.stroke();
+  q.lineWidth = Math.max(2.2, S * 0.22);
+  q.beginPath();
+  for (const rx of XING.rails) { q.moveTo(rx * S, y0); q.lineTo(rx * S, y1); }
+  q.stroke();
+  q.strokeStyle = C.white;
+  q.lineWidth = 1.1;
+  q.beginPath();
+  for (const rx of XING.rails) { q.moveTo(rx * S - 1.2, y0); q.lineTo(rx * S - 1.2, y1); }
+  q.stroke();
+}
+
+// the edges of the danger lane: bold ink, flashing while the bell rings
+function drawCrossingEdges(g, v, st) {
+  const S = v.S, xl = v.sx(XING.x - XING.w / 2), xr = v.sx(XING.x + XING.w / 2), y0 = v.sy(2), y1 = v.sy(18.4);
   const warn = st.trainD < 0 || st.trainD > 0;
   g.lineWidth = Math.max(3, S * 0.3);
   g.strokeStyle = C.ink;
+  g.lineCap = 'butt';
   g.setLineDash([S * 1.1, S * 1.1]);
   g.lineDashOffset = warn ? (Math.floor(st.t * 5) & 1 ? S * 1.1 : 0) : 0;
   g.beginPath(); g.moveTo(xl, y0); g.lineTo(xl, y1); g.moveTo(xr, y0); g.lineTo(xr, y1); g.stroke();
@@ -339,30 +431,42 @@ export function drawTrain(g, v, tones, head, t, sc) {
 }
 
 // ---------------------------------------------------------------------------
-// rain: strokes drawn with 'difference', so they are black on the pale street and white on the dark sky
+// rain: strokes drawn with 'difference', so they are black on the pale street and white on the dark sky.
+// Each drop is its own tiny path: a blend mode only touches the pixels a path covers, and one path holding every
+// drop would cover the whole page. A browser without 'difference' gets ink strokes with a white core instead.
 // ---------------------------------------------------------------------------
+export function hasDifference(g) {
+  const was = g.globalCompositeOperation;
+  g.globalCompositeOperation = 'difference';
+  const ok = g.globalCompositeOperation === 'difference';
+  g.globalCompositeOperation = was;
+  return ok;
+}
+
 export function drawRain(g, v, set, dt, wind, heavy) {
   const d = set.drops, n = d.length / 4, { px, py, pw, ph } = v, slant = 0.16 + wind * 0.55;
+  if (set.diff === undefined) set.diff = hasDifference(g);
   g.save();
   g.beginPath(); g.rect(px, py, pw, ph); g.clip();
-  g.globalCompositeOperation = 'difference';
-  g.strokeStyle = '#fff';
   g.lineCap = 'round';
-  for (let pass = 0; pass < (heavy === 2 ? 1 : 2); pass++) {
-    g.lineWidth = pass ? 1.8 : 1;
+  if (set.diff) { g.globalCompositeOperation = 'difference'; g.strokeStyle = '#fff'; }
+  for (let i = 0; i < n; i++) {
+    if (heavy === 2 && (i & 1)) continue;
+    const o = i * 4, sp = d[o + 2], pass = i & 1;
+    d[o + 1] += dt * (1.3 + sp * 1.1) * (heavy === 1 ? 1.2 : 1);
+    d[o] += dt * slant * 1.3;
+    if (d[o + 1] > 1.05) { d[o + 1] -= 1.15; d[o] = Math.random(); }
+    if (d[o] > 1.1) d[o] -= 1.2;
+    if (d[o] < -0.1) d[o] += 1.2;
+    const x = px + d[o] * pw, y = py + d[o + 1] * ph, l = (pass ? 30 : 20) * (0.7 + sp * 0.6) * (ph / 720 + 0.4);
     g.beginPath();
-    for (let i = pass; i < n; i += 2) {
-      const o = i * 4, sp = d[o + 2];
-      d[o + 1] += dt * (1.3 + sp * 1.1) * (heavy === 1 ? 1.2 : 1);
-      d[o] += dt * slant * 1.3;
-      if (d[o + 1] > 1.05) { d[o + 1] -= 1.15; d[o] = Math.random(); }
-      if (d[o] > 1.1) d[o] -= 1.2;
-      if (d[o] < -0.1) d[o] += 1.2;
-      const x = px + d[o] * pw, y = py + d[o + 1] * ph, l = (pass ? 30 : 20) * (0.7 + sp * 0.6) * (ph / 720 + 0.4);
-      g.moveTo(x, y);
-      g.lineTo(x + slant * l, y + l);
+    g.moveTo(x, y);
+    g.lineTo(x + slant * l, y + l);
+    if (set.diff) { g.lineWidth = pass ? 1.8 : 1; g.stroke(); }
+    else {
+      g.strokeStyle = C.ink; g.lineWidth = pass ? 3.2 : 2.4; g.stroke();
+      g.strokeStyle = C.white; g.lineWidth = pass ? 1.2 : 0.8; g.stroke();
     }
-    g.stroke();
   }
   g.restore();
 }

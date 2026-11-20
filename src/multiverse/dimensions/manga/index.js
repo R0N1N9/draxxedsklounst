@@ -25,9 +25,10 @@
 //           close in from both ends until the street is a few paces wide.
 import { clamp, lerp, ease, damp, Shake, segCircle, raycastRects, rgba, TAU } from '../../kit.js';
 import { C, Tones, drawSheet } from './ink.js';
-import { WX, WZ, DY, R_BODY, R_WALK, V_X, V_Z, BULLET_V, CHEST, XING, TRAIN, SPAWN, buildWorld, trainHead, syncTrain, gustAt, aimDir, pushOut, limits, makeView } from './world.js';
+import { WX, WZ, DY, R_BODY, R_WALK, V_X, V_Z, BULLET_V, CHEST, XING, TRAIN, SPAWN, buildWorld, trainHead, syncTrain, gustAt, aimDir, pushOut, pushOutTall, limits, makeView } from './world.js';
 import { buildScenery } from './scenery.js';
-import { makeSet, drawBackdrop, drawGround, drawGates, drawTrain, drawRain } from './stage.js';
+import { makeSet, drawBackdrop, drawGround, drawGates, drawTrain, drawRain, hasDifference, primePlates, disposeStage } from './stage.js';
+import { Plates, Sprites } from './plates.js';
 import { drawSniper, drawShadow } from './figures.js';
 import { Panels, drawFrame, drawSplash, drawSight, drawReticle, drawReload, drawCaption, drawPointer } from './panels.js';
 import { SfxPool, Ripples, makeParticles, inkBurst, chips } from './fx.js';
@@ -37,8 +38,24 @@ import { drawSteam, drawBullet, drawSmoke, drawTrails, drawWalls, drawFront, dra
 import { makeLife, updateLife, startleCats, drawLanterns, drawCats, drawCrows, drawWalkers, strayAt, drawStray } from './life.js';
 
 const QUALITY_AUTO = true; // step the tones down to flat greys if the device cannot hold the frame rate
+// the first shots are taught in the world itself: [all, without the depth hint, only the first line]
+const capSet = (a, b, c) => ({ all: [a, b, c], noDepth: [a, c], one: [a] });
+const CAPS = {
+  touch: capSet('DRAG TO AIM · LET GO TO FIRE', 'stick up / down: walk into the street', 'tap FOCUS to steady the line'),
+  gamepad: capSet('RIGHT STICK AIMS · RT FIRES', 'stick up / down: walk into the street', 'hold LT to FOCUS'),
+  kbm: capSet('CLICK TO FIRE', 'W / S: walk into the street', 'hold RIGHT-CLICK to FOCUS'),
+};
+const OPENING = 2.6; // both rifles start the round with the bolt open: the cut-in of the hand working it is the starting gun
 const RELOAD = 1.5, RELOAD_SD = 1.0, FLASH_CD = 5, FLASH_DIST = 13, SUB_CD = 8.5, SUB_LIFE = 7, SMOKE_LIFE = 3.4, SMOKE_R = 4.4;
 const ROUND = 45;
+// the camera frames the duel in a few fixed zoom levels, so the baked street (plates.js) can be shown 1:1
+const VIS_MAX = 82, VIS_SMALL = 80, VIS_MIN = 38;
+const LEVELS = new Map();
+function levelsFor(top) {
+  let a = LEVELS.get(top);
+  if (!a) { a = []; for (let x = top; x > VIS_MIN + 1; x *= 0.9) a.push(Math.round(x * 10) / 10); a.push(VIS_MIN); LEVELS.set(top, a); }
+  return a;
+}
 const r1 = (v) => Math.round(v * 10) / 10;
 const wobble = (ph) => 0.62 * Math.sin(ph) + 0.38 * Math.sin(ph * 2.31 + 1.3);
 
@@ -50,8 +67,8 @@ export default {
   renderer: '2d',
   aim: 'pointer',
   palette: { bg: '#16120f', fg: '#f3ead8', accent: '#f3ead8' },
-  controls: { move: 'WALK', fire: 'SHOOT', alt: 'FOCUS', a1: 'FLASH STEP', a2: 'DECOY' },
-  hint: 'The street has depth: walk in and out, and shoot along the line you aim.',
+  controls: { move: 'WALK IN / OUT', fire: 'SHOOT', alt: 'FOCUS', a1: 'FLASH STEP', a2: 'DECOY' },
+  hint: 'Up and down walk you into the street. Your shot flies where you aim.',
   altToggle: true,
   roundTime: ROUND,
   angleFields: ['a'],
@@ -63,7 +80,8 @@ export default {
     const tones = new Tones();
     const v = makeView();
     const online = ctx.opponent === 'remote';
-    const cam = { x: WX / 2, vis: 130 };
+    const cam = { x: WX / 2, vis: ctx.width < 800 ? VIS_SMALL : VIS_MAX };
+    const plates = new Plates(), sprites = new Sprites(), art = { tones, sc, set };
     const snd = makeSound(ctx, (x) => (x - cam.x) / (cam.vis * 0.5));
     const parts = makeParticles(), letters = new SfxPool(14), ripples = new Ripples(34), panels = new Panels(), shake = new Shake(9, 0.01);
     const lim = { x0: 2.5, x1: WX - 2.5 };
@@ -71,7 +89,7 @@ export default {
 
     const P = [0, 1].map((i) => ({
       i, x: SPAWN[i].x, z: SPAWN[i].z, vx: 0, vz: 0, f: i ? -1 : 1, aim: i ? Math.PI : 0, a: i ? Math.PI : 0, sway: 0.01, swPh: Math.random() * 6, kick: 0,
-      reload: 0, fz: 0, wasF: false, ph: Math.random() * 6, spd: 0, recoil: 0, flash: 0, stun: 0, flashCd: 0, subCd: 0, dash: 0, dx: 0, dz: 0, alive: true,
+      reload: 0, rmax: RELOAD, fz: 0, wasF: false, ph: Math.random() * 6, spd: 0, recoil: 0, flash: 0, stun: 0, flashCd: 0, subCd: 0, dash: 0, dx: 0, dz: 0, alive: true,
       col: ctx.players[i].color, remote: online && i !== ctx.me, bot: null, pxv: 0, pzv: 0, stepT: 0, hideA: 1, shots: 0,
     }));
     const env = { bullets: [], decoys: [], smokes: [], sudden: false, lim, hiddenFrom: null };
@@ -83,7 +101,7 @@ export default {
     const pos = { x: 0, y: 0 }, uv = { x: 0, z: 0 };
     const S = {
       t: 0, introT: 0, overT: 0, kill: null, sd: false, bulletN: 0, decoyN: 0, trainD: 0, lastTrainD: 0, gustIdx: -1, flash: 0, flashT: 12 + Math.random() * 10,
-      firstShot: false, firstFocus: false, lastRender: 0, ft: 16, slow: 0, wind: 0, steam: 0, shotsMine: 0, readyFlash: 0, bellAt: -1,
+      lvIdx: 0, lv: ctx.width < 800 ? VIS_SMALL : VIS_MAX, firstShot: false, firstFocus: false, lastRender: 0, ft: 16, slow: 0, wind: 0, steam: 0, shotsMine: 0, readyFlash: 0, bellAt: -1,
     };
     const list = [];
     for (let i = 0; i < 90; i++) list.push({ z: 0, k: 0, o: null });
@@ -91,7 +109,7 @@ export default {
     ctx.canvas.style.cursor = 'none';
 
     const reloadT = () => (ctx.sudden ? RELOAD_SD : RELOAD);
-    const layout = () => v.layout(ctx.width, ctx.height, ctx.dpr, cam.x, cam.vis);
+    const layout = () => v.layout(ctx.width, ctx.height, ctx.dpr, cam.x, cam.vis, ctx.input.device === 'touch');
     const colOf = (i) => ctx.players[i].color;
 
     // is a sniper standing inside a mature smoke cloud (invisible to the other one)?
@@ -117,9 +135,9 @@ export default {
       return human;
     }
 
-    function solve(p, r) {
+    function solve(p, r, tallOnly) {
       pos.x = p.x; pos.y = p.z;
-      const hit = pushOut(world, pos, r);
+      const hit = tallOnly ? pushOutTall(world, pos, r) : pushOut(world, pos, r);
       p.x = pos.x; p.z = pos.y;
       return hit;
     }
@@ -153,8 +171,9 @@ export default {
       const ox = p.x, oz = p.z;
       if (p.dash > 0) {
         const n = 4, h = dt / n;
-        for (let k = 0; k < n; k++) { p.x += p.dx * h; p.z += p.dz * h; solve(p, R_WALK); }
+        for (let k = 0; k < n; k++) { p.x += p.dx * h; p.z += p.dz * h; solve(p, R_WALK, true); }
         p.dash = Math.max(0, p.dash - dt);
+        if (p.dash <= 0) solve(p, R_WALK); // and never end inside a scooter
         p.vx = p.dx * 0.15; p.vz = p.dz * 0.15;
       } else {
         p.vx += clamp(mx * V_X * mul - p.vx, -80 * dt, 80 * dt);
@@ -181,6 +200,7 @@ export default {
         if (me) snd.step(p.x, dt, p.spd);
       }
       if (!live) return;
+      if (me && Math.abs(p.z - SPAWN[p.i].z) > 2.2) S.movedZ = true;
       if (cmd.fire && p.reload <= 0 && p.stun <= 0 && p.dash <= 0) fire(p);
       if (cmd.a1 && p.flashCd <= 0 && p.stun <= 0) flashStep(p, mx, mz);
       if (cmd.a2 && p.subCd <= 0 && p.stun <= 0) substitute(p, mx, mz);
@@ -209,7 +229,7 @@ export default {
       aimDir(p.a, uv);
       const id = p.i * 1000 + ++S.bulletN, norm = Math.hypot(Math.cos(p.a), Math.sin(p.a) / DY);
       spawnBullet(p.i, p.x, p.z, uv.x, uv.z, true, id, 3.1 * norm);
-      p.reload = reloadT();
+      p.reload = p.rmax = reloadT();
       p.kick += 0.018;
       p.shots++;
       if (p.i === ctx.me) S.firstShot = true;
@@ -392,20 +412,27 @@ export default {
     }
 
     // ---- camera ----
+    // Zoom moves in discrete levels (wider at once when the frame no longer holds both snipers, tighter only
+    // when there is clear room) and the camera eases between them.
     function camera(dt) {
       const me = P[ctx.me], foe = P[1 - ctx.me];
-      const small = ctx.width < 800, visMax = small ? 80 : 82, visMin = 38;
+      const top = ctx.width < 800 ? VIS_SMALL : VIS_MAX, lv = levelsFor(top);
       if (ctx.phase === 'intro') {
         S.introT += dt;
-        const k = ease.inOutCubic(clamp((S.introT - 1.1) / 2.2, 0, 1)), sep = Math.abs(me.x - foe.x), vis = clamp(sep * 1.08 + 10, visMin, visMax);
-        cam.vis = lerp(WX + 14, vis, k);
-        cam.x = lerp(WX / 2, (me.x + foe.x) / 2, k);
+        S.lvIdx = 0;
+        S.lv = lv[0];
+        cam.vis = lv[0];
+        cam.x = (me.x + foe.x) / 2;
         return;
       }
-      const sep = Math.abs(me.x - foe.x);
-      // sudden death: keep the closing page in view, so you can see it come
-      const vis = clamp(Math.max(sep * 1.08 + 10, ctx.sudden ? lim.x1 - lim.x0 + 12 : 0), visMin, visMax), tx = ctx.sudden ? (lim.x0 + lim.x1) / 2 : (me.x + foe.x) / 2;
-      cam.vis = damp(cam.vis, vis, 2.2, dt);
+      const sep = Math.abs(me.x - foe.x), need = Math.max(sep * 1.08 + 10, ctx.sudden ? lim.x1 - lim.x0 + 12 : 0), tx = ctx.sudden ? (lim.x0 + lim.x1) / 2 : (me.x + foe.x) / 2;
+      let i = Math.min(S.lvIdx, lv.length - 1);
+      while (i > 0 && need > lv[i]) i--;
+      while (i < lv.length - 1 && need < lv[i + 1] - 1) i++;
+      S.lvIdx = i;
+      S.lv = lv[i];
+      cam.vis = damp(cam.vis, lv[i], 3, dt);
+      if (Math.abs(cam.vis - lv[i]) < 0.02) cam.vis = lv[i];
       cam.x = damp(cam.x, tx, 3.2, dt);
       if (cam.vis < WX + 14) cam.x = clamp(cam.x, cam.vis / 2 - 6, WX - cam.vis / 2 + 6);
     }
@@ -420,10 +447,13 @@ export default {
     function render() {
       const g = ctx.g, W = ctx.width, H = ctx.height;
       layout();
-      tones.ensure(g, ctx.dpr);
-      watchFrameRate();
       g.fillStyle = C.paper;
       g.fillRect(0, 0, W, H);
+      if (v.pw < 48 || v.ph < 48) return; // a window squeezed to nothing: just the paper
+      tones.ensure(g, ctx.dpr);
+      plates.begin(v);
+      sprites.begin();
+      watchFrameRate();
       const over = ctx.phase === 'over' && S.kill;
       if (over && S.overT >= 0.09) {
         drawSplash(g, v, S.kill);
@@ -437,11 +467,11 @@ export default {
       g.rect(v.px, v.py, v.pw, v.ph);
       g.clip();
       g.translate(shakeOut.x, shakeOut.y);
-      drawBackdrop(g, v, tones, sc, set, st);
+      drawBackdrop(g, v, art, st, plates, S.lv);
       drawCrows(g, v, life);
-      drawLanterns(g, v, life, S.t, S.wind);
+      drawLanterns(g, v, life, S.t, S.wind, sprites, v.pw / S.lv);
       drawCats(g, v, life, S.t);
-      drawGround(g, v, tones, sc, set, world, st);
+      drawGround(g, v, art, st, plates, S.lv);
       drawWalkers(g, v, life, S.t);
       ripples.draw(g, v);
       drawGates(g, v, st, false);
@@ -468,8 +498,9 @@ export default {
       parts.draw(g);
       if (ctx.phase === 'live' && P[ctx.me].alive) drawFocusLines(g, v, P[ctx.me].fz, S.t);
       if (S.flash > 0.02) { // lightning: the whole picture goes negative for a few frames
-        g.globalCompositeOperation = 'difference';
-        g.fillStyle = '#fff';
+        if (set.diff === undefined) set.diff = hasDifference(g);
+        if (set.diff) g.globalCompositeOperation = 'difference';
+        g.fillStyle = set.diff ? '#fff' : 'rgba(255,253,246,0.5)';
         g.fillRect(v.px - 20, v.py - 20, v.pw + 40, v.ph + 40);
         g.globalCompositeOperation = 'source-over';
       }
@@ -496,6 +527,25 @@ export default {
       B.z = z; B.k = k; B.o = o;
     }
 
+    // a static drawing (cover, a gate) stamped from its baked sprite
+    function spriteFor(key, sh) {
+      const Sq = v.pw / S.lv;
+      return sprites.get(key, Sq, ctx.dpr, { x0: sh.x0 * Sq, y0: sh.y0 * Sq, x1: sh.x1 * Sq, y1: sh.y1 * Sq }, (q, s) => {
+        const was = tones.lite;
+        tones.lite = false;
+        q.scale(s, s);
+        drawSheet(q, sh, tones, s);
+        tones.lite = was;
+      });
+    }
+
+    function stamp(g, key, sh, ax, ay) {
+      const dpr = ctx.dpr, sp = spriteFor(key, sh), k = v.S / sp.Sq;
+      let x = ax + sp.ox * k, y = ay + sp.oy * k;
+      if (k > 0.999 && k < 1.001) { x = Math.round(x * dpr) / dpr; y = Math.round(y * dpr) / dpr; }
+      g.drawImage(sp.cv, x, y, (sp.cv.width / dpr) * k, (sp.cv.height / dpr) * k);
+    }
+
     function drawItem(g, it) {
       const S_ = v.S;
       switch (it.k) {
@@ -504,21 +554,19 @@ export default {
           // contact shadow
           g.fillStyle = 'rgba(22,18,15,0.4)';
           g.beginPath(); g.ellipse(v.sx(c.x + c.w / 2), v.sy(c.z + c.d), c.w * 0.62 * S_, c.d * 0.5 * DY * S_ + 2, 0, 0, TAU); g.fill();
-          g.save();
-          g.translate(v.sx(c.x), v.sy(c.z + c.d));
-          g.scale(S_, S_);
-          drawSheet(g, sh, tones, S_);
-          if (c.kind === 'cart') drawSteam(g, v, S.t, c);
-          g.restore();
+          stamp(g, 'p' + c.id, sh, v.sx(c.x), v.sy(c.z + c.d));
+          if (c.kind === 'cart') {
+            g.save();
+            g.translate(v.sx(c.x), v.sy(c.z + c.d));
+            g.scale(S_, S_);
+            drawSteam(g, v, S.t, c);
+            g.restore();
+          }
           break;
         }
         case 2: {
           const q = it.o;
-          g.save();
-          g.translate(v.sx(q.x), v.sy(q.z));
-          g.scale(S_, S_);
-          drawSheet(g, q.sh, tones, S_);
-          g.restore();
+          stamp(g, 't' + q.x, q.sh, v.sx(q.x), v.sy(q.z));
           break;
         }
         case 3: drawPlayer(g, it.o); break;
@@ -548,7 +596,7 @@ export default {
       drawSniper(g, { sx, sy, S: v.S, f: p.f, a: p.a, ph: p.ph, spd: Math.min(1, p.spd), focus: p.fz, recoil: p.recoil, stun: p.stun > 0, col: p.col, t: S.t, wind: S.wind, umb: true, x: p.x, z: p.z });
       g.globalAlpha = 1;
       if (p.flash > 0) { // muzzle flash: a jagged white star with an ink core
-        const mx = sx + Math.cos(p.a) * 3.5 * v.S, my = sy - CHEST * v.S + 0.34 * v.S + Math.sin(p.a) * 3.5 * v.S, k = p.flash / 0.09, R = (1.2 + 1.4 * k) * v.S;
+        const mx = sx + Math.cos(p.a) * 3.5 * v.S, my = sy - CHEST * v.S + Math.sin(p.a) * 3.5 * v.S, k = p.flash / 0.09, R = (1.2 + 1.4 * k) * v.S;
         g.save();
         g.translate(mx, my);
         g.rotate(p.a);
@@ -618,13 +666,13 @@ export default {
         const rr = 9 + me.sway * 520 * (1 - me.fz * 0.5);
         const ready = me.reload <= 0;
         drawReticle(g, rx, ry, Math.min(24, rr), me.fz, ready, S.t, me.col);
-        if (!ready) drawReload(g, rx, ry, Math.min(24, rr) + 7, 1 - me.reload / reloadT());
+        if (!ready) drawReload(g, rx, ry, Math.min(24, rr) + 7, clamp(1 - me.reload / me.rmax, 0, 1));
         // the first shots are taught in the world itself
         if (live && ctx.phase === 'live' && !S.firstShot) {
           const dev = inp.device;
-          const lines = dev === 'touch' ? ['DRAG TO AIM · LET GO TO FIRE', 'tap FOCUS to steady the line'] : dev === 'gamepad' ? ['RIGHT STICK AIMS · RT FIRES', 'hold LT to FOCUS'] : ['CLICK TO FIRE', 'hold RIGHT-CLICK to FOCUS'];
+          const cap = CAPS[dev] || CAPS.kbm, lines = S.firstFocus ? cap.one : S.movedZ ? cap.noDepth : cap.all;
           const sz = clamp(v.W / 80, 12, 17);
-          drawCaption(g, mx, my - 3.1 * v.S, S.firstFocus ? lines.slice(0, 1) : lines, sz, mx, my - 2.9 * v.S, S.t, v.px + 8, v.px + v.pw - 8);
+          drawCaption(g, mx, my - 3.4 * v.S, lines, sz, mx, my - 3.2 * v.S, S.t, v.px + 8, v.px + v.pw - 8);
         }
       }
       // sudden death: beacons
@@ -651,6 +699,18 @@ export default {
         g.globalAlpha = 1;
       }
     }
+
+    // The first frame must not hitch: ink the street's plates and the cover while the world is being built.
+    try {
+      layout();
+      tones.ensure(ctx.g, ctx.dpr);
+      plates.begin(v);
+      primePlates(v, art, plates, S.lv);
+      sprites.left = 1e9;
+      for (const c of world.cover) spriteFor('p' + c.id, sc.props.get(c.id));
+      for (const q of sc.torii) spriteFor('t' + q.x, q.sh);
+      sprites.left = 0;
+    } catch (e) { /* the first frame will bake what is missing */ }
 
     // ---- frame loop ----
     let frameDt = 1 / 60;
@@ -687,10 +747,10 @@ export default {
         parts.update(dt);
         letters.update(dt);
         ripples.update(dt);
-        panels.update(dt, me.fz, me.reload, reloadT(), ctx.phase === 'live' && me.alive);
+        panels.update(dt, me.fz, me.reload, me.rmax, ctx.phase === 'live' && me.alive);
         if (S.readyFlash > 0) S.readyFlash -= dt;
         camera(dt);
-        ctx.hud.cooldown('fire', me.reload / reloadT());
+        ctx.hud.cooldown('fire', clamp(me.reload / me.rmax, 0, 1));
         ctx.hud.cooldown('a1', me.flashCd / FLASH_CD);
         ctx.hud.cooldown('a2', me.subCd / SUB_CD);
         if (ctx.phase === 'live' && P[ctx.me].alive) {
@@ -706,6 +766,7 @@ export default {
 
       onPhase(phase) {
         if (phase === 'live') {
+          for (const p of P) { p.reload = OPENING; p.rmax = OPENING; }
           if (!music) { music = true; snd.music(false); }
         } else if (phase === 'over') {
           const r = ctx.result;
@@ -714,7 +775,7 @@ export default {
           vic.alive = false;
           layout();
           const sgn = sho.x < vic.x ? 1 : -1, m = Math.hypot(vic.x - sho.x, vic.z - sho.z);
-          S.kill = { t: 0, sgn, a: sgn > 0 ? 0.06 : Math.PI - 0.06, wcol: sho.col, lcol: vic.col, word: m < 10 ? 'ドン!!' : m > 60 ? 'バン!!' : 'ズドン!!', seed: 5 + (ctx.seed % 50), tones, vx: v.sx(vic.x), vy: v.sy(vic.z, 1.9) };
+          S.kill = { t: 0, sgn, a: sgn > 0 ? 0.06 : Math.PI - 0.06, wcol: sho.col, lcol: vic.col, word: m < 10 ? 'ドン!!' : m > 60 ? 'バン!!' : 'ズドン!!', seed: 5 + (ctx.seed % 50), tones, touch: ctx.input.device === 'touch', vx: v.sx(vic.x), vy: v.sy(vic.z, 1.9) };
           S.overT = 0;
           snd.kill();
           shake.add(1);
@@ -736,6 +797,9 @@ export default {
         else if (msg.k === 'dpop') popDecoy(decoys.find((d) => d.id === msg.id), false);
       },
 
+      // a read-only snapshot for the automated tests
+      debug: () => ({ me: { x: P[ctx.me].x, z: P[ctx.me].z, a: P[ctx.me].a, reload: P[ctx.me].reload, fz: P[ctx.me].fz, flashCd: P[ctx.me].flashCd, subCd: P[ctx.me].subCd, alive: P[ctx.me].alive }, foe: { x: P[1 - ctx.me].x, z: P[1 - ctx.me].z, alive: P[1 - ctx.me].alive }, bullets: bullets.filter((b) => b.live).length, decoys: decoys.length, vis: cam.vis, lv: S.lv, tiles: plates.baked, touch: ctx.input.device }),
+
       focus() {
         if (S.kill) return { x: v.px + v.pw * 0.5 + S.kill.sgn * v.pw * 0.015, y: v.py + v.ph * 0.6 };
         const p = P[1 - ctx.me];
@@ -748,6 +812,9 @@ export default {
         bullets.length = decoys.length = smokes.length = ghosts.length = trails.length = 0;
         parts.clear();
         letters.clear();
+        plates.dispose();
+        sprites.dispose();
+        disposeStage();
       },
     };
   },
