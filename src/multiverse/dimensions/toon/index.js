@@ -36,12 +36,15 @@ import { makeSound, BPM, BPM_HOT } from './sound.js';
 import { makeSim, RELOAD } from './sim.js';
 import { makeBot } from './bot.js';
 import { drawSniper, drawDecoy, drawHat, drawDizzy, drawBirdie, GUN } from './figures.js';
-import { drawLadder, drawBoard, drawSpring, drawSeesaw, crate, drawHandcar, drawTrainBody, drawAnvil, drawAnvilShadow, drawWeed, drawVulture, drawHole, drawCork, drawSun, drawCloud, drawCactus, drawRockFace } from './props.js';
+import { drawLadder, drawBoard, drawSpring, drawSeesaw, crate, drawHandcar, drawTrainBody, drawAnvil, drawAnvilShadow, drawWeed, drawVulture, drawHole, drawCork, drawSun, drawCloud, drawCactus, drawRockFace, drawRock } from './props.js';
 
 const ROUND = 45;
 const r1 = (v) => Math.round(v * 10) / 10;
 const OVER_SLOW = 0.35;
 
+// what the world tells you about the device in your hand, until you have done it
+const PROMPT1 = { touch: ['DRAG to aim,', 'LET GO to shoot'], gamepad: ['RIGHT STICK aims', 'RT shoots'], kbm: ['CLICK to shoot', 'corks drop: aim high'] };
+const PROMPT2 = { touch: ['TAP TAKE AIM, then', 'aim: longer & flatter'], gamepad: ['HOLD LT: longer,', 'flatter shot'], kbm: ['HOLD RIGHT-CLICK:', 'longer, flatter shot'] };
 const CLOUDS = [[200, 120, 1.0, 9], [760, 210, 0.8, 7], [1280, 90, 1.25, 11], [1750, 190, 0.9, 5], [-300, 230, 1.1, 14]];
 
 export default {
@@ -68,7 +71,7 @@ export default {
     const S = {
       T: 0, tl: 0, P: null, corks: [], decoys: [], holes: [], hats: [], shots: [0, 0], shake, springHit: [0, 0],
       firstShot: false, usedAlt: false, tookAim: false, usedDecoy: false, sd: false, sdA: 0, introT: 0, kill: null, hit: null,
-      beat0: 0, flashW: 0, freeze: 0, holeHint: 0, decoyHint: 0,
+      beat0: 0, sdT0: 0, flashW: 0, freeze: 0,
     };
     const P = [0, 1].map((i) => {
       const col = ctx.players[i].color;
@@ -214,8 +217,9 @@ export default {
         for (let i = 0; i < 2; i++) S.springHit[i] = Math.max(0, S.springHit[i] - rd * 5);
         if (ctx.sudden && !S.sd) {
           S.sd = true;
-          sound.sudden(); sound.music(true); S.beat0 = S.T; S.flashW = 0.5;
+          sound.sudden(); sound.music(true); S.beat0 = S.T; S.sdT0 = S.T; S.flashW = 0.5;
           while (w.tower.n > 0) sim.crateOut(false);
+          for (const rk of w.rocks) { rk.h = 0; fx.dust(rk.x + rk.w / 2, GY, 6, rk.x < W / 2 ? -1 : 1, 14); fx.text('see ya!', rk.x + rk.w / 2, GY - 90, 24, '#f7f0de', 1.1); }
           w.carOn = false;
           for (const p of P) if (p.rt > 0.6) p.rt = 0.6;
         }
@@ -317,7 +321,7 @@ export default {
         else { rate = 3.5; }
       } else if (S.kill && S.kill.t > 0.12) {
         const k = S.kill, u = clamp((k.t - 0.12) / 1.2, 0, 1);
-        x = k.v.x; y = k.v.y - 78; z = 1 + 0.85 * ease.outCubic(u); rate = 7;
+        x = k.v.x; y = k.v.y - 78; z = 1 + 0.7 * ease.outCubic(u); rate = 7;
       }
       cam.z = damp(cam.z, z, rate, rd);
       cam.x = damp(cam.x, x, rate, rd);
@@ -381,6 +385,7 @@ export default {
         drawCloud(g, x, y0 + Math.sin(T * 1.9 + i) * 4 - E.pulse * 3, s * (1 + 0.02 * E.pulse), seed, i);
       }
       drawSun(g, 1190, 118 + Math.sin(T * 1.4) * 3, T, E);
+      drawFlock(g, T);
       const Wl = art.wall; g.drawImage(Wl.canvas, Wl.x0, Wl.y0, Wl.w, Wl.h);
       const Tt = art.terr; g.drawImage(Tt.canvas, Tt.x0, Tt.y0, Tt.w, Tt.h);
     }
@@ -407,6 +412,20 @@ export default {
       drawOverlay(g, T);
       if (!(S.off && S.off.film)) film.draw(g, cw, ch, T, 1);
       if (S.flashW > 0) { g.fillStyle = `rgba(255,252,240,${Math.min(1, S.flashW)})`; g.fillRect(0, 0, cw, ch); }
+    }
+
+    // a small flock of ink-stroke birds drifts across the far sky now and then (decoration only)
+    function drawFlock(g, T) {
+      const cyc = 23, ph = (T + 6) % cyc, u = ph / 9;
+      if (u > 1) return;
+      const x0 = -150 + u * 1900;
+      g.save();
+      g.strokeStyle = C.ink; g.lineWidth = 3.2; g.lineCap = 'round';
+      for (let k = 0; k < 6; k++) {
+        const bx = x0 - k * 46 + (k & 1) * 12, by = 150 + k * 16 - Math.abs(k - 2.5) * 6 + Math.sin(T * 2 + k) * 4, fl = Math.sin(T * 9 + k * 1.3) * 7;
+        g.beginPath(); g.moveTo(bx - 13, by - 6 + fl); g.quadraticCurveTo(bx - 6, by - 10 + fl * 0.4, bx, by); g.quadraticCurveTo(bx + 6, by - 10 + fl * 0.4, bx + 13, by - 6 + fl); g.stroke();
+      }
+      g.restore();
     }
 
     function drawDecor(g, T) {
@@ -460,12 +479,16 @@ export default {
       // cacti: the chorus line
       drawCactus(g, 46, GY + 4, 1.05, T, E, 1);
       drawCactus(g, W - 46, GY + 4, 1.05, T + 0.3, E, 2);
-      // the cover rocks watch the duel
+      // the cover rocks watch the duel — and in sudden death they get up and leave
       for (let r = 0; r < 2; r++) {
-        const rx = r ? W - 246 - 48 : 246 + 48, foe = P[1 - r];
+        const q = w.rocks[r], foe = P[1 - r], away = S.sd ? Math.max(0, S.T - S.sdT0) : 0;
+        const dir = r ? 1 : -1, ox = dir * away * away * 90 + dir * away * 40, hop = S.sd && away < 3.5 ? Math.abs(Math.sin(away * 9)) * 22 : 0;
+        const rx = q.x + q.w / 2 + ox;
+        if (rx < -200 || rx > W + 200) continue;
+        drawRock(g, rx, GY, r === 0, 4 + r * 9, hop);
         let lx = Math.sign(foe.x - rx), ly = clamp((foe.y - 60 - (GY - 24)) / 400, -1, 1), alarm = false;
         for (const c of S.corks) if (c.live && Math.abs(c.x - rx) < 260 && c.owner !== r) { lx = Math.sign(c.x - rx); ly = clamp((c.y - (GY - 24)) / 200, -1, 1); alarm = true; break; }
-        drawRockFace(g, rx, GY - 28, lx, ly, T, r * 7 + 3, alarm);
+        drawRockFace(g, rx, GY - 28 - hop, S.sd ? dir : lx, S.sd ? 0 : ly, T, r * 7 + 3, alarm && !S.sd);
       }
     }
 
@@ -484,8 +507,9 @@ export default {
       for (const d of S.decoys) {
         d.x += 0; drawDecoy(g, d, E, P[d.owner].col, d.owner);
       }
-      const order = ctx.me === 0 ? [1, 0] : [0, 1];
-      for (const i of order) {
+      for (let n = 0; n < 2; n++) {
+        const i = ctx.me === 0 ? 1 - n : n; // the local sniper is drawn on top
+
         const p = P[i];
         poseOf(p);
         const mood = moodOf(p);
@@ -537,7 +561,7 @@ export default {
         for (const p of P) drawTag(g, p.x, p.y - (p.st === 1 ? 92 : 134) - (p.hat ? 20 : 4), p.name, p.i === ctx.me, p.col, u, T);
         if (!ctx.autopilot && ctx.phase === 'live' && !me.lad && !me.tele) drawPreview(g, me, u);
         if (!ctx.autopilot && ctx.phase === 'live') drawPrompt(g, me, u);
-        if (me.a1msgT > 0) bubble(g, me.x, me.y - 150 - 46 * u, me.a1msg.split('|'), u, T, me.col, Math.min(1, me.a1msgT * 3), cam.x - V.cw / 2 / V.s, cam.x + V.cw / 2 / V.s);
+        if (me.a1msgT > 0) bubble(g, me.x, me.y - 150 - 46 * u, me.a1msg, u, T, me.col, Math.min(1, me.a1msgT * 3), cam.x - V.cw / 2 / V.s, cam.x + V.cw / 2 / V.s);
       }
     }
 
@@ -555,11 +579,8 @@ export default {
     function drawPrompt(g, me, u) {
       const dev = ctx.input.device;
       let lines = null;
-      if (!S.firstShot && ctx.time < 22) {
-        lines = dev === 'touch' ? ['DRAG to aim,', 'LET GO to shoot'] : dev === 'gamepad' ? ['RIGHT STICK aims', 'RT shoots'] : ['CLICK to shoot', 'corks drop: aim high'];
-      } else if (!S.usedAlt && !S.tookAim && S.firstShot && ctx.time < 40 && S.shots[ctx.me] >= 1 && S.shots[ctx.me] < 4) {
-        lines = dev === 'touch' ? ['TAP TAKE AIM, then', 'aim: longer & flatter'] : dev === 'gamepad' ? ['HOLD LT: longer,', 'flatter shot'] : ['HOLD RIGHT-CLICK:', 'longer, flatter shot'];
-      }
+      if (!S.firstShot && ctx.time < 22) lines = PROMPT1[dev] || PROMPT1.kbm;
+      else if (!S.usedAlt && !S.tookAim && S.firstShot && ctx.time < 40 && S.shots[ctx.me] >= 1 && S.shots[ctx.me] < 4) lines = PROMPT2[dev] || PROMPT2.kbm;
       if (lines && me.alive) bubble(g, me.x + me.face * 4, me.y - 150 - 46 * u, lines, u, S.T, me.col, 1, cam.x - V.cw / 2 / V.s, cam.x + V.cw / 2 / V.s);
     }
 
@@ -580,7 +601,7 @@ export default {
           const d = Math.min(cw, ch) * 0.28;
           rx = tx(me.x + me.face * 7) + Math.cos(me.a) * d; ry = ty(me.y - SHOULDER) + Math.sin(me.a) * d;
         }
-        if (Number.isFinite(rx) && Number.isFinite(ry)) drawReticle(g, rx, ry, 1, me.col, me.charge, T, me.rt <= 0);
+        if (Number.isFinite(rx) && Number.isFinite(ry)) drawReticle(g, rx, ry, 1, me.col, me.charge, T, me.rt <= 0, me.reload);
       }
       // the iris closes on the victim
       const k = S.kill;

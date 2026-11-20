@@ -138,7 +138,7 @@ export function bubble(g, x, y, lines, u, T, col, alpha = 1, lo = -1e9, hi = 1e9
 }
 
 /** The cursor of this world: a hand-drawn bullseye (a daisy in the owner's tint). */
-export function drawReticle(g, x, y, u, col, charge, T, ready) {
+export function drawReticle(g, x, y, u, col, charge, T, ready, reload = 0) {
   const r = (13 + charge * 6) * u;
   g.save();
   g.translate(x, y);
@@ -150,6 +150,12 @@ export function drawReticle(g, x, y, u, col, charge, T, ready) {
   g.strokeStyle = ready ? col : '#f7f0de'; g.lineWidth = 2.6 * u;
   blobPath(g, 0, 0, r, r, 3, 0.7 * u, 12); g.stroke();
   g.beginPath(); for (let k = 0; k < 4; k++) { const a = (k * Math.PI) / 2; g.moveTo(Math.cos(a) * r * 0.5, Math.sin(a) * r * 0.5); g.lineTo(Math.cos(a) * r * 1.45, Math.sin(a) * r * 1.45); } g.stroke();
+  if (reload > 0.01) { // re-corking: a ring that closes, with a cork rammed in at the end
+    g.save(); g.rotate(-charge * 1.2);
+    g.strokeStyle = C.ink; g.lineWidth = 7 * u; g.beginPath(); g.arc(0, 0, r * 1.75, -Math.PI / 2, -Math.PI / 2 + (1 - reload) * 6.283); g.stroke();
+    g.strokeStyle = '#f7f0de'; g.lineWidth = 3.4 * u; g.beginPath(); g.arc(0, 0, r * 1.75, -Math.PI / 2, -Math.PI / 2 + (1 - reload) * 6.283); g.stroke();
+    g.restore();
+  }
   if (charge > 0.02) { // the longer you hold, the more of the ring fills
     g.strokeStyle = col; g.lineWidth = 5 * u;
     g.beginPath(); g.arc(0, 0, r * 1.75, -Math.PI / 2, -Math.PI / 2 + charge * 6.283); g.stroke();

@@ -123,7 +123,7 @@ export function makeToys(THREE, G) {
 
   // ---- the lamp: base at `base`, shade at `head`, pointing along `dir` (unit) ----
   function lamp(base, head, dir) {
-    const b = new G.Bag(), enamel = '#ece4d2', brass = '#b08a3c';
+    const b = new G.Bag(), enamel = '#d9d2c0', brass = '#c9a24a';
     b.add(G.cyl(1.9, 2.15, 0.34, 30), { p: [base.x, 0.17, base.z], color: enamel });
     const el = [base.x + (head.x - base.x) * 0.2, head.y * 0.72, base.z + (head.z - base.z) * 0.05], neck = [head.x - dir.x * 0.5, head.y - dir.y * 0.5, head.z - dir.z * 0.5];
     b.limb([base.x, 0.3, base.z], el, 0.16, 0.14, enamel, false);
@@ -134,10 +134,10 @@ export function makeToys(THREE, G) {
     b.add(G.lathe([[0.3, -0.5], [0.42, 0], [0.75, 0.3], [1.9, 2.3], [1.98, 2.34]], 30), { p: [head.x, head.y, head.z], q: q.clone(), color: enamel });
     const body = b.build();
     // What glows: the inside of the shade and the bulb.
-    const g = new G.Bag();
+    const g = new G.Bag(), bulb = new G.Bag();
     g.add(G.lathe([[0.4, 0.06], [0.72, 0.34], [1.84, 2.3]], 30), { p: [head.x, head.y, head.z], q: q.clone() });
-    g.add(G.ball(0.5, 14, 10), { p: [head.x + dir.x * 1.1, head.y + dir.y * 1.1, head.z + dir.z * 1.1] });
-    return { body, glow: g.build() };
+    bulb.add(G.ball(0.46, 14, 10), { p: [head.x + dir.x * 1.0, head.y + dir.y * 1.0, head.z + dir.z * 1.0] });
+    return { body, glow: g.build(), bulb: bulb.build() };
   }
 
   // ---- a teddy bear sitting with its feet towards the rug (only its lower half is ever in frame) ----

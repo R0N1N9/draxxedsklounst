@@ -1,34 +1,40 @@
-// BREAK POINT — the camera and everything that hangs off it: the chase rig that rides
-// behind your board (and drops to your shoulder, zoomed, when you brace), the crane shot
-// that opens a round, the low orbit of the wipe-out, what the HUD needs projected to the
-// screen, the per-frame uniforms of sea, haze and lens, and the pacing of draws on a
-// machine that has no GPU.
+// BREAK POINT — the camera and everything that hangs off it. This world is third person
+// from the first frame to the last: the chase rig rides behind your board, and when you
+// brace it pulls back onto a long lens with you still kneeling in the foot of the frame and
+// the sight line lifted above your head. Also here: the crane shot that opens a round, the
+// one unbroken move that ends it (over the winner's shoulder as the loser falls, round
+// behind the winner as they dive, down through the surface after them), what the HUD needs
+// projected to the screen, the per-frame uniforms of sea, haze and lens, and the pacing of
+// draws on a machine that has no GPU.
 import { clamp, lerp, damp, smoothstep, noise2 } from '../../kit.js';
-import { SUN } from './sky.js';
 import { drawOverlay } from './overlay.js';
+import { KILL } from './game.js';
+import { SUN } from './sky.js';
 
 const PROMPTS = {
   kbm: ['CLICK TO FIRE', 'hold RIGHT-CLICK to BRACE: steady, zoomed, no steering', 'HOLD RIGHT-CLICK TO BRACE'],
   touch: ['TAP FIRE TO SHOOT', 'drag to aim · BRACE steadies and zooms', 'TAP BRACE TO STEADY AND ZOOM'],
   gamepad: ['RT TO FIRE', 'hold LT to BRACE: steady, zoomed, no steering', 'HOLD LT TO BRACE'],
 };
+const AIM_LIFT = 0.066; // braced, the sight line sits this far (radians) above the lens axis: the reticle clears your own head
 
 export function makeView(ctx, THREE, renderer, W) {
-  const { scene, sea, world, game, fx, post, ocean, haze, models, Q, sfx } = W;
+  const { scene, sea, world, game, post, ocean, haze, Q, sfx } = W;
   const R = game.R, P = game.P, me = game.me, foe = P[1 - ctx.me];
   const camera = new THREE.PerspectiveCamera(52, ctx.width / Math.max(1, ctx.height), 0.3, 9000);
   camera.rotation.order = 'YXZ';
   const F = new THREE.Vector3(), Rt = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), sunDir = new THREE.Vector3(SUN.x, SUN.y, SUN.z);
-  const play = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, fov: 52, roll: 0 };
+  const pA = new THREE.Vector3(), lA = new THREE.Vector3(), pB = new THREE.Vector3(), lB = new THREE.Vector3(), pC = new THREE.Vector3(), lC = new THREE.Vector3(), q1 = new THREE.Quaternion();
+  const play = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, fov: 52, roll: 0, lift: 0 };
   const S = {
     w: 1, h: 1, t: 0, live: false, alive: true, under: false, brace: 0, rx: 0, ry: 0, spreadPx: 10, clear: false, wall: false, ready: true, cycle: 0,
     prompt: '', prompt2: '', promptA: 0, note: '', noteA: 0, noteHot: false, bars: 1, pad: 8, gauge: true, prof: new Float32Array(game.los.n + 1), eyeA: 0, eyeB: 0,
-    colA: me.color, colB: foe.color, ammo: 4, mag: R.mag, reloading: false, dist: 0, marks: [], hits: [],
+    colA: me.color, colB: foe.color, ammo: 4, mag: R.mag, reloading: false, dist: 0, kmh: 0, push: 0, white: 0, marks: [], hits: [],
   };
   for (let i = 0; i < 3; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: 'foe', color: '#fff', hollow: false, text: '', sub: '' });
   for (let i = 0; i < 3; i++) S.hits.push({ ang: 0, a: 0, x: 0, z: 0 });
-  let wt = 0, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, camY = me.y, lift = 0, flashA = 0, raysK = 0, foeVis = 1, seenX = foe.x, seenZ = foe.z, seenY = foe.y;
-  let fired = false, braced = false, promptT = 0, noteT = 0, frames = 0, fresh = false, tPrev = 0, debt = 0, drawAt = -1e9;
+  let wt = 0, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, camY = me.y, lift = 0, flashA = 0, raysK = 0, foeVis = 1, seenX = foe.x, seenZ = foe.z;
+  let fired = false, braced = false, promptT = 0, noteT = 0, frames = 0, fresh = false, tPrev = 0, debt = 0, drawAt = -1e9, pushS = 0, stills = 0;
   const api = { camera, shot: null, wt: 0, force: 0, draws: 0 };
   const dirOf = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
   const fov0 = () => (ctx.width / Math.max(1, ctx.height) < 1.45 ? 58 : 52);
@@ -37,18 +43,19 @@ export function makeView(ctx, THREE, renderer, W) {
   function rig(p, dt) {
     const k = p.alive ? p.brace : 0, ks = k * k * (3 - 2 * k);
     const yaw = p.yaw, pitch = clamp(p.pitch + kickA, -0.75, 0.62);
-    dirOf(yaw, pitch, F);
+    // The boom swings with the aim, but less on the long lens (it would dig into the sea).
+    dirOf(yaw, pitch * lerp(1, 0.3, ks), F);
     Rt.set(Math.cos(yaw), 0, -Math.sin(yaw));
-    camY = damp(camY, p.y, lerp(4.5, 24, ks), dt); // the lens rides the swell, not every ripple
-    const back = lerp(9.2, 2.5, ks), up = lerp(2.3, 0.4, ks), right = lerp(1.15, 0.52, ks);
+    camY = damp(camY, p.y, lerp(4.5, 9, ks), dt); // the lens rides the swell, not every ripple
+    const back = lerp(9.2, 13, ks), up = lerp(2.3, 1.75, ks), right = lerp(1.15, 0.75, ks);
     play.pos.set(p.x - F.x * back + Rt.x * right, camY + lerp(1.55, 1.22, ks) - F.y * back + up, p.z - F.z * back + Rt.z * right);
     // never under the water: when a crest comes through behind you the lens goes over it
     const need = sea.height(play.pos.x, play.pos.z) + 0.75 - play.pos.y;
     lift = need > lift ? need : damp(lift, Math.max(0, need), 3, dt);
     if (lift > 0) play.pos.y += lift;
-    play.yaw = yaw; play.pitch = pitch; play.fov = zoomed(ks);
+    play.yaw = yaw; play.pitch = pitch; play.lift = AIM_LIFT * ks; play.fov = zoomed(ks);
     const cross = p.air ? 0 : sea.slope(p.x, p.z, Rt.x, Rt.z);
-    play.roll = damp(play.roll, (p.lean * 0.22 + cross * 0.3) * (1 - 0.75 * ks), 6, dt);
+    play.roll = damp(play.roll, (p.lean * 0.22 + cross * 0.3) * (1 - 0.6 * ks), 6, dt);
   }
   function project(x, y, z, m) {
     tmp.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
@@ -60,6 +67,40 @@ export function makeView(ctx, THREE, renderer, W) {
     return m;
   }
 
+  // The hand-off: one move, the same on both clients once it has left each one's own lens.
+  function killShot(dt) {
+    const k = game.kill, t = k.t, w = k.w, h = w.hop, ux = k.ux, uz = k.uz, rx = -uz, rz = ux;
+    kc.y = damp(kc.y, w.y, 4, dt);
+    const dist = Math.hypot(k.x - w.x, k.z - w.z);
+    // A — over the winner's shoulder on a long lens: the fall, the splash, the bow
+    pA.set(w.x - ux * 14 + rx * 1.2, kc.y + 3.5, w.z - uz * 14 + rz * 1.2);
+    lA.set(k.x, k.y + 1.6 + Math.min(1.6, t), k.z);
+    const fA = clamp((2 * Math.atan(10 / (dist + 14)) * 180) / Math.PI, 9, 34);
+    // B — round behind the winner as they crouch and go
+    const bx = h.on ? h.x : w.x, by = h.on ? Math.max(h.y, kc.y - 0.5) : kc.y + 0.9, bz = h.on ? h.z : w.z;
+    pB.set(bx - ux * 7.5 + rx * 2.6, Math.max(by, kc.y) + 2.0, bz - uz * 7.5 + rz * 2.6);
+    lB.set(bx + ux * 1.6, by + 0.1, bz + uz * 1.6);
+    // C — down to the water where they went in, and through it
+    pC.set(k.ex - ux * 3.0 + rx * 0.5, k.ey + 0.5, k.ez - uz * 3.0 + rz * 0.5);
+    lC.set(k.ex + ux * 3, k.ey - 2.2, k.ez + uz * 3);
+    const ab = smoothstep(KILL.squat - 0.35, KILL.jump + 0.15, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
+    pA.lerp(pB, ab).lerp(pC, bc);
+    lA.lerp(lB, ab).lerp(lC, bc);
+    const floor = sea.height(pA.x, pA.z) + lerp(0.9, 0.3, bc);
+    if (pA.y < floor) pA.y = floor;
+    const e = smoothstep(0, 0.85, t);
+    camera.position.copy(pA);
+    camera.lookAt(lA);
+    q1.copy(camera.quaternion);
+    camera.position.lerpVectors(kc.p0, pA, e);
+    camera.quaternion.copy(kc.q0).slerp(q1, smoothstep(0, 0.65, t));
+    camera.fov = lerp(kc.f0, lerp(lerp(fA, 46, ab), 60, bc), e);
+    // the lens goes under: the waterline climbs the frame and stops a fifth of the way from the top
+    const wl = t < KILL.sink ? -1 : lerp(-0.12, 0.775, smoothstep(KILL.sink, KILL.under, t)) + 0.012 * Math.min(1, Math.max(0, t - KILL.under) * 2);
+    post.u.uWater.value.set(wl, 0.05 * Math.sin(t * 2.1), clamp((t - KILL.sink) * 2, 0, 1));
+    return 1 - smoothstep(KILL.jump + 0.4, KILL.sink - 0.1, t);
+  }
+
   Object.assign(api, {
     shake(a) { trauma = Math.min(1, trauma + a); },
     kick(k) { kickV += 0.3 * k; trauma = Math.min(1, trauma + 0.2 * k); fired = true; },
@@ -67,19 +108,19 @@ export function makeView(ctx, THREE, renderer, W) {
     hitFrom(x, z) { let t = S.hits[0]; for (const q of S.hits) if (q.a < t.a) t = q; t.a = 1.3; t.x = x; t.z = z; },
     beginIntro() { introT = 0; drawAt = -1e9; },
     poke() { drawAt = -1e9; debt = 0; }, // whatever the pacing says, the next quiet frame is drawn
-    killCam(v) {
-      trauma = Math.min(1, trauma + 0.5);
-      if (!Q.soft) flashA = 0.45;
-      // Stand on the sunward side, low: the splash front-lit, the board against the sky, the bow behind.
-      const sl = Math.hypot(SUN.x, SUN.z), sx = SUN.x / sl, sz = SUN.z / sl;
-      kc = { v, t: 0, ang: Math.atan2(sz, sx) + (v.i ? 0.5 : -0.5), x: v.x, y: v.y, z: v.z };
-      fx.rainbow(v.x - sx * 13, v.y - 1.5, v.z - sz * 13);
+    killCam() {
+      trauma = Math.min(1, trauma + 0.4);
+      if (!Q.soft) flashA = 0.4;
+      kc = { p0: camera.position.clone(), q0: camera.quaternion.clone(), f0: camera.fov, y: game.kill.w.y };
       drawAt = -1e9; debt = 0;
     },
+    // Where the picture's centre of interest is as the round ends: the spot the winner went in.
     focus() {
-      const r = ctx.result, v = P[r && r.victim >= 0 ? r.victim : 1 - ctx.me], m = project(kc ? kc.x : v.x, (kc ? kc.y : v.y) + 2.5, kc ? kc.z : v.z, S.marks[2]);
+      const k = game.kill, m = S.marks[2];
+      if (!k.on) return { x: ctx.width / 2, y: ctx.height / 2 };
+      project(k.ex, k.ey - 0.5, k.ez, m);
       m.a = 0;
-      return m.on ? { x: m.x, y: m.y } : { x: ctx.width / 2, y: ctx.height / 2 };
+      return m.on ? { x: m.x, y: Math.min(m.y, ctx.height * 0.8) } : { x: ctx.width / 2, y: ctx.height * 0.6 };
     },
     resize(w, h) {
       if (!(w > 0 && h > 0)) return;
@@ -96,12 +137,13 @@ export function makeView(ctx, THREE, renderer, W) {
       kickV -= kickA * 70 * dt; kickV *= Math.exp(-10 * dt); kickA = Math.max(-0.02, kickA + kickV * dt);
       trauma = Math.max(0, trauma - dt * 1.6);
       rig(me, dt);
-      // The local sniper aims along the lens: tell the rules where that ray is.
+      // The local sniper aims along the sight line: tell the rules where that ray is.
       const c = game.cam;
       dirOf(play.yaw + me.swayX, play.pitch + me.swayY, F);
       c.on = true; c.x = play.pos.x; c.y = play.pos.y; c.z = play.pos.z; c.dx = F.x; c.dy = F.y; c.dz = F.z;
 
       let bars = 0;
+      post.u.uWater.value.x = -1;
       if (phase === 'intro' || introT < 0) {
         // The arrival: high behind you with the whole bay and the other sniper in the frame,
         // then down the crane to your shoulder as the count runs out.
@@ -116,18 +158,10 @@ export function makeView(ctx, THREE, renderer, W) {
         camera.rotation.z += play.roll * e;
         camera.fov = lerp(44, play.fov, e);
         bars = 1 - smoothstep(0.75, 1, u);
-      } else if (phase === 'over' && kc) {
-        kc.t += dt;
-        const a = kc.ang + kc.t * 0.35, d = 12.5 - kc.t * 1.2;
-        camera.position.set(kc.x + Math.cos(a) * d, 0, kc.z + Math.sin(a) * d);
-        camera.position.y = Math.max(kc.y + 1.3 + kc.t * 0.6, sea.height(camera.position.x, camera.position.z) + 1.1);
-        const b = kc.v.body, lookY = Math.max(kc.y + 2.2, lerp(kc.y + 2, Math.max(b.y, kc.y + 2) * 0.6 + kc.v.brd.y * 0.4, Math.min(1, kc.t * 2.2)));
-        camera.lookAt(kc.x, Math.min(lookY, kc.y + 9), kc.z);
-        camera.fov = 50;
-        bars = Math.min(1, kc.t * 5);
-      } else {
+      } else if (phase === 'over' && kc && game.kill.on) bars = killShot(dt);
+      else {
         camera.position.copy(play.pos);
-        camera.rotation.set(play.pitch, play.yaw, play.roll);
+        camera.rotation.set(play.pitch - play.lift, play.yaw, play.roll);
         camera.fov = play.fov;
       }
       if (trauma > 0) {
@@ -149,7 +183,7 @@ export function makeView(ctx, THREE, renderer, W) {
       ocean.update(camera);
       for (let i = 0; i < 2; i++) {
         const p = P[i];
-        ocean.uniforms.uCast.value[i].set(p.x, p.y, p.z, p.alive && p.dive <= 0 ? lerp(1.85, 1.35, p.brace) : 0);
+        ocean.uniforms.uCast.value[i].set(p.x, p.y, p.z, p.alive && p.dive <= 0 && !p.hop.on ? lerp(1.85, 1.35, p.brace) : 0);
       }
       haze.shared.uSunView.value.copy(sunDir).transformDirection(camera.matrixWorldInverse);
       tmp.copy(sunDir).multiplyScalar(1000).add(camera.position).applyMatrix4(camera.matrixWorldInverse);
@@ -160,7 +194,7 @@ export function makeView(ctx, THREE, renderer, W) {
       const pu = post.u, under = me.dive > 0 && me.alive && phase === 'live';
       pu.uTime.value = wt;
       pu.uRays.value = raysK * 0.8;
-      pu.uFlinch.value = me.alive ? me.flinch * 0.7 : 0;
+      pu.uFlinch.value = me.alive && phase === 'live' ? me.flinch * 0.7 : 0;
       pu.uBrace.value = me.alive && phase === 'live' ? me.brace : 0;
       pu.uDive.value = damp(pu.uDive.value, under ? 1 : 0, 14, dt);
       pu.uFlash.value = flashA;
@@ -172,7 +206,7 @@ export function makeView(ctx, THREE, renderer, W) {
       S.alive = me.alive;
       S.under = under;
       S.brace = me.brace;
-      S.rx = ctx.width / 2 - Math.tan(me.swayX) * pxPerRad; S.ry = ctx.height / 2 - Math.tan(me.swayY) * pxPerRad;
+      S.rx = ctx.width / 2 - Math.tan(me.swayX) * pxPerRad; S.ry = ctx.height / 2 - Math.tan(me.swayY + play.lift) * pxPerRad;
       S.spreadPx = (0.004 + (1 - me.brace) * 0.012) * pxPerRad;
       S.clear = game.sees(ctx.me) && foe.alive;
       S.wall = game.los.wall;
@@ -180,6 +214,9 @@ export function makeView(ctx, THREE, renderer, W) {
       S.cycle = me.reload > 0 ? me.reload / R.reload : Math.max(0, me.bolt) / R.bolt;
       S.ammo = me.ammo; S.reloading = me.reload > 0;
       S.dist = Math.round(game.los.dist);
+      S.kmh = Math.round(me.v * 3.6);
+      pushS = damp(pushS, me.push - (me.air ? 0 : R.grav * me.slope * 0.35), 5, dt); // what the water is doing to your speed
+      S.push = pushS; S.white = me.white;
       S.bars = damp(S.bars, bars, 6, dt);
       S.pad = ctx.input.device === 'touch' ? 8 : 14;
       S.gauge = foe.alive && me.alive;
@@ -193,12 +230,12 @@ export function makeView(ctx, THREE, renderer, W) {
       S.promptA = promptT * (0.8 + 0.2 * Math.sin(wt * 5));
       if (want) { S.prompt = fired ? pr[2] : pr[0]; S.prompt2 = fired ? '' : pr[1]; }
       noteT = Math.max(0, noteT - dt);
-      S.noteA = noteT;
+      S.noteA = phase === 'over' ? 0 : noteT;
 
       // the other sniper: a solid diamond while you can see them, a hollow one where they went behind the water
       const m0 = S.marks[0];
       const can = S.clear || phase === 'intro' || ctx.sudden;
-      if (can) { seenX = foe.x; seenZ = foe.z; seenY = foe.y; }
+      if (can) { seenX = foe.x; seenZ = foe.z; }
       foeVis = damp(foeVis, can ? 1 : 0.5, can ? 10 : 2, dt);
       m0.a = foe.alive && phase !== 'over' ? foeVis : 0;
       if (m0.a > 0) {
@@ -220,9 +257,6 @@ export function makeView(ctx, THREE, renderer, W) {
     },
 
     render() {
-      // A machine with no GPU cannot draw this sea sixty times a second. Rather than let the
-      // duel run in slow motion there, it draws the sea less often: the canvas keeps its last
-      // picture and the frames in between cost almost nothing.
       const now = performance.now(), iv = tPrev ? now - tPrev : 0;
       tPrev = now;
       S.w = ctx.width; S.h = ctx.height;
@@ -230,14 +264,23 @@ export function makeView(ctx, THREE, renderer, W) {
       const inBand = fresh;
       fresh = false;
       frames++;
-      if (!inBand && frames > 2) { post.present(); return; } // the core is photographing the world: put the last frame back
-      if (api.force > 0) api.force--; // (test scripts: draw now)
-      else if (Q.soft && frames > 2) {
-        // A software rasteriser pays for a draw over the next several frames, not in one: add
-        // up everything it stalled since, do not draw again while it is still catching up,
-        // and let no more than a fifth of the time go on drawing.
-        if (iv > 40) debt += iv - 17;
-        if (frames < 14 || iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
+      if (!inBand && frames > 2) {
+        // A render with no update before it is the core photographing the world (the last
+        // frame of a round is the next transition's first), or a paused game: the canvas must
+        // hold the picture as it is NOW, so the first such call draws; after that the graded
+        // frame is simply put back.
+        if (stills++ > 0) return post.present();
+        if (W.settle) W.settle(); // (a round that ends on a hitch still ends on its last frame)
+      } else {
+        stills = 0;
+        if (api.force > 0) api.force--; // (test scripts: draw now)
+        else if (Q.soft && frames > 2) {
+          // A software rasteriser pays for a draw over the next several frames, not in one:
+          // add up everything it stalled since, do not draw again while it is still catching
+          // up, and let no more than a sixth of the time go on drawing — the duel runs true.
+          if (iv > 40) debt += iv - 17;
+          if (frames < 14 || iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
+        }
       }
       drawAt = now;
       debt = 0;

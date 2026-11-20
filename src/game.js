@@ -929,6 +929,7 @@ export class Game {
     }
     let dmg = (WEAPONS[shot && shot.wk] || WEAPONS.mk22).damage[cap.part];
     if (cap.part === 'torso' && this.tools.remote.vs === 'plate') dmg = Math.round(dmg * VEST.plateTorso);
+    if (this.mv) dmg = Math.max(dmg || 0, PLAYER.hp); // "Do you want to develop an app?": any hit is the kill
     this.net.send({ t: 'hit', id: b.id, part: cap.part, dmg, dist: Math.round(dist), ip: ip.toArray().map((x) => Math.round(x * 100) / 100) });
     this.audio.hitConfirm(head, 0);
     this.hud.hitMarker(head);

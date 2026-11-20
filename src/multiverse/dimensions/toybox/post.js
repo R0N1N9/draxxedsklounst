@@ -35,7 +35,7 @@ void main() {
   float f = clamp((abs(vUv.y - uFocus.x) - uFocus.y) / max(0.5 - uFocus.y, 0.05), 0.0, 1.0);
   f = f * f * (3.0 - 2.0 * f) * uTilt;
   // A breath of lateral colour at the edges; a real kick of it when someone is hit.
-  vec2 ca = c * dot(c, c) * (0.008 + 0.09 * uPunch);
+  vec2 ca = c * dot(c, c) * (0.008 + 0.03 * uPunch);
   vec3 sharp = vec3(texture2D(tSrc, vUv + ca).r, texture2D(tSrc, vUv).g, texture2D(tSrc, vUv - ca).b);
   vec3 col = mix(sharp, texture2D(tHalf, vUv).rgb, clamp(f * 2.2, 0.0, 1.0));
   col = mix(col, texture2D(tQuarter, vUv).rgb, clamp(f * 2.2 - 1.0, 0.0, 1.0));
@@ -43,7 +43,7 @@ void main() {
   col = aces(col * 1.05);
   // Grade: cool, slightly lifted shadows; warm highlights; a little extra colour, as toys have.
   float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
-  col = mix(vec3(l), col, 1.14 - 0.5 * uPunch);
+  col = mix(vec3(l), col, 1.06 - 0.35 * uPunch);
   col *= mix(vec3(0.9, 0.97, 1.14), vec3(1.07, 1.0, 0.9), smoothstep(0.08, 0.7, l));
   col = clamp((col - 0.5) * 1.06 + 0.5, 0.0, 1.0);
   col = pow(col, vec3(1.0 / 2.2));
@@ -53,7 +53,7 @@ void main() {
   gl_FragColor = vec4(mix(col, vec3(1.0, 0.96, 0.9), uFlash), 1.0);
 }`;
 
-// q: { msaa (bool), scale (scene resolution relative to the drawing buffer) }
+// q: { msaa (bool), scale (scene resolution relative to the drawing buffer), cap (most pixels the scene is ever drawn at) }
 export function makePost(THREE, renderer, q) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3));
@@ -95,6 +95,9 @@ export function makePost(THREE, renderer, q) {
     // Sized from the drawing buffer: the core shrinks that when frames run long.
     resize() {
       renderer.getDrawingBufferSize(size);
+      // A 16" retina screen is 7.7 million pixels: past the cap the scene is drawn smaller and
+      // the final pass enlarges it under full-resolution grain. Nobody can tell; the GPU can.
+      scale = Math.min(q.scale, Math.sqrt(q.cap / Math.max(1, size.x * size.y)));
       const w = Math.max(8, Math.round(size.x * scale)), h = Math.max(8, Math.round(size.y * scale));
       // Multisample where there are few pixels to hide the stair-steps; retina hides them itself.
       const samples = !q.msaa || w * h > 4.2e6 ? 0 : w * h > 2.2e6 ? 2 : 4;

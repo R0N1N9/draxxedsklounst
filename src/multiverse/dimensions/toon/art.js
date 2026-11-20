@@ -6,7 +6,7 @@ import { clamp, makeCanvas, makeRng, rand, noise2 } from '../../kit.js';
 import { C, hash1 } from './ink.js';
 import { W, GY, FLOOR, PIV, LIP } from './world.js';
 
-export const BOUNDS = { x0: -300, y0: -260, x1: 1900, y1: 1180 };
+export const BOUNDS = { x0: -450, y0: -260, x1: 2050, y1: 1180 };
 export const ARCH = [{ x: 520, y: FLOOR }, { x: 1080, y: FLOOR }]; // painted tunnel mouths on the canyon floor
 const FACE = [[0, 0], [4, 24], [-6, 62], [12, 98], [12, 122], [-2, 160], [-10, 232], [2, 280], [2, 302], [-12, 362], [-6, 420], [0, FLOOR - GY]];
 
@@ -49,40 +49,40 @@ function mesa(g, rng, side) {
   const x0 = side ? LIP[1] : -700, far = side ? 2300 : LIP[0];
   g.save();
   g.beginPath();
-  g.moveTo(side ? W + 300 : -300, GY);
+  g.moveTo(side ? W + 600 : -600, GY);
   const lx = f[0][0];
   g.lineTo(lx - dir * 26, GY);
   g.quadraticCurveTo(lx + dir * 2, GY, lx + dir * 4, GY + 16);
   for (let i = 1; i < f.length; i++) g.lineTo(f[i][0], f[i][1]);
   g.lineTo(f[f.length - 1][0], BOUNDS.y1);
-  g.lineTo(side ? W + 300 : -300, BOUNDS.y1);
+  g.lineTo(side ? W + 600 : -600, BOUNDS.y1);
   g.closePath();
   g.clip();
   // strata: bands of slightly different warm greys, with wavy edges
   const lit = side === 0; // the sun is upper right: the left mesa's face is lit
   const base = lit ? C.g1 : C.g2;
   g.fillStyle = base;
-  g.fillRect(-300, GY, W + 600, BOUNDS.y1 - GY);
+  g.fillRect(-600, GY, W + 1200, BOUNDS.y1 - GY);
   let y = GY + 14, i = 0;
   while (y < BOUNDS.y1) {
     const hgt = 30 + rng() * 34;
     g.fillStyle = i % 3 === 0 ? (lit ? C.paper2 : C.g1) : i % 3 === 1 ? base : (lit ? C.g2 : C.g3);
     g.beginPath();
-    g.moveTo(-300, y);
-    for (let x = -300; x <= W + 300; x += 60) g.lineTo(x, y + noise2(x * 0.011 + i * 3.1, i) * 5);
-    g.lineTo(W + 300, y + hgt); g.lineTo(-300, y + hgt);
+    g.moveTo(-600, y);
+    for (let x = -600; x <= W + 600; x += 60) g.lineTo(x, y + noise2(x * 0.011 + i * 3.1, i) * 5);
+    g.lineTo(W + 600, y + hgt); g.lineTo(-600, y + hgt);
     g.closePath(); g.fill();
     y += hgt; i++;
   }
   // a cap of paler dirt along the top
   g.fillStyle = C.paper2;
-  g.fillRect(-300, GY, W + 600, 14);
+  g.fillRect(-600, GY, W + 1200, 14);
   // shade down the cliff face, darker the further down it goes
   const grd = g.createLinearGradient(0, GY, 0, FLOOR + 80);
   grd.addColorStop(0, 'rgba(27,22,18,0)');
   grd.addColorStop(1, 'rgba(27,22,18,0.38)');
   g.fillStyle = grd;
-  g.fillRect(-300, GY, W + 600, BOUNDS.y1 - GY);
+  g.fillRect(-600, GY, W + 1200, BOUNDS.y1 - GY);
   // hatching on the shadow side, thickest at the face
   const fx = f[f.length >> 1][0];
   if (!lit) hatch(g, fx - 3, GY + 20, fx + 160, FLOOR + 30, 8, 0.32, 1.7);
@@ -100,26 +100,6 @@ function mesa(g, rng, side) {
     for (let j = 0; j < 4; j++) { cx += (rng() - 0.5) * 26; cy += 14 + rng() * 16; g.lineTo(cx, cy); }
   }
   g.stroke();
-  g.restore();
-}
-
-function boulder(g, rng, x, y, w, h, lit) {
-  g.save();
-  g.beginPath();
-  g.moveTo(x + 4, y + h);
-  g.quadraticCurveTo(x - 10, y + h * 0.35, x + w * 0.24, y + 6);
-  g.quadraticCurveTo(x + w * 0.5, y - 8, x + w * 0.78, y + 8);
-  g.quadraticCurveTo(x + w + 10, y + h * 0.4, x + w - 2, y + h);
-  g.closePath();
-  g.clip();
-  g.fillStyle = lit ? C.g1 : C.g2;
-  g.fillRect(x - 20, y - 20, w + 40, h + 40);
-  g.fillStyle = lit ? C.paper2 : C.g1;
-  g.beginPath(); g.ellipse(x + w * 0.38, y + h * 0.3, w * 0.34, h * 0.24, -0.3, 0, 6.283); g.fill();
-  hatch(g, x - 20, y, x + w + 20, y + h, 8, lit ? 0.14 : 0.3, 1.6);
-  g.strokeStyle = 'rgba(27,22,18,0.6)'; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(x + w * 0.62, y + 12); g.lineTo(x + w * 0.52, y + h * 0.4); g.lineTo(x + w * 0.6, y + h * 0.62); g.stroke();
-  speckle(g, rng, x, y, x + w, y + h, 24, 'rgba(27,22,18,0.3)', 1.2);
   g.restore();
 }
 
@@ -259,16 +239,19 @@ export function bakeStage(seed, ppu) {
     g.fillStyle = C.paper2; g.fillRect(LIP[0] - 20, FLOOR, 800, 12);
     hatch(g, LIP[0], FLOOR, LIP[1], FLOOR + 300, 9, 0.25, 1.6);
     speckle(g, rng, LIP[0], FLOOR + 8, LIP[1], FLOOR + 300, 120, 'rgba(27,22,18,0.3)', 1.6);
-    const fg = g.createLinearGradient(0, FLOOR, 0, FLOOR + 220);
-    fg.addColorStop(0, 'rgba(27,22,18,0)'); fg.addColorStop(1, 'rgba(27,22,18,0.55)');
+    const fg = g.createLinearGradient(0, FLOOR, 0, FLOOR + 170);
+    fg.addColorStop(0, 'rgba(27,22,18,0.05)'); fg.addColorStop(1, 'rgba(27,22,18,0.72)');
     g.fillStyle = fg; g.fillRect(LIP[0] - 20, FLOOR, 800, 500);
     g.restore();
+    for (let i = 0; i < 16; i++) {
+      const x = rand(rng, LIP[0] + 20, LIP[1] - 20), y = FLOOR + 14 + rng() * 60;
+      g.fillStyle = C.g2; g.strokeStyle = C.ink; g.lineWidth = 2;
+      g.beginPath(); g.ellipse(x, y, 4 + rng() * 7, 2.5 + rng() * 3, 0, 0, 6.283); g.fill(); g.stroke();
+    }
     // rail ties along the floor
     g.fillStyle = C.g5;
     for (let x = LIP[0] + 6; x < LIP[1]; x += 26) g.fillRect(x, FLOOR - 4, 14, 8);
     g.fillStyle = C.ink; g.fillRect(LIP[0], FLOOR - 8, LIP[1] - LIP[0], 3);
-    boulder(g, rng, 246, GY - 64, 96, 64, true);
-    boulder(g, rng, W - 246 - 96, GY - 64, 96, 64, false);
     // pebbles and tufts on the mesa tops
     for (const side of [0, 1]) {
       for (let i = 0; i < 9; i++) {
@@ -298,7 +281,7 @@ function outlines(rng) {
     };
     for (const side of [0, 1]) {
       const f = faceLine(side), dir = side ? -1 : 1, lx = f[0][0];
-      line([[side ? W + 300 : -300, GY], [lx - dir * 28, GY], [lx + dir * 3, GY + 6], [lx + dir * 5, GY + 18]].concat(f.slice(1)));
+      line([[side ? W + 600 : -600, GY], [lx - dir * 28, GY], [lx + dir * 3, GY + 6], [lx + dir * 5, GY + 18]].concat(f.slice(1)));
       // strata edges across the face
       for (let k = 0; k < 6; k++) {
         const y = GY + 70 + k * 78 + hash1(k * 9.1 + side * 3.3) * 20, x = (f[Math.min(f.length - 1, 2 + k * 2)] || f[f.length - 1])[0];
@@ -311,9 +294,7 @@ function outlines(rng) {
     line([[722, FLOOR], [738, PIV.y + 40], [731, PIV.y + 4], [760, PIV.y + 1]]);
     line([[840, PIV.y + 1], [869, PIV.y + 4], [862, PIV.y + 40], [878, FLOOR]]);
     // boulders
-    for (const bx of [246, W - 246 - 96]) {
-      line([[bx + 2, GY], [bx - 8, GY - 34], [bx + 20, GY - 58], [bx + 48, GY - 70], [bx + 76, GY - 58], [bx + 104, GY - 32], [bx + 94, GY]], false);
-    }
+
     out.push({ edge, strata });
   }
   return out;

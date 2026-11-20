@@ -73,11 +73,12 @@ export default {
 
   create(ctx) {
     const { THREE, renderer } = ctx.three;
-    // A software rasteriser (no GPU, or a blocked one) gets the same page with cheaper shadows.
+    // A software rasteriser (no GPU, or a blocked one) gets the same page a little smaller,
+    // with single-tap shadows and a depth pre-pass, and redraws it only as often as it can.
     const Q = { rich: true, scale: 1, bloom: true, fxaa: true, prepass: false };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.rich = false; Q.prepass = true; }
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.rich = false; Q.prepass = true; Q.scale = 0.8; }
     } catch { /* masked: assume a real GPU */ }
     const W = buildWorld(ctx.rng);
     const scene = new THREE.Scene();
@@ -541,6 +542,7 @@ export default {
         renderer.shadowMap.autoUpdate = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.shadowMap.enabled = false;
+        view.dispose();
         post.dispose();
         depthMat.dispose();
         fx.dispose();

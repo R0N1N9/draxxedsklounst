@@ -134,18 +134,21 @@ export function makeView(ctx, THREE, renderer, o) {
       if (api.force > 0) api.force--;
       else if (!hadUpdate) { /* the core photographing the world for a transition: always a real frame */ }
       else if (++frames > 3 && skipLeft > 0) { skipLeft--; draw = false; }
+      if (api.log) api.log.push(Math.round(now) * (draw ? 1 : -1));
       S.w = ctx.width; S.h = ctx.height;
       drawOverlay(ctx.g, S);
       if (!draw) return;
       const cost = Q.rich ? Math.min(worst, worstPrev || worst) : worst; // one hitch is not a slow machine
       worstPrev = worst;
       worst = 0;
-      skipLeft = cost < 70 ? 0 : cost < 130 ? 1 : Math.min(60, Math.round((cost - 40) / 14));
+      skipLeft = cost < 70 ? 0 : cost < 130 ? 1 : Math.min(120, Math.round(cost / 9));
       api.cost = cost; api.drawn = (api.drawn || 0) + 1;
       post.render(room.scene, camera);
       renderer.setRenderTarget(null);
     },
   });
+  // (test scripts) how long n real draws take, GPU work included
+  api.bench = (n = 3) => { const gl = renderer.getContext(), t0 = performance.now(); const px = new Uint8Array(4); for (let i = 0; i < n; i++) { if (Q.nopost) { renderer.setRenderTarget(null); renderer.render(room.scene, camera); } else post.render(room.scene, camera); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); } renderer.setRenderTarget(null); return (performance.now() - t0) / n; };
   fit();
   return api;
 }

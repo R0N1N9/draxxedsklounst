@@ -9,7 +9,7 @@ import { MvInput } from './input.js';
 import { AudioKit } from './audiokit.js';
 import { MvHud } from './hud.js';
 import { Mux } from './transport.js';
-import { loadDimension, loadTransition, playableDimensions, playableTransitions, firstTransition, dimensionKind, metaOf } from './registry.js';
+import { loadDimension, loadTransition, playableDimensions, playableTransitions, firstTransition, dimensionKind, chainOf, chainedDimensions, metaOf } from './registry.js';
 import { PLAYER_COLORS, DEFAULTS, BOT_SKILL } from './contract.js';
 import { mulberry32 } from '../util.js';
 import finale from './finale.js';
@@ -189,8 +189,16 @@ export class Director {
   _resetBags() {
     this.pick = mulberry32(mixSeed(this.matchSeed, 0xb0b));
     // The opening world does not come round again until every other one has been seen.
-    this.dimBag = shuffled(playableDimensions().filter((id) => id !== this.first), this.pick);
+    this.dimBag = shuffled(this._rotation().filter((id) => id !== this.first), this.pick);
     this.fxBag = [];
+  }
+
+  // The worlds the rotation draws from: everything playable except worlds that are only
+  // reached through their lead-in (see `then` in the registry).
+  _rotation() {
+    const ok = (id) => !this.broken.has(id);
+    const chained = chainedDimensions(ok);
+    return playableDimensions().filter((id) => ok(id) && !chained.includes(id));
   }
 
   // Shuffle bags: nothing repeats until everything has been seen, and never twice in a row.
@@ -211,10 +219,19 @@ export class Director {
   // but from what is left in the bag take the one LEAST like the worlds just played, so a
   // match keeps changing viewpoint (first person / third person / top-down / side-on) and
   // look (2D / 3D) instead of serving two of a kind in a row.
-  _nextDim() {
+  // `kill` = the round ended with a kill: only then does a chained world follow (the chain
+  // is a story beat about the loser, so a drawn round moves on like any other).
+  _nextDim(kill) {
+    this.linkFx = null;
     if (this.dev.next.length) return this.dev.next.shift();
     const cur = this.mod && this.mod.id;
-    const pool = playableDimensions().filter((id) => !this.broken.has(id));
+    const link = kill ? chainOf(cur, (id) => !this.broken.has(id)) : null;
+    if (link) {
+      this.linkFx = link.fx;
+      this.prevDim = cur;
+      return link.dim;
+    }
+    const pool = this._rotation();
     if (pool.length <= 1) return pool[0] || this.first;
     let bag = this.dimBag.filter((id) => pool.includes(id) && id !== cur);
     if (!bag.length) bag = shuffled(pool.filter((id) => id !== cur), this.pick);
@@ -239,6 +256,8 @@ export class Director {
       const id = firstTransition();
       if (id && !this.broken.has(id)) return id;
     }
+    // A chained pair of worlds brings its own transition.
+    if (this.linkFx) { const id = this.linkFx; this.linkFx = null; return id; }
     return this._draw('fxBag', playableTransitions(), this.lastFx) || 'none';
   }
 
@@ -649,11 +668,11 @@ export class Director {
     const score = this.score.slice();
     if (winner >= 0) score[winner]++;
     const done = winner >= 0 && score[winner] >= this.target;
+    this.linkFx = null;
+    const dim = done ? FINALE : this._nextDim(winner >= 0);
     const fx = this._nextFx();
     this.lastFx = fx;
-    const next = done
-      ? { dim: FINALE, fx, seed: mixSeed(this.matchSeed, 9999) }
-      : { dim: this._nextDim(), fx, seed: mixSeed(this.matchSeed, this.round + 1) };
+    const next = { dim, fx, seed: mixSeed(this.matchSeed, done ? 9999 : this.round + 1) };
     const m = { t: 'mv', k: 'point', r: this.round, winner, victim, how, score, next };
     if (this.online) this.transport.send(m);
     this._applyPoint(m);
@@ -947,7 +966,7 @@ export class Director {
     this._resetBags();
     const fx = this._nextFx();
     this.lastFx = fx;
-    const m = { t: 'mv', k: 'rematch', seed: this.matchSeed, next: { dim: this._draw('dimBag', playableDimensions(), null) || this.first, fx, seed: mixSeed(this.matchSeed, 1) } };
+    const m = { t: 'mv', k: 'rematch', seed: this.matchSeed, next: { dim: this._draw('dimBag', this._rotation(), null) || this.first, fx, seed: mixSeed(this.matchSeed, 1) } };
     if (this.online) this.transport.send(m);
     this._applyRematch(m);
   }

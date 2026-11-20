@@ -1,5 +1,5 @@
-// Fat ink lines: every segment is an instanced screen-space quad, so a line is the same number of
-// pixels wide at 2 m and at 200 m (the "drawn" look). One draw call per LineSet.
+// Fat ink lines: every segment is a screen-space quad, so a line is the same number of pixels wide at 2 m and
+// at 200 m (the "drawn" look). One draw call per LineSet.
 import { lin } from './style.js';
 
 const VERT = `
@@ -57,29 +57,37 @@ export function makeLineMats(THREE) {
   return mats;
 }
 
+/**
+ * A batch of fat segments as ONE plain indexed mesh (four vertices per segment, the same segment data repeated on
+ * each corner). Not instanced on purpose: instancing costs a fixed overhead per instance on software rasterisers
+ * and thousands of ink lines would dominate the frame; a plain mesh is the same picture for a fraction of the cost.
+ */
 export class LineSet {
   constructor(THREE, cap, material, dynamic = false) {
     this.cap = cap;
     this.n = 0;
-    this.A = new Float32Array(cap * 3);
-    this.B = new Float32Array(cap * 3);
-    this.C = new Float32Array(cap * 4);
-    this.W = new Float32Array(cap);
-    const g = (this.geo = new THREE.InstancedBufferGeometry());
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, -1, 0, 0, 1, 0, 1, -1, 0, 1, 1, 0]), 3));
-    g.setIndex([0, 1, 2, 2, 1, 3]);
+    const V = cap * 4;
+    this.A = new Float32Array(V * 3);
+    this.B = new Float32Array(V * 3);
+    this.C = new Float32Array(V * 4);
+    this.W = new Float32Array(V);
+    const corner = new Float32Array(V * 3);
+    const idx = V > 65535 ? new Uint32Array(cap * 6) : new Uint16Array(cap * 6);
+    for (let i = 0; i < cap; i++) {
+      const o = i * 4;
+      for (let k = 0; k < 4; k++) { corner[(o + k) * 3] = k >> 1; corner[(o + k) * 3 + 1] = (k & 1) * 2 - 1; }
+      idx[i * 6] = o; idx[i * 6 + 1] = o + 1; idx[i * 6 + 2] = o + 2; idx[i * 6 + 3] = o + 2; idx[i * 6 + 4] = o + 1; idx[i * 6 + 5] = o + 3;
+    }
+    const g = (this.geo = new THREE.BufferGeometry());
+    g.setAttribute('position', new THREE.BufferAttribute(corner, 3));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
     const usage = dynamic ? THREE.DynamicDrawUsage : THREE.StaticDrawUsage;
-    this.attrs = [
-      new THREE.InstancedBufferAttribute(this.A, 3).setUsage(usage),
-      new THREE.InstancedBufferAttribute(this.B, 3).setUsage(usage),
-      new THREE.InstancedBufferAttribute(this.C, 4).setUsage(usage),
-      new THREE.InstancedBufferAttribute(this.W, 1).setUsage(usage),
-    ];
+    this.attrs = [new THREE.BufferAttribute(this.A, 3).setUsage(usage), new THREE.BufferAttribute(this.B, 3).setUsage(usage), new THREE.BufferAttribute(this.C, 4).setUsage(usage), new THREE.BufferAttribute(this.W, 1).setUsage(usage)];
     g.setAttribute('aStart', this.attrs[0]);
     g.setAttribute('aEnd', this.attrs[1]);
     g.setAttribute('aCol', this.attrs[2]);
     g.setAttribute('aW', this.attrs[3]);
-    g.instanceCount = 0;
+    g.setDrawRange(0, 0);
     this.mesh = new THREE.Mesh(g, material);
     this.mesh.frustumCulled = false;
   }
@@ -90,18 +98,20 @@ export class LineSet {
     return this.set(this.n++, ax, ay, az, bx, by, bz, hex, w, a);
   }
   set(i, ax, ay, az, bx, by, bz, hex, w = 1, a = 1) {
-    const c = lin(hex);
-    const i3 = i * 3, i4 = i * 4;
-    this.A[i3] = ax; this.A[i3 + 1] = ay; this.A[i3 + 2] = az;
-    this.B[i3] = bx; this.B[i3 + 1] = by; this.B[i3 + 2] = bz;
-    this.C[i4] = c.r; this.C[i4 + 1] = c.g; this.C[i4 + 2] = c.b; this.C[i4 + 3] = a;
-    this.W[i] = w;
+    const c = lin(hex), A = this.A, B = this.B, C = this.C, W = this.W;
+    for (let k = 0; k < 4; k++) {
+      const v = i * 4 + k, v3 = v * 3, v4 = v * 4;
+      A[v3] = ax; A[v3 + 1] = ay; A[v3 + 2] = az;
+      B[v3] = bx; B[v3 + 1] = by; B[v3 + 2] = bz;
+      C[v4] = c.r; C[v4 + 1] = c.g; C[v4 + 2] = c.b; C[v4 + 3] = a;
+      W[v] = w;
+    }
     return i;
   }
-  hide(i) { this.C[i * 4 + 3] = 0; }
-  /** Upload after writing. count: how many instances to draw (default: the appended ones). */
+  hide(i) { for (let k = 0; k < 4; k++) this.C[(i * 4 + k) * 4 + 3] = 0; }
+  /** Upload after writing. count: how many segments to draw (default: the appended ones). */
   flush(count = this.n) {
-    this.geo.instanceCount = count;
+    this.geo.setDrawRange(0, Math.min(count, this.cap) * 6);
     for (const a of this.attrs) a.needsUpdate = true;
   }
   dispose() { this.geo.dispose(); }

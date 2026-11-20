@@ -10,7 +10,7 @@
 import { clamp, lerp, damp, angDiff, angLerp, gauss } from '../../kit.js';
 import { ARENA } from './sea.js';
 
-const GRACE = 10.2; // nobody is hit by a bot before this: the opening is for reading the sea
+const GRACE = 10.2; // nobody is hit by a bot before this (and often a little after): the opening is for reading the sea
 
 export function makeBot(ctx, sea, world, G) {
   const R = G.R, rnd = Math.random;
@@ -20,7 +20,7 @@ export function makeBot(ctx, sea, world, G) {
     return {
       skill, t: 0, plan: 'open', planT: 0, openT: 3.6 + (1 - skill) * 1.6 + rnd() * 1.2, weave: rnd() < 0.5 ? 1 : -1, weaveT: 1.5 + rnd() * 2,
       seen: 0, lost: 9, braceT: 0, wantBrace: false, relocate: 0, settle: 1, eY: 0, eP: 0, tY: 0, tP: 0, errT: 0, underFire: 0, wasFire: 0,
-      lx: 0, lz: 0, side: rnd() < 0.5 ? 1 : -1, pref: 74 + rnd() * 26, near: 44 + rnd() * 14, closer: rnd() < 0.42 + 0.2 * skill, lead: 1, shots: 0, follow: false, rangeN: 0,
+      lx: 0, lz: 0, side: rnd() < 0.5 ? 1 : -1, pref: 74 + rnd() * 26, near: 44 + rnd() * 14, closer: rnd() < 0.42 + 0.2 * skill, lead: 1, shots: 0, follow: false, grace: GRACE + rnd() * 3.5,
     };
   }
 
@@ -59,7 +59,7 @@ export function makeBot(ctx, sea, world, G) {
     const comp = 0.2 + 0.65 * skill; // how much of the board's wobble it rides out
     wantYaw += b.eY - p.swayX * comp;
     wantPitch += b.eP - p.swayY * comp;
-    if (T < GRACE) { wantYaw += (b.side * 4.2) / dist; wantPitch -= 1.1 / dist; } // ranging shots: wide, low, and they skip
+    if (T < b.grace) { wantYaw += (b.side * 4.2) / dist; wantPitch -= 1.1 / dist; } // ranging shots: wide, low, and they skip
     const k = 1 - Math.exp(-dt * (see ? 4 + 8 * skill : 2.2));
     cmd.yaw = angLerp(p.yaw, wantYaw, k);
     cmd.pitch = clamp(p.pitch + (wantPitch - p.pitch) * k, -0.6, 0.5);

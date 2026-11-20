@@ -34,7 +34,7 @@
 //   pellets, lasers, copters, particles) · post.js (tilt-shift, bloom, grade) · view.js (camera,
 //   screen <-> floor) · overlay.js (2D) · sound.js · bot.js.
 import { clamp, lerp, damp, smoothstep, angDiff, angDamp, segCircle, disposeTree } from '../../kit.js';
-import { buildWorld, hit, SPAWN, BODY_R, SPOT_R } from './world.js';
+import { buildWorld, hit, SPAWN, BODY_R, SPOT_R, MUZZLE, gunY } from './world.js';
 import { makeGeo } from './geo.js';
 import { makeTextures } from './tex.js';
 import { makeToys } from './toys.js';
@@ -47,7 +47,7 @@ import { makeBot } from './bot.js';
 
 const SPEED = 5.2, RELOAD = 1.15, PELLET = 62, ROLL_T = 0.36, ROLL_D = 4.6, ROLL_CD = 2.8, COP_CD = 15, COP_LIFE = 5.5, INTRO = 3.6;
 const DEG = Math.PI / 180, CM = 3; // a soldier is two inches tall: one unit is about 3 cm
-const PLASTIC = ['#f5a428', '#22c8da']; // the identity colours, as injection-moulded plastic
+const PLASTIC = ['#f29a14', '#14bdd2']; // the identity colours, as injection-moulded plastic
 
 export default {
   id: 'toybox',
@@ -68,18 +68,19 @@ export default {
     const { THREE, renderer } = ctx.three;
     // Two builds of the same picture: a software rasteriser gets no reflections, a smaller
     // shadow map and a smaller scene target (and view.js draws it less often).
-    const Q = { rich: true, scale: 1, shadow: 2048 };
+    const Q = { rich: true, pbr: true, scale: 1, shadow: 2048 };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.rich = false; Q.scale = 0.8; Q.shadow = 1024; }
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.rich = false; Q.pbr = false; Q.scale = 0.75; Q.shadow = 1024; }
     } catch { /* masked: assume a real GPU */ }
+    if (globalThis.__toyboxQ) Object.assign(Q, globalThis.__toyboxQ); // test scripts: force a build
     const names = ctx.players.map((p) => p.name);
     const W = buildWorld(ctx.rng, names);
     const geo = makeGeo(THREE), tex = makeTextures(THREE, renderer, ctx.seed, names, Q.rich), toys = makeToys(THREE, geo);
     const room = buildRoom(THREE, renderer, W, tex, toys, geo, Q);
     const sfx = makeSfx(ctx);
     const fx = buildActors(THREE, room, toys, PLASTIC, ctx.me, Q, sfx);
-    const post = makePost(THREE, renderer, { msaa: Q.rich, scale: Q.scale });
+    const post = makePost(THREE, renderer, { msaa: Q.rich, scale: Q.scale, cap: Q.rich ? 5.4e6 : 3.5e5 });
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = Q.rich ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 
@@ -119,13 +120,13 @@ export default {
     // Somebody fired: the flash, the report, the kick.
     function report(p, a, y) {
       const dx = Math.cos(a), dz = Math.sin(a);
-      fx.muzzle(p.x + dx * 1.2, y, p.z + dz * 1.2, dx, dz, p.i);
+      fx.muzzle(p.x + dx * (MUZZLE + 0.05), y, p.z + dz * (MUZZLE + 0.05), dx, dz, p.i);
       sfx.shot(p.x, p === me);
       p.recoil = 1; p.kickA = 1;
       if (p === me) { view.kick(1); view.shake(0.24); } else view.shake(0.08);
     }
     function shoot(p) {
-      const a = p.shotA, y = lerp(1.25, 1.0, p.k);
+      const a = p.shotA, y = gunY(p.k);
       spawnPellet(p.i, p.x, p.z, y, a, true);
       p.reload = p.reloadMax = RELOAD;
       report(p, a, y);
@@ -158,8 +159,8 @@ export default {
           if (e.alive && ctx.phase === 'live') {
             // Mid-tumble a soldier is off the ground and out of the way.
             if (b.judge && !(e.roll >= 0.1 && e.roll <= 0.85)) {
-              const u = segCircle(b.x, b.z, b.x + dx * tw, b.z + dz * tw, e.x, e.z, (e.k > 0.5 ? 0.44 : 0.5) + 0.1);
-              if (u >= 0 && (b.trav > 0.3 || u > 0)) { b.on = false; scored(b, e, dx, dz, u * tw); break; }
+              const u = segCircle(b.x, b.z, b.x + dx * tw, b.z + dz * tw, e.x, e.z, (e.k > 0.5 ? 0.54 : 0.6) + 0.1);
+              if (u >= 0) { b.on = false; scored(b, e, dx, dz, u * tw); break; }
             }
             if (!b.near && b.trav > 2) {
               const al = clamp((e.x - b.x) * dx + (e.z - b.z) * dz, 0, tw), ox = b.x + dx * al - e.x, oz = b.z + dz * al - e.z;
@@ -231,7 +232,7 @@ export default {
     // ---- one sniper, one slice of time ----
     // `first`: trigger pulls are spent once, however many slices a frame is cut into.
     function humanCmd(p, first, dt) {
-      const inp = ctx.input, c = p.cmd, y = lerp(1.25, 1.0, p.k);
+      const inp = ctx.input, c = p.cmd, y = gunY(p.k);
       view.moveDir(inp.moveX, inp.moveY, v2);
       c.mx = v2.x; c.mz = v2.z;
       if (inp.device === 'kbm') {
@@ -320,13 +321,13 @@ export default {
       const dx = Math.cos(p.shotA), dz = Math.sin(p.shotA);
       let t = W.cast(p.x, p.z, dx, dz, 46, 0.05), s = hit.s;
       const nx = hit.nx, nz = hit.nz;
-      if (e.alive) { const u = segCircle(p.x, p.z, p.x + dx * t, p.z + dz * t, e.x, e.z, 0.5); if (u >= 0) { t *= u; s = null; } }
-      A.len = t - 1.2; A.x1 = p.x + dx * t; A.z1 = p.z + dz * t;
+      if (e.alive) { const u = segCircle(p.x, p.z, p.x + dx * t, p.z + dz * t, e.x, e.z, 0.6); if (u >= 0) { t *= u; s = null; } }
+      A.len = t - MUZZLE; A.x1 = p.x + dx * t; A.z1 = p.z + dz * t;
       if (A.len < 0.3) { A.on = false; return A; }
       if (s && s.mat === 'wood' && A.full > 0.02) {
         const d = 2 * (dx * nx + dz * nz), rx = dx - d * nx, rz = dz - d * nz, ox = A.x1 + nx * 0.03, oz = A.z1 + nz * 0.03;
         let t2 = W.cast(ox, oz, rx, rz, 24, 0.05);
-        if (e.alive) { const u = segCircle(ox, oz, ox + rx * t2, oz + rz * t2, e.x, e.z, 0.5); if (u >= 0) t2 *= u; }
+        if (e.alive) { const u = segCircle(ox, oz, ox + rx * t2, oz + rz * t2, e.x, e.z, 0.6); if (u >= 0) t2 *= u; }
         A.bx = ox + rx * t2; A.bz = oz + rz * t2; A.hasB = true;
       }
       return A;
@@ -381,7 +382,7 @@ export default {
       S.t = view.wt; S.device = inp.device; S.live = live; S.sudden = ctx.sudden; S.top = ctx.height < 480 ? 34 : 60;
       for (const [p, o] of [[me, S.me], [foe, S.foe]]) {
         view.toScreen(p.x, 0, p.z, s2); o.x = s2.x; o.y = s2.y;
-        view.toScreen(p.x, lerp(1.9, 1.5, p.k), p.z, s2); o.hx = s2.x; o.hy = s2.y;
+        view.toScreen(p.x, lerp(2.55, 2.0, p.k), p.z, s2); o.hx = s2.x; o.hy = s2.y;
         o.color = PLASTIC[p.i]; o.alive = p.alive;
       }
       S.intro = damp(S.intro, phase === 'intro' && flags.introOn ? 1 : 0, 7, dt);
@@ -398,7 +399,7 @@ export default {
       const c = S.cursor;
       c.on = inp.device === 'kbm' && human && me.alive && phase !== 'over';
       if (c.on) {
-        const y = lerp(1.25, 1.0, me.k);
+        const y = gunY(me.k);
         view.toFloor(inp.pointerX, inp.pointerY, y, v2);
         const d = Math.hypot(v2.x - me.x, v2.z - me.z);
         view.toScreen(me.x, y, me.z, s2);
@@ -469,7 +470,7 @@ export default {
         disposeTree(room.scene);
       },
     };
-    inst.debug = { P, W, cop, pellets, view, flags, S }; // test scripts only
+    inst.debug = { P, W, cop, pellets, view, flags, S, room, fx, post, Q }; // test scripts only
     post.resize();
     return inst;
   },

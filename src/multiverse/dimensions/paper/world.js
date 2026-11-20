@@ -1,9 +1,9 @@
 // The static yard: ground, containers, concourse buildings, paper panels, skyline. Everything is built once into
 // a handful of merged meshes (one fill mesh, one line set) so the whole drawn world costs a few draw calls.
-import { INK, PAPER, KRAFT, CONT, SKY, GROUND, GROUND_SHADE, YARD_OUT, WALL, TRIM, ID, faceTone, darker, lighter, lin } from './style.js';
+import { INK, PAPER, KRAFT, CONT, SKY, GROUND, GROUND_SHADE, YARD_OUT, WALL, TRIM, ID, faceTone, darker, lighter } from './style.js';
 import { FillBuf, LineBuf, LineSet } from './lines.js';
 import { drawSheet, drawMascot, drawBerthSign, drawCloud, dieCut } from './art.js';
-import { CW, CH, STEEL, PAPER as PAPERS, SPAWN_Z, BUILD_Z, YARD_X, GANTRY_X, makeNav } from './layout.js';
+import { CW, CH, STEEL, PAPER as PAPERS, SPAWN_Z, BUILD_Z, GANTRY_X, makeNav } from './layout.js';
 
 export const HOLES = 12, RING = 12, HOLE_R = 0.17;
 
@@ -188,7 +188,7 @@ export function buildWorld(ctx, THREE, mats) {
     // the slanted sign
     const g = new THREE.Group();
     const sg = new THREE.PlaneGeometry(9.6, 3.0);
-    const sm = new THREE.MeshBasicMaterial({ map: sign[which], side: THREE.DoubleSide });
+    const sm = new THREE.MeshBasicMaterial({ map: sign[which], alphaTest: 0.01, side: THREE.DoubleSide });
     const sp = new THREE.Mesh(sg, sm);
     g.add(sp);
     const e = [[-4.8, -1.5], [4.8, -1.5], [4.8, 1.5], [-4.8, 1.5]];
@@ -244,7 +244,7 @@ export function buildWorld(ctx, THREE, mats) {
       texCache.set(key, t);
     }
     const uniforms = { uMap: { value: t }, uSize: { value: new THREE.Vector2(w, h) }, uHoles: { value: Array.from({ length: HOLES }, () => new THREE.Vector3(0, 0, 0)) } };
-    const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: PANEL_VS, fragmentShader: PANEL_FS, side: THREE.DoubleSide, alphaToCoverage: true });
+    const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: PANEL_VS, fragmentShader: PANEL_FS, side: THREE.DoubleSide });
     const geo = new THREE.PlaneGeometry(w, h).translate(0, h / 2, 0);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(cx, y0, cz);
@@ -377,7 +377,7 @@ export function buildWorld(ctx, THREE, mats) {
   // clouds: flat cut-outs on a slow carousel
   const cloudTex = tex((g, W, H) => drawCloud(g, W, H), 512, 256, true);
   const clouds = new THREE.Group();
-  const cm = new THREE.MeshBasicMaterial({ map: cloudTex, transparent: false, alphaTest: 0.5, side: THREE.DoubleSide, alphaToCoverage: true });
+  const cm = new THREE.MeshBasicMaterial({ map: cloudTex, transparent: false, alphaTest: 0.5, side: THREE.DoubleSide });
   const cg = new THREE.PlaneGeometry(1, 0.5);
   for (let k = 0; k < 9; k++) {
     const a = (k / 9) * Math.PI * 2 + rng() * 0.5, R = 380 + rng() * 60, s = 70 + rng() * 70;

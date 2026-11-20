@@ -84,7 +84,7 @@ export function makeSea(THREE, rng, roundTime) {
   const uWvA = W.map((w) => new THREE.Vector4(w.dx, w.dz, w.k, w.a)), uWvB = W.map((w) => new THREE.Vector4(w.c, w.h, w.ph, 0));
   const uSea = new THREE.Vector4(0, 1, -1e4, 0);
   let t = 0, calm = 1, pkS = -1e4, pkA = 0;
-  const d = { x: 0, y: 0, z: 0 };
+  const d = { x: 0, y: 0, z: 0 }, fl = { vx: 0, vz: 0, fold: 1, bx: 0, bz: 0 };
 
   function disp(x, z) {
     let ox = 0, oy = 0, oz = 0;
@@ -128,6 +128,32 @@ export function makeSea(THREE, rng, roundTime) {
     },
     // Rise per metre along a heading (dx, dz): what a board feels as "uphill".
     slope(x, z, dx, dz) { return (sea.height(x + dx * 0.8, z + dz * 0.8) - sea.height(x - dx * 0.8, z - dz * 0.8)) / 1.6; },
+    // What the water itself is doing under a world point — the part of the sea a board FEELS:
+    //   vx, vz  the surface current (water runs forward on a crest and back in a trough)
+    //   fold    1 on open water, falling towards 0 where the surface bunches into a breaking crest
+    //   bx, bz  the velocity of the wave(s) that crest belongs to (what whitewater shoves you along at)
+    flow(x, z) {
+      disp(x, z);
+      disp(x - d.x, z - d.z);
+      const px = x - d.x, pz = z - d.z;
+      let vx = 0, vz = 0, mxx = 0, mzz = 0, mxz = 0, bw = 0, bx = 0, bz = 0;
+      for (let i = 0; i < 4; i++) {
+        const w = W[i], sn = Math.sin(w.k * (w.dx * px + w.dz * pz - w.c * t) + w.ph), g = w.h * w.k * sn * calm;
+        vx += w.dx * g * w.c; vz += w.dz * g * w.c;
+        mxx -= g * w.dx * w.dx; mzz -= g * w.dz * w.dz; mxz -= g * w.dx * w.dz;
+        if (g > 0) { bw += g; bx += g * w.c * w.dx; bz += g * w.c * w.dz; }
+      }
+      if (pkA > 0.001) {
+        const u = SET.dx * px + SET.dz * pz - pkS, E = Math.exp(-u * u * SET_IS2) * pkA, ku = SET.k * u;
+        const g = SET_H * (-2 * u * SET_IS2 * E * Math.sin(ku) + E * SET.k * Math.cos(ku));
+        vx += SET.dx * g * SET.speed; vz += SET.dz * g * SET.speed;
+        mxx -= g * SET.dx * SET.dx; mzz -= g * SET.dz * SET.dz; mxz -= g * SET.dx * SET.dz;
+        if (g > 0) { bw += g; bx += g * SET.speed * SET.dx; bz += g * SET.speed * SET.dz; }
+      }
+      fl.vx = vx; fl.vz = vz; fl.fold = (1 + mxx) * (1 + mzz) - mxz * mxz;
+      fl.bx = bw > 1e-4 ? bx / bw : 0; fl.bz = bw > 1e-4 ? bz / bw : 0;
+      return fl;
+    },
     // Where the set wave's crest is (signed distance along its travel, metres from the arena
     // centre; negative = still out to sea) and how big it stands right now.
     setWave() { return { s: pkS, amp: pkA, z: -pkS }; },

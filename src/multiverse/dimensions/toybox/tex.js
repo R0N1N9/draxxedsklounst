@@ -3,7 +3,7 @@
 import { makeCanvas, makeRng, rand, mixHex, shade, TAU } from '../../kit.js';
 import { RUG_A, RUG_B } from './world.js';
 
-export const TOY = { red: '#d8412f', blue: '#2c6fbd', green: '#3c9a52', yellow: '#eab52c', wood: '#d9b17c', cream: '#efe4c8' };
+export const TOY = { red: '#cf4636', blue: '#2f6db4', green: '#3f9655', yellow: '#e4b233', wood: '#d9b17c', cream: '#efe4c8' };
 const ROUND = '"Arial Rounded MT Bold", "Helvetica Neue", "Trebuchet MS", Arial, sans-serif';
 
 export function makeTextures(THREE, renderer, seed, names, rich) {
@@ -26,7 +26,7 @@ export function makeTextures(THREE, renderer, seed, names, rich) {
       // Each row is two or three boards butted end to end.
       let x = -rand(rng, 0, BS * 0.5);
       while (x < BS) {
-        const len = rand(rng, BS * 0.45, BS * 0.9), col = mixHex(mixHex('#a9743f', '#c59258', rng()), '#8a5a30', rng() * 0.35);
+        const len = rand(rng, BS * 0.45, BS * 0.9), col = mixHex(mixHex('#8c7151', '#9c8160', rng()), '#7a6146', rng() * 0.5);
         for (const ox of [0, BS]) { // (wrap)
           g.fillStyle = col; g.fillRect(x - ox, i * ph, len, ph);
           r.fillStyle = shade('#6a6a6a', rand(rng, -0.1, 0.1)); r.fillRect(x - ox, i * ph, len, ph);
@@ -37,7 +37,7 @@ export function makeTextures(THREE, renderer, seed, names, rich) {
     // Grain: long, slightly wavy lines that wrap.
     for (let k = 0; k < (rich ? 520 : 240); k++) {
       const y0 = rng() * BS, amp = rand(rng, 0.5, 3), per = 1 + Math.floor(rng() * 3), ph0 = rng() * TAU, dark = rng() < 0.6;
-      g.strokeStyle = dark ? `rgba(70,38,14,${rand(rng, 0.05, 0.16)})` : `rgba(255,224,170,${rand(rng, 0.04, 0.1)})`;
+      g.strokeStyle = dark ? `rgba(48,30,16,${rand(rng, 0.05, 0.16)})` : `rgba(240,220,190,${rand(rng, 0.04, 0.1)})`;
       g.lineWidth = rand(rng, 0.6, 1.8);
       g.beginPath();
       for (let x = 0; x <= BS; x += 16) { const y = y0 + Math.sin((x / BS) * TAU * per + ph0) * amp; if (x) g.lineTo(x, y); else g.moveTo(x, y); }
@@ -63,7 +63,7 @@ export function makeTextures(THREE, renderer, seed, names, rich) {
   {
     const g = rc.g, k = RW / (RUG_A * 2), w = 0.52, rings = Math.floor(RUG_B / w);
     const base = ['#7b2f31', '#8a3a35', '#6f2a30', '#84332f', '#93403a'];
-    const special = { 0: '#232b47', 1: '#2a3454', 2: '#d6c6a2', 3: '#232b47', 7: '#d6c6a2', 8: '#b9a47c', 13: '#2a3454', 14: '#d6c6a2', 19: '#b9a47c' };
+    const special = { 0: '#232b47', 1: '#2a3454', 2: '#b7a27c', 3: '#232b47', 8: '#a8926c', 13: '#2a3454', 14: '#a8926c', 20: '#8f7a5a' };
     g.translate(RW / 2, RH / 2);
     for (let i = 0; i < rings; i++) {
       const a = (RUG_A - i * w) * k, b = (RUG_B - i * w) * k, col = special[i] || base[Math.floor(rng() * base.length)];
@@ -134,7 +134,7 @@ export function makeTextures(THREE, renderer, seed, names, rich) {
   const pc = makeCanvas(512, 512);
   {
     const g = pc.g;
-    g.fillStyle = '#f2ecdc'; g.fillRect(0, 0, 512, 512);
+    g.fillStyle = '#d8d1bf'; g.fillRect(0, 0, 512, 512);
     g.lineCap = g.lineJoin = 'round';
     // A crayon line is several faint passes that do not quite agree.
     const stroke = (pts, col, w = 5) => {

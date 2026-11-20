@@ -90,7 +90,7 @@ export function makeSet(ctx, THREE, mats, W) {
     boxInto(F, L, -2.6, 8.6, -2.1, 2.6, 10.6, 2.1, '#d9d1bb', 1.1);
     freeze(F, L, trolley);
     for (const sx of [-1, 1]) {
-      const m = new THREE.MeshBasicMaterial({ color: '#4a1410' });
+      const m = new THREE.MeshBasicMaterial({ color: '#4a1410', side: THREE.DoubleSide });
       mls.push(m);
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), m);
       geos.push(lamp.geometry);
@@ -206,7 +206,7 @@ export function makeSet(ctx, THREE, mats, W) {
   // ---- bullet holes: ring outlines on a shared dynamic line set, the cut itself is in the panel shader ----
   const holeLines = new LineSet(THREE, Math.max(1, W.panels.length * HOLES * RING), mats.ink, true);
   for (let i = 0; i < holeLines.cap; i++) holeLines.hide(i);
-  holeLines.flush(holeLines.cap);
+  let holeTop = 0; // only the ring slots written so far are drawn
   root.add(holeLines.mesh);
   geos.push(holeLines.geo);
 
@@ -222,7 +222,8 @@ export function makeSet(ctx, THREE, mats, W) {
       const uu0 = u + Math.cos(a0) * HOLE_R, vv0 = v + Math.sin(a0) * HOLE_R, uu1 = u + Math.cos(a1) * HOLE_R, vv1 = v + Math.sin(a1) * HOLE_R;
       holeLines.set(base + i, p.x + p.ux * uu0, p.y0 + vv0, p.z + p.uz * uu0, p.x + p.ux * uu1, p.y0 + vv1, p.z + p.uz * uu1, INK, 0.8, 1);
     }
-    holeLines.flush(holeLines.cap);
+    holeTop = Math.max(holeTop, base + RING);
+    holeLines.flush(holeTop);
     return k;
   }
   /** Is (u, v) on this panel already inside a hole? */

@@ -6,7 +6,8 @@ import { clamp, lerp, makeRng, rand, TAU } from '../../kit.js';
 import { RUG_A, RUG_B, LOOP, SPOT_R, TIDY } from './world.js';
 import { TOY } from './tex.js';
 
-export const LAMP_HEAD = { x: -13.8, y: 8.4, z: -13.6 }, LAMP_BASE = { x: -18.6, z: -16.8 };
+export const LAMP_HEAD = { x: -18.4, y: 5.7, z: -8.8 }, LAMP_BASE = { x: -23.6, z: -11.4 };
+const HEMI = 1.0;
 const LIGHT_POS = { x: -8.5, y: 17.5, z: -11.5 }; // where the light really comes from: higher, for a rounder pool
 
 const PATCH_PARS = `
@@ -30,8 +31,8 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   scene.background = new THREE.Color(0.012, 0.01, 0.02);
   const rng = makeRng(0x7075);
   const U = {
-    head: { value: new THREE.Vector4(0, 0, W.head.ca, W.head.sa) }, headDir: { value: new THREE.Vector3(0, 1, 0) }, headCol: { value: new THREE.Color(13, 11.5, 8.5) },
-    spot: { value: [new THREE.Vector4(), new THREE.Vector4()] }, spotCol: { value: new THREE.Color(8.5, 9.5, 11) }, up: { value: new THREE.Vector3(0, 1, 0) }, lim: { value: 99 },
+    head: { value: new THREE.Vector4(0, 0, W.head.ca, W.head.sa) }, headDir: { value: new THREE.Vector3(0, 1, 0) }, headCol: { value: new THREE.Color(9, 8, 6) },
+    spot: { value: [new THREE.Vector4(), new THREE.Vector4()] }, spotCol: { value: new THREE.Color(3.4, 3.9, 4.8) }, up: { value: new THREE.Vector3(0, 1, 0) }, lim: { value: 99 },
   };
   const owned = []; // materials and geometries made here
   const keep = (x) => { owned.push(x); return x; };
@@ -53,8 +54,13 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
     material.customProgramCacheKey = () => 'toybox' + (opt.clip ? 'c' : '') + (opt.cell ? 'i' : '');
     return keep(material);
   }
-  const std = (o, opt) => patch(new THREE.MeshStandardMaterial({ metalness: 0, ...o }), opt);
-  const gloss = (o) => patch(Q.rich ? new THREE.MeshPhysicalMaterial({ metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.2, ...o }) : new THREE.MeshStandardMaterial({ metalness: 0, ...o }));
+  // The software build lights everything with Lambert: a fraction of the cost per pixel.
+  const std = (o, opt) => {
+    if (Q.pbr) return patch(new THREE.MeshStandardMaterial({ metalness: 0, ...o }), opt);
+    const { roughness, roughnessMap, envMapIntensity, ...rest } = o;
+    return patch(new THREE.MeshLambertMaterial(rest), opt);
+  };
+  const gloss = (o) => (Q.rich ? patch(new THREE.MeshPhysicalMaterial({ metalness: 0, clearcoat: 0.6, clearcoatRoughness: 0.2, ...o })) : std(o));
   const M = {
     floor: std({ map: tex.boards, roughnessMap: tex.boardsRough, roughness: 0.62, envMapIntensity: 0.9 }),
     rug: std({ map: tex.rug, roughness: 0.96, envMapIntensity: 0.15 }, { clip: true }),
@@ -67,9 +73,10 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
     track: std({ map: tex.track, roughness: 0.6 }),
     domino: std({ map: tex.domino, roughness: 0.28 }, { cell: true }),
     glass: gloss({ vertexColors: true, roughness: 0.08 }),
-    plush: patch(Q.rich ? new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 1, metalness: 0, sheen: 1, sheenRoughness: 0.55, sheenColor: new THREE.Color('#ffd9a8') }) : new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 })),
+    plush: patch(Q.rich ? new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 1, metalness: 0, sheen: 1, sheenRoughness: 0.55, sheenColor: new THREE.Color('#ffd9a8') }) : Q.pbr ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }) : new THREE.MeshLambertMaterial({ vertexColors: true })),
     roll: std({ color: '#6f2a30', roughness: 0.95 }),
-    glow: keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(7, 4.6, 2.2) })),
+    glow: keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 0.82, 0.3), side: THREE.DoubleSide })),
+    bulb: keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(14, 10, 5) })),
   };
   const mesh = (geo, mat, cast = true, receive = true) => { const m = new THREE.Mesh(geo, mat); m.castShadow = cast; m.receiveShadow = receive; return m; };
   const add = (m) => { scene.add(m); return m; };
@@ -183,17 +190,17 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   // ---- the lamp ----
   const ld = new THREE.Vector3(0 - LAMP_HEAD.x, 0 - LAMP_HEAD.y, 0.5 - LAMP_HEAD.z).normalize();
   const lampGeo = toys.lamp(LAMP_BASE, LAMP_HEAD, ld);
-  keep(lampGeo.body); keep(lampGeo.glow);
-  const lampBody = add(mesh(lampGeo.body, M.paint, false, false));
-  lampBody.material = patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, side: THREE.DoubleSide, emissive: new THREE.Color(0.5, 0.3, 0.12) }));
+  keep(lampGeo.body); keep(lampGeo.glow); keep(lampGeo.bulb);
+  add(mesh(lampGeo.body, std({ vertexColors: true, roughness: 0.32, side: THREE.DoubleSide }), false, false));
   add(mesh(lampGeo.glow, M.glow, false, false));
+  add(mesh(lampGeo.bulb, M.bulb, false, false));
 
   // ---- the big soft things round the edge (they never move: one mesh per material) ----
   {
     const b = new G.Bag();
     toys.stacker(b, -18.4, 15.4);
     toys.chest(b, 13.2, -19.4, -0.1);
-    [[1.0, 17.4, 0.4, TOY.red], [6.6, 15.3, -0.9, TOY.blue], [5.6, 17.9, 2.4, TOY.green], [-11.8, -14.4, 1.0, TOY.yellow], [-7.6, -16.9, -0.5, '#e8792c'], [16.5, 16.6, 0.2, '#7a4a8a'], [-13.6, 14.2, 2.0, TOY.blue], [22.6, -6.5, 1.3, TOY.red], [-23.2, 5.8, 0.5, TOY.green]]
+    [[1.0, 17.4, 0.4, TOY.red], [6.6, 15.3, -0.9, TOY.blue], [5.6, 17.9, 2.4, TOY.green], [-11.8, -15.4, 1.0, TOY.yellow], [-7.6, -16.9, -0.5, '#e8792c'], [16.5, 16.6, 0.2, '#7a4a8a'], [-13.6, 14.2, 2.0, TOY.blue], [22.6, -6.5, 1.3, TOY.red], [-23.2, 5.8, 0.5, TOY.green]]
       .forEach(([x, z, r, c]) => toys.crayon(b, x, z, r, c));
     add(mesh(keep(b.build()), M.paint));
     const p = new G.Bag();
@@ -220,12 +227,12 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   }
 
   // ---- light ----
-  const hemi = add(new THREE.HemisphereLight(new THREE.Color(0.36, 0.46, 0.95), new THREE.Color(0.2, 0.13, 0.12), 0.85));
-  const fill = add(new THREE.DirectionalLight(new THREE.Color(0.45, 0.58, 1), 0.55)); // the last of the dusk, from the window
+  const hemi = add(new THREE.HemisphereLight(new THREE.Color(0.3, 0.44, 1.0), new THREE.Color(0.15, 0.14, 0.22), HEMI));
+  const fill = add(new THREE.DirectionalLight(new THREE.Color(0.4, 0.56, 1), 0.85)); // the last of the dusk, from the window
   fill.position.set(14, 12, 16);
-  const lamp = new THREE.SpotLight(new THREE.Color(1, 0.74, 0.44), 3600, 0, 0.5, 0.75, 2);
+  const lamp = new THREE.SpotLight(new THREE.Color(1, 0.8, 0.56), 3900, 0, 0.46, 0.85, 2);
   lamp.position.set(LIGHT_POS.x, LIGHT_POS.y, LIGHT_POS.z);
-  lamp.castShadow = true;
+  lamp.castShadow = Q.shadow > 0;
   lamp.shadow.mapSize.set(Q.shadow, Q.shadow);
   lamp.shadow.camera.near = 6; lamp.shadow.camera.far = 60;
   lamp.shadow.bias = -0.0006; lamp.shadow.normalBias = 0.03;
@@ -260,9 +267,10 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
   // ---- the lamp's beam in the dusty air, and the dust ----
   const beamMat = keep(new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    uniforms: { uApex: { value: new THREE.Vector3(LAMP_HEAD.x + ld.x * 1.6, LAMP_HEAD.y + ld.y * 1.6, LAMP_HEAD.z + ld.z * 1.6) }, uPool: { value: new THREE.Vector2() }, uA: { value: 0.085 } },
-    vertexShader: 'attribute vec3 aRing; uniform vec3 uApex; uniform vec2 uPool; varying float vT; varying float vE;\nvoid main() { vT = aRing.z; vE = position.x; vec3 p = mix(uApex + vec3(aRing.x, 0.0, aRing.y) * 0.16, vec3(uPool.x + aRing.x, 0.0, uPool.y + aRing.y), aRing.z); gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }',
-    fragmentShader: 'precision highp float; uniform float uA; varying float vT; varying float vE;\nvoid main() { float a = pow(1.0 - vT, 1.6) * (0.55 + 0.45 * sin(vE * 6.2832)) ; gl_FragColor = vec4(vec3(1.0, 0.72, 0.4) * a * uA, 1.0); }',
+    uniforms: { uApex: { value: new THREE.Vector3(LAMP_HEAD.x + ld.x * 1.6, LAMP_HEAD.y + ld.y * 1.6, LAMP_HEAD.z + ld.z * 1.6) }, uPool: { value: new THREE.Vector2() }, uA: { value: 0.06 } },
+    // A cone of lit air is brightest where you look through most of it: its middle, not its edges.
+    vertexShader: 'attribute vec3 aRing; uniform vec3 uApex; uniform vec2 uPool; varying float vT; varying float vE;\nvoid main() { vT = aRing.z; vE = abs(normalize(mat3(viewMatrix) * vec3(aRing.x, 0.0, aRing.y)).z); vec3 p = mix(uApex + vec3(aRing.x, 0.0, aRing.y) * 0.16, vec3(uPool.x + aRing.x, 0.0, uPool.y + aRing.y), aRing.z); gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0); }',
+    fragmentShader: 'precision highp float; uniform float uA; varying float vT; varying float vE;\nvoid main() { float a = pow(1.0 - vT, 1.3) * pow(vE, 1.6); gl_FragColor = vec4(vec3(1.0, 0.72, 0.4) * a * uA, 1.0); }',
   }));
   {
     const n = 48, ring = [], pos = [], idx = [];
@@ -277,7 +285,7 @@ export function buildRoom(THREE, renderer, W, tex, toys, G, Q, players) {
     const beam = add(new THREE.Mesh(g, beamMat));
     beam.frustumCulled = false; beam.renderOrder = 5;
   }
-  const DUST = Q.rich ? 260 : 120;
+  const DUST = Q.rich ? 170 : 90;
   const dustMat = keep(new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     uniforms: { uT: { value: 0 }, uPx: { value: 1 }, uPool: { value: new THREE.Vector2() }, uLamp: { value: new THREE.Vector3(LAMP_HEAD.x, LAMP_HEAD.y, LAMP_HEAD.z) } },
@@ -294,7 +302,7 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
   gl_PointSize = (1.2 + aSeed.z * 2.2) * uPx;
 }`,
-    fragmentShader: 'precision highp float; varying float vA;\nvoid main() { vec2 c = gl_PointCoord - 0.5; float a = smoothstep(0.5, 0.05, length(c)) * vA; gl_FragColor = vec4(vec3(1.0, 0.82, 0.55) * a * 0.9, 1.0); }',
+    fragmentShader: 'precision highp float; varying float vA;\nvoid main() { vec2 c = gl_PointCoord - 0.5; float a = smoothstep(0.5, 0.05, length(c)) * vA; gl_FragColor = vec4(vec3(1.0, 0.82, 0.55) * a * 0.6, 1.0); }',
   }));
   {
     const pos = new Float32Array(DUST * 3), seed = new Float32Array(DUST * 4);
@@ -312,7 +320,7 @@ void main() {
   let bigK = 0;
 
   return {
-    scene, U, M, patch, keep, lamp,
+    scene, U, M, patch, std, keep, lamp,
     // fx: { pop(x, y, z), puff(x, y, z) } — sparkle when a toy is tidied away, steam from the engine
     update(dt, T, wt, camera, pxPerUnit, fx) {
       // Uniforms shared by every patched material.
@@ -329,7 +337,7 @@ void main() {
       dustMat.uniforms.uT.value = wt; dustMat.uniforms.uPx.value = pxPerUnit * 0.045 * renderer.getPixelRatio();
       // Sudden death: somebody turns the big light on.
       bigK += ((ts >= 0 ? 1 : 0) - bigK) * Math.min(1, dt * 5);
-      big.intensity = bigK * 2.4; hemi.intensity = 0.85 + bigK * 1.3; beamMat.uniforms.uA.value = 0.085 * (1 - bigK * 0.7);
+      big.intensity = bigK * 2.4; hemi.intensity = HEMI + bigK * 1.3; beamMat.uniforms.uA.value = 0.06 * (1 - bigK * 0.7);
       // The train, and whatever is being tidied away.
       for (const v of views) {
         const o = v.o, obj = v.obj;

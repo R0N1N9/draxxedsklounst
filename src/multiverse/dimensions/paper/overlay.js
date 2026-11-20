@@ -1,7 +1,7 @@
 // The flat 2D layer on top of the 3D yard: the drawn rifle, scope ring, compass strip, paper ammo tag, range
 // callouts, shot arrows, the in-world "how to play" tags and the crumple-up of a kill. Same inked, hard-shadowed
 // paper-sticker language as the world: fills, thick round-joined outlines, no gradients, no blur.
-import { INK, PAPER, KRAFT, ID, ID_DARK, darker, lighter } from './style.js';
+import { INK, PAPER, ID, ID_DARK, darker } from './style.js';
 
 const TAU = Math.PI * 2;
 const PAIR_A = [[INK, 6], ['#fffdf5', 2.4]], PAIR_B = [['#fffdf5', 5], [INK, 2]], PAIR_C = [['#fffdf5', 4], [INK, 1.6]];
@@ -47,56 +47,69 @@ export function makeOverlay(ctx) {
     return w;
   }
 
-  // ---- the rifle: a flat outlined drawing ----
-  function rifle(sc, a) {
+  // ---- the rifle: a flat outlined drawing, painted once into a sprite; only the bolt and the flash are live ----
+  const RS = 1.2, RX = 200, RY = 100; // sprite scale and origin offset
+  let rifleImg = null, rifleFor = -1;
+  function paintRifle(gg, id, idd) {
+    gg.scale(RS, RS);
+    gg.translate(RX, RY);
+    const line = (lw) => { gg.lineWidth = lw; gg.strokeStyle = INK; gg.lineJoin = 'round'; gg.lineCap = 'round'; gg.stroke(); };
+    const fill = (c, lw = 7) => { gg.fillStyle = c; gg.fill(); line(lw); };
+    // sleeve and arm run off the corner
+    gg.beginPath(); gg.moveTo(-40, 150); gg.lineTo(60, 40); gg.lineTo(150, 80); gg.lineTo(80, 260); gg.closePath(); fill(darker(id, 0.15), 8);
+    // stock
+    gg.beginPath(); gg.moveTo(-170, 44); gg.lineTo(-20, -4); gg.lineTo(-10, 66); gg.lineTo(-96, 138); gg.lineTo(-176, 96); gg.closePath(); fill('#cf9b62', 8);
+    gg.beginPath(); gg.moveTo(-160, 62); gg.lineTo(-30, 22); gg.lineWidth = 3; gg.strokeStyle = '#a8733b'; gg.stroke();
+    // receiver
+    rrect(gg, -14, -18, 230, 70, 14); fill('#2d3447', 8);
+    rrect(gg, 20, -4, 120, 24, 6); gg.fillStyle = '#4b5671'; gg.fill();
+    // barrel and muzzle brake
+    rrect(gg, 200, -4, 330, 26, 8); fill('#59627a', 7);
+    rrect(gg, 505, -12, 56, 42, 8); fill('#1f2230', 7);
+    gg.fillStyle = '#3b4258'; for (const x of [516, 532, 548]) gg.fillRect(x, -6, 5, 30);
+    // scope
+    rrect(gg, 40, -76, 250, 44, 18); fill('#262a39', 8);
+    rrect(gg, 255, -88, 64, 68, 12); fill('#1b1e2b', 8);
+    gg.beginPath(); gg.arc(319, -54, 26, 0, TAU); fill('#9fe8f4', 6);
+    gg.fillStyle = '#fff'; gg.fillRect(308, -66, 9, 9);
+    for (const x of [86, 230]) { rrect(gg, x, -34, 22, 24, 4); fill('#59627a', 5); }
+    // hands in identity-coloured gloves
+    rrect(gg, 252, 14, 124, 70, 28); fill(id, 8);
+    gg.lineWidth = 4; gg.strokeStyle = INK; for (const x of [284, 318, 350]) { gg.beginPath(); gg.moveTo(x, 22); gg.lineTo(x - 6, 76); gg.stroke(); }
+    rrect(gg, -4, 48, 96, 92, 30); fill(id, 8);
+    gg.strokeStyle = idd; gg.lineWidth = 5; gg.beginPath(); gg.moveTo(8, 58); gg.lineTo(80, 58); gg.stroke();
+  }
+  function rifle() {
     const w = ctx.width, h = ctx.height;
     const s = Math.max(0.5, Math.min(1.35, h / 700));
     const scopeDown = S.scope;
     const kick = S.kick;
+    if (!rifleImg || rifleFor !== S.me) {
+      rifleImg = document.createElement('canvas');
+      rifleImg.width = Math.round(800 * RS); rifleImg.height = Math.round(400 * RS);
+      paintRifle(rifleImg.getContext('2d'), idc(S.me), ID_DARK[S.me]);
+      rifleFor = S.me;
+    }
     const bx = w * 0.9 + (S.bobS * 6 + 40 * scopeDown) * s, by = h * 0.97 + (S.bob * 8 + 360 * scopeDown) * s;
     g.save();
     g.globalAlpha = 1 - Math.min(1, scopeDown * 1.4);
     g.translate(bx + kick * 26 * s, by + kick * 18 * s);
     g.scale(-s * 0.86, s * 0.86);
     g.rotate(-0.2 + kick * 0.07);
-    const line = (lw) => { g.lineWidth = lw; g.strokeStyle = INK; g.lineJoin = 'round'; g.lineCap = 'round'; g.stroke(); };
-    const fill = (c, lw = 7) => { g.fillStyle = c; g.fill(); line(lw); };
-    const id = idc(S.me), idd = ID_DARK[S.me];
-    // sleeve and arm run off the corner
-    g.beginPath(); g.moveTo(-40, 150); g.lineTo(60, 40); g.lineTo(150, 80); g.lineTo(80, 260); g.closePath(); fill(darker(id, 0.15), 8);
-    // stock
-    g.beginPath(); g.moveTo(-170, 44); g.lineTo(-20, -4); g.lineTo(-10, 66); g.lineTo(-96, 138); g.lineTo(-176, 96); g.closePath(); fill('#cf9b62', 8);
-    g.beginPath(); g.moveTo(-160, 62); g.lineTo(-30, 22); g.lineWidth = 3; g.strokeStyle = '#a8733b'; g.stroke();
-    // receiver
-    rrect(g, -14, -18, 230, 70, 14); fill('#2d3447', 8);
-    rrect(g, 20, -4, 120, 24, 6); g.fillStyle = '#4b5671'; g.fill();
-    // barrel and muzzle brake
-    rrect(g, 200, -4, 330, 26, 8); fill('#59627a', 7);
-    rrect(g, 505, -12, 56, 42, 8); fill('#1f2230', 7);
-    g.fillStyle = '#3b4258'; for (const x of [516, 532, 548]) g.fillRect(x, -6, 5, 30);
+    g.drawImage(rifleImg, -RX, -RY, 800, 400);
+    // the bolt handle works back and forth during the cycle
+    const bolt = Math.sin(Math.min(1, 1 - S.bolt) * Math.PI), id = idc(S.me);
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(150 + bolt * 26, 2); g.lineTo(172 + bolt * 26, -38); g.lineWidth = 11; g.strokeStyle = INK; g.stroke();
+    g.beginPath(); g.moveTo(150 + bolt * 26, 2); g.lineTo(172 + bolt * 26, -38); g.lineWidth = 5; g.strokeStyle = '#cf9b62'; g.stroke();
+    g.beginPath(); g.arc(176 + bolt * 26, -44, 12, 0, TAU); g.fillStyle = id; g.fill(); g.lineWidth = 5; g.strokeStyle = INK; g.stroke();
     if (kick > 0.45) { // the muzzle flash: a hard-edged starburst, gone in a few frames
       const r = 46 + 80 * kick;
       g.beginPath();
       for (let i = 0; i < 18; i++) { const a = (i / 18) * TAU, rr_ = i % 2 ? r * 0.42 : r; g.lineTo(580 + Math.cos(a) * rr_, 9 + Math.sin(a) * rr_); }
-      g.closePath(); fill('#ffe27a', 7);
-      g.beginPath(); g.arc(580, 9, r * 0.3, 0, TAU); fill('#fffdf0', 5);
+      g.closePath(); g.fillStyle = '#ffe27a'; g.fill(); g.lineWidth = 7; g.stroke();
+      g.beginPath(); g.arc(580, 9, r * 0.3, 0, TAU); g.fillStyle = '#fffdf0'; g.fill(); g.lineWidth = 5; g.stroke();
     }
-    // scope
-    rrect(g, 40, -76, 250, 44, 18); fill('#262a39', 8);
-    rrect(g, 255, -88, 64, 68, 12); fill('#1b1e2b', 8);
-    g.beginPath(); g.arc(319, -54, 26, 0, TAU); fill('#9fe8f4', 6);
-    g.fillStyle = '#fff'; g.fillRect(308, -66, 9, 9);
-    for (const x of [86, 230]) { rrect(g, x, -34, 22, 24, 4); fill('#59627a', 5); }
-    // bolt handle works back and forth during the cycle
-    const bolt = Math.sin(Math.min(1, (1 - S.bolt) * 1.0) * Math.PI);
-    g.beginPath(); g.moveTo(150 + bolt * 26, 2); g.lineTo(172 + bolt * 26, -38); g.lineWidth = 11; g.strokeStyle = INK; g.stroke();
-    g.beginPath(); g.moveTo(150 + bolt * 26, 2); g.lineTo(172 + bolt * 26, -38); g.lineWidth = 5; g.strokeStyle = '#cf9b62'; g.stroke();
-    g.beginPath(); g.arc(176 + bolt * 26, -44, 12, 0, TAU); fill(id, 5);
-    // hands in identity-coloured gloves
-    rrect(g, 252, 14, 124, 70, 28); fill(id, 8);
-    g.lineWidth = 4; g.strokeStyle = INK; for (const x of [284, 318, 350]) { g.beginPath(); g.moveTo(x, 22); g.lineTo(x - 6, 76); g.stroke(); }
-    rrect(g, -4, 48, 96, 92, 30); fill(id, 8);
-    g.strokeStyle = idd; g.lineWidth = 5; g.beginPath(); g.moveTo(8, 58); g.lineTo(80, 58); g.stroke();
     g.restore();
   }
 
@@ -151,14 +164,18 @@ export function makeOverlay(ctx) {
     const tick = (1 / Math.max(10, S.ruler)) * px;
     g.fillStyle = INK;
     g.font = FONT(11, 800); g.textAlign = 'center'; g.textBaseline = 'top';
-    for (let k = -6; k <= 6; k++) {
-      if (!k) continue;
-      const x = cx + k * tick;
-      if (Math.abs(x - cx) > R - 24) continue;
-      const big = k % 2 === 0;
-      for (const [col, lw] of PAIR_C) { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); g.moveTo(x, cy - (big ? 9 : 5)); g.lineTo(x, cy + (big ? 9 : 5)); g.stroke(); }
-      if (big && Math.abs(k) <= 4) { g.fillStyle = '#fffdf5'; g.fillText(String(Math.abs(k)), x, cy + 13); }
+    for (const [col, lw] of PAIR_C) {
+      g.strokeStyle = col; g.lineWidth = lw; g.beginPath();
+      for (let k = -6; k <= 6; k++) {
+        const x = cx + k * tick;
+        if (!k || Math.abs(x - cx) > R - 24) continue;
+        const e = k % 2 === 0 ? 9 : 5;
+        g.moveTo(x, cy - e); g.lineTo(x, cy + e);
+      }
+      g.stroke();
     }
+    g.fillStyle = '#fffdf5';
+    for (let k = -4; k <= 4; k += 2) if (k && Math.abs(k * tick) < R - 24) g.fillText(String(Math.abs(k)), cx + k * tick, cy + 13);
     g.fillStyle = INK; g.beginPath(); g.arc(cx, cy, 3.4, 0, TAU); g.fill();
     g.fillStyle = '#fffdf5'; g.beginPath(); g.arc(cx, cy, 1.6, 0, TAU); g.fill();
     // range readout under the lens
@@ -179,10 +196,14 @@ export function makeOverlay(ctx) {
     const hd = ((-S.heading * 180) / Math.PI + 720) % 360;
     g.strokeStyle = INK; g.fillStyle = INK; g.lineWidth = 2;
     const names = COMPASS_NAMES;
+    g.beginPath(); // every tick in one path; only the labels are separate draws
     for (let d = Math.floor((hd - half) / 5) * 5; d <= hd + half; d += 5) {
       const x = cx + (d - hd) * ppd, dd = ((d % 360) + 360) % 360;
-      const major = dd % 15 === 0;
-      g.beginPath(); g.moveTo(x, top + h); g.lineTo(x, top + h - (dd % 45 === 0 ? 9 : major ? 7 : 4)); g.stroke();
+      g.moveTo(x, top + h); g.lineTo(x, top + h - (dd % 45 === 0 ? 9 : dd % 15 === 0 ? 7 : 4));
+    }
+    g.stroke();
+    for (let d = Math.floor((hd - half) / 15) * 15; d <= hd + half; d += 15) {
+      const x = cx + (d - hd) * ppd, dd = ((d % 360) + 360) % 360;
       if (names[dd]) label(names[dd], x, top + 9, 13, INK, 'center', 800);
       else if (dd % 30 === 0) label(String(dd), x, top + 9, 10, '#6b6577', 'center', 700);
     }

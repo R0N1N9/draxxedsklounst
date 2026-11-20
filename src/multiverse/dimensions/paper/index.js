@@ -1,26 +1,35 @@
 // FLAT OUT — first person, but the world is paper. A shipping-container yard between two low concourse buildings,
 // drawn as a graphic-novel panel: flat colour fills, thick ink on every edge, a flat outlined rifle in the corner.
 //
-// FANTASY   Two paper cut-out snipers 74 m apart across a container yard, a gantry crane carrying a steel box across
-//           the middle on a timetable, forklifts, gulls, windsocks. The whole world is a printed page.
-// RULES     One hit wins. A round flies at 175 m/s and drops, the wind (windsocks, the strip beside the compass)
-//           pushes it sideways, so you lead a walker and hold off for the gusts. Steel (containers, the crane's
-//           box, forklifts) stops everything. PAPER (cardboard barricades, posters, mascot cut-outs) stops sight
-//           but not a round: it punches a neat round hole that stays for the round and that both snipers can look
-//           and shoot through. Every shot leaves a dashed line hanging in the air back to the shooter.
+// FANTASY   Two printed cut-out snipers 74 m apart, each standing behind a cardboard barricade, across a yard of
+//           stacked containers. A gantry crane carries a steel box across the middle on a timetable; forklifts
+//           shuttle in the side lanes; gulls, windsocks, loose pages and a paper plane keep the page alive.
+// RULES     One hit wins. A round flies at 175 m/s and drops, and the wind (windsocks, the strip beside the compass)
+//           pushes it sideways: lead a walker, hold off for gusts. Steel (containers, the crane's box, forklifts)
+//           stops everything. PAPER (cardboard, posters, mascot cut-outs) stops sight but not a round: it punches a
+//           neat hole that stays for the round and that both snipers can look and shoot through. Every shot leaves a
+//           dashed line hanging in the air back to the shooter.
 // HOOK      You are paper. Facing your rival you are a full-size target; turn EDGE-ON and you are a ruled line a few
 //           centimetres wide, nearly impossible to hit — but you cannot shoot while thin.
-// CONTROLS  move · look · SHOOT (a bolt-action, four rounds) · alt SCOPE (held; latching on touch; narrow view,
-//           slow turn, lead ruler on the lens, a little breathing sway) · a1 EDGE-ON (1.8 s, then a pause) ·
-//           a2 STANDEE (prop up a cardboard cut-out of yourself: the decoy; two charges). In-world tags teach each
-//           in turn during the first seconds of play.
-// BOT       Feels the other sniper out around its own end, then holds a lane behind the scope or flanks through the
-//           containers; leads, holds off for drop and wind, dodges edge-on when it sees a round coming, and can be
-//           fooled by standees. Skill scales reaction, aim error, lead, dodging and decoy sense.
+// CONTROLS  move · look · SHOOT (a bolt-action, four rounds) · alt SCOPE (held; latching on touch; narrow view, slow
+//           turn, a lead ruler on the lens, breathing sway; the lens glints for the other sniper) · a1 EDGE-ON (1.8 s,
+//           then a pause) · a2 STANDEE (prop up a cardboard cut-out of yourself: the decoy; two charges). In-world
+//           tags teach each in turn during the first seconds of play.
+// BOT       Feels the other sniper out for the first ten seconds, then holds a lane behind the scope or flanks through
+//           the containers, ducking out of sight after each shot. Skill scales reaction, aim error, lead, wind and
+//           drop judgement, dodging (edge-on when it sees a round coming) and how easily a standee fools it.
+// ONLINE    Each client simulates its own sniper and judges its own shots against the puppet. A shot is planned when
+//           it leaves the barrel (path, steel, holes it punches, standees it passes) and sent as one event; holes,
+//           standees and edge-on are events too. Crane, forklifts, wind and the closing curtains are pure functions
+//           of ctx.time.
 // KILL      The victim crumples into a paper ball, bounces once and unfolds flat on the ground in a flutter of
-//           scraps; the camera does a slow flat push-in (or, for the victim, the page folds up around the view).
-// SUDDEN    Both snipers get a tall beacon, edge-on and standees are off, and the page closes in: two paper
-//           curtains slide in from the ends until the yard is a short stage.
+//           scraps while the camera slowly pushes in (the victim's own view: the page folds up around them).
+// SUDDEN    Beacons on both snipers, edge-on and standees off, and two paper curtains slide in from the ends until
+//           the yard is a short stage: the ending is forced well inside 40 s.
+//
+// FILES     layout.js (yard plan, timetables, nav grid) · world.js (static yard) · set.js (everything that moves) ·
+//           figures.js / art.js (the paper people and every canvas drawing) · lines.js (fat ink lines) · ballistics.js
+//           · fx.js (juice, trails) · overlay.js (2D HUD and rifle) · bot.js · sound.js · style.js
 import { clamp, angDiff, gauss, resolveCircleRects, disposeTree } from '../../kit.js';
 import { setThree, ID } from './style.js';
 import { makeLineMats } from './lines.js';
@@ -344,7 +353,7 @@ export default {
     let scopeOn = false, spotted = false, spotT = 0, driftT = 0, promptStage = 0, promptT = 0, note = '', noteA = 0, shakeT = 0, hornPrev = 0, gullT = 6, boltStage = 0, burstT = 0;
     const cs = { x: 0, y: 0, warn: 0, moving: 0 };
     const dbg = globalThis.__PAPER_DBG || null; // DBG
-    if (dbg) Object.assign(dbg, { P, camera, W, set, fx, stands, ctx, shots, S, placeStandee, fire }); // DBG
+    if (dbg) Object.assign(dbg, { P, camera, W, set, fx, stands, ctx, shots, S, placeStandee, fire, scene, mats }); // DBG
     const rmem = { x: 0, z: 0, has: false };
     const dev = () => ctx.input.device;
 
@@ -485,7 +494,7 @@ export default {
       } else { S.prompt = ''; S.promptKey = ''; S.spot = ''; S.spotKey = ''; }
     }
 
-    return {
+    const inst = {
       update(dt) {
         anim += dt; frameDt += dt;
         const live = ctx.phase === 'live';
@@ -537,14 +546,19 @@ export default {
       },
 
       render() {
+        const T = dbg && dbg.T, t0 = T ? performance.now() : 0; // DBG
         const fdt = Math.min(frameDt, 0.1);
         frameDt = 0;
         const fov = cameraRig(fdt);
         renderer.getDrawingBufferSize(size);
         mats.set(size.x, size.y, clamp(ctx.height / 235, 1.9, 4.6) * renderer.getPixelRatio(), camera.near);
-        renderer.render(scene, camera);
+        const t1 = T ? performance.now() : 0; // DBG
+        if (!(dbg && dbg.noGL)) renderer.render(scene, camera); // DBG
+        const t2 = T ? performance.now() : 0; // DBG
         fillOverlay(fdt);
-        ov.draw();
+        const t3 = T ? performance.now() : 0; // DBG
+        if (!(dbg && dbg.noOv)) ov.draw(); // DBG
+        if (T) { T.c += t1 - t0; T.g += t2 - t1; T.f += t3 - t2; T.o += performance.now() - t3; T.n++; } // DBG
       },
 
       resize(w, h) {
@@ -600,5 +614,14 @@ export default {
         mats.dispose();
       },
     };
+    if (dbg) { // DBG: where does the frame go?
+      const T = (dbg.T = { u: 0, r: 0, c: 0, f: 0, g: 0, o: 0, n: 0 });
+      const timed = (k, fn) => (...a) => { const t = performance.now(); const r = fn(...a); T[k] += performance.now() - t; return r; };
+      inst.update = timed('u', inst.update);
+      const rr = inst.render;
+      inst.render = timed('r', rr);
+    }
+    return inst;
   },
 };
+
