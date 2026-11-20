@@ -55,6 +55,7 @@ const settings = {
   gyroMode: store.get('gyroMode', 'ontouchstart' in window ? 'scoped' : 'off'),
   gyroSens: store.get('gyroSens', 1),
   gyroInvertY: store.get('gyroInvertY', false),
+  autoBipod: store.get('autoBipod', true),
 };
 
 // Generic binding for [data-setting] controls (menu + pause menu share keys).
@@ -62,6 +63,7 @@ const LIVE_KEYS = ['touchSensR', 'touchSensL', 'gyroMode', 'gyroSens', 'gyroInve
 function applyInputSettings() {
   if (!game) return;
   for (const k of LIVE_KEYS) game.input[k] = settings[k];
+  if (game.player) game.player.autoBipod = settings.autoBipod;
   if (settings.gyroMode !== 'off') game.input.requestGyro();
 }
 function syncSettingUI() {

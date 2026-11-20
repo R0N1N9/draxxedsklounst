@@ -43,6 +43,7 @@ export class LocalPlayer {
     this.bipodState = 'stowed';
     this.bipodT = 0;
     this.bipodU = 0;
+    this.autoBipod = true; // set the bipod by itself once you've been prone and still a moment
   }
 
   get w() {
@@ -117,6 +118,7 @@ export class LocalPlayer {
       return 'deploying';
     }
     if (s === 'deployed') {
+      this._bipodHold = true; // folded by hand: don't auto-set again until you move or get up
       this.bipodState = 'stowing';
       this.bipodU = 0;
       this.bipodEvent = 'reach';
@@ -134,6 +136,18 @@ export class LocalPlayer {
       this.bipodU = 1 - (this.bipodT || 0);
       this.bipodEvent = 'stow';
     }
+    if (!keepOut) {
+      this._bipodHold = false;
+      this._stillT = 0;
+    }
+    // Auto-set: prone and still for half a second, hand still does the full animation.
+    if (this.bipodState === 'stowed' && this.autoBipod && !this._bipodHold && this.canBipod && !this.boltPending && this.cycleT <= 0) {
+      this._stillT = (this._stillT || 0) + dt;
+      if (this._stillT >= 0.5) {
+        this._stillT = 0;
+        this.toggleBipod();
+      }
+    } else if (this.bipodState !== 'stowed') this._stillT = 0;
     const st = this.bipodState || 'stowed';
     if (st === 'deploying') {
       this.bipodU = Math.min(1, (this.bipodU || 0) + dt / 0.9);
