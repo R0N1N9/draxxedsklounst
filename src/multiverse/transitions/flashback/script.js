@@ -118,15 +118,18 @@ export function makePlan(ctx, rng) {
   });
 
   // --- timing: every memory gets a little less time than the one before ----------------------
-  const ratio = 0.84, span = T.reel1 - T.reel0, N = cards.length;
-  let d = (span * (1 - ratio)) / (1 - Math.pow(ratio, N)), at = T.reel0;
-  for (const c of cards) {
+  // The reel gathers speed, then the present arrives and it breathes for a beat: the handshake is
+  // the joke and the last thing worth reading, so it gets a fixed hold and the rest race for the remainder.
+  const ratio = 0.84, hold = 0.62, N = cards.length, span = T.reel1 - T.reel0 - hold;
+  let d = (span * (1 - ratio)) / (1 - Math.pow(ratio, N - 1)), at = T.reel0;
+  cards.forEach((c, i) => {
+    const last = i === N - 1;
     c.t0 = at;
-    c.dur = d;
-    c.slip = clamp(d * 0.24, 0.085, 0.18);
-    at += d;
+    c.dur = last ? hold : d;
+    c.slip = clamp(c.dur * 0.24, 0.085, 0.18);
+    at += c.dur;
     d *= ratio;
-  }
+  });
   const how = ctx.how || '';
   let killCaps;
   if (duo) killCaps = ['Today. Nobody hit anything.', 'Just now: a draw. How embarrassing.', '…and then nothing happened. Twice.'];

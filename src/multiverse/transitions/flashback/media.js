@@ -2,7 +2,7 @@
 // with one framing device (a Super-8 strip, an instant photo, a camcorder tape, an album
 // page) and paints the memory's scene inside it; plus the leader, the title card and the
 // last frame of the reel, which is the round that just ended.
-import { seg, ease, clamp01, TAU, rgba, shade, mixHex, roundRect, drawCover, fitText } from '../../kit.js';
+import { seg, ease, lerp, clamp01, TAU, rgba, shade, mixHex, roundRect, drawCover, fitText } from '../../kit.js';
 import { dateWords, dateShort, dateStamp, dateTape, timeTape } from './script.js';
 
 export const HAND = `'Marker Felt', 'Bradley Hand', 'Comic Sans MS', cursive`;
@@ -357,6 +357,11 @@ export function drawTitle(g, w, h, t, plan) {
   const tc = plan.titleCard, cream = '#f3e7cc', cx = w / 2;
   g.fillStyle = BLACK;
   g.fillRect(0, 0, w, h);
+  // the lamp warms the middle of the card; the corners stay the shared black
+  const lamp = g.createRadialGradient(cx, h * 0.5, 0, cx, h * 0.5, h * 0.85);
+  lamp.addColorStop(0, rgba(cream, 0.11)); lamp.addColorStop(1, rgba(cream, 0));
+  g.fillStyle = lamp;
+  g.fillRect(0, 0, w, h);
   const m = h * 0.07;
   g.strokeStyle = rgba(cream, 0.75); g.lineWidth = Math.max(1, h * 0.004);
   g.strokeRect(m, m, w - 2 * m, h - 2 * m);
@@ -385,7 +390,36 @@ export function drawTitle(g, w, h, t, plan) {
       g.save(); g.beginPath(); g.rect(s ? 0 : -tw, -px, tw, px * 2); g.clip();
       g.fillStyle = mixHex(plan.cast[s].col, '#ffffff', 0.12); g.fillText(tc.name, 0, 0); g.restore();
     }
-  } else g.fillText(tc.name, 0, 0);
+  } else {
+    // the name is stamped in letter by letter: each drops and settles with a little overshoot
+    const n = tc.name.length, full = g.measureText(tc.name).width;
+    g.textAlign = 'left';
+    for (let i = 0; i < n; i++) {
+      if (tc.name[i] === ' ') continue;
+      const at = 0.02 + (i / Math.max(1, n - 1)) * 0.2, a = seg(t, at, at + 0.14), k = ease.outBack(a);
+      if (a <= 0) continue;
+      const cw = g.measureText(tc.name[i]).width, x = g.measureText(tc.name.slice(0, i)).width - full / 2 + cw / 2;
+      g.save();
+      g.globalAlpha = Math.min(1, a * 3);
+      g.translate(x, -(1 - k) * px * 0.32);
+      g.scale(1 + (1 - k) * 0.35, 1 + (1 - k) * 0.35);
+      g.fillText(tc.name[i], -cw / 2, 0);
+      g.restore();
+    }
+    g.textAlign = 'center';
+  }
+  // a glint runs across the lettering once it has settled
+  const gs = seg(t, 0.3, 0.7);
+  if (gs > 0 && gs < 1) {
+    const fw = g.measureText(tc.name).width, bx = lerp(-fw / 2 - px * 0.5, fw / 2 + px * 0.5, gs), sl = px * 0.5, bw = px * 0.16;
+    g.save();
+    g.beginPath();
+    g.moveTo(bx + sl, -px * 0.9); g.lineTo(bx + sl + bw, -px * 0.9); g.lineTo(bx + bw, px * 0.5); g.lineTo(bx, px * 0.5);
+    g.closePath(); g.clip();
+    g.fillStyle = 'rgba(255,255,255,0.75)';
+    g.fillText(tc.name, 0, 0);
+    g.restore();
+  }
   const tw2 = Math.min(w * 0.74, g.measureText(tc.name).width), uk = seg(t, 0.18, 0.5);
   g.strokeStyle = cream; g.lineWidth = h * 0.008; g.lineCap = 'round';
   g.beginPath();
