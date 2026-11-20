@@ -46,8 +46,10 @@ export function makeBot(ctx, w, S, p) {
   const shoulderY = () => p.y - (SHOULDER - 2) * (p.st === 1 ? 0.66 : 1);
 
   function pickPlan() {
-    const wt = WEIGHT[skill < 0.4 ? 0 : skill < 0.75 ? 1 : 2].slice();
     const e = enemy();
+    // out in the middle of the canyon there is only one thing to do
+    if (p.ground && p.y > GY + 40) { b.plan = p.y < FLOOR - 40 && onPlank(p.x) ? 'island' : 'descend'; b.stage = 0; b.planT = 8 + Math.random() * 6; b.stuck = 0; return; }
+    const wt = WEIGHT[skill < 0.4 ? 0 : skill < 0.75 ? 1 : 2].slice();
     for (let i = 0; i < wt.length; i++) {
       if (PLANS[i] === b.plan) wt[i] *= 0.2;
       if ((PLANS[i] === 'launch' || PLANS[i] === 'descend') && (S.tl < 5 || (e.y > GY + 40))) wt[i] *= 0.2;
@@ -126,9 +128,14 @@ export function makeBot(ctx, w, S, p) {
       case 'descend': {
         // down the cliff ladder, across the floor, up the pillar ladder
         const cx = X(378), px = X(718);
-        if (p.y < GY + 10 && p.ground && b.stage === 0) { if (walk(cx, 8)) { cmd.my = 1; if (p.lad) b.stage = 1; } } else if (b.stage === 0) b.stage = 1;
-        if (b.stage === 1) { cmd.my = 1; if (!p.lad && p.y > FLOOR - 8) b.stage = 2; }
-        if (b.stage === 2) { if (walk(px, 8)) { b.stage = 3; } }
+        if (b.stage === 0) {
+          if (p.lad) b.stage = 1;
+          else if (p.ground && p.y > FLOOR - 30) b.stage = 2; // already down on the floor
+          else if (p.ground && p.y > GY + 30) { b.plan = 'island'; b.stage = 0; } // somewhere in the middle
+          else if (p.ground && onTop && walk(cx, 8)) cmd.my = 1;
+        }
+        if (b.stage === 1) { cmd.my = 1; if (!p.lad && p.ground && p.y > FLOOR - 8) b.stage = 2; }
+        if (b.stage === 2) { if (walk(px, 8)) b.stage = 3; }
         if (b.stage === 3) { cmd.my = -1; if (p.lad) b.stage = 4; }
         if (b.stage === 4) { cmd.my = -1; if (!p.lad && p.y < PIV.y + 40) { b.plan = 'island'; b.stage = 0; b.planT = 10; } }
         break;
@@ -272,7 +279,7 @@ export function makeBot(ctx, w, S, p) {
     }
     b.noOk = ok ? 0 : b.noOk + dt;
     // no clear shot for a while: go and find one
-    if (b.noOk > 2.2 && !p.lad && live) { b.noOk = 0; b.plan = Math.random() < 0.5 ? 'lip' : 'perch'; b.stage = 0; b.planT = 6; b.charging = false; }
+    if (b.noOk > 2.2 && !p.lad && live && (b.plan === 'hold' || b.plan === 'rock' || b.plan === 'lip')) { b.noOk = 0; b.plan = Math.random() < 0.5 ? 'lip' : 'perch'; b.stage = 0; b.planT = 6; b.charging = false; }
     const want = ok ? sol.a + b.err : dxe > 0 ? -0.35 : Math.PI + 0.35;
     b.desired = want;
     cmd.a = angLerp(p.aim, want, 1 - Math.exp(-dt * (5 + 11 * skill)));

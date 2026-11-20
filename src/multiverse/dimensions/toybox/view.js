@@ -141,6 +141,7 @@ export function makeView(ctx, THREE, renderer, o) {
       worstPrev = worst;
       worst = 0;
       skipLeft = cost < 70 ? 0 : cost < 130 ? 1 : Math.min(60, Math.round((cost - 40) / 14));
+      api.cost = cost; api.drawn = (api.drawn || 0) + 1;
       post.render(room.scene, camera);
       renderer.setRenderTarget(null);
     },
