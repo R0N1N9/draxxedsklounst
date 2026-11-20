@@ -115,6 +115,8 @@ A night stealth mode for one or two players, built around the feel of a classic 
 
 Pick **SNIPER CELL** on the main menu, then a mission, the **staging area** loadout, and how to play.
 
+**Play it:** [r0n1n9.github.io/snipercellnightwatch/#nightwatch](https://r0n1n9.github.io/snipercellnightwatch/#nightwatch) opens Sniper Cell with NightWatch selected. Use `#infiltration` for the other mission.
+
 ### Missions
 
 - **NightWatch** (default): SENTINEL's augmented night garrison.
