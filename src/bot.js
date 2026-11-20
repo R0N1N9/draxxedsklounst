@@ -762,6 +762,8 @@ export class BotPeer {
       kf: this.loadout && this.loadout.stealth === 'killflash' ? 1 : 0,
       tp: this.loadout && this.loadout.stealth === 'poncho' ? 1 : 0,
       lk: this.loadout && this.loadout.outfit === 'wraith' ? 1 : 0,
+      lc: (this.loadout && this.loadout.lens) || '#e0283a',
+      ko: this.loadout ? `${this.loadout.scout},${this.loadout.stealth},${this.loadout.tactical}` : '',
       jm: this.jammer ? 1 : 0,
       dr: this.drone && this.alive ? this.drone.pos.toArray() : 0,
       hd: this.hunter ? [this.hunter.pos.x, this.hunter.pos.y, this.hunter.pos.z, this.hunter.heading, this.hunter.locked ? 1 : 0, this.hunter.bank] : 0,

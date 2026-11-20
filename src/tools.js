@@ -3,7 +3,7 @@
 // players; objects are tagged `mine` so the same code renders both sides.
 import * as THREE from 'three';
 import { BALLISTICS, PLAYER, WEAPON } from './config.js';
-import { Avatar, worldCapsules, scopePoint } from './avatar.js';
+import { Avatar, worldCapsules, scopePoint, LENS_COLORS, DEFAULT_LENS } from './avatar.js';
 import { puffTexture, glowTexture, glintTexture } from './textures.js';
 import { screenSprite } from './effects.js';
 import { clamp, smoothstep, segSegClosest } from './util.js';
@@ -33,6 +33,7 @@ export function validLoadout(lo) {
   if (lo && RIFLES.includes(lo.rifle)) out.rifle = lo.rifle;
   out.bolt = lo && lo.bolt === 'straight' ? 'straight' : 'standard';
   out.outfit = lo && lo.outfit === 'wraith' ? 'wraith' : 'ghillie';
+  out.lens = lo && /^#[0-9a-f]{6}$/i.test(lo.lens || '') ? lo.lens.toLowerCase() : DEFAULT_LENS;
   if (lo) for (const s of SLOTS) if (TOOLS[lo[s.key]] && TOOLS[lo[s.key]].slot === s.key) out[s.key] = lo[s.key];
   return out;
 }
@@ -42,7 +43,7 @@ export function randomLoadout() {
     const keys = Object.keys(TOOLS).filter((k) => TOOLS[k].slot === slot);
     return keys[Math.floor(Math.random() * keys.length)];
   };
-  return { outfit: Math.random() < 0.5 ? 'wraith' : 'ghillie', rifle: RIFLES[Math.floor(Math.random() * RIFLES.length)], scout: pick('scout'), stealth: pick('stealth'), tactical: pick('tactical') };
+  return { lens: LENS_COLORS[Math.floor(Math.random() * (LENS_COLORS.length - 1))], outfit: Math.random() < 0.5 ? 'wraith' : 'ghillie', rifle: RIFLES[Math.floor(Math.random() * RIFLES.length)], scout: pick('scout'), stealth: pick('stealth'), tactical: pick('tactical') };
 }
 
 // Fixed-wing loitering drone flight + search, shared by players and the AI.
@@ -215,11 +216,13 @@ export class ToolSystem {
 
   // Outfit + poncho, as Avatar.setLook wants them.
   myLook() {
-    return { outfit: this.loadout.outfit, poncho: this.has('poncho') };
+    const lo = this.loadout;
+    return { outfit: lo.outfit, poncho: this.has('poncho'), lens: lo.lens, kit: { scout: lo.scout, stealth: lo.stealth, tactical: lo.tactical } };
   }
 
   remoteLook() {
-    return { outfit: this.remote.lk ? 'wraith' : 'ghillie', poncho: !!this.remote.tp };
+    const r = this.remote;
+    return { outfit: r.lk ? 'wraith' : 'ghillie', poncho: !!r.tp, lens: r.lc, kit: r.kit || { stealth: r.tp ? 'poncho' : '' } };
   }
 
   has(tool) {
@@ -268,6 +271,8 @@ export class ToolSystem {
       kf: this.has('killflash') ? 1 : 0,
       tp: this.has('poncho') ? 1 : 0,
       lk: this.loadout.outfit === 'wraith' ? 1 : 0,
+      lc: this.loadout.lens,
+      ko: `${this.loadout.scout},${this.loadout.stealth},${this.loadout.tactical}`,
       jm: this.jammer ? 1 : 0,
       dr: d ? [Math.round(d.pos.x * 10) / 10, Math.round(d.pos.y * 10) / 10, Math.round(d.pos.z * 10) / 10] : 0,
       hd: this.hunter ? [Math.round(this.hunter.pos.x * 10) / 10, Math.round(this.hunter.pos.y * 10) / 10, Math.round(this.hunter.pos.z * 10) / 10, Math.round(this.hunter.heading * 100) / 100, this.hunter.locked ? 1 : 0, Math.round(this.hunter.bank * 100) / 100] : 0,
@@ -278,6 +283,11 @@ export class ToolSystem {
     this.remote.kf = m.kf | 0;
     this.remote.tp = m.tp | 0;
     this.remote.lk = m.lk | 0;
+    if (typeof m.lc === 'string') this.remote.lc = m.lc;
+    if (typeof m.ko === 'string') {
+      const [scout, stealth, tactical] = m.ko.split(',');
+      this.remote.kit = { scout, stealth, tactical };
+    }
     this.remote.jm = m.jm | 0;
     this.remote.dr = Array.isArray(m.dr) ? new THREE.Vector3(m.dr[0], m.dr[1], m.dr[2]) : null;
     this.remote.hd = Array.isArray(m.hd) ? { pos: new THREE.Vector3(m.hd[0], m.hd[1], m.hd[2]), heading: m.hd[3], locked: !!m.hd[4], bank: m.hd[5] || 0 } : null;

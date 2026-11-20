@@ -385,9 +385,17 @@ body.touch #h-hint { bottom: 30%; }
 .lo-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: grab; }
 .lo-cap { position: absolute; left: 8px; bottom: 6px; z-index: 1; font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; color: var(--amber); pointer-events: none; }
 .lo-cap i { font-style: normal; color: #9fd8e0; }
-.lo-outfits { flex: 1; }
+
 .lo-outfits .lo-opts { grid-template-columns: 1fr; }
 .lo-list { display: flex; flex-direction: column; gap: 12px; }
 @media (max-width: 520px) { .lo-op { flex-direction: column; } .lo-prev { flex-basis: auto; height: 230px; } }
 #menu-loadout .lo-op { flex-direction: column; }
 #menu-loadout .lo-prev { flex-basis: auto; height: 260px; }
+.lo-side { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+.lo-lens { display: flex; flex-wrap: wrap; gap: 7px; }
+.lo-sw { appearance: none; width: 30px !important; height: 30px; min-height: 0 !important; padding: 0 !important; border-radius: 50% !important; border: 2px solid rgba(232, 230, 240, 0.25) !important; background: radial-gradient(circle at 35% 35%, rgba(255,255,255,.45), transparent 45%), var(--c) !important; cursor: pointer; position: relative; flex: none; }
+.lo-sw::after { content: none !important; }
+.lo-sw.on { border-color: var(--amber) !important; box-shadow: 0 0 0 2px rgba(242, 179, 91, 0.35), 0 0 12px var(--c); }
+.lo-custom { display: inline-block; background: conic-gradient(#e0283a, #f2d23c, #3cf28a, #38d6f2, #8a5cff, #f23ca8, #e0283a) !important; }
+.lo-custom.on { background: radial-gradient(circle at 35% 35%, rgba(255,255,255,.45), transparent 45%), var(--c) !important; }
+.lo-custom input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; border: 0; padding: 0; }

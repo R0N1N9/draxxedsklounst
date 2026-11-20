@@ -64,6 +64,11 @@ const PAL = {
   steel: '#25262a',
   furniture: '#4c4a3a',
   lens: '#1a1f2e',
+  rig: '#5a573f',
+  web: '#45432f',
+  tab: '#7c6b4c',
+  mag: '#2a2b2e',
+  can: '#3d4a35',
 };
 const GHILLIE = ['#4c5434', '#57603a', '#3c452e', '#646044', '#474530', '#5b6640', '#41492f'];
 
@@ -167,6 +172,8 @@ function seeded(seed) {
 // Outfits: 'ghillie' (default) and 'wraith' (hooded poncho, balaclava, goggles).
 // Any outfit can wear the thermal poncho; the wraith wears a cloth one anyway.
 // ---------------------------------------------------------------------------
+export const DEFAULT_LENS = '#e0283a';
+export const LENS_COLORS = ['#e0283a', '#ff8a1f', '#f2d23c', '#3cf28a', '#38d6f2', '#8a5cff', '#f23ca8', '#1b1d22'];
 export const OUTFITS = {
   ghillie: { name: 'Ghillie', desc: 'Jute ghillie, boonie hat, painted face. Melts into grass and scrub.' },
   wraith: { name: 'Wraith', desc: 'Hooded poncho thrown over the left shoulder, balaclava and goggles. Dark urban camo.' },
@@ -179,10 +186,14 @@ const WRAITH_MAP = {
   [PAL.glove]: '#1d1e20',
   [PAL.boot]: '#1c1b1b',
   [PAL.face]: '#1f2022', // balaclava
+  [PAL.rig]: '#3b3d3c',
+  [PAL.web]: '#2c2e2d',
+  [PAL.tab]: '#6b6250',
+  [PAL.can]: '#2f3530',
 };
 const CAMO = {
   olive: ['#363c2a', '#454b33', '#535940', '#61633f', '#3d3a2b'],
-  urban: ['#222426', '#2d3033', '#3a3d40', '#4b4e50', '#5d605f'],
+  urban: ['#1b1c1e', '#2a2c2f', '#424548', '#63676a', '#828586'],
 };
 const LINING = { foil: '#9fa3a0', dark: '#1e1f1e' };
 
@@ -200,14 +211,19 @@ function vnoise(x, y, z) {
   return L(L(L(c(0, 0, 0), c(1, 0, 0), fx), L(c(0, 1, 0), c(1, 1, 0), fx), fy), L(L(c(0, 0, 1), c(1, 0, 1), fx), L(c(0, 1, 1), c(1, 1, 1), fx), fy), fz);
 }
 // Blotchy camo: two octaves of value noise quantised into the palette.
+const _c2 = new THREE.Color();
 function camoColors(geo, pal, seed) {
   const pos = geo.attributes.position, n = pos.count;
   const out = new Float32Array(n * 3), c = new THREE.Color();
   for (let i = 0; i < n; i++) {
     const x = pos.getX(i) + seed, y = pos.getY(i), z = pos.getZ(i);
     const v = vnoise(x * 4.2, y * 4.2, z * 4.2) * 0.8 + vnoise(x * 11 + 9, y * 11, z * 11) * 0.2;
-    const k = Math.max(0, Math.min(pal.length - 1, Math.floor((v - 0.18) * pal.length * 1.6)));
-    c.set(pal[k]);
+    // Soft-edged blotches: steepened blend between neighbouring palette colours.
+    const f = Math.max(0, Math.min(pal.length - 1.001, (v - 0.2) * pal.length * 1.6));
+    const k = Math.floor(f);
+    let t = f - k;
+    t = t < 0.35 ? 0 : t > 0.65 ? 1 : (t - 0.35) / 0.3;
+    c.set(pal[k]).lerp(_c2.set(pal[k + 1]), t);
     out[i * 3] = c.r; out[i * 3 + 1] = c.g; out[i * 3 + 2] = c.b;
   }
   return out;
@@ -245,56 +261,82 @@ function ponchoLining(kind) {
 }
 
 // Poncho in spine space (hip joint at origin, shoulders ~y 0.47, back is +Z, left is -X).
+// Worn the "Poncho Villa" way: the body hangs behind the arms and down the back, and the front
+// flap is thrown up over the left shoulder so the chest rig and rifle are clear.
+const CAPE_TOP = 0.51, CAPE_LEN = 0.88;
+function capeAt(th, y, extra = 0) {
+  const k = Math.min(1, Math.max(0, (CAPE_TOP - y) / CAPE_LEN));
+  const r = 0.28 + 0.1 * k + extra;
+  const k2 = Math.min(1, k / 0.3);
+  const back = Math.max(0, Math.cos(th));
+  return new THREE.Vector3(Math.sin(th) * r * 1.08, y, Math.cos(th) * r * 0.82 + back * 0.1 * k2 + 0.02);
+}
 function buildPonchoBody() {
   const parts = [];
-  // Main body: hangs from the shoulders down the back and both sides to mid-thigh.
-  const cape = cloth(34, 16, (u, v) => {
-    const th = -2.3 + u * 4.0; // 0 = back; negative wraps round the left side further
-    let r, y;
+  // Main body: from a collar round the neck, over the shoulders, hanging behind the arms.
+  const cape = cloth(30, 16, (u, v) => {
+    const th = -1.55 + u * 3.1;
     if (v < 0.16) {
       const k = Math.pow(v / 0.16, 0.7);
-      r = 0.13 + 0.15 * k;
-      y = 0.63 - 0.12 * k;
-    } else {
-      const k = (v - 0.16) / 0.84;
-      r = 0.28 + 0.1 * k + 0.024 * k * Math.sin(th * 8 + k * 1.7) + 0.01 * k * Math.sin(th * 19);
-      y = 0.51 - 0.88 * k + 0.035 * Math.sin(th * 4.5 + 1) * k * k * k;
+      const r = 0.13 + 0.15 * k;
+      return new THREE.Vector3(Math.sin(th) * r * 1.08, 0.63 - 0.12 * k, Math.cos(th) * r * 0.82 + 0.02);
     }
-    const k2 = Math.min(1, Math.max(0, (v - 0.16) / 0.25));
-    const back = Math.max(0, Math.cos(th));
-    return new THREE.Vector3(Math.sin(th) * r * 1.08, y, Math.cos(th) * r * 0.82 + back * 0.1 * k2 + 0.02);
+    const k = (v - 0.16) / 0.84;
+    const fold = 0.026 * k * Math.sin(th * 8 + k * 1.7) + 0.01 * k * Math.sin(th * 19);
+    const edge = Math.max(0, Math.abs(th) - 1.2) * 0.25 * k; // front edges swing back a little
+    return capeAt(th * (1 - edge * 0.4), CAPE_TOP - CAPE_LEN * k + 0.035 * Math.sin(th * 4.5 + 1) * k * k * k, fold);
   }, (p) => new THREE.Vector3(p.x, 0, p.z - 0.02));
   parts.push(cape);
-  // Front flap thrown up across the chest and over the left shoulder, hanging down the back.
+  // The thrown-over front flap: a bunched roll riding on top of the left shoulder...
   const curve = new THREE.CatmullRomCurve3([
-    [0.28, 0.0, -0.03], [0.21, 0.08, -0.19], [0.07, 0.22, -0.23], [-0.09, 0.4, -0.2],
-    [-0.21, 0.56, -0.09], [-0.255, 0.635, 0.05], [-0.235, 0.52, 0.2], [-0.17, 0.3, 0.28], [-0.1, 0.05, 0.3],
+    [-0.1, 0.6, -0.05], [-0.2, 0.645, -0.04], [-0.275, 0.62, 0.04], [-0.27, 0.55, 0.15], [-0.22, 0.47, 0.22],
   ].map((a) => new THREE.Vector3(...a)));
   const tmp = new THREE.Vector3();
-  const flap = cloth(14, 40, (u, t) => {
+  const roll = cloth(12, 20, (u, t) => {
     const c = curve.getPointAt(t), tan = curve.getTangentAt(t);
-    const n = c.clone().sub(tmp.set(0, Math.min(0.45, Math.max(0.05, c.y)), 0.02)).normalize();
+    const n = c.clone().sub(tmp.set(-0.1, 0.42, 0.04)).normalize();
     const w = new THREE.Vector3().crossVectors(tan, n).normalize();
     const n2 = new THREE.Vector3().crossVectors(w, tan).normalize();
-    const sh = Math.exp(-Math.pow((t - 0.6) / 0.14, 2)); // bunched over the shoulder
-    const ends = Math.max(0, 1 - Math.abs(t - 0.6) / 0.6);
-    const grow = Math.min(1, t / 0.28);
-    const wd = 0.065 + 0.07 * grow * grow * (3 - 2 * grow) - 0.035 * sh + 0.02 * (1 - ends) * (t > 0.6 ? 1 : 0);
-    const th = 0.034 + 0.03 * sh + 0.012 * Math.sin(t * 15);
     const a = u * Math.PI * 2;
-    // Folds running along the roll, plus a droop on the lower edge.
-    const ripple = 0.016 * Math.sin(t * 28 + Math.cos(a) * 1.5) * (1 - sh) + 0.01 * Math.sin(a * 3 + t * 20);
-    const droop = Math.cos(a) < 0 ? 0.03 * (1 - sh) * grow : 0;
-    return c.clone().addScaledVector(w, Math.cos(a) * wd).addScaledVector(n2, Math.sin(a) * th + ripple).addScaledVector(n, 0.01).add(tmp.set(0, -droop, 0));
+    const taper = Math.min(1, t / 0.2);
+    const wd = 0.075 * (0.55 + 0.45 * taper);
+    const th = 0.05 * (0.6 + 0.4 * taper) + 0.008 * Math.sin(t * 22);
+    return c.clone().addScaledVector(w, Math.cos(a) * wd).addScaledVector(n2, Math.sin(a) * th + 0.01 * Math.sin(a * 3 + t * 17));
   }, (p) => {
     let best = 0, bd = 1e9;
-    for (let i = 0; i <= 40; i++) { const d = curve.getPointAt(i / 40).distanceToSquared(p); if (d < bd) { bd = d; best = i / 40; } }
+    for (let i = 0; i <= 20; i++) { const d = curve.getPointAt(i / 20).distanceToSquared(p); if (d < bd) { bd = d; best = i / 20; } }
     return p.clone().sub(curve.getPointAt(best));
   });
-  parts.push(flap);
+  parts.push(roll);
+  // ...and the rest of the flap hanging down the back-left, over the main body, hem on a slant.
+  const sheet = cloth(18, 14, (u, v) => {
+    const th = -1.3 + u * 1.15;
+    const top = 0.56 - 0.07 * u;
+    const bottom = -0.26 + 0.2 * u;
+    const y = top + (bottom - top) * v;
+    const fold = 0.035 + 0.02 * v * Math.sin(u * 13 + v * 2) + 0.012 * Math.sin(u * 29);
+    return capeAt(th, y, fold);
+  }, (p) => new THREE.Vector3(p.x, 0, p.z - 0.02));
+  parts.push(sheet);
   // Bunched cowl round the neck where the hood meets the body.
   const cowl = new THREE.TorusGeometry(0.135, 0.05, 8, 20).rotateX(Math.PI / 2).scale(1.15, 1, 0.95).translate(0, 0.6, 0.0);
   return { parts, cowl };
+}
+
+// Rounded slab (bevelled box) centred on the origin: plates, pouches, holsters.
+function slab(w, h, d, r = 0.012) {
+  const b = Math.min(r, d / 3, w / 3, h / 3);
+  const sh = new THREE.Shape();
+  const x = -w / 2 + b, y = -h / 2 + b, W = w - 2 * b, H = h - 2 * b, c = Math.min(b * 1.2, W / 2, H / 2);
+  sh.moveTo(x + c, y);
+  sh.lineTo(x + W - c, y); sh.quadraticCurveTo(x + W, y, x + W, y + c);
+  sh.lineTo(x + W, y + H - c); sh.quadraticCurveTo(x + W, y + H, x + W - c, y + H);
+  sh.lineTo(x + c, y + H); sh.quadraticCurveTo(x, y + H, x, y + H - c);
+  sh.lineTo(x, y + c); sh.quadraticCurveTo(x, y, x + c, y);
+  const g = new THREE.ExtrudeGeometry(sh, { depth: Math.max(0.001, d - 2 * b), bevelEnabled: true, bevelThickness: b, bevelSize: b * 0.9, bevelSegments: 2, curveSegments: 3 });
+  g.translate(0, 0, -(d - 2 * b) / 2);
+  g.computeVertexNormals();
+  return g;
 }
 
 // Hood in head space (head centre at origin, face toward -Z).
@@ -344,6 +386,10 @@ function buildRifle() {
   const brake = mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.07, 8).rotateX(Math.PI / 2), P.steel);
   brake.position.set(0, 0, -1.09);
   r.add(brake);
+  const can = mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.22, 12).rotateX(Math.PI / 2), '#2e2f33');
+  can.position.set(0, 0, -1.15);
+  can.visible = false;
+  r.add(can);
   const tube = mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.24, 12).rotateX(Math.PI / 2), P.steel);
   tube.position.set(0, 0.075, -0.2);
   r.add(tube);
@@ -379,6 +425,13 @@ function buildRifle() {
   bipod.position.set(0, -0.02, -0.62);
   r.add(bipod);
   r.userData.bipod = bipod;
+  r.userData.brake = brake;
+  r.userData.can = can;
+  const honey = mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.05, 6).rotateX(Math.PI / 2), '#202124');
+  honey.position.set(0, 0.075, -0.42);
+  honey.visible = false;
+  r.add(honey);
+  r.userData.honey = honey;
   return r;
 }
 
@@ -386,6 +439,8 @@ export class Avatar {
   constructor(accent = '#d89a3a', seed = 7) {
     const rng = seeded(seed);
     const P = PAL;
+    // Goggle / glasses lenses: tinted and faintly lit so the colour reads at dusk.
+    this.lensMat = withHaze(new THREE.MeshLambertMaterial({ color: '#e0283a', emissive: '#e0283a', emissiveIntensity: 0.45 }), { key: 'lens' });
     this.root = new THREE.Group();
     this.root.rotation.order = 'YXZ';
     this.body = new THREE.Group();
@@ -426,6 +481,37 @@ export class Avatar {
     this.legL = mkLeg(-1);
     this.legR = mkLeg(1);
     this.hips.add(this.legL, this.legR);
+    // Battle belt: drop-leg holster with the M18 on the right thigh, dump pouch, smoke cans.
+    const at = (geo, hex, parent, x, y, z, rx = 0, ry = 0, rz = 0) => {
+      const m = mesh(geo, hex);
+      m.position.set(x, y, z);
+      m.rotation.set(rx, ry, rz);
+      parent.add(m);
+      return m;
+    };
+    const holster = new THREE.Group();
+    holster.position.set(0.085, -0.15, -0.005);
+    holster.rotation.z = 0.08;
+    at(slab(0.03, 0.17, 0.075, 0.012), P.rig, holster, 0.0, 0, 0);
+    at(new THREE.TorusGeometry(0.088, 0.01, 5, 18).rotateX(Math.PI / 2), P.web, holster, -0.085, -0.04, 0.0);
+    at(new THREE.TorusGeometry(0.085, 0.01, 5, 18).rotateX(Math.PI / 2), P.web, holster, -0.085, 0.06, 0.0);
+    at(slab(0.012, 0.16, 0.012, 0.004), P.web, holster, -0.035, 0.12, 0.0, 0, 0, 0.35);
+    this.holsterPistol = new THREE.Group();
+    at(slab(0.028, 0.035, 0.115, 0.006), '#232428', this.holsterPistol, 0, 0.1, -0.005);
+    at(slab(0.026, 0.075, 0.04, 0.008), '#8a7758', this.holsterPistol, 0, 0.125, 0.04, -0.3);
+    holster.add(this.holsterPistol);
+    this.legR.add(holster);
+    at(slab(0.14, 0.11, 0.06, 0.02), P.web, this.hips, -0.06, 0.03, 0.17, 0.1);
+    at(slab(0.06, 0.07, 0.05, 0.01), P.rig, this.hips, 0.17, 0.1, 0.08, 0, -0.9);
+    const smoke = new THREE.Group();
+    smoke.visible = false;
+    for (const [x, z] of [[-0.175, -0.04], [-0.185, 0.05]]) {
+      at(new THREE.CylinderGeometry(0.027, 0.027, 0.1, 12), P.can, smoke, x, 0.07, z);
+      at(new THREE.CylinderGeometry(0.018, 0.022, 0.025, 10), '#8d9088', smoke, x, 0.13, z);
+      at(slab(0.006, 0.05, 0.012, 0.003), '#8d9088', smoke, x - 0.025, 0.1, z, 0, 0, 0.1);
+    }
+    this.hips.add(smoke);
+    this.smokeKit = smoke;
 
     // --- Spine: torso, plate carrier, pack, ghillie ---
     this.spine = new THREE.Group();
@@ -433,24 +519,69 @@ export class Avatar {
     const chest = mesh(new THREE.CapsuleGeometry(0.17, 0.3, 4, 12).scale(1.12, 1, 0.72), P.fatigue);
     chest.position.set(0, 0.3, 0);
     this.spine.add(chest);
-    const carrier = mesh(new THREE.CapsuleGeometry(0.175, 0.2, 4, 12).scale(1.1, 1, 0.8), P.vest);
+    // Plate carrier: front/back plates, cummerbund, shoulder straps.
+    const carrier = mesh(new THREE.CapsuleGeometry(0.172, 0.2, 4, 12).scale(1.08, 1, 0.76), P.web);
     carrier.position.set(0, 0.33, -0.005);
     this.spine.add(carrier);
+    const put = (geo, hex, x, y, z, rx = 0, ry = 0, rz = 0, parent = this.spine) => {
+      const m = mesh(geo, hex);
+      m.position.set(x, y, z);
+      m.rotation.set(rx, ry, rz);
+      parent.add(m);
+      return m;
+    };
+    put(slab(0.29, 0.3, 0.055, 0.02), P.rig, 0, 0.37, -0.135, -0.06);
+    put(slab(0.29, 0.31, 0.05, 0.02), P.rig, 0, 0.37, 0.13, 0.05);
+    put(new THREE.CylinderGeometry(0.2, 0.205, 0.12, 22, 1, true).scale(1.04, 1, 0.8), P.rig, 0, 0.255, 0);
+    for (const sx of [-1, 1]) put(slab(0.065, 0.03, 0.27, 0.01), P.rig, sx * 0.11, 0.535, 0.0, 0, 0, sx * -0.18);
+    // Front: triple mag shingle (mags + pull tabs), admin pouch with a team patch.
     for (let i = -1; i <= 1; i++) {
-      const p = mesh(new THREE.BoxGeometry(0.075, 0.1, 0.05), P.pouch);
-      p.position.set(i * 0.085, 0.22, -0.145);
-      this.spine.add(p);
+      put(slab(0.074, 0.1, 0.05, 0.01), P.rig, i * 0.086, 0.26, -0.185);
+      put(slab(0.05, 0.04, 0.03, 0.006), P.mag, i * 0.086, 0.325, -0.185);
+      put(slab(0.02, 0.035, 0.008, 0.003), P.tab, i * 0.086, 0.35, -0.205, -0.3);
     }
-    const radio = mesh(new THREE.BoxGeometry(0.06, 0.13, 0.04), P.pouch);
-    radio.position.set(-0.17, 0.4, 0.06);
-    this.spine.add(radio);
-    const antenna = mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.35, 4), P.glove);
-    antenna.position.set(-0.17, 0.62, 0.08);
-    antenna.rotation.z = 0.15;
-    this.spine.add(antenna);
-    const pack = mesh(new THREE.CapsuleGeometry(0.12, 0.16, 4, 10).scale(1.1, 1, 0.65), P.vest);
-    pack.position.set(0, 0.32, 0.17);
-    this.spine.add(pack);
+    put(slab(0.19, 0.085, 0.032, 0.01), P.rig, 0, 0.425, -0.172, -0.06);
+    put(slab(0.075, 0.04, 0.006, 0.003), accent, 0.04, 0.43, -0.19, -0.06);
+    // Tourniquet on the left strap, radio on the left side, med pouch on the right.
+    put(new THREE.CylinderGeometry(0.019, 0.019, 0.1, 10), '#1d1d1f', -0.115, 0.49, -0.115, 0.15);
+    put(slab(0.025, 0.018, 0.02, 0.004), '#a8402e', -0.115, 0.545, -0.12);
+    put(slab(0.06, 0.13, 0.045, 0.01), P.rig, -0.205, 0.33, 0.05, 0, 0.5);
+    put(new THREE.CylinderGeometry(0.004, 0.004, 0.38, 4), P.glove, -0.21, 0.56, 0.08, 0.1, 0, 0.12);
+    put(slab(0.05, 0.1, 0.07, 0.012), P.rig, 0.205, 0.27, 0.03, 0, -0.5);
+    // Assault pack on the back.
+    put(slab(0.25, 0.3, 0.11, 0.025), P.vest, 0, 0.34, 0.22);
+    put(slab(0.22, 0.08, 0.03, 0.012), P.web, 0, 0.42, 0.285);
+    // Kit-dependent gear: each piece is shown when that tool is in the loadout.
+    this.kit = {};
+    const kitG = (name, parent = this.spine) => { const g = new THREE.Group(); g.visible = false; parent.add(g); this.kit[name] = g; return g; };
+    // Spotting quadcopter, folded and strapped to the pack.
+    const quad = kitG('drone');
+    put(slab(0.12, 0.05, 0.17, 0.015), '#2b2c30', 0, 0.4, 0.31, Math.PI / 2 - 0.15, 0, 0, quad);
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      put(new THREE.CylinderGeometry(0.006, 0.006, 0.12, 5), '#1f2023', sx * 0.07, 0.4 + sy * 0.07, 0.33, 0, 0, sx * sy * 0.5, quad);
+      put(new THREE.CylinderGeometry(0.035, 0.035, 0.006, 12).rotateX(Math.PI / 2), '#3a3b40', sx * 0.1, 0.4 + sy * 0.11, 0.335, 0, 0, 0, quad);
+    }
+    put(new THREE.CylinderGeometry(0.012, 0.012, 0.01, 8).rotateX(Math.PI / 2), '#ff5d55', 0, 0.36, 0.34, 0, 0, 0, quad);
+    // Hunter drone: launch tube slung diagonally across the pack.
+    const tube = kitG('hunter');
+    const TA = -1.0, tc = [0.0, 0.31, 0.31];
+    const along = (k) => [tc[0] - Math.sin(TA) * k, tc[1] + Math.cos(TA) * k, tc[2]];
+    put(new THREE.CylinderGeometry(0.048, 0.048, 0.52, 14), '#3d4031', ...tc, 0, 0, TA, tube);
+    for (const k of [-0.24, 0.24]) put(new THREE.CylinderGeometry(0.053, 0.053, 0.04, 14), '#25262a', ...along(k), 0, 0, TA, tube);
+    put(new THREE.CylinderGeometry(0.054, 0.054, 0.015, 14), accent, ...along(0.15), 0, 0, TA, tube);
+    // Recon darts: a pair of dart canisters on the right of the pack.
+    const darts = kitG('dart');
+    for (const dz of [0, 0.05]) put(new THREE.CylinderGeometry(0.02, 0.02, 0.2, 10), '#2c2e2a', 0.15, 0.36, 0.2 + dz, 0, 0, 0, darts);
+    put(new THREE.CylinderGeometry(0.021, 0.021, 0.02, 10), accent, 0.15, 0.47, 0.2, 0, 0, 0, darts);
+    // UAV jammer: box with stubby antennas on top of the pack.
+    const jam = kitG('jammer');
+    put(slab(0.14, 0.06, 0.08, 0.01), '#26272b', 0, 0.52, 0.22, 0, 0, 0, jam);
+    for (const sx of [-1, 1]) put(new THREE.CylinderGeometry(0.006, 0.004, 0.14, 5), '#1a1a1c', sx * 0.05, 0.6, 0.22, 0, 0, sx * 0.25, jam);
+    put(new THREE.SphereGeometry(0.008, 6, 4), '#58ff8a', 0.03, 0.555, 0.18, 0, 0, 0, jam);
+    // Decoy: rolled mannequin strapped under the pack.
+    const dec = kitG('decoy');
+    put(new THREE.CylinderGeometry(0.06, 0.06, 0.32, 14).rotateZ(Math.PI / 2), P.tab, 0, 0.17, 0.25, 0, 0, 0, dec);
+    for (const sx of [-1, 1]) put(new THREE.CylinderGeometry(0.063, 0.063, 0.02, 14).rotateZ(Math.PI / 2), '#26272b', sx * 0.1, 0.17, 0.25, 0, 0, 0, dec);
     for (const s of [-1, 1]) {
       const sh = mesh(new THREE.SphereGeometry(0.078, 10, 8), P.fatigue);
       sh.position.set(s * 0.2, 0.47, 0.01);
@@ -492,6 +623,15 @@ export class Avatar {
     const veil = new THREE.Mesh(strands(rng, 60, [0, 0.07, 0.05, 0.32, 0.02, 0.26], [0.1, 0.22], [0.12, 0]), ghillieMaterial());
     head.add(veil);
     this.hatParts = [brim, crown, veil];
+    // Ghillie: wraparound shooting glasses.
+    const glasses = new THREE.Group();
+    glasses.add(new THREE.Mesh(new THREE.CylinderGeometry(0.103, 0.1, 0.026, 18, 1, true, Math.PI * 0.62, Math.PI * 0.76).scale(0.95, 1, 1.02), this.lensMat));
+    const frame = mesh(new THREE.CylinderGeometry(0.106, 0.106, 0.007, 18, 1, true, Math.PI * 0.62, Math.PI * 0.76).scale(0.95, 1, 1.02), '#151517');
+    frame.position.y = 0.018;
+    glasses.add(frame);
+    glasses.position.set(0, 0.018, -0.005);
+    head.add(glasses);
+    this.glasses = glasses;
     this.faceParts = [paint, nose];
     // Wraith: goggles, respirator half-mask (the balaclava is the head recoloured).
     const mask = new THREE.Group();
@@ -503,7 +643,7 @@ export class Avatar {
       cup.position.set(sx * 0.04, 0.02, -0.098);
       cup.rotation.y = sx * 0.22;
       mask.add(cup);
-      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.025, 14), mat('#2f4a4c'));
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(0.025, 14), this.lensMat);
       lens.position.set(sx * 0.043, 0.02, -0.117);
       lens.rotation.y = Math.PI + sx * 0.22;
       mask.add(lens);
@@ -546,8 +686,6 @@ export class Avatar {
     this.hood = new THREE.Group();
     addCloth(buildHood(), this.hood);
     head.add(this.hood);
-    this.look = null;
-    this.setLook({ outfit: 'ghillie', poncho: false });
 
     // --- Aim group: rifle and arms (pitches with aim) ---
     this.aim = new THREE.Group();
@@ -582,17 +720,22 @@ export class Avatar {
     this.aim.add(pistol);
 
     this.walkPhase = 0;
+    this.look = null;
+    this.setLook({ outfit: 'ghillie', poncho: false });
   }
 
   setVisible(v) {
     this.root.visible = v;
   }
 
-  // look: { outfit: 'ghillie' | 'wraith', poncho: bool (thermal poncho equipped) }
-  setLook(look) {
-    const outfit = look && look.outfit === 'wraith' ? 'wraith' : 'ghillie';
-    const thermal = !!(look && look.poncho);
-    const key = outfit + thermal;
+  // look: { outfit: 'ghillie' | 'wraith', poncho: thermal poncho equipped, lens: '#rrggbb',
+  //         kit: { scout, stealth, tactical } — shows the matching gear on the body }
+  setLook(look = {}) {
+    const outfit = look.outfit === 'wraith' ? 'wraith' : 'ghillie';
+    const thermal = !!look.poncho;
+    const lens = /^#[0-9a-f]{6}$/i.test(look.lens || '') ? look.lens : DEFAULT_LENS;
+    const kit = look.kit || {};
+    const key = [outfit, thermal, lens, kit.scout, kit.stealth, kit.tactical].join('|');
     if (this.look === key) return;
     this.look = key;
     const wraith = outfit === 'wraith';
@@ -602,6 +745,18 @@ export class Avatar {
     for (const o of this.hatParts) o.visible = !hooded;
     for (const o of this.faceParts) o.visible = !wraith;
     this.mask.visible = wraith;
+    this.glasses.visible = !wraith;
+    this.lensMat.color.set(lens);
+    this.lensMat.emissive.set(lens);
+    for (const [k, g] of Object.entries(this.kit)) {
+      g.visible = kit.scout === k || kit.stealth === k || kit.tactical === k;
+      g.position.z = hooded ? 0.09 : 0; // strapped on over the poncho
+    }
+    this.smokeKit.visible = kit.tactical === 'smoke';
+    const sup = kit.stealth === 'suppressor';
+    this.rifle.userData.can.visible = sup;
+    this.rifle.userData.brake.visible = !sup;
+    this.rifle.userData.honey.visible = kit.stealth === 'killflash';
     const setMat = (o, m) => {
       if (o.userData.coolMat) o.userData.coolMat = m;
       else o.material = m;
@@ -633,6 +788,7 @@ export class Avatar {
     this.aim.rotation.x = s.pitch;
     this.rifle.visible = !s.w;
     this.pistol.visible = !!s.w;
+    this.holsterPistol.visible = !s.w;
     const kL = this.legL.userData.knee, kR = this.legR.userData.knee;
     this.rifle.userData.bipod.rotation.x = st === 2 ? 0.15 : 1.45;
     this.legL.rotation.z = this.legR.rotation.z = 0;

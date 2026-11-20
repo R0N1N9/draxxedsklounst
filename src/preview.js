@@ -12,11 +12,11 @@ function init() {
   renderer.domElement.className = 'lo-canvas';
   const scene = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(26, 1, 0.1, 30);
-  scene.add(new THREE.HemisphereLight('#c9c2e8', '#3d3846', 3.2));
-  const key = new THREE.DirectionalLight('#ffd6b8', 3.4);
+  scene.add(new THREE.HemisphereLight('#c9c2e8', '#3d3846', 1.5));
+  const key = new THREE.DirectionalLight('#ffd6b8', 2.6);
   key.position.set(-3, 4, -3);
   scene.add(key);
-  const rim = new THREE.DirectionalLight('#8fb4ff', 2.4);
+  const rim = new THREE.DirectionalLight('#8fb4ff', 1.8);
   rim.position.set(3, 2, 4);
   scene.add(rim);
   const pad = new THREE.Mesh(new THREE.CircleGeometry(0.75, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#f2b35b', transparent: true, opacity: 0.1 }));
@@ -43,8 +43,8 @@ function init() {
 function frame(t) {
   const el = P.renderer.domElement;
   if (!el.isConnected) { P.raf = 0; return; }
+  if (!el.offsetParent) { P.raf = 0; P.last = 0; return; } // hidden: stop until shown again
   P.raf = requestAnimationFrame(frame);
-  if (!el.offsetParent) return; // hidden
   const dt = Math.min(0.05, (t - (P.last || t)) / 1000);
   P.last = t;
   const w = el.clientWidth, h = el.clientHeight;
