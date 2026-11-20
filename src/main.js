@@ -4,7 +4,7 @@ import { randomCode } from './util.js';
 import { PALETTES } from './atmosphere.js';
 import { drawMap } from './briefmap.js';
 import { renderLoadout } from './loadout.js';
-import { PRESETS, applyRules, normalizeRules, rulesLabel } from './rules.js';
+import { PRESETS, RULES, applyRules, normalizeRules, rulesLabel } from './rules.js';
 import { RANGES } from './range.js';
 
 const $ = (id) => document.getElementById(id);
@@ -12,6 +12,24 @@ const params = new URLSearchParams(location.search);
 const LOCAL = params.has('local'); // two tabs on one machine (testing)
 // Opened as a standalone file (file://): invite links can't point anywhere, so share the code instead.
 const FILE_MODE = location.protocol === 'file:';
+// Dev / test switches for the Multiverse (documented in src/multiverse/contract.js, section 8).
+const num = (k) => (params.has(k) && isFinite(+params.get(k)) ? +params.get(k) : undefined);
+const DEV = {
+  dim: params.get('dim') || null,
+  auto: params.get('auto') === '1',
+  speed: num('speed') || 1,
+  skill: num('skill'),
+  seed: num('seed'),
+  target: num('target'),
+  next: (params.get('next') || '').split(',').filter(Boolean),
+  fx: params.get('fx') || null,
+  fxlab: params.get('fxlab') || null,
+  from: params.get('from') || null,
+  to: params.get('to') || null,
+  fixres: params.get('fixres') === '1',
+  autohost: params.get('autohost') || null,
+  autojoin: params.get('autojoin') || null,
+};
 
 const store = {
   get(k, d) {
@@ -56,6 +74,8 @@ const settings = {
   gyroMode: store.get('gyroMode', 'ontouchstart' in window ? 'scoped' : 'off'),
   gyroSens: store.get('gyroSens', 1),
   gyroInvertY: store.get('gyroInvertY', false),
+  mode: store.get('mode', 'classic'), // 'classic' | 'app' ("Do you want to develop an app?")
+  mvTarget: store.get('mvTarget', 7),
   autoBipod: store.get('autoBipod', true),
   autoCycle: store.get('autoCycle', true),
 };
@@ -85,7 +105,7 @@ function syncSettingUI() {
 document.querySelectorAll('[data-setting]').forEach((el) => {
   const on = () => {
     const k = el.dataset.setting;
-    settings[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : el.value;
+    settings[k] = el.type === 'checkbox' ? el.checked : el.type === 'range' || k === 'mvTarget' ? +el.value : el.value;
     store.set(k, settings[k]);
     if (k === 'gyroMode') primeGyro();
     syncSettingUI();
@@ -204,6 +224,7 @@ document.querySelectorAll('.back').forEach((b) => (b.onclick = () => {
 const audio = new Audio();
 let net = null;
 let game = null;
+let director = null;
 
 function callsign() {
   return (settings.name || 'Ghost').replace(/[<>&"]/g, '');
@@ -221,11 +242,9 @@ function goFullscreen() {
   try { screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {}); } catch {}
 }
 
-async function startGame(mode, opts = {}) {
-  showPanel('panel-loading');
-  $('loading-text').textContent = 'Building the valley…';
-  // Let the loading panel paint before the heavy world build.
-  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+// Build the valley game. Used directly by Classic mode and, through the director, as the
+// Multiverse's home dimension (opts.mv) — there it starts frozen and the director runs it.
+async function buildValley(mode, opts = {}) {
   const quality = settings.quality === 'auto' ? detectQuality() : settings.quality;
   const { Game } = await import('./game.js');
   game = new Game({
@@ -237,17 +256,62 @@ async function startGame(mode, opts = {}) {
     settings: { ...settings, audio },
     hostCode: opts.code,
     difficulty: opts.difficulty,
+    mv: opts.mv,
   });
   if (opts.oppName) game.oppName = opts.oppName;
   window.__game = game;
-  $('menu').classList.remove('on');
-  $('touch').classList.add('active');
   applyInputSettings();
   document.body.classList.toggle('touch', game.input.touch);
+  wirePause();
+  return game;
+}
+
+async function startGame(mode, opts = {}) {
+  showPanel('panel-loading');
+  $('loading-text').textContent = 'Building the valley…';
+  // Let the loading panel paint before the heavy world build.
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+  await buildValley(mode, opts);
+  $('menu').classList.remove('on');
+  $('touch').classList.add('active');
   game.input.enabled = true;
   game.input.requestLock();
-  wirePause();
 }
+
+// "Do you want to develop an app?": it opens as the ordinary valley duel, and from the first
+// point on every score throws the match somewhere else (src/multiverse). Nothing on screen
+// gives that away beforehand — the menu, the loading text and round one are the classic game's.
+async function startMultiverse(mode, opts = {}) {
+  if (director) return;
+  showPanel('panel-loading');
+  $('loading-text').textContent = 'Building the valley…';
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+  const { Director } = await import('./multiverse/director.js');
+  director = new Director({
+    mode,
+    net: opts.net || null,
+    audio,
+    settings,
+    name: callsign(),
+    oppName: opts.oppName,
+    difficulty: opts.difficulty || aiDiff,
+    match: opts.match,
+    target: settings.mvTarget,
+    first: opts.first,
+    dev: { ...DEV, ...(opts.dev || {}) },
+    valley: { build: (o) => buildValley(o.mode, { ...o, pal: opts.pal, code: opts.code }) },
+    hello: () => ({ rules: { ...RULES } }),
+  });
+  window.__mv = director;
+  try {
+    await director.start();
+    $('menu').classList.remove('on');
+  } catch (e) {
+    console.error(e);
+    $('loading-text').textContent = 'Something failed to load. Reload the page to try again.';
+  }
+}
+const multiverse = () => settings.mode === 'app';
 
 function wirePause() {
   const pause = $('pause');
@@ -259,17 +323,22 @@ function wirePause() {
     game.paused = on;
   };
   document.addEventListener('pointerlockchange', () => {
-    if (touch && !game.input.mouseMode) return;
+    // Frozen = another dimension (or a transition) is on screen; the director handles pausing there.
+    if ((touch && !game.input.mouseMode) || game.frozen || game.suspended) return;
     const locked = document.pointerLockElement === game.renderer.domElement;
     const cardOpen = $('h-card').classList.contains('on') && $('h-card').querySelector('button');
     show(!locked && !cardOpen && !game.toolsOpen);
   });
-  $('tb-pause').addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); show(true); }, { passive: false });
+  $('tb-pause').addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!game.frozen && !game.suspended) show(true);
+  }, { passive: false });
   $('btn-resume').onclick = () => {
     primeGyro();
     applyInputSettings();
     show(false);
-    game.input.requestLock();
+    if (!game.frozen && !game.suspended) game.input.requestLock();
   };
   $('btn-exit').onclick = () => {
     if (game.net && game.net.close) game.net.close();
@@ -322,7 +391,44 @@ $('btn-ai').onclick = () => {
   audio.unlock();
   primeGyro();
   goFullscreen();
-  startGame('ai', { difficulty: aiDiff });
+  if (multiverse()) startMultiverse('ai', { difficulty: aiDiff });
+  else startGame('ai', { difficulty: aiDiff });
+};
+
+// The lab (any world against the AI, any transition on a loop) would spoil the surprise,
+// so it only shows up when the page is opened with ?lab.
+const syncMode = () => {
+  $('btn-host-go').style.display = multiverse() ? 'none' : '';
+  $('btn-lab').style.display = params.has('lab') ? '' : 'none';
+  // The host picks the mode; someone arriving on an invite link has nothing to pick.
+  $('field-mode').style.display = params.get('join') ? 'none' : '';
+  $('field-target').style.display = multiverse() && !params.get('join') ? '' : 'none';
+};
+document.querySelector('[data-setting="mode"]').addEventListener('change', syncMode);
+syncMode();
+
+// Dimension lab: any dimension against the AI, or a transition on a loop.
+$('btn-lab').onclick = async () => {
+  showPanel('panel-lab');
+  const { DIMENSIONS, TRANSITIONS, loadDimension, loadTransition } = await import('./multiverse/registry.js');
+  const fill = (box, list, load, onPick) => {
+    box.innerHTML = '';
+    for (const e of list.filter((x) => !x.dev)) {
+      const b = document.createElement('button');
+      b.className = 'ghost';
+      b.textContent = e.id;
+      b.onclick = () => onPick(e.id);
+      box.appendChild(b);
+      load(e.id).then((m) => { b.innerHTML = `${m.name}<small>${m.perspective || `${m.duration} s`}</small>`; }, () => { b.disabled = true; });
+    }
+    if (!box.children.length) box.innerHTML = '<p class="hint small">Nothing here yet.</p>';
+  };
+  const go = (opts) => { audio.unlock(); primeGyro(); goFullscreen(); startMultiverse('ai', { difficulty: aiDiff, ...opts }); };
+  fill($('lab-dims'), DIMENSIONS, loadDimension, (id) => go({ first: id }));
+  fill($('lab-fx'), TRANSITIONS, loadTransition, (id) => {
+    const dims = DIMENSIONS.filter((d) => !d.dev && d.id !== 'valley').map((d) => d.id).sort(() => Math.random() - 0.5);
+    go({ dev: { fxlab: id, from: dims[0], to: dims[1] || dims[0] } });
+  });
 };
 
 // Sandbox
@@ -367,7 +473,7 @@ $('btn-host').onclick = async () => {
   }
   $('host-status').textContent = 'Waiting for your friend to join…';
   net.on('open', () => {
-    if (!game) {
+    if (!game && !director) {
       $('host-status').textContent = 'Friend connected!';
       enterAsHost();
     }
@@ -401,7 +507,8 @@ function copy(text) {
 
 function enterAsHost() {
   goFullscreen();
-  startGame('host', { net, code: hostCode, pal: settings.pal });
+  if (multiverse()) startMultiverse('host', { net, code: hostCode, pal: settings.pal });
+  else startGame('host', { net, code: hostCode, pal: settings.pal });
 }
 $('btn-host-go').onclick = () => {
   audio.unlock();
@@ -429,7 +536,10 @@ $('btn-join').onclick = async () => {
     if (m.rules) applyRules(m.rules);
     $('join-status').textContent = 'Connected!';
     goFullscreen();
-    startGame('guest', { net, pal: PALETTES[m.pal] ? m.pal : 'dusk', oppName: String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16) });
+    const o = { net, pal: PALETTES[m.pal] ? m.pal : 'dusk', oppName: String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16) };
+    // The host decides the mode: a Multiverse host says so in its hello.
+    if (m.mv) startMultiverse('guest', { ...o, match: m.mv });
+    else startGame('guest', o);
   });
   net.on('open', () => {
     $('join-status').textContent = 'Connected — waiting for host…';
@@ -447,4 +557,19 @@ if (params.get('join')) {
   showPanel('panel-join');
   $('in-code').value = params.get('join').toUpperCase().slice(0, 5);
   $('join-status').textContent = 'Tap Join to enter the match.';
+}
+
+// ---- Dev / test entry points (no clicks needed) ----
+if (DEV.autohost) {
+  audio.unlock();
+  net = new Net();
+  hostCode = DEV.autohost;
+  net.host(hostCode, { local: LOCAL }).then(() => net.on('open', () => startMultiverse('host', { net, code: hostCode, pal: settings.pal })));
+} else if (DEV.autojoin) {
+  audio.unlock();
+  $('in-code').value = DEV.autojoin;
+  $('btn-join').click();
+} else if (DEV.dim || DEV.fxlab || params.get('mv') === 'ai') {
+  audio.unlock();
+  startMultiverse('ai', { difficulty: aiDiff });
 }

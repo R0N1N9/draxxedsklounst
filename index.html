@@ -17,6 +17,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="src/multiverse/multiverse.css" />
+  <link rel="stylesheet" href="src/multiverse/input.css" />
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
   </script>
@@ -38,6 +40,10 @@
 
       <label class="field callsign"><span>Callsign</span><input id="in-name" maxlength="14" placeholder="Ghost" autocomplete="off" /></label>
       <div id="panel-main" class="panel on">
+        <label class="field" id="field-mode"><span>Mode <em>(host picks)</em></span>
+          <select data-setting="mode"><option value="classic">Classic duel</option><option value="app">Do you want to develop an app?</option></select></label>
+        <label class="field" id="field-target" style="display:none"><span>Points to win</span>
+          <select data-setting="mvTarget"><option value="3">First to 3</option><option value="5">First to 5</option><option value="7">First to 7</option><option value="10">First to 10</option></select></label>
         <button id="btn-host" class="primary">Host a match</button>
         <button id="btn-join-open">Join with code</button>
         <button id="btn-ai-open">Vs AI</button>
@@ -47,6 +53,7 @@
           <button id="btn-practice" class="ghost">Practice range</button>
           <button id="btn-sandbox" class="ghost">Sandbox</button>
         </div>
+        <button id="btn-lab" class="ghost" style="display:none">Lab</button>
         <details class="settings">
           <summary>Settings</summary>
           <label class="field"><span>Time of day <em>(host picks)</em></span>
@@ -145,6 +152,15 @@
         </div>
         <p class="hint small" id="ai-desc"></p>
         <button id="btn-ai" class="primary">Deploy</button>
+        <button class="ghost back">Back</button>
+      </div>
+
+      <div id="panel-lab" class="panel">
+        <p class="hint small">Jump straight into any world against the AI, or preview a transition.</p>
+        <div class="lab-head">// WORLDS</div>
+        <div class="lab-list" id="lab-dims"></div>
+        <div class="lab-head">// TRANSITIONS</div>
+        <div class="lab-list" id="lab-fx"></div>
         <button class="ghost back">Back</button>
       </div>
 
