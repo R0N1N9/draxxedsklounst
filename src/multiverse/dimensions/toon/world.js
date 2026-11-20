@@ -25,16 +25,16 @@ export function buildWorld(rng) {
   add({ x: 1150, y: GY, w: 1150, h: 1400, k: 'mesa' });
   add({ x: 450, y: FLOOR, w: 700, h: 700, k: 'floor' });
   add({ x: 735, y: PIV.y + 4, w: 130, h: FLOOR - PIV.y - 4, k: 'pillar' });
-  const rockL = { x: 286, y: GY - 64, w: 96, h: 64, k: 'rock' };
+  const rockL = { x: 246, y: GY - 64, w: 96, h: 64, k: 'rock' };
   add(rockL);
   add(mirror(rockL));
-  const perchL = { x: 250, y: 205, w: 170, h: 12, k: 'board' };
+  const perchL = { x: 204, y: 205, w: 200, h: 12, k: 'board' };
   const boards = [perchL, mirror(perchL)];
   const ladders = [
-    { x: 264, top: 205, bot: GY, z0: 244, z1: 284, k: 'perch' },
-    { x: 1336, top: 205, bot: GY, z0: 1316, z1: 1356, k: 'perch' },
-    { x: 472, top: GY, bot: FLOOR, z0: 408, z1: 450, k: 'cliff' },
-    { x: 1128, top: GY, bot: FLOOR, z0: 1150, z1: 1192, k: 'cliff' },
+    { x: 222, top: 205, bot: GY, z0: 202, z1: 242, k: 'perch' },
+    { x: 1378, top: 205, bot: GY, z0: 1358, z1: 1398, k: 'perch' },
+    { x: 472, top: GY, bot: FLOOR, z0: 352, z1: 400, k: 'cliff' },
+    { x: 1128, top: GY, bot: FLOOR, z0: 1200, z1: 1248, k: 'cliff' },
     { x: 718, top: PIV.y, bot: FLOOR, z0: 700, z1: 736, k: 'pillar' },
     { x: 882, top: PIV.y, bot: FLOOR, z0: 864, z1: 900, k: 'pillar' },
   ];

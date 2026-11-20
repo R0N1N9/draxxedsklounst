@@ -104,7 +104,7 @@ export function drawOverlay(g, S) {
 
   // ---- bottom centre: the sea between you, and what is in the rifle ----
   if (S.gauge && S.bars < 0.6) {
-    const a = 1 - S.bars / 0.6, gw = clamp(w * 0.15, 104, 200), gh = 34 * u, gx = w * 0.585 - gw / 2, gy = h - S.pad - gh - 6, gc = gx + gw / 2;
+    const a = 1 - S.bars / 0.6, gw = clamp(w * 0.15, 104, 200), gh = 34 * u, gx = w * 0.565 - gw / 2, gy = h - S.pad - gh - 6, gc = gx + gw / 2;
     g.globalAlpha = a;
     roundRect(g, gx - 6, gy - 6, gw + 12, gh + 12, 8);
     g.fillStyle = rgba(INK, 0.62); g.fill();
@@ -138,7 +138,7 @@ export function drawOverlay(g, S) {
     }
     if (S.reloading) label(g, 'RELOAD', bx - 2 * (bw + 4 * u), gy + gh - bh - 9 * u, 10 * u, CORAL, 0.6 + 0.4 * Math.sin(S.t * 10));
     // how far apart
-    label(g, `${S.dist} M`, gx + gw + 12 * u, gy + gh / 2, 13 * u, CREAM, 0.9, 'left');
+    label(g, `${S.dist} M`, gx + gw - 4, gy + 9 * u, 11 * u, CREAM, 0.9, 'right');
     g.globalAlpha = 1;
   }
 }

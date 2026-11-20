@@ -62,7 +62,7 @@ export function makeSurferKit(THREE, haze) {
   const UP = new THREE.Vector3(0, 1, 0), v0 = new THREE.Vector3(), v1 = new THREE.Vector3();
 
   function surfer(color) {
-    const bright = haze.patch(new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.32 }), mixHex(color, '#ffffff', 0.3));
+    const bright = haze.patch(new THREE.MeshLambertMaterial({ color: mixHex(color, '#000000', 0.3), emissive: color, emissiveIntensity: 0.22 }), mixHex(color, '#ffffff', 0.2));
     const deepC = haze.patch(new THREE.MeshLambertMaterial({ color: mixHex(color, '#101820', 0.35), emissive: color, emissiveIntensity: 0.15 }));
     own.push(bright, deepC);
     const root = new THREE.Group(), board = new THREE.Group(), body = new THREE.Group();

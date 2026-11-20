@@ -462,7 +462,7 @@ export default {
       drawCactus(g, W - 46, GY + 4, 1.05, T + 0.3, E, 2);
       // the cover rocks watch the duel
       for (let r = 0; r < 2; r++) {
-        const rx = r ? W - 286 - 48 : 286 + 48, foe = P[1 - r];
+        const rx = r ? W - 246 - 48 : 246 + 48, foe = P[1 - r];
         let lx = Math.sign(foe.x - rx), ly = clamp((foe.y - 60 - (GY - 24)) / 400, -1, 1), alarm = false;
         for (const c of S.corks) if (c.live && Math.abs(c.x - rx) < 260 && c.owner !== r) { lx = Math.sign(c.x - rx); ly = clamp((c.y - (GY - 24)) / 200, -1, 1); alarm = true; break; }
         drawRockFace(g, rx, GY - 28, lx, ly, T, r * 7 + 3, alarm);

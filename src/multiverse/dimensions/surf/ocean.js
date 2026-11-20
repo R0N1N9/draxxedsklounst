@@ -30,7 +30,8 @@ void main() {
   gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0);
 }`;
 
-const FRAG = `precision highp float;
+const FRAG = (soft) => `precision highp float;
+#define SKY_LOD ${soft ? '2.0' : '3.0'}
 uniform vec3 uCam, uSunDir, uSunCol;
 uniform sampler2D tDetail;
 uniform vec4 uCast[2];  // each rider: feet (xyz), height (0 = none)
@@ -63,8 +64,8 @@ void main() {
   vec4 d1 = texture2D(tDetail, vP0 * 0.031 + t * vec2(0.011, 0.017));
   vec4 d2 = texture2D(tDetail, vP0 * 0.0093 + t * vec2(-0.006, 0.0045) + 0.37);
   vec4 d3 = texture2D(tDetail, vP0 * 0.13 + t * vec2(-0.025, 0.04) + 0.71);
-  vec2 rip = (d1.xy - 0.5) + (d2.xy - 0.5) * 1.3 + (d3.xy - 0.5) * 0.55 * (1.0 - far);
-  N = normalize(N + vec3(rip.x, 0.0, rip.y) * mix(0.46, 0.2, far) * (0.3 + 0.7 * uSea.y));
+  vec2 rip = (d1.xy - 0.5) * 1.15 + (d2.xy - 0.5) * 0.6 + (d3.xy - 0.5) * 0.8 * (1.0 - far);
+  N = normalize(N + vec3(rip.x, 0.0, rip.y) * mix(0.42, 0.2, far) * (0.3 + 0.7 * uSea.y));
   float ndv = max(dot(N, V), 0.0), sunN = max(dot(N, uSunDir), 0.0);
   float sh = shade(vW, uCast[0]) * shade(vW, uCast[1]);
 
@@ -72,13 +73,15 @@ void main() {
   float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
   vec3 R = reflect(-V, N);
   R.y = abs(R.y);
-  vec3 refl = skyTex(normalize(R + vec3(0.0, 0.03, 0.0)));
+  vec3 refl = skyTex(normalize(R + vec3(0.0, 0.03, 0.0)), mix(SKY_LOD, SKY_LOD - 1.5, far));
   float sd = max(dot(R, uSunDir), 0.0);
-  float glit = pow(sd, 1500.0) * 80.0 + pow(sd, 200.0) * 3.2 + pow(sd, 22.0) * 0.2;
+  // glitter: the broad road, the hot core, and sparks where a ripple happens to face the sun
+  float spark = smoothstep(0.82, 1.0, d3.z + d1.w * 0.5) * (1.0 - far * 0.5);
+  float glit = pow(sd, 1500.0) * 80.0 + pow(sd, 200.0) * 3.2 + pow(sd, 22.0) * (0.2 + spark * 1.4) + pow(sd, 90.0) * spark * 8.0;
 
   // what is under it
   float depth = shoreDepth(vW.xz), shallow = 1.0 - smoothstep(0.0, 4.5, depth);
-  vec3 body = mix(vec3(0.003, 0.022, 0.04), vec3(0.006, 0.062, 0.075), clamp(h * 0.2 + 0.45, 0.0, 1.0));
+  vec3 body = mix(vec3(0.003, 0.024, 0.04), vec3(0.007, 0.085, 0.09), clamp(h * 0.2 + 0.45, 0.0, 1.0));
   body += vec3(0.006, 0.06, 0.06) * sunN * 0.6 * sh;
   // the light that comes THROUGH a wave: looking sunwards at water that stands up thin
   float through = pow(clamp(dot(V, -normalize(uSunDir + N * 0.5)), 0.0, 1.0), 2.4) * smoothstep(-0.5, 2.3, h) * (0.3 + 3.2 * clamp(1.0 - N.y, 0.0, 0.45));
@@ -100,14 +103,14 @@ void main() {
   foam = clamp(foam, 0.0, 1.0);
   vec3 foamCol = vec3(0.92, 0.9, 0.88) * (uSunCol * (0.25 + sunN * 1.9) * sh + vec3(0.1, 0.13, 0.2));
   col = mix(col, foamCol, foam);
-  col *= mix(0.72, 1.0, sh);
+  col *= mix(0.82, 1.0, sh);
 
   col = mix(col, hazeColor(-V, uSunDir), 1.0 - exp(-dist * 0.00045));
   gl_FragColor = vec4(col, 1.0);
 }`;
 
 // Tileable ripple map: normal (rg), lace foam (b), blotches (a).
-function detailTexture(THREE, seed) {
+function detailTexture(THREE, seed, Q) {
   const S = 256, rng = mulberry32(seed), data = new Uint8Array(S * S * 4);
   const waves = [];
   for (let i = 0; i < 22; i++) {
@@ -148,12 +151,12 @@ function detailTexture(THREE, seed) {
   tex.magFilter = THREE.LinearFilter;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.generateMipmaps = true;
-  tex.anisotropy = 4;
+  tex.anisotropy = Q.soft ? 1 : 4;
   tex.needsUpdate = true;
   return tex;
 }
 
-export function makeOcean(THREE, sea, sky, seed, tints) {
+export function makeOcean(THREE, sea, sky, seed, tints, Q) {
   const n = (RINGS + 1) * SEGS, pos = new Float32Array(n * 3), idx = new Uint32Array(RINGS * SEGS * 6);
   const e = Math.exp(GROW) - 1;
   for (let i = 0; i <= RINGS; i++) {
@@ -171,14 +174,14 @@ export function makeOcean(THREE, sea, sky, seed, tints) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  const detail = detailTexture(THREE, seed);
+  const detail = detailTexture(THREE, seed, Q);
   const uniforms = {
     ...sea.uniforms,
     uCenter: { value: new THREE.Vector2() }, uCam: { value: new THREE.Vector3() }, uSunDir: { value: sky.sun }, uSunCol: { value: new THREE.Vector3(...SUN_COLOR) },
     tDetail: { value: detail }, tSky: { value: sky.texture },
     uCast: { value: [new THREE.Vector4(), new THREE.Vector4()] }, uTint: { value: tints },
   };
-  const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide });
+  const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG(Q.soft), side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.frustumCulled = false;
   mesh.renderOrder = -5;

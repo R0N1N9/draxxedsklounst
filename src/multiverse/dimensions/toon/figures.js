@@ -78,8 +78,8 @@ function eye(g, x, y, look, mood, blink, seed, big = 1) {
 
 /** Head, with every expression the story needs. look = [-1..1, -1..1] */
 function head(g, p, E, mood, look, hat) {
-  const blink = (E.T + p.i * 1.7) % 3.3 < 0.12;
   const scorch = mood === 'scorch';
+  const blink = scorch ? (E.T * 1.3 + p.i * 0.5) % 1 < 0.2 : (E.T + p.i * 1.7) % 3.3 < 0.12;
   // tufts of hair
   if (!hat) {
     g.strokeStyle = C.ink; g.lineWidth = 3; g.lineCap = 'round';
@@ -199,19 +199,19 @@ export function drawSniper(g, p, E, mood) {
   const sy = p.sy * (1 + 0.04 * E.pulse) * (duck ? 0.66 : 1), sx = p.sx * (1 - 0.025 * E.pulse) * (duck ? 1.14 : 1);
   g.scale((p.face || 1) * sx, sy);
   const moving = p.ground && !climb && Math.abs(p.vx) > 25;
-  g.rotate(clamp((p.vx * (p.face || 1)) / 285, -1, 1) * 0.07 + (p.dead ? 0 : E.sway * 0.025 * (moving ? 0 : 1)));
+  g.rotate(clamp((p.vx * (p.face || 1)) / 285, -1, 1) * 0.12 + (p.dead ? 0 : E.sway * 0.025 * (moving ? 0 : 1)));
   const T = E.T;
   // ---- legs ----
   for (let s = -1; s <= 1; s += 2) {
     let fx = s * 9, fy = 0, bend = s * 5;
     if (climb) { fx = s * 6; fy = -Math.sin(p.climb + (s > 0 ? Math.PI : 0)) * 9 - 3; bend = s * 9; } else if (!p.ground) { fy = -9 - 3 * Math.sin(T * 17 + s * 2); fx = s * 11 + (p.vy < 0 ? s * 3 : -s * 2); bend = s * 12; } else if (moving) {
       const ph = p.run + (s > 0 ? Math.PI : 0);
-      fx = Math.sin(ph) * 18; fy = -Math.max(0, Math.cos(ph)) * 12; bend = 10 * s + 6;
+      fx = Math.sin(ph) * 25; fy = -Math.max(0, Math.cos(ph)) * 19; bend = 12 * s + 7;
     } else if (!p.dead && s > 0) { fy = -E.pulse * 5; } // the front foot taps the beat
     hose(g, s * 6, -30, fx, fy - 4, bend, 8.5, p.i * 7 + s);
     shoe(g, fx, fy, p.i * 11 + s);
   }
-  if (!climb && !p.dead) g.translate(0, -E.pulse * (p.ground ? 3.6 : 1)); // the whole top half hops on the beat
+  if (!climb && !p.dead) g.translate(0, -E.pulse * (p.ground ? 3.6 : 1) - (moving ? Math.abs(Math.sin(p.run)) * 5 : 0)); // the whole top half hops on the beat, and bounces as it runs
   // ---- back arm (the glove that holds the pump) goes behind the body ----
   const rel = p.face > 0 ? p.a : Math.PI - p.a;
   const sxs = 7, sys = -SHOULDER + 2;
@@ -265,7 +265,7 @@ export function drawSniper(g, p, E, mood) {
   g.restore();
 }
 
-/** The decoy: the same sniper reduced to a painted wooden cut-out on a stake, waving. */
+/** The decoy: the same sniper as a painted wooden cut-out on a stake, waving. Close up, the stake and the dotted cut line give it away. */
 export function drawDecoy(g, d, E, col, style) {
   const T = E.T, pop = d.pop || 0;
   g.save();
@@ -275,25 +275,30 @@ export function drawDecoy(g, d, E, col, style) {
   g.scale(d.face, 1 - pop * 0.3);
   const grow = d.grow < 1 ? 1 - Math.pow(1 - d.grow, 3) : 1;
   g.scale(1, 0.3 + 0.7 * grow);
-  const tone = (c) => mixHex(c, '#d9cfb8', 0.28);
-  // wooden prop braces and foot
-  g.strokeStyle = C.ink; g.lineWidth = 3;
-  poly(g, [-26, 0, 26, 0, 26, 6, -26, 6], d.id, C.g3, 2.6, 0.4, C.ink, 0.2);
-  g.beginPath(); g.moveTo(-18, 0); g.lineTo(-9, -44); g.moveTo(18, 0); g.lineTo(9, -44); g.stroke();
-  // body board with a visible cut edge
-  poly(g, [-17, -30, 17, -30, 15, -66, -15, -66], d.id + 3, tone(col), 3.4, 0.5, C.ink, 0.4);
-  g.strokeStyle = 'rgba(247,240,222,0.7)'; g.lineWidth = 1.4; g.setLineDash([4, 4]);
-  g.beginPath(); g.moveTo(-12, -34); g.lineTo(12, -34); g.stroke(); g.setLineDash([]);
-  blob(g, 0, -88, 23, 24.5, d.id + 5, '#efe6cf', 3.6, 0.9, 14);
-  g.strokeStyle = C.ink; g.lineWidth = 2.6; g.lineCap = 'round';
-  g.beginPath(); g.arc(4, -91, 4, 0.3, 2.9); g.arc(15, -91, 4, 0.3, 2.9); g.stroke(); // two painted happy eyes
-  g.beginPath(); g.moveTo(8, -76); g.quadraticCurveTo(15, -70, 22, -77); g.stroke();
-  blob(g, 23, -85, 4.5, 4.2, d.id + 9, C.paper2, 2.4, 0.4, 8);
-  drawHat(g, style, col, 0, -106, 0, 1, d.id);
-  // one waving arm, painted on
+  const tone = (c) => mixHex(c, '#d9cfb8', 0.2);
+  const bob = E.pulse * 2;
+  // wooden foot and braces behind the legs
+  poly(g, [-24, 0, 24, 0, 24, 5, -24, 5], d.id, C.g3, 2.6, 0.4, C.ink, 0.2);
+  g.strokeStyle = C.ink; g.lineWidth = 3.4; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(-17, 0); g.lineTo(-6, -40); g.moveTo(17, 0); g.lineTo(6, -40); g.stroke();
+  // painted legs and shoes, as the real thing stands
+  for (const s of [-1, 1]) { hose(g, s * 6, -30, s * 9, -4, s * 5, 8.5, d.id + s); shoe(g, s * 9, 0, d.id + s * 3); }
+  g.translate(0, -bob);
+  // the board: body shape with a visible cut edge
+  blob(g, 0, -46, 17.5, 19, d.id + 3, tone(col), 3.6, 0.9, 12);
+  g.strokeStyle = 'rgba(247,240,222,0.8)'; g.lineWidth = 1.5; g.setLineDash([4, 4]);
+  blobPath(g, 0, -46, 13.5, 15, d.id + 3, 0.4, 12); g.stroke(); g.setLineDash([]);
+  g.fillStyle = C.ink; g.beginPath(); g.arc(3, -45, 2, 0, 6.283); g.arc(3, -37, 2, 0, 6.283); g.fill();
+  blob(g, 0, -80, 23, 24.5, d.id + 5, '#efe6cf', 3.6, 0.9, 14);
+  g.strokeStyle = C.ink; g.lineWidth = 2.8; g.lineCap = 'round';
+  g.beginPath(); g.arc(1, -84, 4, 0.2, 2.9); g.arc(13.5, -84, 4, 0.2, 2.9); g.stroke(); // two painted happy eyes
+  g.beginPath(); g.moveTo(8, -68); g.quadraticCurveTo(15, -62, 22, -69); g.stroke();
+  blob(g, 23.5, -77, 5.2, 4.8, d.id + 9, C.paper2, 2.8, 0.5, 8);
+  drawHat(g, style, col, 0, -100, 0, 1, d.id);
+  // one waving arm
   const w = Math.sin(T * 7 + d.id) * 0.5;
-  g.save(); g.translate(14, -62); g.rotate(-1.4 + w);
-  hose(g, 0, 0, 24, 0, 5, 7, d.id + 2);
+  g.save(); g.translate(10, -58); g.rotate(-1.3 + w);
+  hose(g, 0, 0, 24, 0, 5, 8, d.id + 2);
   glove(g, 25, 0, 0, d.id + 4);
   g.restore();
   g.restore();

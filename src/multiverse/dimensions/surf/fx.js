@@ -69,17 +69,21 @@ varying float vS;
 void main() { float a = (1.0 - vS * vS); gl_FragColor = vec4(vC.rgb * a * a * vC.a, 0.0); }`;
 const WAKE_V = `
 attribute float aA;
+attribute float aS;
 varying float vA;
+varying float vS;
 varying vec2 vP;
-void main() { vA = aA; vP = position.xz; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`;
+void main() { vA = aA; vS = aS; vP = position.xz; gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`;
 const WAKE_F = `precision highp float;
 uniform sampler2D tDetail;
 uniform vec3 uFoam;
 varying float vA;
+varying float vS;
 varying vec2 vP;
 void main() {
   float lace = texture2D(tDetail, vP * 0.21).b * 0.7 + texture2D(tDetail, vP * 0.063 + 0.4).b * 0.6;
-  float a = clamp(vA * (0.35 + lace * 1.1), 0.0, 1.0);
+  float e = 1.0 - vS * vS;
+  float a = clamp(vA * e * (0.3 + lace * 1.2 + e * 0.3), 0.0, 1.0);
   gl_FragColor = vec4(uFoam * a, a);
 }`;
 const BOW_F = `precision highp float;
@@ -143,6 +147,16 @@ export function makeFx(THREE, sky, detail, sunCol) {
     },
   };
 
+  // Particles emitted this instant start `dt` seconds into their flight (an impact frame).
+  api.warm = (dt) => {
+    for (let i = 0; i < MAX; i++) {
+      if (!P.on[i] || P.age[i] !== 0) continue;
+      P.age[i] = Math.min(dt, P.life[i] * 0.5);
+      P.vy[i] -= P.grav[i] * dt;
+      P.x[i] += P.vx[i] * dt; P.y[i] += P.vy[i] * dt; P.z[i] += P.vz[i] * dt;
+    }
+  };
+
   // ---- streaks ----
   const tGeo = new THREE.InstancedBufferGeometry();
   tGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0]), 3));
@@ -170,6 +184,9 @@ export function makeFx(THREE, sky, detail, sunCol) {
     pos.setUsage(THREE.DynamicDrawUsage); al.setUsage(THREE.DynamicDrawUsage);
     for (let i = 0; i < WAKE_N - 1; i++) idx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
     geo.setAttribute('position', pos); geo.setAttribute('aA', al); geo.setIndex(idx);
+    const sd = new Float32Array(WAKE_N * 2);
+    for (let i = 0; i < WAKE_N; i++) { sd[i * 2] = -1; sd[i * 2 + 1] = 1; }
+    geo.setAttribute('aS', new THREE.BufferAttribute(sd, 1));
     const mesh = new THREE.Mesh(geo, null);
     mesh.frustumCulled = false;
     mesh.renderOrder = -3;
@@ -247,7 +264,7 @@ export function makeFx(THREE, sky, detail, sunCol) {
         let dx = px - nd.x, dz = pz - nd.z;
         const l = Math.hypot(dx, dz) || 1;
         dx /= l; dz /= l;
-        const live = nd.age < WAKE_LIFE && l < 6, half = live ? 0.35 + nd.age * 0.55 : 0, y = live ? sea.height(nd.x, nd.z) + 0.07 : 0;
+        const live = nd.age < WAKE_LIFE && l < 6, half = live ? 0.55 + nd.age * 0.6 : 0, y = live ? sea.height(nd.x, nd.z) + 0.07 : 0;
         pos[o] = nd.x - dz * half; pos[o + 1] = y; pos[o + 2] = nd.z + dx * half;
         pos[o + 3] = nd.x + dz * half; pos[o + 4] = y; pos[o + 5] = nd.z - dx * half;
         al[j * 2] = al[j * 2 + 1] = live ? nd.k * Math.min(1, j * 0.5 + 0.2) * Math.pow(1 - nd.age / WAKE_LIFE, 1.5) : 0;

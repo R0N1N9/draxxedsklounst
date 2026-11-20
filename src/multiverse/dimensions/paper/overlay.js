@@ -4,6 +4,8 @@
 import { INK, PAPER, KRAFT, ID, ID_DARK, darker, lighter } from './style.js';
 
 const TAU = Math.PI * 2;
+const PAIR_A = [[INK, 6], ['#fffdf5', 2.4]], PAIR_B = [['#fffdf5', 5], [INK, 2]], PAIR_C = [['#fffdf5', 4], [INK, 1.6]];
+const COMPASS_NAMES = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
 const FONT = (px, w = 800) => `${w} ${px}px Rajdhani, "Arial Narrow", "Helvetica Neue", sans-serif`;
 const MONO = (px) => `700 ${px}px "JetBrains Mono", Menlo, "Courier New", monospace`;
 const angDiff = (a, b) => { let d = (b - a) % TAU; if (d > Math.PI) d -= TAU; else if (d <= -Math.PI) d += TAU; return d; };
@@ -105,7 +107,7 @@ export function makeOverlay(ctx) {
     if (a <= 0.01) return;
     g.globalAlpha = a;
     g.lineCap = 'round';
-    for (const [col, lw] of [[INK, 6], ['#fffdf5', 2.4]]) {
+    for (const [col, lw] of PAIR_A) {
       g.strokeStyle = col; g.lineWidth = lw;
       g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.stroke();
       g.beginPath();
@@ -138,7 +140,7 @@ export function makeOverlay(ctx) {
     // reticle
     const px = (h / 2) / Math.tan((S.fovS * Math.PI) / 360); // pixels per radian
     g.lineCap = 'butt';
-    for (const [col, lw] of [['#fffdf5', 5], [INK, 2]]) {
+    for (const [col, lw] of PAIR_B) {
       g.strokeStyle = col; g.lineWidth = lw;
       g.beginPath();
       g.moveTo(cx - R + 14, cy); g.lineTo(cx - 14, cy); g.moveTo(cx + 14, cy); g.lineTo(cx + R - 14, cy);
@@ -154,7 +156,7 @@ export function makeOverlay(ctx) {
       const x = cx + k * tick;
       if (Math.abs(x - cx) > R - 24) continue;
       const big = k % 2 === 0;
-      for (const [col, lw] of [['#fffdf5', 4], [INK, 1.6]]) { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); g.moveTo(x, cy - (big ? 9 : 5)); g.lineTo(x, cy + (big ? 9 : 5)); g.stroke(); }
+      for (const [col, lw] of PAIR_C) { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); g.moveTo(x, cy - (big ? 9 : 5)); g.lineTo(x, cy + (big ? 9 : 5)); g.stroke(); }
       if (big && Math.abs(k) <= 4) { g.fillStyle = '#fffdf5'; g.fillText(String(Math.abs(k)), x, cy + 13); }
     }
     g.fillStyle = INK; g.beginPath(); g.arc(cx, cy, 3.4, 0, TAU); g.fill();
@@ -176,7 +178,7 @@ export function makeOverlay(ctx) {
     rrect(g, x0, top, w, h, 4); g.clip();
     const hd = ((-S.heading * 180) / Math.PI + 720) % 360;
     g.strokeStyle = INK; g.fillStyle = INK; g.lineWidth = 2;
-    const names = { 0: 'N', 45: 'NE', 90: 'E', 135: 'SE', 180: 'S', 225: 'SW', 270: 'W', 315: 'NW' };
+    const names = COMPASS_NAMES;
     for (let d = Math.floor((hd - half) / 5) * 5; d <= hd + half; d += 5) {
       const x = cx + (d - hd) * ppd, dd = ((d % 360) + 360) % 360;
       const major = dd % 15 === 0;

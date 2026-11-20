@@ -1,6 +1,6 @@
 // The paper people: a sniper is a printed card on a thin core — a full target face-on, a ruled line edge-on.
 // Standees are the same card in cardboard. The mascots dotted round the yard are plain scenery cut-outs.
-import { drawSniper, drawMascot, drawGlint } from './art.js';
+import { drawSniper, drawMascot, drawGlint, dieCut } from './art.js';
 import { ID, ID_DARK, INK, PAPER, KRAFT, GROUND_SHADE, lighter } from './style.js';
 import { LineSet } from './lines.js';
 
@@ -42,9 +42,9 @@ export function makeFigureKit(THREE, mats) {
     return m;
   };
   const tex = {
-    live: [0, 1].map((i) => canvasTex((g) => drawSniper(g, ID[i], ID_DARK[i], 'live'), 256, 512)),
-    standee: [0, 1].map((i) => canvasTex((g) => drawSniper(g, ID[i], ID_DARK[i], 'standee'), 256, 512)),
-    mascot: canvasTex((g) => drawMascot(g), 256, 512),
+    live: [0, 1].map((i) => canvasTex((g) => { drawSniper(g, ID[i], ID_DARK[i], 'live'); dieCut(g, 256, 512, 7, '#fffdf5'); }, 256, 512)),
+    standee: [0, 1].map((i) => canvasTex((g) => { drawSniper(g, ID[i], ID_DARK[i], 'standee'); dieCut(g, 256, 512, 7, '#e8c48e'); }, 256, 512)),
+    mascot: canvasTex((g) => { drawMascot(g); dieCut(g, 256, 512, 7, '#fffdf5'); }, 256, 512),
   };
   const mLive = tex.live.map(cardMat), mStand = tex.standee.map(cardMat), mMascot = cardMat(tex.mascot);
   const coreMats = ID.map((c) => { const m = new THREE.MeshBasicMaterial({ color: c }); matl.push(m); return m; });
@@ -53,7 +53,7 @@ export function makeFigureKit(THREE, mats) {
   matl.push(standCore, shadowMat);
 
   // crumpled paper ball, shared by every figure that dies (one geometry, one set of edge lines per ball)
-  const ballGeo = new THREE.IcosahedronGeometry(0.4, 1).toNonIndexed();
+  const ballGeo = new THREE.IcosahedronGeometry(0.4, 1); // already non-indexed: one flat face colour per triangle
   geos.push(ballGeo);
   {
     const p = ballGeo.attributes.position, jit = new Map();

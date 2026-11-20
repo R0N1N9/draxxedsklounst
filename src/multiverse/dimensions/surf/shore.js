@@ -65,14 +65,16 @@ export function buildShore(THREE, haze, seed, Q, sun, renderer) {
   }
   // ---- the land behind: jungle ridges and the volcano ----
   {
-    const nx = 96, nd = 40, pos = [], col = [], idx = [], c = new THREE.Color();
+    const nx = 150, nd = 60, pos = [], col = [], idx = [], c = new THREE.Color();
     for (let j = 0; j <= nd; j++) for (let i = 0; i <= nx; i++) {
       const x = -1500 + (i / nx) * 3000, d = 150 + (j / nd) * 1300 + 0;
       const rise = smoothstep(150, 520, d), n = fbm(x * 0.0042 + 3, d * 0.0042, 4), vx = x + 330, vd = d - 900;
       const h = 5 + rise * (55 + n * 110) + 210 * Math.exp(-(vx * vx + vd * vd) / (2 * 210 * 210)) * (1 - 0.14 * Math.exp(-(vx * vx + vd * vd) / 2200)) + 55 * Math.exp(-((x - 620) * (x - 620) + (d - 520) * (d - 520)) / 60000);
       pos.push(x, h * (1 - smoothstep(1250, 1450, d) * 0.7), shoreZ(Math.max(-700, Math.min(700, x))) - d);
-      const k = smoothstep(120, 330, h) + n * 0.2;
-      c.setRGB(lerp(0.07, 0.24, k), lerp(0.15, 0.17, k), lerp(0.05, 0.13, k));
+      // jungle below, bare rock high up; gullies in shadow, and the drifting shade of the clouds
+      const k = smoothstep(90, 230, h) + n * 0.2, gully = 0.55 + 0.9 * Math.abs(fbm(x * 0.011, d * 0.016, 4)), cloud = 0.62 + 0.38 * smoothstep(-0.25, 0.2, fbm(x * 0.0021 + 9, d * 0.003, 2));
+      const dapple = Math.min(1.35, gully) * cloud;
+      c.setRGB(lerp(0.085, 0.3, k) * dapple, lerp(0.16, 0.19, k) * dapple, lerp(0.05, 0.13, k) * dapple);
       col.push(c.r, c.g, c.b);
     }
     for (let j = 0; j < nd; j++) for (let i = 0; i < nx; i++) { const a = j * (nx + 1) + i, b = a + 1, cc = a + nx + 1, dd = cc + 1; idx.push(a, b, cc, b, dd, cc); }
@@ -90,7 +92,7 @@ export function buildShore(THREE, haze, seed, Q, sun, renderer) {
     // nudge every corner by a hash of where it is, so shared corners stay shared
     for (let i = 0; i < p.length; i += 3) { const h = Math.sin(p[i] * 12.9 + p[i + 1] * 78.2 + p[i + 2] * 37.7 + x) * 43758.5; const k = 0.78 + (h - Math.floor(h)) * 0.5; p[i] *= k; p[i + 1] *= k; p[i + 2] *= k; }
     const t = rng();
-    ROCK.add(g, [x, y, z], t < 0.5 ? '#2a2422' : '#221f24', [R(-0.3, 0.3), R(0, TAU), R(-0.3, 0.3)], [r * R(0.8, 1.25), r * sy * R(0.8, 1.2), r * R(0.8, 1.25)], true);
+    ROCK.add(g, [x, y, z], t < 0.5 ? '#4a3d36' : '#3d3638', [R(-0.3, 0.3), R(0, TAU), R(-0.3, 0.3)], [r * R(0.8, 1.25), r * sy * R(0.8, 1.2), r * R(0.8, 1.25)], true);
   };
   // ---- headlands at both ends of the bay, and loose stacks off their points ----
   for (const side of [-1, 1]) {

@@ -28,8 +28,8 @@ export function makeView(ctx, THREE, renderer, W) {
   for (let i = 0; i < 3; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: 'foe', color: '#fff', hollow: false, text: '', sub: '' });
   for (let i = 0; i < 3; i++) S.hits.push({ ang: 0, a: 0, x: 0, z: 0 });
   let wt = 0, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, camY = me.y, lift = 0, flashA = 0, raysK = 0, foeVis = 1, seenX = foe.x, seenZ = foe.z, seenY = foe.y;
-  let fired = false, braced = false, promptT = 0, noteT = 0, frames = 0, fresh = false, tPrev = 0, skip = 0, slow = 0;
-  const api = { camera, shot: null, wt: 0 };
+  let fired = false, braced = false, promptT = 0, noteT = 0, frames = 0, fresh = false, tPrev = 0, debt = 0, drawAt = -1e9;
+  const api = { camera, shot: null, wt: 0, force: 0, draws: 0 };
   const dirOf = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
   const fov0 = () => (ctx.width / Math.max(1, ctx.height) < 1.45 ? 58 : 52);
   const zoomed = (k) => (2 * Math.atan(Math.tan((fov0() * Math.PI) / 360) / lerp(1, R.zoom, k)) * 180) / Math.PI;
@@ -65,8 +65,8 @@ export function makeView(ctx, THREE, renderer, W) {
     kick(k) { kickV += 0.3 * k; trauma = Math.min(1, trauma + 0.2 * k); fired = true; },
     note(text, hot = false, dur = 2.2) { S.note = text; S.noteHot = hot; noteT = dur; },
     hitFrom(x, z) { let t = S.hits[0]; for (const q of S.hits) if (q.a < t.a) t = q; t.a = 1.3; t.x = x; t.z = z; },
-    beginIntro() { introT = 0; },
-    poke() { skip = 0; },
+    beginIntro() { introT = 0; drawAt = -1e9; },
+    poke() { drawAt = -1e9; debt = 0; }, // whatever the pacing says, the next quiet frame is drawn
     killCam(v) {
       trauma = Math.min(1, trauma + 0.5);
       if (!Q.soft) flashA = 0.45;
@@ -74,7 +74,7 @@ export function makeView(ctx, THREE, renderer, W) {
       const sl = Math.hypot(SUN.x, SUN.z), sx = SUN.x / sl, sz = SUN.z / sl;
       kc = { v, t: 0, ang: Math.atan2(sz, sx) + (v.i ? 0.5 : -0.5), x: v.x, y: v.y, z: v.z };
       fx.rainbow(v.x - sx * 13, v.y - 1.5, v.z - sz * 13);
-      skip = 0;
+      drawAt = -1e9; debt = 0;
     },
     focus() {
       const r = ctx.result, v = P[r && r.victim >= 0 ? r.victim : 1 - ctx.me], m = project(kc ? kc.x : v.x, (kc ? kc.y : v.y) + 2.5, kc ? kc.z : v.z, S.marks[2]);
@@ -231,11 +231,17 @@ export function makeView(ctx, THREE, renderer, W) {
       fresh = false;
       frames++;
       if (!inBand && frames > 2) { post.present(); return; } // the core is photographing the world: put the last frame back
-      if (Q.soft && frames > 3) {
-        slow = iv > 70 ? Math.min(slow + 1, 6) : Math.max(slow - 1, 0);
-        if (skip > 0) { skip--; return; }
-        skip = slow >= 2 ? Math.min(3, Math.round(iv / 80)) : 0;
+      if (api.force > 0) api.force--; // (test scripts: draw now)
+      else if (Q.soft && frames > 2) {
+        // A software rasteriser pays for a draw over the next several frames, not in one: add
+        // up everything it stalled since, do not draw again while it is still catching up,
+        // and let no more than a fifth of the time go on drawing.
+        if (iv > 40) debt += iv - 17;
+        if (frames < 14 || iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
       }
+      drawAt = now;
+      debt = 0;
+      api.draws++;
       post.render(scene, camera, raysK > 0.01 && !Q.soft);
     },
   });

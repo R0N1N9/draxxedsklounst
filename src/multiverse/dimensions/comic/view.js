@@ -27,7 +27,7 @@ export function makeView(ctx, THREE, renderer, X) {
   let wt = 0, boom = BOOM, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, flashA = 0, speedA = 0, suddenA = 0, popN = 0;
   let frames = 0, fresh = false, held = false, shadowDirty = true, glintT = 0, tPrev = 0, cost = 0, drawAfter = 0, drew = false;
   const lt = { ok: false, x: 0, z: 0, roof: 0 };
-  const api = { camera, shot: null, force: 0, lt, S };
+  const api = { camera, shot: null, force: 0, lt, S, get frames() { return frames; } };
 
   const dirOf = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
   // The sniper's place on the page: left of centre, and on a phone clear of the left thumb's cluster.

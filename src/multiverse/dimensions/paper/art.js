@@ -215,6 +215,25 @@ export function drawFlash(g, S) { // a muzzle flash: a hard-edged starburst
   g.beginPath(); g.arc(S / 2, S / 2, S * 0.17, 0, TAU); ink(g, '#fffdf0', S * 0.03);
 }
 
+/** Wrap whatever is on the canvas in a die-cut sticker border: a paper-white halo, then a thin ink line outside it. */
+export function dieCut(g, W, H, halo, paper) {
+  const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
+  const src = mk();
+  src.getContext('2d').drawImage(g.canvas, 0, 0);
+  const grow = (r, col) => {
+    const c = mk(), q = c.getContext('2d');
+    for (let i = 0; i < 20; i++) { const a = (i / 20) * TAU; q.drawImage(src, Math.cos(a) * r, Math.sin(a) * r); }
+    q.globalCompositeOperation = 'source-in';
+    q.fillStyle = col; q.fillRect(0, 0, W, H);
+    return c;
+  };
+  const ring = Math.max(3, halo * 0.55);
+  g.clearRect(0, 0, W, H);
+  g.drawImage(grow(halo + ring, INK), 0, 0);
+  g.drawImage(grow(halo, paper), 0, 0);
+  g.drawImage(src, 0, 0);
+}
+
 export function drawGlint(g, S) { // the sparkle of a scope lens catching the sun: a four-point paper star
   g.clearRect(0, 0, S, S);
   g.beginPath();

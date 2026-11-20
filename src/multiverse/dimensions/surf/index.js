@@ -77,14 +77,15 @@ export default {
     const Q = { soft: false, scale: 1 };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.75; }
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.62; }
     } catch { /* masked: assume a real GPU */ }
+    if (globalThis.__surfRich) { Q.soft = false; Q.scale = 1; } // test scripts: the full build, whatever draws it
 
     const sea = makeSea(THREE, ctx.rng, ROUND), world = makeWorld(ctx.rng, sea, ROUND);
     const scene = new THREE.Scene();
-    const sky = makeSky(THREE, renderer), haze = makeHaze(THREE);
+    const sky = makeSky(THREE, renderer, Q), haze = makeHaze(THREE);
     const tints = ctx.players.map((pl) => { const c = new THREE.Color(pl.color); return new THREE.Vector3(c.r, c.g, c.b); });
-    const ocean = makeOcean(THREE, sea, sky, ctx.seed, tints);
+    const ocean = makeOcean(THREE, sea, sky, ctx.seed, tints, Q);
     const fx = makeFx(THREE, sky, ocean.uniforms.tDetail.value, SUN_COLOR);
     scene.add(sky.dome, ocean.mesh, fx.group);
     scene.add(new THREE.HemisphereLight(new THREE.Color(0.42, 0.5, 0.86), new THREE.Color(0.2, 0.3, 0.3), 1.7));
@@ -164,6 +165,7 @@ export default {
         for (let i = 0; i < 3; i++) fx.ring(v.x, v.y, v.z, 1 + i, 9 + i * 4, 1.2 + i * 0.3, 0.9);
         // a hanging veil for the rainbow to live in
         for (let i = 0; i < 26; i++) fx.mist(v.x + rnd(9) - SUN.x * 8, v.y + 1 + Math.random() * 7, v.z + rnd(9) - SUN.z * 8, rnd(0.6), 0.6 + Math.random(), rnd(0.6), 2.4, 3, 7, 0.16, 0.2, 0.5);
+        fx.warm(0.1);
         sfx.wipeout(v.x, v.z);
       },
       splashDown(x, y, z, size) { fx.splash(x, y, z, 1.6 * size, 8, 8 * size); sfx.splashDown(x, z, size); },

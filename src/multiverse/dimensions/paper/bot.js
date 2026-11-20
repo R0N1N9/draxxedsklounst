@@ -14,9 +14,9 @@ export function makeBot(ctx, env) {
 
   function init(p) {
     p.bot = {
-      mode: 'feel', modeT: 0, feelT: 7.5 - 5 * skill() + rnd() * 3, goal: { x: p.x, z: p.z }, goalT: 99,
+      mode: 'feel', modeT: 0, feelT: 9 - 3 * skill() + rnd() * 3, fireOk: 9.6 + rnd() * 1.6, goal: { x: p.x, z: p.z }, goalT: 99,
       seen: 0, lost: 0, ey: 0, ep: 0, errT: 0, lead: 1, wig: 0, wigT: 0, still: 0, fireDelay: 0, hideT: 0,
-      last: { x: 0, z: 0, t: -99 }, decoyId: -1, ignore: new Set(), dodged: new Set(), standT: 5 + rnd() * 6,
+      field: env.nav.newField(), last: { x: 0, z: 0, t: -99 }, decoyId: -1, ignore: new Set(), dodged: new Set(), standT: 5 + rnd() * 6,
     };
   }
 
@@ -42,7 +42,7 @@ export function makeBot(ctx, env) {
     else if (b.mode === 'rush') g = [clamp(foe.x + (rnd() - 0.5) * 6, -YARD_X + 3, YARD_X - 3), foe.z + side * (5 + rnd() * 6)];
     else g = spot(foe.x * 0.5, foe.z + side * (14 + rnd() * 12), 22, hidden); // flank: out of the other sniper's sight, 14-26 m short of them
     b.goal.x = g[0]; b.goal.z = g[1]; b.goalT = 0;
-    env.nav.field(g[0], g[1]);
+    env.nav.field(g[0], g[1], b.field);
   }
   const SPAWN_Z = 37;
 
@@ -101,7 +101,7 @@ export function makeBot(ctx, env) {
     const tol = Math.atan2(0.2 + 0.1 * (1 - sk), Math.max(8, dist));
     const aimed = seeing && Math.abs(angDiff(p.yaw, wantYaw)) < tol && Math.abs(p.pitch - wantPitch) < tol * 1.3;
     const moving = Math.hypot(p.vx, p.vz) > 1.2;
-    const open = b.mode !== 'feel' || dist < 32;
+    const open = (b.mode !== 'feel' || dist < 32) && t >= b.fireOk; // the feeling-out phase: nobody takes a shot in the first ten seconds
     if (aimed && open && b.seen > react + 0.15 && foe.e < 0.3 && p.cycle <= 0 && p.reload <= 0 && p.ammo > 0 && p.e < 0.1 && (!moving || sk > 0.5 || dist < 22)) {
       b.still += dt;
       if (b.still > (dist > 30 ? 0.22 - 0.16 * sk : 0.05) && b.fireDelay <= 0 && (p.scope > 0.85 || dist < 28)) {
@@ -117,7 +117,7 @@ export function makeBot(ctx, env) {
     // ---- movement ----
     let gx = 0, gz = 0, go = !(b.mode === 'snipe' && seeing && dist > 30 && b.hideT <= 0 && b.wig === 0 && sk > 0.3);
     if (goalD < 1.2) go = false;
-    if (go && env.nav.step(p.x, p.z, tmp)) { gx = tmp.x - p.x; gz = tmp.z - p.z; }
+    if (go && env.nav.step(p.x, p.z, tmp, b.field)) { gx = tmp.x - p.x; gz = tmp.z - p.z; }
     else if (go) { gx = b.goal.x - p.x; gz = b.goal.z - p.z; }
     let gl = Math.hypot(gx, gz) || 1;
     gx /= gl; gz /= gl;

@@ -162,7 +162,7 @@ export function makeSim(ctx, w, S, sound, fx) {
     sound.bonk(x, big);
     fx.ring(x, y, 8, big ? 70 : 40, 0.3, '#1b1612');
     fx.burst(x, y, big ? 12 : 7, big ? 420 : 260, 0.3);
-    if (big) { fx.text('BONK!', x, y - 36, 54, '#f7f0de', 1.3, -0.12); S.shake.add(0.6); } else fx.text('bonk', x, y - 26, 22, '#f7f0de', 0.6);
+    if (big) S.shake.add(0.6); else fx.text('bonk', x, y - 26, 22, '#f7f0de', 0.6);
   }
 
   function crateOut(judge) {
@@ -302,7 +302,8 @@ export function makeSim(ctx, w, S, sound, fx) {
 
   function grabLadder(p, l, fromTop) {
     p.lad = l;
-    p.x = l.x; p.vx = 0; p.vy = 0; p.ground = false; p.plat = '';
+    p.vx = 0; p.vy = 0; p.ground = false; p.plat = '';
+    if (!fromTop) p.x = l.x;
     if (fromTop) p.y = ladderTop(w, l) + 4;
     p.charge = 0;
     sound.rung(p.x);
@@ -345,6 +346,7 @@ export function makeSim(ctx, w, S, sound, fx) {
     if (p.lad) {
       const l = p.lad, top = ladderTop(w, l);
       p.st = 2; p.h = PH; p.ground = false;
+      p.x += (l.x - p.x) * Math.min(1, dt * 16); // swing onto the rungs
       const dy = live && p.stun <= 0 ? (cmd.my < -0.2 ? -1 : cmd.my > 0.2 ? 1 : 0) : 0;
       p.y += dy * CLIMB * dt;
       p.climb += Math.abs(dy) * dt * 11;
@@ -402,7 +404,7 @@ export function makeSim(ctx, w, S, sound, fx) {
       fx.dust(p.x, p.y, 4, 0, 9);
     }
     // springboards
-    if (p.ground && p.plat === 'solid' && p.spCd <= 0 && live) {
+    if (p.ground && p.plat === 'solid' && p.spCd <= 0 && live && (Math.abs(p.vx) > 70 || !wasGround)) { // standing still on the pad does not fire it: that is how you reach the ladder
       for (const s of w.springs) {
         if (p.x >= s.x0 && p.x <= s.x1 && Math.abs(p.y - s.y) < 3) {
           p.vy = -SPRING; p.vx = clamp(p.vx + s.dir * 160, -RUN, RUN); p.ground = false; p.spCd = 0.4; p.coyote = 0;

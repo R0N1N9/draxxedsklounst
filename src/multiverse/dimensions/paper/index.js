@@ -22,26 +22,24 @@
 // SUDDEN    Both snipers get a tall beacon, edge-on and standees are off, and the page closes in: two paper
 //           curtains slide in from the ends until the yard is a short stage.
 import { clamp, angDiff, gauss, resolveCircleRects, disposeTree } from '../../kit.js';
-import { setThree, ID, INK } from './style.js';
+import { setThree, ID } from './style.js';
 import { makeLineMats } from './lines.js';
 import { buildWorld } from './world.js';
 import { makeSet } from './set.js';
-import { makeFigureKit, poseFigure, crumpleFigure } from './figures.js';
+import { makeFigureKit, poseFigure, crumpleFigure, sheetHit } from './figures.js';
 import { makeFx, shotAt, V0, G, ZERO } from './fx.js';
 import { planFlight, sheetSeg, segBoxT, panelCross, cross } from './ballistics.js';
-import { sheetHit } from './figures.js';
 import { makeOverlay } from './overlay.js';
 import { makeSound } from './sound.js';
 import { makeBot } from './bot.js';
 import { drawFlash } from './art.js';
-import { EYE, RADIUS, SPAWN_Z, YARD_X, windAt, craneAt, yardLimit, CRANE_X } from './layout.js';
+import { EYE, RADIUS, SPAWN_Z, YARD_X, windAt, craneAt, yardLimit } from './layout.js';
 
 const LOOK = 0.0022, RUN = 5.4, SCOPE_RUN = 2.2, EDGE_RUN = 3.6;
 const MAG = 4, CYCLE = 1.05, CYCLE_SD = 0.7, RELOAD = 2.0;
 const EDGE_MAX = 1.8, EDGE_CD = 5.0, STAND_LIFE = 16, STAND_RE = 13, WIND_K = 5.5;
 const ROUND = 42, FOV_SCOPE = 15, OVER_SLOW = 0.35;
 const TH0 = (G * ZERO) / (2 * V0 * V0); // the rifle is zeroed at ZERO metres: it points this far above the sight line
-const TAU = Math.PI * 2;
 const ease = (u) => u * u * (3 - 2 * u);
 
 const PROMPTS = {
@@ -63,7 +61,7 @@ export default {
   hint: 'Edge-on, you are a paper-thin line: hard to hit, but you cannot shoot.',
   altToggle: true,
   roundTime: ROUND,
-  overTime: 3.0,
+  overTime: 2.6,
   angleFields: ['yaw', 'pitch'],
 
   create(ctx) {
@@ -94,9 +92,9 @@ export default {
       const fig = kit.sniper(i);
       scene.add(fig.root);
       return {
-        i, x: 0, z: i ? -SPAWN_Z : SPAWN_Z, yaw: i ? Math.PI : 0, pitch: 0, vx: 0, vz: 0, px: 0, pz: 0, e: 0, edgeT: 0, edgeCd: 0, standCd: 0, standCharges: 2, standRe: 0,
+        i, x: 0, z: i ? -SPAWN_Z : SPAWN_Z, yaw: i ? Math.PI : 0, pitch: 0, vx: 0, vz: 0, e: 0, edgeT: 0, edgeCd: 0, standCd: 0, standCharges: 2, standRe: 0,
         ammo: MAG, cycle: 0, reload: 0, scope: 0, alive: true, fall: 0, walk: i * 3, speed: 0, fireBuf: 0, flash: 0, kick: 0, stepT: 0, bolt: 0,
-        remote: ctx.opponent === 'remote' && i !== ctx.me, bot: null, fig, swayT: i * 11.3, hitT: 0, rs: 0,
+        remote: ctx.opponent === 'remote' && i !== ctx.me, bot: null, fig, swayT: i * 11.3, hitT: 0,
       };
     });
     const bot = makeBot(ctx, {
@@ -126,7 +124,7 @@ export default {
     }
     const allStands = [];
     const standeeList = () => { allStands.length = 0; for (const s of stands) if (s.active) allStands.push(s); return allStands; };
-    function placeStandee(owner, slot, x, z, yaw, mine) {
+    function placeStandee(owner, slot, x, z, yaw) {
       const s = stands[slot];
       s.active = true; s.owner = owner; s.x = x; s.z = z; s.yaw = yaw; s.life = STAND_LIFE; s.hitT = 0;
       s.nx = Math.sin(yaw); s.nz = Math.cos(yaw); s.ux = Math.cos(yaw); s.uz = -Math.sin(yaw);
@@ -134,11 +132,9 @@ export default {
       poseFigure(s.fig, x, z, yaw, 0, 0, 0, 1);
       fx.burst(x, 1.0, z, 14, ['#f7f1e3', '#cf9b62', ID[owner]], 3.2, 0.2, 1.1, 1.5);
       snd.stand(((x - P[ctx.me].x) * Math.cos(P[ctx.me].yaw) - (z - P[ctx.me].z) * Math.sin(P[ctx.me].yaw)) / 20);
-      void mine;
     }
 
     // ---- world queries ----
-    const dynBoxes = set.dyn;
     function sees(ax, ay, az, bx, by, bz) {
       for (const b of W.boxes) if (segBoxT(ax, ay, az, bx, by, bz, b) >= 0) return false;
       const dyn = set.boxesAt(ctx.time);
@@ -155,12 +151,11 @@ export default {
     // ---- shots ----
     const shots = [];
     let shotId = 0;
-    const hexOf = (o) => ID[o];
     function launch(s, own) {
       s.age = 0; s.hi = 0; s.si = 0; s.own = own; s.done = false;
       shots.push(s);
-      fx.addShot(s, hexOf(s.owner));
-      fx.addBullet(s, hexOf(s.owner));
+      fx.addShot(s, ID[s.owner]);
+      fx.addBullet(s, ID[s.owner]);
       const o = P[s.owner];
       o.flash = 0.12;
       const me = P[ctx.me];
@@ -330,7 +325,7 @@ export default {
         const sa = stands[p.i * 2], sb = stands[p.i * 2 + 1];
         const slot = p.i * 2 + (!sa.active ? 0 : !sb.active ? 1 : sa.life < sb.life ? 0 : 1);
         const yaw = Math.atan2(o.x - x, o.z - z);
-        placeStandee(p.i, slot, x, z, yaw, true);
+        placeStandee(p.i, slot, x, z, yaw);
         ctx.net.send({ k: 'st', slot, x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, yaw: Math.round(yaw * 1000) / 1000 });
         p.standCharges--; p.standCd = 1.2;
         if (p.i === ctx.me) standUsed = true;
@@ -345,8 +340,8 @@ export default {
     }
 
     // ---- state for the overlay and the camera ----
-    let frameDt = 0, anim = 0, introT = 0, overT = 0, wasSudden = false, known = 1, knownT = 0, heading = 0, fired = false, edgeUsed = false, standUsed = false, scoped = 0, scopeUsed = false;
-    let scopeOn = false, spotted = false, spotT = 0, driftT = 0, promptStage = 0, promptT = 0, note = '', noteA = 0, shakeT = 0, hornPrev = 0, gullT = 6, boltStage = 0, burstT = 0, lastLive = false, calm = false;
+    let frameDt = 0, anim = 0, introT = 0, overT = 0, wasSudden = false, known = 1, knownT = 0, heading = 0, fired = false, edgeUsed = false, standUsed = false, scopeUsed = false;
+    let scopeOn = false, spotted = false, spotT = 0, driftT = 0, promptStage = 0, promptT = 0, note = '', noteA = 0, shakeT = 0, hornPrev = 0, gullT = 6, boltStage = 0, burstT = 0;
     const cs = { x: 0, y: 0, warn: 0, moving: 0 };
     const dbg = globalThis.__PAPER_DBG || null; // DBG
     if (dbg) Object.assign(dbg, { P, camera, W, set, fx, stands, ctx, shots, S, placeStandee, fire }); // DBG
@@ -558,7 +553,7 @@ export default {
       },
 
       onPhase(phase) {
-        if (phase === 'live') { snd.music(ctx.sudden); lastLive = true; promptT = 0; }
+        if (phase === 'live') { snd.music(ctx.sudden); promptT = 0; }
         if (phase === 'over') {
           const r = ctx.result;
           overT = 0;
@@ -582,7 +577,7 @@ export default {
             en: m.en ? { x: m.en[0], y: m.en[1], z: m.en[2] } : null, holes: m.h || [], hits: m.s || [], age: 0, hi: 0, si: 0, own: false, done: false,
           };
           launch(s, false);
-        } else if (m.k === 'st') placeStandee(1 - ctx.me, m.slot, m.x, m.z, m.yaw, false);
+        } else if (m.k === 'st') placeStandee(1 - ctx.me, m.slot, m.x, m.z, m.yaw);
         else if (m.k === 'edge') snd.edge(!!m.on);
       },
 

@@ -2,6 +2,9 @@
 // lazily (one literal import() per entry so the single-file build can bundle them),
 // which keeps start-up light and means one broken module cannot take down the rest.
 //
+// `view` (fp = first person, tp = third person, top = top-down, side = side-on) and `look`
+// ('2d' or '3d': how the world READS, so a flat-drawn first-person world is '2d') drive
+// the rotation: the director avoids playing two worlds of the same kind back to back.
 // `dev: true` keeps an entry out of the match rotation (examples / templates).
 // `wip: true` does the same for a module that is still being built: it can be loaded by id
 // (?dim=, ?fxlab=, the lab) but matches do not visit it until the flag is removed.
@@ -9,24 +12,24 @@
 // the mode shows its hand — which never comes round again in the rotation.
 
 export const DIMENSIONS = [
-  { id: 'valley', load: () => import('./dimensions/valley/index.js') },
-  { id: 'neon', load: () => import('./dimensions/neon/index.js') },
-  { id: 'comic', wip: true, load: () => import('./dimensions/comic/index.js') },
-  { id: 'pixel', load: () => import('./dimensions/pixel/index.js') },
-  { id: 'ww2', load: () => import('./dimensions/ww2/index.js') },
-  { id: 'surf', wip: true, load: () => import('./dimensions/surf/index.js') },
-  { id: 'abyss', wip: true, load: () => import('./dimensions/abyss/index.js') },
-  { id: 'orbit', wip: true, load: () => import('./dimensions/orbit/index.js') },
-  { id: 'arcade', wip: true, load: () => import('./dimensions/arcade/index.js') },
-  { id: 'toon', wip: true, load: () => import('./dimensions/toon/index.js') },
-  { id: 'manga', load: () => import('./dimensions/manga/index.js') },
-  { id: 'noir', wip: true, load: () => import('./dimensions/noir/index.js') },
-  { id: 'terminal', load: () => import('./dimensions/terminal/index.js') },
-  { id: 'toybox', wip: true, load: () => import('./dimensions/toybox/index.js') },
-  { id: 'tapestry', wip: true, load: () => import('./dimensions/tapestry/index.js') },
-  { id: 'petri', wip: true, load: () => import('./dimensions/petri/index.js') },
-  { id: 'paper', wip: true, load: () => import('./dimensions/paper/index.js') },
-  { id: 'snow', wip: true, load: () => import('./dimensions/snow/index.js') },
+  { id: 'valley', view: 'fp', look: '3d', load: () => import('./dimensions/valley/index.js') },
+  { id: 'neon', view: 'top', look: '2d', load: () => import('./dimensions/neon/index.js') },
+  { id: 'comic', view: 'tp', look: '3d', wip: true, load: () => import('./dimensions/comic/index.js') },
+  { id: 'pixel', view: 'side', look: '2d', load: () => import('./dimensions/pixel/index.js') },
+  { id: 'ww2', view: 'tp', look: '3d', load: () => import('./dimensions/ww2/index.js') },
+  { id: 'surf', view: 'tp', look: '3d', wip: true, load: () => import('./dimensions/surf/index.js') },
+  { id: 'abyss', view: 'fp', look: '3d', wip: true, load: () => import('./dimensions/abyss/index.js') },
+  { id: 'orbit', view: 'side', look: '2d', wip: true, load: () => import('./dimensions/orbit/index.js') },
+  { id: 'arcade', view: 'fp', look: '3d', wip: true, load: () => import('./dimensions/arcade/index.js') },
+  { id: 'toon', view: 'side', look: '2d', wip: true, load: () => import('./dimensions/toon/index.js') },
+  { id: 'manga', view: 'side', look: '2d', load: () => import('./dimensions/manga/index.js') },
+  { id: 'noir', view: 'fp', look: '2d', wip: true, load: () => import('./dimensions/noir/index.js') },
+  { id: 'terminal', view: 'top', look: '2d', load: () => import('./dimensions/terminal/index.js') },
+  { id: 'toybox', view: 'top', look: '3d', wip: true, load: () => import('./dimensions/toybox/index.js') },
+  { id: 'tapestry', view: 'side', look: '2d', wip: true, load: () => import('./dimensions/tapestry/index.js') },
+  { id: 'petri', view: 'top', look: '2d', wip: true, load: () => import('./dimensions/petri/index.js') },
+  { id: 'paper', view: 'fp', look: '2d', wip: true, load: () => import('./dimensions/paper/index.js') },
+  { id: 'snow', view: 'top', look: '3d', wip: true, load: () => import('./dimensions/snow/index.js') },
   { id: 'example-2d', dev: true, load: () => import('./dimensions/example-2d/index.js') },
   { id: 'example-3d', dev: true, load: () => import('./dimensions/example-3d/index.js') },
 ];
@@ -85,6 +88,7 @@ export function loadTransition(id) {
   });
 }
 
+export const dimensionKind = (id) => { const e = DIMENSIONS.find((d) => d.id === id); return e ? { view: e.view, look: e.look } : {}; };
 export const playableDimensions = () => DIMENSIONS.filter((d) => !d.dev && !d.wip).map((d) => d.id);
 export const playableTransitions = () => TRANSITIONS.filter((d) => !d.dev && !d.wip && !d.first).map((d) => d.id);
 export const firstTransition = () => (TRANSITIONS.find((d) => d.first && !d.dev && !d.wip) || {}).id || null;
