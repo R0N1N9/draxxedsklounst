@@ -6,6 +6,8 @@
 
 A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tablets. No install, no server: one player hosts, the other opens the invite link, and the two connect peer-to-peer over WebRTC.
 
+It also has **[Sniper Cell: NightWatch](#sniper-cell)**, a co-op (or solo) night stealth mode: a shooter and a spotter infiltrate a guarded two-storey data center, steal intel from a hidden server and get out in a van.
+
 ![The practice range: looking out over the valley from the ridge with the Mk22 MRAD](docs/screenshots/practice-range.png)
 
 ## Screenshots
@@ -131,20 +133,50 @@ Headshots kill anything except a helmet's first hit.
 - **Solo · lone operative:** one sniper carrying both kits.
 - **Co-op:** the host picks a role and the friend who joins gets the other.
 
-### Sabotage
+### Mission
 
-- **Barracks:** reinforcements and backup fireteams only come out of here.
-  - The spotter can hack the door panel to lock them in for 90 s.
-  - The shooter can plant **C4** to end it for good.
-- **Drone bay** (west yard): replacement patrol drones launch from its pad.
-  - Hacking its control panel grounds it for good, and so does C4.
-- **Planting C4 alerts every guard on the map.** The fuse is 6 s, so get clear.
+1. Breach the fence.
+2. Plant the relay in the Electrical Room.
+3. Find a keycard in the office drawers, or take the Overseer's master badge.
+4. Find the server.
+5. **Upload:** the spotter jacks in with the signal-lock minigame, then holds the rack.
+   - A clean lock means a silent upload: no trace and no alarm, so you can walk the drive out.
+   - Three misses trips SENTINEL's **ICE**. The upload still forces through, but the outside guards and a fireteam take posts around the building walls, and the guards inside search their floors. Sneak out between them, or go loud.
+6. **Extract:** the drive-release minigame.
+7. **Exfil:** carry the drive to the **extraction van** on the east track. It shows on whoever carries it; drop it with **J** for your partner to pick up. The spotter drives and the shooter rides shotgun.
 
-### Guards notice
+### If ICE trips
 
-- Guards who see a comrade drop, or find a body, walk over to check it.
-- Then they get on the radio for backup, with the weapon slung low. Drop them first, jam them, or hack the comms rack.
-- Shooting out a light brings nearby guards over to look.
+1. **The report:** ISR Overwatch reports it, and the operators talk it over on the radio.
+2. **The vote:** each player votes **QUIET (1)** or **LOUD (2)**, or taps the buttons.
+   - The AI partner backs your call. In co-op, both players have to agree.
+   - If there's no agreement when the clock runs out, you stay quiet.
+3. **The sweep:** squads peel off the ring and clear the building room by room, ground floor first, then upstairs.
+   - Quiet is hide and seek: the shooter has camo, and the spotter has to stay nimble.
+   - Let a sweep walk past you and you'll hear about it. Get out through the ring and Overwatch sends you to the van.
+4. **The music:** a tense score plays while they sweep. Once they spot you, it switches to a full combat score with drums, choir and brass.
+5. **The console:** ICE also knocks the CYBER OPS tablet offline: it's all static and its network payloads are blocked. Quickhacks by line of sight still work.
+
+### The building
+
+The data center has **two storeys** with two stairwells. Guards, cameras and patrols are on both floors.
+
+- **Rack rooms:** six of them, behind **keycard doors**. Each door takes its own keycard, shown by a coloured tag on the reader and above the door (red, orange, yellow, green, blue, violet). Either player can swipe.
+- **Office drawers:** eleven desk drawers on both floors. Six of them hide the keycards; the rest hold junk. Searching takes a second and makes a little noise.
+- **Rooms you can use:**
+  - Storage shelves (upstairs): ammo for both weapons, one haul per shelf.
+  - The break-room fridge: +40 HP, three servings.
+  - The comms rack: hack it in person and guards can no longer radio for backup.
+  - The CCTV desk (Security / CCTV, ground floor): hack it in person and every camera is looped for SENTINEL and feeds your console. The cameras still see you, but nobody hears about it.
+- **The archive server:** in a random rack room. Find the cabinet with the slow amber beacon.
+- **Lights:** every lamp and ceiling panel can be **shot out**.
+- **IoT devices:** vending machines, printers, coffee machines, speakers, a TV and server fans. Hack them from the tablet or with a quickhack to make a distracting noise.
+
+**Cyber inside the building:**
+
+- Cut-lights blacks out the whole room.
+- An EMP fills the room: it drops shields, bulwark walls, cameras and lights.
+- **Supply drops can't land through a roof.**
 
 ### Security layout
 
@@ -168,53 +200,24 @@ Headshots kill anything except a helmet's first hit.
 
 **Inside the building:** patrols on both floors.
 
-### The building
+### Guards notice
 
-The data center has **two storeys** with two stairwells. Guards, cameras and patrols are on both floors.
+- Guards who see a comrade drop, or find a body, walk over to check it.
+- Then they get on the radio for backup, with the weapon slung low. Drop them first, jam them, or hack the comms rack.
+- Shooting out a light brings nearby guards over to look.
 
-- **Rack rooms:** six of them, behind **keycard doors**. Each door takes its own keycard, shown by a coloured tag on the reader and above the door (red, orange, yellow, green, blue, violet). Either player can swipe.
-- **Office drawers:** eleven desk drawers on both floors. Six of them hide the keycards; the rest hold junk. Searching takes a second and makes a little noise.
-- **Rooms you can use:**
-  - Storage shelves (upstairs): ammo for both weapons, one haul per shelf.
-  - The break-room fridge: +40 HP, three servings.
-  - The comms rack: hack it in person and guards can no longer radio for backup.
-  - The CCTV desk (Security / CCTV, ground floor): hack it in person and every camera is looped for SENTINEL and feeds your console. The cameras still see you, but nobody hears about it.
-- **The archive server:** in a random rack room. Find the cabinet with the slow amber beacon.
-- **Lights:** every lamp and ceiling panel can be **shot out**.
-- **IoT devices:** vending machines, printers, coffee machines, speakers, a TV and server fans. Hack them from the tablet to make a distracting noise.
+### Sabotage
 
-**Cyber inside the building:**
-
-- Cut-lights blacks out the whole room.
-- An EMP fills the room: it drops shields, bulwark walls, cameras and lights.
-- **Supply drops can't land through a roof.**
-
-### Mission
-
-1. Breach the fence.
-2. Plant the relay in the Electrical Room.
-3. Find a keycard in the office drawers, or take the Overseer's master badge.
-4. Find the server.
-5. **Upload:** the spotter jacks in with the signal-lock minigame, then holds the rack.
-   - A clean lock means a silent upload: no trace and no alarm, so you can walk the drive out.
-   - Three misses trips SENTINEL's **ICE**. The upload still forces through, but the outside guards and a fireteam take posts around the building walls, and the guards inside search their floors. Sneak out between them, or go loud.
-6. **Extract:** the drive-release minigame.
-
-### If ICE trips
-
-1. **The report:** ISR Overwatch reports it, and the operators talk it over on the radio.
-2. **The vote:** each player votes **QUIET (1)** or **LOUD (2)**, or taps the buttons.
-   - The AI partner backs your call. In co-op, both players have to agree.
-   - If there's no agreement when the clock runs out, you stay quiet.
-3. **The sweep:** squads peel off the ring and clear the building room by room, ground floor first, then upstairs.
-   - Quiet is hide and seek: the shooter has camo, and the spotter has to stay nimble.
-   - Let a sweep walk past you and you'll hear about it. Get out through the ring and Overwatch sends you to the van.
-4. **The music:** a tense score plays while they sweep. Once they spot you, it switches to a full combat score with drums, choir and brass.
-7. Carry the drive (it shows on the carrier; drop it with **J** for your partner to pick up) to the **extraction van**. The spotter drives and the shooter rides shotgun.
+- **Barracks:** reinforcements and backup fireteams only come out of here.
+  - The spotter can hack the door panel to lock them in for 90 s.
+  - The shooter can plant **C4** to end it for good.
+- **Drone bay** (west yard): replacement patrol drones launch from its pad.
+  - Hacking its control panel grounds it for good, and so does C4.
+- **Planting C4 alerts every guard on the map.** The fuse is 6 s, so get clear.
 
 ### Stealth
 
-- **Radio for backup:** a guard who spots you radios after 1.5 s (watch for the ((•)) icon). The call brings a fireteam from outside the building to your position. Drop the guard first, or jam the radio.
+- **Radio for backup:** a guard who spots you radios after 1.5 s (watch for the ((•)) icon). The call brings a fireteam from the barracks to your position. Drop the guard first, jam his comms, or hack the comms rack so nobody can radio at all.
 - **Breaking contact:** the HUD shows DETECTED, then HUNTED. Break line of sight for long enough and the hunt is called off. While they hunt, a **white silhouette** marks your last known position.
 - **Light and night vision:**
   - **N** to reach up and pull the goggles down: your hand comes up, the goggles flip down with a click and a tube whine, and the picture irises open as the tubes warm.
@@ -259,7 +262,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
   - Hacks: loop a camera, short-circuit a drone, open an electronic door, cut a light, set off an IoT device, or jam a guard's comms / reboot his optics (blind for 6 s).
   - Quickhacks still work when ICE knocks the console offline.
 - **Lock-pick set:** mechanical locks (maintenance and side doors) can't be hacked; the spotter picks them in person. Electronic locks (front, dock) open over the network, from the console or a quickhack.
-- **CYBER OPS tablet** (TAB), with ground and upper floors.
+- **CYBER OPS tablet:** a map of both floors, with payloads (pulse scan, jam, EMP, supply drop, cut lights, spoof cameras, decoy, quad, medevac), door and camera hacks, and camera feeds.
 - **Recon quad (Q):**
   - **Neurolink:** every enemy the quad can see within 45 m is marked for the team, with a lock-on animation and a red silhouette through walls. The mark stays as long as the quad keeps line of sight.
   - **Controls:** tap Q to park it; parked, it keeps marking. Tap Q again to fly it. **Hold Q** (or RECALL) for a quick calldown.
@@ -268,7 +271,6 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 - **ISR Predator** (I): a high-altitude drone orbiting the map. Slew its sensor with the mouse; it has IR (white-hot) and EO modes. Tag, ping and request from it.
   - **P (SWEEP)** runs a ping sweep: a circle on the ground that marks every unit inside it, people and machines, for 15 s, with red silhouettes through walls.
   - The tablet's pulse scan only hears electronics (drones, cameras, devices).
-- **Under ICE** the tablet is all static and its network payloads are blocked; use quickhacks.
 - **SNIPER POS** on the ping wheel asks the shooter to set up at a spot. It works from first person, the ISR cross or the tablet map. An AI shooter relocates there.
 - The HUD shows both interfaces as small live squares; tap one to open it.
 
@@ -282,7 +284,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 ### Comms
 
-- **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER and SYNC, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
+- **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER, SYNC and SNIPER POS, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
 - **Radio:** operators and ISR Overwatch talk over a tactical squad net. You hear a mic click and static on key-up, clipped male voices over a crackling static bed with dropouts, and a squelch tail on key-down; Overwatch ends with a talk-permit chirp. Every line is **subtitled**.
 - **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
 - **Cut-scenes:**
@@ -299,6 +301,36 @@ Play with headphones. Every sound is positioned in 3D (HRTF panning):
 - Patrol-drone rotor hum.
 - Your partner's footsteps.
 - Shots, impacts and C4 blasts.
+
+### Sniper Cell controls
+
+| Key | Shooter | Spotter |
+| --- | --- | --- |
+| Mouse / right-click | Aim / scope | Aim / aim down sights |
+| 1 / 2 | Rifle / sidearm | — |
+| B | Fire mode (SMG); hold for the suppressor | Suppressor |
+| TAB | Map | Tap: tablet → ISR → back; hold: quickhacks |
+| Q | Hold on an enemy (aiming): sync mark | Quad (tap: launch / park / fly; hold: recall); hold on an enemy (aiming): sync mark |
+| G | Active camo | — |
+| H / X / T | Deadeye / lure / Mark & Execute | — |
+| E | Use, knife takedown, plant C4 | Use, pick locks, hack stations |
+| F | Tag | Tag |
+| V | Ping (hold: wheel); downed: call for pickup | Same |
+| Y / U | Acknowledge | Approve / deny requests |
+| I | — | ISR view (P: ping sweep) |
+| N | Night vision | Night vision |
+| L | Weapon light | Weapon light |
+| J | Drop the drive | Drop the drive |
+| O / P | Show / expand the objective board | Same |
+| Enter / M / K | Chat / mic / push-to-talk | Same |
+
+The lone operative carries both kits. Shift+E plants C4.
+
+**On an iPad or a phone:**
+
+- On-screen buttons cover every action, including TABLET, HACK, ISR, SWEEP, QUAD, RECALL, SYNC, HELP, LIGHT, DROP, PING, TAG, USE, SUPP, NV and CHAT.
+- The Auto preset gives iPads Medium, with a capped render resolution.
+- For better radio voices, install enhanced male voices: Settings → Accessibility → Spoken Content → Voices → English, then Aaron, Arthur or Evan (Enhanced).
 
 ### Atmosphere
 
@@ -367,8 +399,8 @@ Matchmaking uses the free public PeerJS broker only to exchange connection detai
 
 **Auto** picks a preset based on the GPU (iPads get Medium, with the render resolution capped on touch devices):
 
-- **High**: Apple Silicon and discrete GPUs. Shadows, MSAA, bloom, ink outlines and the full grade.
-- **Medium**: phones and mid-range GPUs.
+- **High**: Apple Silicon Macs and discrete GPUs. Shadows, MSAA, bloom, ink outlines and the full grade.
+- **Medium**: phones, iPads and mid-range GPUs.
 - **Low**: older integrated GPUs such as Intel HD 4000. No post-processing, fewer trees, no grass.
 
 Resolution also scales dynamically to hold the frame rate. You can override the preset under Settings in the menu.
@@ -391,4 +423,5 @@ Resolution also scales dynamically to hold the frame rate. You can override the 
 | `src/briefmap.js` | Topographic briefing map drawn from the real terrain |
 | `src/net.js` | PeerJS / BroadcastChannel transport |
 | `src/config.js` | Gameplay tuning |
-| `src/cell/` | Sniper Cell: NightWatch / Infiltration (co-op stealth mode) |
+| `src/cell/` | Sniper Cell: NightWatch / Infiltration (co-op stealth mode; file list under [Sniper Cell › Code](#code)) |
+| `src/atmofx.js` | Atmospheric particles (motes, mist, fireflies, moths) shared by both modes |
