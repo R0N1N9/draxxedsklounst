@@ -19,7 +19,7 @@ export const DIFFICULTY = {
 };
 const EYE = [PLAYER.eyeStand, PLAYER.eyeCrouch, PLAYER.eyeProne];
 const BODY_H = [1.8, 1.25, 0.55];
-const ZOOM_GLINT = { 4: 0.35, 5: 0.4, 8: 0.7, 10: 0.85, 12: 1, 16: 1.15, 20: 1.3 };
+const ZOOM_GLINT = { 4: 0.35, 5: 0.4, 8: 0.7, 10: 0.85, 12: 1, 16: 1.15, 20: 1.3, 30: 1.5, 40: 1.7 };
 const CALM = { at: (t, out) => out.set(0, 0) };
 
 function gauss() {

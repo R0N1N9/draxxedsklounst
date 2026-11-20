@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { PLAYER, WEAPON, MAP, VEST } from './config.js';
 import { clamp, lerp, noise2 } from './util.js';
 import { zeroAngle } from './ballistics.js';
-import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
+import { WEAPONS, SUPPRESSOR_FACTOR, SCOPE40 } from './weapons.js';
 import { RULES } from './rules.js';
 
 const HEIGHTS = [1.8, 1.25, 0.55];
@@ -86,6 +86,7 @@ export class LocalPlayer {
 
   // Zoom steps: the sniping style can override them (e.g. Halo's 5× / 10×).
   get zooms() {
+    if (this.def.key === 'mk22' && this.scope40) return SCOPE40.zooms;
     return this.def.scope && RULES.zooms ? RULES.zooms : this.def.zooms;
   }
 
@@ -253,7 +254,7 @@ export class LocalPlayer {
 
   // Sway offset in radians (yaw, pitch).
   sway(out = { x: 0, y: 0 }) {
-    let amp = SWAY[this.stance] * 0.001 * this.def.sway * RULES.sway;
+    let amp = SWAY[this.stance] * 0.001 * this.def.sway * RULES.sway * (this.def.key === 'mk22' && this.scope40 ? SCOPE40.sway : 1);
     amp *= 1 - (this.bipodT || 0);
     if (this.moving) amp *= 2.4;
     if (this.wounded) amp *= 1.6;

@@ -234,7 +234,10 @@ function wirePause() {
   };
   $('btn-exit').onclick = () => {
     if (game.net && game.net.close) game.net.close();
-    location.href = location.pathname;
+    // Back to a clean menu: drop any ?host/?join query, else just reload (works for files
+    // opened straight from a phone's Files app too).
+    if (location.search) location.replace(location.href.split('?')[0].split('#')[0]);
+    else location.reload();
   };
   $('in-sens2').value = settings.sensitivity;
   $('sens-val2').textContent = (+settings.sensitivity).toFixed(2);

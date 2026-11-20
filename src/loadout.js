@@ -60,6 +60,11 @@ export function renderLoadout(el, loadout, onChange) {
       <div class="lo-opts">
         <button class="lo-opt${lo.bolt !== 'straight' ? ' on' : ''}" data-slot="bolt" data-tool="standard"><b>Standard bolt</b><span>Fire scoped, then come off the scope to work the bolt before the next shot.</span></button>
         <button class="lo-opt${lo.bolt === 'straight' ? ' on' : ''}" data-slot="bolt" data-tool="straight"><b>Straight-pull bolt</b><span>Cycles while you stay scoped, and a little faster. Slightly more muzzle climb.</span></button>
+      </div>
+      <div class="lo-head" style="margin-top:6px"><span>Scope</span><em>Mk22 attachment</em></div>
+      <div class="lo-opts">
+        <button class="lo-opt${lo.scope !== '40' ? ' on' : ''}" data-slot="scope" data-tool="std"><b>4–20× scope</b><span>The standard optic. Steps 4 / 8 / 12 / 16 / 20×.</span></button>
+        <button class="lo-opt${lo.scope === '40' ? ' on' : ''}" data-slot="scope" data-tool="40"><b>5–40× long-range scope</b><span>Steps 5 / 10 / 20 / 30 / 40×. The big objective glints harder and holds a bit less steady.</span></button>
       </div>` : ''}</div>`;
     const vest = `<div class="lo-slot"><div class="lo-head"><span>Vest</span><em>armor or ammo</em></div><div class="lo-opts">
       <button class="lo-opt${lo.vest !== 'rig' ? ' on' : ''}" data-slot="vest" data-tool="plate"><b>Plate carrier</b><span>Plates take a third off torso hits: you survive one Mk22 body shot (it takes 2). Headshots still kill.</span></button>

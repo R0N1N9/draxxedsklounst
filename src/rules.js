@@ -29,8 +29,8 @@ export const PRESETS = {
   halo: {
     name: 'Halo',
     feel: 'Halo',
-    desc: 'Instant hit, dead straight, no wind and no scope sway. 5× / 10× zoom. Pure reflex.',
-    gravity: 0, drag: 0, wind: 0, speed: 40, sway: 0, hitbox: 1.25, zooms: [5, 10],
+    desc: 'Instant hit, dead straight, no wind and no scope sway. 5× / 10× / 20× zoom. Pure reflex.',
+    gravity: 0, drag: 0, wind: 0, speed: 40, sway: 0, hitbox: 1.25, zooms: [5, 10, 20],
   },
 };
 

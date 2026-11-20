@@ -14,7 +14,7 @@ export const TOOLS = {
   drone: { slot: 'scout', name: 'Spotting drone', short: 'DRONE', charges: 1, desc: 'Fly a thermal quadcopter for 25 s, up to 500 m out. Loud, and it can be shot down. Your body stays put while you fly.' },
   hunter: { slot: 'scout', name: 'Hunter drone', short: 'HUNTER', charges: 1, desc: 'Fixed-wing loitering drone. Flies where you aim (up to ~450 m), circles, and locks onto the enemy when it sees them — marking them for you every second. 40 s. Audible, visible, shootable; smoke breaks its lock. Against a thermal poncho it has to get close and only gives rough marks every 3 s.' },
   dart: { slot: 'scout', name: 'Recon dart', short: 'DART', charges: 2, desc: 'Fire a sensor up to ~400 m. For 40 s it pings any enemy moving within 45 m. It blinks and beeps, and can be shot out.' },
-  poncho: { slot: 'stealth', name: 'Thermal poncho', short: 'PONCHO', desc: 'Invisible to thermal drones; the hunter drone has to get close and only gets rough fixes. You move 20% slower and can\'t sprint.' },
+  poncho: { slot: 'stealth', name: 'Thermal poncho', short: 'PONCHO', desc: 'Invisible to thermal drones; the hunter drone has to get close and only gets rough fixes. You move 10% slower.' },
   suppressor: { slot: 'stealth', name: 'Suppressor', short: 'SUPPRESSOR', desc: 'No muzzle flash or dust, much quieter report. Bullets 12% slower: more drop and wind drift.' },
   killflash: { slot: 'stealth', name: 'Anti-glint cover', short: 'ANTI-GLINT', desc: 'Your scope never glints. The scope view is narrower and darker.' },
   jammer: { slot: 'stealth', name: 'UAV jammer', short: 'JAMMER', desc: 'Hides you from the next UAV sweep (one use per round). The enemy sees "jammed".' },
@@ -37,6 +37,7 @@ export function validLoadout(lo) {
   out.theme = lo && THEMES[lo.theme] ? lo.theme : '';
   out.hat = lo && HATS[lo.hat] ? lo.hat : '';
   out.vest = lo && lo.vest === 'rig' ? 'rig' : 'plate';
+  out.scope = lo && lo.scope === '40' ? '40' : 'std';
   out.eyes = lo && EYEWEAR[lo.eyes] ? lo.eyes : '';
   if (lo) for (const s of SLOTS) if (TOOLS[lo[s.key]] && TOOLS[lo[s.key]].slot === s.key) out[s.key] = lo[s.key];
   return out;
@@ -203,6 +204,7 @@ export class ToolSystem {
     this.loadout = validLoadout(game.settings && game.settings.loadout);
     game.player.rifleKey = this.loadout.rifle;
     game.player.vest = this.loadout.vest;
+    game.player.scope40 = this.loadout.scope === '40';
     game.player.equip();
     game.player.straightPull = this.loadout.bolt === 'straight';
     this._buildRemoteDrone();
@@ -221,6 +223,7 @@ export class ToolSystem {
     this.loadout = validLoadout(lo);
     this.g.player.rifleKey = this.loadout.rifle;
     this.g.player.vest = this.loadout.vest;
+    this.g.player.scope40 = this.loadout.scope === '40';
     this.g.player.equip();
     this.g.player.straightPull = this.loadout.bolt === 'straight';
     this.resetMine();
@@ -267,8 +270,9 @@ export class ToolSystem {
   _applyPlayerMods() {
     const P = this.g.player;
     P.suppressed = this.has('suppressor');
-    P.speedMul = this.has('poncho') ? 0.8 : 1;
-    P.noSprint = this.has('poncho');
+    // Poncho: a little slower, but you can still run (plates never slow you).
+    P.speedMul = this.has('poncho') ? 0.9 : 1;
+    P.noSprint = false;
     P.killflash = this.has('killflash');
   }
 

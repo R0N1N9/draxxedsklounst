@@ -10,7 +10,7 @@ export const WEAPONS = {
     mag: 7,
     spareMags: 3,
     muzzle: 720,
-    damage: { head: 200, torso: 110, legs: 40 }, // body shot kills unless plated (110 × 0.65 = 72)
+    damage: { head: 200, torso: 110, legs: 50 }, // body shot kills unless plated (110 × 0.65 = 72); 2 leg hits kill
     cycle: 1.35, // bolt throw
     reload: 3.0,
     reloadEmpty: 3.8,
@@ -69,3 +69,6 @@ export const WEAPONS = {
 
 export const RIFLES = ['mk22', 'dmr'];
 export const SUPPRESSOR_FACTOR = 0.88;
+
+// Mk22 long-range scope attachment: 5–40×, glints harder, a little more sway.
+export const SCOPE40 = { zooms: [5, 10, 20, 30, 40], sway: 1.15 }; // glint comes from the zoom level (30×/40× glint hardest)
