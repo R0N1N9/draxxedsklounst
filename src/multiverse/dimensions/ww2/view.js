@@ -24,7 +24,7 @@ export function makeView(ctx, THREE, renderer, W) {
   for (let i = 0; i < 5; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: '', color: '#fff', hollow: false, text: '', ring: false });
   for (let i = 0; i < 4; i++) S.hits.push({ ang: 0, a: 0, near: false });
   let wt = 0, boom = 2.8, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, blocked = false, bellA = 0, raysK = 0;
-  let frames = 0, tPrev = 0, worst = 0, worstPrev = 0, cost = 0, skipLeft = 0, fresh = false, wasFallen = false;
+  let frames = 0, tPrev = 0, worst = 0, worstPrev = 0, cost = 0, skipLeft = 0, fresh = false, wasFallen = false, drawnScope = 0;
   const api = { camera, shot: null, force: 0, wt: 0, scopeAmount: 0, pointScale: 600 };
 
   const dirOf = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
@@ -252,28 +252,36 @@ export function makeView(ctx, THREE, renderer, W) {
     },
 
     render() {
-      S.w = ctx.width; S.h = ctx.height;
-      drawOverlay(ctx.g, S);
       // The core clamps a frame's time step, so a machine that needs 300 ms to draw the
       // square would play the duel in slow motion (and drift out of step with its opponent).
       // When drawing is that slow, draw the scene less often: the canvas keeps its last
       // picture, the frames in between cost almost nothing, and the clock stays honest.
       const now = performance.now(), iv = tPrev ? now - tPrev : 0, inBand = fresh;
+      let draw = true, again = false;
       tPrev = now;
       fresh = false;
       if (iv > worst) worst = iv;
+      if (api.force > 0) api.force--; // (test scripts: draw now)
       // A render with no update before it is the core photographing the world for a
       // transition: the canvas must hold a picture, so put the last graded frame back.
-      if (api.force > 0) api.force--; // (test scripts: draw now)
-      else if (!inBand && frames > 3) { post.present(); return; }
-      else if (++frames > 3 && skipLeft > 0) { skipLeft--; return; }
-      // The longest gap since the last real draw is what that draw cost. Two slow draws in a
-      // row before anything is skipped: one hitch is not a slow machine.
-      cost = Math.min(worst, worstPrev || worst);
-      worstPrev = worst;
-      worst = 0;
-      // A little slow: drop the odd frame. Very slow: draw rarely and keep the duel in real time.
-      skipLeft = cost < 75 ? 0 : cost < 150 ? Math.round((cost - 50) / 25) : Math.min(240, Math.round((cost - 50) / 5));
+      else if (!inBand && frames > 3) { draw = false; again = true; }
+      else if (++frames > 3 && skipLeft > 0) { skipLeft--; draw = false; }
+      if (draw) {
+        // The longest gap since the last real draw is what that draw cost. Two slow draws in
+        // a row before anything is skipped: one hitch is not a slow machine.
+        cost = Math.min(worst, worstPrev || worst);
+        worstPrev = worst;
+        worst = 0;
+        // A little slow: drop the odd frame. Very slow: draw rarely and keep the duel in real time.
+        skipLeft = cost < 75 ? 0 : cost < 150 ? Math.round((cost - 50) / 25) : Math.min(240, Math.round((cost - 50) / 5));
+        drawnScope = scopeAmt;
+      }
+      // The scope mask follows the picture that is actually on the glass.
+      S.scope = drawnScope;
+      S.w = ctx.width; S.h = ctx.height;
+      drawOverlay(ctx.g, S);
+      if (again) post.present();
+      if (!draw) return;
       // Shadows: every frame on a GPU. In software the map is static — drawn at the start and
       // again once the wall is down — and the snipers do not cast into it.
       const fallen = G.time() > map.fallWall.t + 1.6;
