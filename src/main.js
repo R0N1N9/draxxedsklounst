@@ -136,7 +136,7 @@ function polloOn() {
 function updateTitle() {
   const on = polloOn();
   $('title').innerHTML = on ? 'DRAXXED<br />SKLOUNST<span class="reckon">: THE RECKONING</span>' : 'SNIPER <span class="t-red">CELL</span><span class="nw-box">NIGHTWATCH</span>';
-  $('tagline').textContent = on ? 'One pollo. Two hermanos. Eight hundred sauce packets.' : 'One valley. Two rifles. Eight hundred metres.';
+  $('tagline').textContent = on ? 'One pollo. Two hermanos. Eight hundred sauce packets.' : 'NightWatch co-op stealth';
   document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Sniper Cell: NightWatch';
   document.body.classList.toggle('reckoning', on);
   $('in-name').placeholder = on ? 'Pollo' : 'Ghost';
