@@ -97,7 +97,7 @@ export function buildCity(THREE, W, mats, art, seed) {
     }
   }
   // Hoardings and signs carry painted faces, towards the street.
-  const quad = new THREE.PlaneGeometry(1, 1);
+  const quad = new THREE.PlaneGeometry(1, 1), boardMeshes = [];
   owned.push(quad);
   boards.forEach((p, i) => {
     const sgn = p.kind === 'sign', s = p.side ? -1 : 1;
@@ -108,6 +108,8 @@ export function buildCity(THREE, W, mats, art, seed) {
     mesh.position.set(p.x, p.y + (sgn ? 3.05 : 3.45), p.z - s * (sgn ? 0 : 0.02));
     mesh.rotation.y = s > 0 ? Math.PI : 0;
     mesh.castShadow = !sgn; mesh.receiveShadow = !sgn;
+    if (sgn) mesh.layers.set(1); // cut out with discard: kept out of the depth pre-pass
+    boardMeshes.push(mesh);
     group.add(mesh);
   });
 
@@ -127,18 +129,18 @@ export function buildCity(THREE, W, mats, art, seed) {
     let x = HALF_X + 3;
     while (x < 122) {
       const w = rand(rng, 14, 24);
-      for (const row of [0, 1, 2]) tower(sx * (x + w / 2), sz * (STREET + 8.5 + row * 17), w, 17, rand(rng, 22, 34) + row * rand(rng, 4, 12), pick(rng, PAL.walls));
+      for (const row of [0, 1, 2]) tower(sx * (x + w / 2), sz * (STREET + 8.5 + row * 17), w, 17, rand(rng, 20, 30) + row * rand(rng, 3, 8), pick(rng, PAL.walls));
       x += w + (rng() < 0.4 ? 2.6 : 0);
     }
   }
-  for (const sx of [-1, 1]) { tower(sx * 142, 0, 26, 44, rand(rng, 74, 96), PAL.far[0]); tower(sx * 150, sx * 34, 30, 30, rand(rng, 50, 70), PAL.far[2]); tower(sx * 152, -sx * 30, 24, 28, rand(rng, 60, 110), PAL.far[1]); }
+  for (const sx of [-1, 1]) { tower(sx * 146, 0, 26, 44, rand(rng, 62, 78), PAL.far[0]); tower(sx * 152, sx * 34, 30, 30, rand(rng, 44, 58), PAL.far[2]); tower(sx * 154, -sx * 30, 24, 28, rand(rng, 50, 84), PAL.far[1]); }
   // the skyline behind each sniper: taller the farther back
   for (const sz of [-1, 1]) for (let ring = 0; ring < 3; ring++) {
     let x = -190 + rng() * 10;
     while (x < 190) {
-      const w = rand(rng, 16, 30), d = rand(rng, 16, 28), h = rand(rng, 40, 62) + ring * rand(rng, 12, 34);
-      tower(x + w / 2, sz * (74 + ring * 34 + rng() * 10), w, d, h, PAL.far[(ring + (rng() * 3 | 0)) % PAL.far.length]);
-      x += w + rand(rng, 1, 9);
+      const w = rand(rng, 16, 30), d = rand(rng, 16, 28), h = rand(rng, 26, 40) + ring * rand(rng, 6, 22) + (rng() < 0.12 ? 30 : 0);
+      tower(x + w / 2, sz * (78 + ring * 40 + rng() * 12), w, d, h, PAL.far[(ring + (rng() * 3 | 0)) % PAL.far.length]);
+      x += w + rand(rng, 2, 16);
     }
   }
   const meshes = [B.build(true, true), C.build(true, true), K.build(true, true), F.build(false, false), FK.build(false, false), PB.build(true, true), PC.build(true, true), PK.build(true, true)];
@@ -176,7 +178,8 @@ export function buildCity(THREE, W, mats, art, seed) {
       const was = erase > 0.5;
       erase = k;
       for (const m of erasable) m.uniforms.uErase.value = k;
-      for (const m of propMeshes) m.castShadow = k < 0.5;
+      for (const m of propMeshes) { m.castShadow = k < 0.5; m.layers.set(1); }
+      for (const m of boardMeshes) m.layers.set(1);
       return was !== k > 0.5;
     },
     dispose() { for (const g of owned) g.dispose(); for (const m of meshes) m.geometry.dispose(); },

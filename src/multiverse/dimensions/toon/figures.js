@@ -176,10 +176,12 @@ function gun(g, p, E) {
     g.restore();
   }
   if (p.charge > 0.94 && p.alive !== false) { // full: the glint everyone on the ridge can see
-    const k = 0.6 + 0.4 * Math.sin(E.T * 18);
+    const k = 0.65 + 0.35 * Math.sin(E.T * 18);
     g.save(); g.translate(x + 4, -3); g.rotate(E.T * 2);
-    g.fillStyle = '#fff'; g.strokeStyle = C.ink; g.lineWidth = 2;
-    starPath(g, 0, 0, 12 * k + 4, 0, 0.18); g.fill(); g.stroke();
+    g.fillStyle = '#fff'; g.strokeStyle = C.ink; g.lineWidth = 2.6;
+    starPath(g, 0, 0, 22 * k + 6, 0, 0.16); g.fill(); g.stroke();
+    g.rotate(0.78);
+    starPath(g, 0, 0, 13 * k + 4, 0, 0.2); g.fill(); g.stroke();
     g.restore();
   }
   g.restore();
@@ -209,6 +211,7 @@ export function drawSniper(g, p, E, mood) {
     hose(g, s * 6, -30, fx, fy - 4, bend, 8.5, p.i * 7 + s);
     shoe(g, fx, fy, p.i * 11 + s);
   }
+  if (!climb && !p.dead) g.translate(0, -E.pulse * (p.ground ? 3.6 : 1)); // the whole top half hops on the beat
   // ---- back arm (the glove that holds the pump) goes behind the body ----
   const rel = p.face > 0 ? p.a : Math.PI - p.a;
   const sxs = 7, sys = -SHOULDER + 2;

@@ -78,31 +78,31 @@ void main() {
 
   // what is under it
   float depth = shoreDepth(vW.xz), shallow = 1.0 - smoothstep(0.0, 4.5, depth);
-  vec3 body = mix(vec3(0.005, 0.045, 0.075), vec3(0.01, 0.15, 0.165), clamp(h * 0.2 + 0.45, 0.0, 1.0));
-  body += vec3(0.012, 0.14, 0.14) * sunN * 0.55 * sh;
+  vec3 body = mix(vec3(0.003, 0.022, 0.04), vec3(0.006, 0.062, 0.075), clamp(h * 0.2 + 0.45, 0.0, 1.0));
+  body += vec3(0.006, 0.06, 0.06) * sunN * 0.6 * sh;
   // the light that comes THROUGH a wave: looking sunwards at water that stands up thin
   float through = pow(clamp(dot(V, -normalize(uSunDir + N * 0.5)), 0.0, 1.0), 2.4) * smoothstep(-0.5, 2.3, h) * (0.3 + 3.2 * clamp(1.0 - N.y, 0.0, 0.45));
   body += vec3(0.04, 0.62, 0.42) * through * 1.7 * sh;
-  body = mix(body, vec3(0.05, 0.36, 0.34) * (0.45 + sunN * 1.3), shallow * 0.85);
+  body = mix(body, vec3(0.03, 0.22, 0.2) * (0.45 + sunN * 1.3), shallow * 0.85);
   vec3 col = mix(body, refl, fres) + uSunCol * glit * (0.25 + 0.75 * fres) * sh;
 
   // each board glows a little in its rider's colour
   for (int i = 0; i < 2; i++) {
     vec2 g = vW.xz - uCast[i].xz;
-    col += uTint[i] * exp(-dot(g, g) * 0.09) * 0.5 * step(0.01, uCast[i].w);
+    col += uTint[i] * exp(-dot(g, g) * 0.22) * 0.16 * step(0.01, uCast[i].w);
   }
 
   // foam: where the surface folds, in streaks on the high water, and along the sand
-  float lace = d3.z * 0.55 + d1.z * 0.75;
-  float foam = smoothstep(0.8, 0.36, J) * (0.5 + lace) + smoothstep(0.7, 2.6, h) * smoothstep(0.82, 1.2, lace + d2.w * 0.6) * 0.75;
+  float lace = d3.z * 0.7 + texture2D(tDetail, vP0 * 0.071 - t * vec2(0.013, 0.006)).z * 0.65;
+  float foam = smoothstep(0.72, 0.3, J) * (0.35 + lace) + smoothstep(1.0, 2.8, h) * smoothstep(0.95, 1.3, lace + d2.w * 0.7) * 0.5;
   float band = sin(depth * 2.6 + t * 1.25 + d2.w * 3.0 + vP0.x * 0.02);
   foam += (smoothstep(0.55, 1.0, band) * (0.35 + lace) * smoothstep(4.5, 0.6, depth) + smoothstep(0.55, 0.05, depth) * (0.6 + lace)) * step(-0.3, depth);
   foam = clamp(foam, 0.0, 1.0);
-  vec3 foamCol = vec3(0.92, 0.9, 0.88) * (uSunCol * (0.3 + sunN * 2.2) * sh + vec3(0.2, 0.26, 0.4));
+  vec3 foamCol = vec3(0.92, 0.9, 0.88) * (uSunCol * (0.25 + sunN * 1.9) * sh + vec3(0.1, 0.13, 0.2));
   col = mix(col, foamCol, foam);
   col *= mix(0.72, 1.0, sh);
 
-  col = mix(col, hazeColor(-V, uSunDir), 1.0 - exp(-dist * 0.0012));
+  col = mix(col, hazeColor(-V, uSunDir), 1.0 - exp(-dist * 0.00045));
   gl_FragColor = vec4(col, 1.0);
 }`;
 

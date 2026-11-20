@@ -179,8 +179,10 @@ export function drawOverlay(g, S, L) {
         if (y > cy + R * 0.78) continue;
         g.lineWidth = 2 * ui;
         g.beginPath(); g.moveTo(cx - 12 * ui, y); g.lineTo(cx + 12 * ui, y); g.stroke();
-        g.font = `700 ${Math.max(9, 11 * ui)}px ${HAND}`; g.fillStyle = INK; g.textAlign = 'left'; g.textBaseline = 'middle';
-        g.fillText(hd.label, cx + 16 * ui, y);
+        g.font = `700 ${Math.max(9, 11 * ui)}px ${HAND}`; g.fillStyle = INK; g.textBaseline = 'middle';
+        const left = hd.label === '100'; // staggered: the rungs sit closer than the type is tall
+        g.textAlign = left ? 'right' : 'left';
+        g.fillText(hd.label, cx + (left ? -16 : 16) * ui, y);
       }
       g.fillStyle = '#e2413a'; g.beginPath(); g.arc(cx, cy, 2.4 * ui, 0, TAU); g.fill();
       g.lineWidth = 1.5; g.strokeStyle = INK; g.stroke();

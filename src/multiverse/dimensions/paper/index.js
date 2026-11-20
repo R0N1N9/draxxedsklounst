@@ -45,10 +45,11 @@ const TAU = Math.PI * 2;
 const ease = (u) => u * u * (3 - 2 * u);
 
 const PROMPTS = {
-  kbm: [['LMB', 'CLICK TO SHOOT'], ['RMB', 'HOLD TO SCOPE: STEADY AND ZOOMED'], ['SHIFT', 'EDGE-ON: DODGE, BUT NO SHOOTING'], ['E', 'STANDEE: A CARDBOARD DECOY']],
-  touch: [['FIRE', 'TAP TO SHOOT'], ['SCOPE', 'TAP TO SCOPE IN'], ['EDGE-ON', 'TURN PAPER-THIN TO DODGE'], ['STANDEE', 'PROP UP A CARDBOARD DECOY']],
-  gamepad: [['RT', 'SQUEEZE TO SHOOT'], ['LT', 'HOLD TO SCOPE'], ['LB', 'EDGE-ON: DODGE, NO SHOOTING'], ['RB', 'STANDEE: A CARDBOARD DECOY']],
+  kbm: [['LMB', 'CLICK TO SHOOT · ROUNDS PUNCH THROUGH PAPER'], ['RMB', 'HOLD TO SCOPE: STEADY AND ZOOMED'], ['SHIFT', 'EDGE-ON: DODGE, BUT NO SHOOTING'], ['E', 'STANDEE: A CARDBOARD DECOY']],
+  touch: [['FIRE', 'TAP TO SHOOT · ROUNDS PUNCH THROUGH PAPER'], ['SCOPE', 'TAP TO SCOPE IN'], ['EDGE-ON', 'TURN PAPER-THIN TO DODGE'], ['STANDEE', 'PROP UP A CARDBOARD DECOY']],
+  gamepad: [['RT', 'SQUEEZE TO SHOOT · ROUNDS PUNCH THROUGH PAPER'], ['LT', 'HOLD TO SCOPE'], ['LB', 'EDGE-ON: DODGE, NO SHOOTING'], ['RB', 'STANDEE: A CARDBOARD DECOY']],
 };
+const SPOT = { kbm: ['A D', 'STEP OUT SIDEWAYS TO SPOT THE OTHER SNIPER'], touch: ['STICK', 'STEP OUT SIDEWAYS TO SPOT THEM'], gamepad: ['L STICK', 'STEP OUT SIDEWAYS TO SPOT THEM'] };
 
 export default {
   id: 'paper',
@@ -59,7 +60,7 @@ export default {
   aim: 'look',
   palette: { bg: '#17151d', fg: '#f7f1e3', accent: '#ffab1f' },
   controls: { move: 'WALK', aim: 'LOOK', fire: 'SHOOT', alt: 'SCOPE', a1: 'EDGE-ON', a2: 'STANDEE' },
-  hint: 'Turn edge-on to become a paper-thin line you can’t be hit in, but you can’t shoot either.',
+  hint: 'Edge-on, you are a paper-thin line: hard to hit, but you cannot shoot.',
   altToggle: true,
   roundTime: ROUND,
   overTime: 3.0,
@@ -166,6 +167,15 @@ export default {
       const rel = Math.atan2(-(s.ox - me.x), -(s.oz - me.z)) - me.yaw;
       snd.shot(s.owner === ctx.me, Math.sin(-rel));
       fx.burst(s.ox, s.oy - 0.15, s.oz, 7, ['#fff6c8', '#ffe27a', '#f7f1e3'], 3.4, 0.16, 0.5, 0.2);
+      s.whizAt = -1;
+      if (s.owner !== ctx.me) { // a round passing close by: a whiz and a flinch
+        let bd = 4.5;
+        for (let tau = 0.02; tau < s.tauEnd; tau += 0.03) {
+          shotAt(s, tau, A3);
+          const d = Math.hypot(A3.x - me.x, A3.z - me.z) + Math.abs(A3.y - EYE) * 0.7;
+          if (d < bd) { bd = d; s.whizAt = tau; s.whizNear = d < 2; s.whizPan = Math.max(-1, Math.min(1, ((A3.x - me.x) * Math.cos(me.yaw) - (A3.z - me.z) * Math.sin(me.yaw)) / 3)); }
+        }
+      }
       if (s.owner !== ctx.me) { S.tells.push({ heading: Math.atan2(s.ox - me.x, -(s.oz - me.z)), a: 1.7, ang: 0 }); if (S.tells.length > 3) S.tells.shift(); known = 1; heading = Math.atan2(s.ox - me.x, -(s.oz - me.z)); knownT = 0; }
     }
     function fire(p) {
@@ -201,6 +211,7 @@ export default {
         const s = shots[i];
         const a0 = s.age, a1 = Math.min(s.tauEnd, a0 + dt);
         s.age += dt;
+        if (s.whizAt >= 0 && s.age >= s.whizAt) { s.whizAt = -1; snd.whiz(s.whizPan, s.whizNear); if (s.whizNear) shakeT = 0.2; }
         while (s.hi < s.holes.length && s.holes[s.hi][3] <= s.age) applyHole(s, s.holes[s.hi++]);
         while (s.si < s.hits.length && s.hits[s.si][1] <= s.age) {
           const st = stands[s.hits[s.si++][0]];
@@ -262,6 +273,8 @@ export default {
       cmdH.fire = inp.firePressed; cmdH.alt = inp.alt; cmdH.a1 = inp.a1Pressed; cmdH.a2 = inp.a2Pressed;
       return cmdH;
     }
+    const cmdI = { mx: 0, my: 0, yaw: 0, pitch: 0, fire: false, alt: false, a1: false, a2: false };
+    const idle = (p) => { cmdI.yaw = p.yaw; cmdI.pitch = p.pitch; return cmdI; };
     const rpos = { x: 0, y: 0 };
     function step(p, c, dt) {
       const live = ctx.phase === 'live';
@@ -303,11 +316,19 @@ export default {
       // standee
       if (c.a2 && !sudden && p.standCharges > 0 && p.standCd <= 0) {
         const o = P[1 - p.i];
-        let d = 3.4;
-        const fx_ = -Math.sin(p.yaw), fz_ = -Math.cos(p.yaw);
-        while (d > 1.2 && !W.nav.free(p.x + fx_ * d, p.z + fz_ * d)) d -= 0.5;
-        const x = p.x + fx_ * d, z = p.z + fz_ * d;
-        const slot = p.i * 2 + (stands[p.i * 2].active && (!stands[p.i * 2 + 1].active || stands[p.i * 2].life < stands[p.i * 2 + 1].life) ? 0 : (stands[p.i * 2 + 1].active ? 1 : 0));
+        // beside you, a little ahead: a decoy must stand where it is seen, not in front of your own sights
+        const fx_ = -Math.sin(p.yaw), fz_ = -Math.cos(p.yaw), rx_ = Math.cos(p.yaw), rz_ = -Math.sin(p.yaw);
+        let x = p.x, z = p.z, found = false;
+        for (const sd of [1, -1]) {
+          for (let d = 3.4; d > 1.4 && !found; d -= 0.6) {
+            x = p.x + rx_ * d * sd + fx_ * d * 0.45; z = p.z + rz_ * d * sd + fz_ * d * 0.45;
+            if (W.nav.free(x, z)) found = true;
+          }
+          if (found) break;
+        }
+        if (!found) { x = p.x + fx_ * 1.6; z = p.z + fz_ * 1.6; }
+        const sa = stands[p.i * 2], sb = stands[p.i * 2 + 1];
+        const slot = p.i * 2 + (!sa.active ? 0 : !sb.active ? 1 : sa.life < sb.life ? 0 : 1);
         const yaw = Math.atan2(o.x - x, o.z - z);
         placeStandee(p.i, slot, x, z, yaw, true);
         ctx.net.send({ k: 'st', slot, x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, yaw: Math.round(yaw * 1000) / 1000 });
@@ -324,9 +345,11 @@ export default {
     }
 
     // ---- state for the overlay and the camera ----
-    let anim = 0, introT = 0, overT = 0, wasSudden = false, known = 1, knownT = 0, heading = 0, fired = false, edgeUsed = false, standUsed = false, scoped = 0, scopeUsed = false;
-    let promptStage = 0, promptT = 0, note = '', noteA = 0, shakeT = 0, hornPrev = 0, gullT = 6, boltStage = 0, burstT = 0, lastLive = false, calm = false;
+    let frameDt = 0, anim = 0, introT = 0, overT = 0, wasSudden = false, known = 1, knownT = 0, heading = 0, fired = false, edgeUsed = false, standUsed = false, scoped = 0, scopeUsed = false;
+    let scopeOn = false, spotted = false, spotT = 0, driftT = 0, promptStage = 0, promptT = 0, note = '', noteA = 0, shakeT = 0, hornPrev = 0, gullT = 6, boltStage = 0, burstT = 0, lastLive = false, calm = false;
     const cs = { x: 0, y: 0, warn: 0, moving: 0 };
+    const dbg = globalThis.__PAPER_DBG || null; // DBG
+    if (dbg) Object.assign(dbg, { P, camera, W, set, fx, stands, ctx, shots, S, placeStandee, fire }); // DBG
     const rmem = { x: 0, z: 0, has: false };
     const dev = () => ctx.input.device;
 
@@ -355,6 +378,13 @@ export default {
           const k = p.flash / 0.12;
           f.flash.scale.setScalar(0.9 * (0.5 + k));
         } else f.flash.visible = false;
+        // a scoped sniper's lens throws a glint: the price of the zoom is being easier to find
+        if (p.scope > 0.6 && p.i !== ctx.me) {
+          const c = Math.cos(f.pivot.rotation.y), s = Math.sin(f.pivot.rotation.y), a = 0.5 + 0.5 * Math.sin(anim * 9 + p.i);
+          f.glint.visible = true;
+          f.glint.position.set(p.x + 0.3 * c + 0.12 * s * 0, 1.62, p.z - 0.3 * s + 0.12 * c);
+          f.glint.scale.setScalar(0.35 + 0.5 * a);
+        } else f.glint.visible = false;
       }
       for (const s of stands) {
         if (!s.active) continue;
@@ -401,6 +431,7 @@ export default {
           yaw = me.yaw + angDiff(me.yaw, Math.atan2(-(foe.x - me.x), -(foe.z - me.z))) * 0.4 * u;
         }
       }
+      if (dbg && dbg.cam) { x = dbg.cam.x; y = dbg.cam.y; z = dbg.cam.z; yaw = dbg.cam.yaw; pitch = dbg.cam.pitch; fov = dbg.cam.fov || fov; roll = 0; } // DBG
       camera.position.set(x, y, z);
       camera.rotation.set(pitch, yaw, roll);
       if (Math.abs(camera.fov - fov) > 0.001) { camera.fov = fov; }
@@ -409,7 +440,7 @@ export default {
       return fov;
     }
 
-    function fillOverlay(fov) {
+    function fillOverlay(fdt) {
       const me = P[ctx.me], foe = P[1 - ctx.me];
       S.t = anim; S.scope = clamp(me.scope, 0, 1); S.fovS = FOV_SCOPE; S.kick = me.kick; S.bolt = me.cycle > 0 ? 1 - me.cycle / (ctx.sudden ? CYCLE_SD : CYCLE) : 1;
       S.ammo = me.ammo; S.mag = MAG; S.reload = me.reload > 0 ? 1 - me.reload / RELOAD : -1;
@@ -430,7 +461,7 @@ export default {
       S.enemyOn = v3.z < 1 && Math.abs(v3.x) < 1.1 && Math.abs(v3.y) < 1.1;
       S.ex = (v3.x * 0.5 + 0.5) * ctx.width; S.ey = (-v3.y * 0.5 + 0.5) * ctx.height;
       if (vis) { known = 1; heading = Math.atan2(foe.x - me.x, -(foe.z - me.z)); knownT = 0; }
-      else { knownT += 1 / 60; if (knownT > 6) known = Math.max(0.3, known - 0.004); }
+      else { knownT += fdt; if (knownT > 6) known = Math.max(0.3, known - 0.25 * fdt); }
       S.enemyKnown = known; S.enemyHeading = heading;
       // aim on foe: the sight line passes through the other sniper's silhouette's box
       S.aimOnFoe = 0;
@@ -439,41 +470,45 @@ export default {
         const t = (foe.x - me.x) * dx + (foe.z - me.z) * dz;
         if (t > 0) { const px = me.x + dx * t - foe.x, pz = me.z + dz * t - foe.z, py = EYE + dy * t; if (Math.hypot(px, pz) < 0.45 && py > 0.1 && py < 2) S.aimOnFoe = 1; }
       }
-      for (const t of S.tells) { t.a -= 1 / 60; t.ang = angDiff(camera.rotation.y, -t.heading); }
+      for (const t of S.tells) { t.a -= fdt; t.ang = angDiff(0, t.heading + camera.rotation.y); }
       while (S.tells.length && S.tells[0].a <= 0) S.tells.shift();
-      noteA = Math.max(0, noteA - 1 / 60); S.note = note; S.noteA = noteA;
+      noteA = Math.max(0, noteA - fdt); S.note = note; S.noteA = noteA;
       S.burst = burstT > 0 ? burstT / 0.7 : 0;
       S.crumple = ctx.phase === 'over' && ctx.result && ctx.result.victim === ctx.me ? clamp(overT / 1.0, 0, 1) : 0;
       // the how-to-play tag in turn
       const list = PROMPTS[dev()] || PROMPTS.kbm;
       if (ctx.phase === 'live') {
-        promptT += 1 / 60;
+        promptT += fdt;
+        if (vis) spotted = true;
+        spotT += fdt;
+        const sp = SPOT[dev()] || SPOT.kbm;
+        if (!spotted && spotT < 12 && !ctx.sudden) { S.spotKey = sp[0]; S.spot = sp[1]; } else { S.spotKey = ''; S.spot = ''; }
         const done = [fired, scopeUsed, edgeUsed, standUsed];
-        while (promptStage < 4 && (done[promptStage] || promptT > (promptStage === 0 ? 14 : 8))) { promptStage++; promptT = 0; }
+        while (promptStage < 4 && (done[promptStage] || promptT > (promptStage === 0 ? 16 : 8))) { promptStage++; promptT = 0; }
         if (promptStage >= 4 || ctx.sudden) { S.prompt = ''; S.promptKey = ''; }
         else { S.promptKey = list[promptStage][0]; S.prompt = list[promptStage][1]; }
-      } else { S.prompt = ''; S.promptKey = ''; }
-    }
-
-    function applyNet(p) {
-      // remote shots arrive as events; here only state: nothing to do
-      void p;
+      } else { S.prompt = ''; S.promptKey = ''; S.spot = ''; S.spotKey = ''; }
     }
 
     return {
       update(dt) {
-        anim += dt;
+        anim += dt; frameDt += dt;
         const live = ctx.phase === 'live';
         for (const p of P) {
           if (p.remote) updatePuppet(p, dt);
           else if (ctx.phase === 'over') { p.vx = p.vz = 0; p.speed = 0; p.scope += (0 - p.scope) * Math.min(1, dt * 6); p.kick = Math.max(0, p.kick - dt * 5); p.flash = Math.max(0, p.flash - dt); p.swayT += dt; }
-          else step(p, p.bot ? bot.think(p, P[1 - p.i], dt) : humanCmd(p), dt);
+          else step(p, p.bot ? (live ? bot.think(p, P[1 - p.i], dt) : idle(p)) : humanCmd(p), dt);
           if (!p.alive) p.fall += (dt / OVER_SLOW) * 0.75;
         }
         const me = P[ctx.me];
         // scope / alt usage for the teaching tags
         if (me.scope > 0.6) scopeUsed = true;
-        if (me.cycle > 0) { const st = me.cycle < 0.5 * CYCLE ? 1 : 0; if (st !== boltStage && me.cycle < CYCLE * 0.8) { boltStage = st; snd.bolt(st); } } else boltStage = 0;
+        if (me.scope > 0.55 && !scopeOn) { scopeOn = true; snd.scope(true); } else if (me.scope < 0.25 && scopeOn) { scopeOn = false; snd.scope(false); }
+        if (me.cycle > 0) {
+          const cy = me.cycle / (ctx.sudden ? CYCLE_SD : CYCLE);
+          if (boltStage < 1 && cy < 0.72) { boltStage = 1; snd.bolt(0); }
+          if (boltStage < 2 && cy < 0.3) { boltStage = 2; snd.bolt(1); }
+        } else boltStage = 0;
         stepShots(dt);
         poseAll(dt);
         const sudT = ctx.sudden ? ctx.time - ROUND : 0;
@@ -481,11 +516,17 @@ export default {
         set.update(ctx.time, anim, wind, sudT, camera);
         fx.beaconPos[0].on = fx.beaconPos[1].on = ctx.sudden && ctx.phase === 'live';
         for (const p of P) { const b = fx.beaconPos[p.i]; b.x = p.x; b.z = p.z; b.y = 1.6; }
+        fx.setWind(wind);
+        driftT -= dt;
+        if (driftT <= 0 && ctx.phase !== 'over') { // loose pages blow across the yard downwind
+          driftT = 0.35 + Math.random() * 0.5;
+          fx.scrap(me.x - Math.sign(wind || 1) * (14 + Math.random() * 14) + (Math.random() - 0.5) * 10, 0.6 + Math.random() * 3.2, me.z + (Math.random() - 0.5) * 40, wind * 4, 0.3, 0, 0.32, ['#f7f1e3', '#ebe3cf', '#cf9b62'][Math.floor(Math.random() * 3)], 7, 0.7, 1);
+        }
         fx.update(dt, anim);
         burstT = Math.max(0, burstT - dt / OVER_SLOW * 0.5);
         // machinery you can hear
         craneAt(ctx.time, cs);
-        if (cs.warn && !hornPrev && live) { const c = Math.cos(me.yaw) * (cs.x - me.x) - Math.sin(me.yaw) * 0 * (0 - me.z); snd.horn(c / 30, 1); }
+        if (cs.warn && !hornPrev && live) snd.horn((Math.cos(me.yaw) * (cs.x - me.x) - Math.sin(me.yaw) * (0 - me.z)) / 30, 1);
         hornPrev = cs.warn;
         gullT -= dt;
         if (gullT <= 0) { gullT = 7 + Math.random() * 9; snd.gull(Math.random() * 2 - 1); }
@@ -493,19 +534,21 @@ export default {
         // hud
         ctx.hud.cooldown('fire', me.reload > 0 ? me.reload / RELOAD : me.cycle / (ctx.sudden ? CYCLE_SD : CYCLE));
         ctx.hud.charges('fire', me.ammo);
-        ctx.hud.cooldown('a1', me.edgeT > 0 ? 0.0001 : me.edgeCd / EDGE_CD);
+        ctx.hud.cooldown('a1', ctx.sudden ? 1 : me.edgeT > 0 ? 0.0001 : me.edgeCd / EDGE_CD);
         ctx.hud.charges('a2', me.standCharges);
-        ctx.hud.cooldown('a2', me.standCd > 0 ? me.standCd / 1.2 : me.standCharges === 0 ? 1 - me.standRe / STAND_RE : 0);
+        ctx.hud.cooldown('a2', ctx.sudden ? 1 : me.standCd > 0 ? me.standCd / 1.2 : me.standCharges === 0 ? 1 - me.standRe / STAND_RE : 0);
         // the other player's state goes out every frame
         ctx.net.sendState({ x: +me.x.toFixed(2), z: +me.z.toFixed(2), yaw: +me.yaw.toFixed(3), pitch: +me.pitch.toFixed(3), e: +me.e.toFixed(2), sc: +me.scope.toFixed(2), sp: +me.speed.toFixed(1) });
       },
 
       render() {
-        const fov = cameraRig(1 / 60);
+        const fdt = Math.min(frameDt, 0.1);
+        frameDt = 0;
+        const fov = cameraRig(fdt);
         renderer.getDrawingBufferSize(size);
         mats.set(size.x, size.y, clamp(ctx.height / 235, 1.9, 4.6) * renderer.getPixelRatio(), camera.near);
         renderer.render(scene, camera);
-        fillOverlay(fov);
+        fillOverlay(fdt);
         ov.draw();
       },
 
@@ -560,7 +603,6 @@ export default {
         W.dispose();
         disposeTree(scene);
         mats.dispose();
-        applyNet();
       },
     };
   },

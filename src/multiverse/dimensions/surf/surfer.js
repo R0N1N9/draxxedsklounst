@@ -8,22 +8,26 @@ import { HAZE_GLSL } from './sky.js';
 
 // Every lit material in this world fades into the same haze as the sea, and can carry a rim light.
 export function makeHaze(THREE) {
-  const shared = { uSunView: { value: new THREE.Vector3(0, 0, -1) } };
-  const mats = [];
+  const shared = { uSunView: { value: new THREE.Vector3(0, 0, -1) }, uWt: { value: 0 } };
   return {
-    shared, mats,
-    patch(mat, rim) {
+    shared,
+    // rim: colour added at grazing angles; sway: instanced leaves that move in the wind
+    patch(mat, rim, sway) {
       const uRim = { value: new THREE.Color(rim || 0) };
       mat.onBeforeCompile = (sh) => {
         sh.uniforms.uSunView = shared.uSunView;
         sh.uniforms.uRim = uRim;
-        sh.fragmentShader = 'uniform vec3 uSunView;\nuniform vec3 uRim;\n' + HAZE_GLSL + sh.fragmentShader.replace('#include <fog_fragment>', `
+        sh.uniforms.uWt = shared.uWt;
+        if (sway) sh.vertexShader = 'uniform float uWt;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+          #ifdef USE_INSTANCING
+          transformed.y += sin(uWt * 1.6 + instanceMatrix[3][0] * 0.31 + instanceMatrix[3][2] * 0.17 + position.x * 0.9) * 0.045 * position.x * position.x;
+          #endif`);
+        sh.fragmentShader = 'uniform vec3 uSunView;\nuniform vec3 uRim;\n' + HAZE_GLSL + '\n' + sh.fragmentShader.replace('#include <fog_fragment>', `
           vec3 hzV = normalize(vViewPosition);
           gl_FragColor.rgb += uRim * pow(1.0 - clamp(dot(normal, hzV), 0.0, 1.0), 2.5);
-          gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(-hzV, uSunView), 1.0 - exp(-length(vViewPosition) * 0.0012));`);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(-hzV, uSunView), 1.0 - exp(-length(vViewPosition) * 0.00045));`);
       };
-      mat.customProgramCacheKey = () => 'surf-haze';
-      mats.push(mat);
+      mat.customProgramCacheKey = () => (sway ? 'surf-haze-sway' : 'surf-haze');
       return mat;
     },
   };
@@ -50,7 +54,7 @@ export function makeSurferKit(THREE, haze) {
     return g;
   })();
   const stripeGeo = new THREE.BoxGeometry(0.09, 0.012, 2.3), finGeo = new THREE.ConeGeometry(0.1, 0.28, 4);
-  const suit = haze.patch(new THREE.MeshLambertMaterial({ color: '#141c28' }), '#3a2a22');
+  const suit = haze.patch(new THREE.MeshLambertMaterial({ color: '#1c2738' }), '#5a3a2a');
   const skin = haze.patch(new THREE.MeshLambertMaterial({ color: '#c98a5e' }));
   const gun = haze.patch(new THREE.MeshLambertMaterial({ color: '#0e0f13' }), '#6a4a30');
   const cream = haze.patch(new THREE.MeshLambertMaterial({ color: '#fff0d8', emissive: '#fff0d8', emissiveIntensity: 0.25 }));
@@ -58,8 +62,8 @@ export function makeSurferKit(THREE, haze) {
   const UP = new THREE.Vector3(0, 1, 0), v0 = new THREE.Vector3(), v1 = new THREE.Vector3();
 
   function surfer(color) {
-    const bright = haze.patch(new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.7 }), mixHex(color, '#ffffff', 0.3));
-    const deepC = haze.patch(new THREE.MeshLambertMaterial({ color: mixHex(color, '#101820', 0.35), emissive: color, emissiveIntensity: 0.3 }));
+    const bright = haze.patch(new THREE.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.32 }), mixHex(color, '#ffffff', 0.3));
+    const deepC = haze.patch(new THREE.MeshLambertMaterial({ color: mixHex(color, '#101820', 0.35), emissive: color, emissiveIntensity: 0.15 }));
     own.push(bright, deepC);
     const root = new THREE.Group(), board = new THREE.Group(), body = new THREE.Group();
     root.add(board, body);

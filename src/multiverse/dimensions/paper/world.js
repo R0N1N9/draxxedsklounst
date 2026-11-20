@@ -13,7 +13,7 @@ precision highp float;
 uniform sampler2D uMap; uniform vec2 uSize; uniform vec3 uHoles[${HOLES}];
 varying vec2 vUv;
 void main() {
-  vec4 c = texture2D(uMap, vUv);
+  vec4 c = texture2D(uMap, vec2(gl_FrontFacing ? vUv.x : 1.0 - vUv.x, vUv.y)); // printed on both sides, never mirrored
   if (c.a < 0.04) discard;
   vec2 p = (vUv - vec2(0.5, 0.0)) * uSize;
   for (int i = 0; i < ${HOLES}; i++) { vec3 h = uHoles[i]; if (h.z > 0.0 && length(p - h.xy) < h.z) discard; }
@@ -243,6 +243,12 @@ export function buildWorld(ctx, THREE, mats) {
     mesh.rotation.y = yaw;
     root.add(mesh);
     const ux = Math.cos(yaw), uz = -Math.sin(yaw);
+    if (kind !== 'mascot' || true) { // flat cast shadow: the sheet's four corners thrown along the sun
+      const q = [];
+      for (const u of [-w / 2, w / 2]) for (const v of [y0, y0 + h]) q.push([cx + ux * u - 0.62 * v, cz + uz * u + 0.16 * v]);
+      q.push([cx + ux * (-w / 2), cz + uz * (-w / 2)], [cx + ux * (w / 2), cz + uz * (w / 2)]);
+      GS.ground(hull(q), 0, GROUND_SHADE);
+    }
     const p = { id: pid++, kind, x: cx, z: cz, w, h, y0, yaw, nx: Math.sin(yaw), nz: Math.cos(yaw), ux, uz, holes: [], hole0: 0, uniforms, fig: kind === 'mascot' };
     panels.push(p);
     const edge = (u, v, u2, v2) => L.add(cx + ux * u, y0 + v, cz + uz * u, cx + ux * u2, y0 + v2, cz + uz * u2, INK, 1);

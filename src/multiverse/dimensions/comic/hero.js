@@ -11,10 +11,10 @@ export const EYE = 1.62, HEAD = 1.66;
 export function makeHeroKit(THREE, mats) {
   const box = new THREE.BoxGeometry(1, 1, 1), cyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 12), ball = new THREE.SphereGeometry(1, 14, 10);
   const coatG = new THREE.CylinderGeometry(0.21, 0.31, 0.72, 10), cone = new THREE.ConeGeometry(0.5, 1, 8);
-  const dark = mats.make({ color: PAL.dark }), skin = mats.make({ color: '#f6d3ae' }), steel = mats.make({ color: '#6f6690' }), flame = mats.make({ color: '#ffb02e', lit: true }), core = mats.make({ color: '#fff3b0', lit: true });
+  const dark = mats.make({ color: '#3a2b63', minL: 0.5 }), skin = mats.make({ color: '#f6d3ae', minL: 0.55 }), steel = mats.make({ color: '#8a80ad', minL: 0.5 }), flame = mats.make({ color: '#ffb02e', lit: true }), core = mats.make({ color: '#fff3b0', lit: true });
 
   function hero(color) {
-    const coat = mats.make({ color }), light = mats.make({ color: mixHex(color, '#ffffff', 0.55) }), glow = mats.make({ color: mixHex(color, '#ffffff', 0.35), lit: true }), deep = mats.make({ color: mixHex(color, PAL.dark, 0.45) });
+    const coat = mats.make({ color, minL: 0.5 }), light = mats.make({ color: mixHex(color, '#ffffff', 0.55), minL: 0.6 }), glow = mats.make({ color: mixHex(color, '#ffffff', 0.35), lit: true }), deep = mats.make({ color: mixHex(color, PAL.dark, 0.4), minL: 0.5 });
     const root = new THREE.Group(), body = new THREE.Group(), torso = new THREE.Group(), head = new THREE.Group(), rifle = new THREE.Group();
     const mesh = (geo, m, parent, x, y, z, sx, sy, sz) => { const q = new THREE.Mesh(geo, m); q.position.set(x, y, z); q.scale.set(sx, sy, sz); q.castShadow = true; q.receiveShadow = true; parent.add(q); return q; };
     const pivot = (parent, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; };

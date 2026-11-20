@@ -36,7 +36,7 @@ import { makeSound, BPM, BPM_HOT } from './sound.js';
 import { makeSim, RELOAD } from './sim.js';
 import { makeBot } from './bot.js';
 import { drawSniper, drawDecoy, drawHat, drawDizzy, drawBirdie, GUN } from './figures.js';
-import { drawLadder, drawSpring, drawSeesaw, crate, drawHandcar, drawTrainBody, drawAnvil, drawAnvilShadow, drawWeed, drawVulture, drawHole, drawCork, drawSun, drawCloud, drawCactus } from './props.js';
+import { drawLadder, drawBoard, drawSpring, drawSeesaw, crate, drawHandcar, drawTrainBody, drawAnvil, drawAnvilShadow, drawWeed, drawVulture, drawHole, drawCork, drawSun, drawCloud, drawCactus, drawRockFace } from './props.js';
 
 const ROUND = 45;
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -81,6 +81,7 @@ export default {
       };
     });
     S.P = P;
+    S.w = w;
     const sim = makeSim(ctx, w, S, sound, fx);
     for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = makeBot(ctx, w, S, p);
     ctx.canvas.style.cursor = 'none';
@@ -103,16 +104,28 @@ export default {
     const needP = () => clamp(Math.round(V.s0 * ctx.dpr * 12) / 10, 0.8, 1.3);
     const bake = () => {
       bakedP = needP();
-      if (art) for (const L of [art.far, art.wall, art.terr]) { L.canvas.width = 1; L.canvas.height = 1; }
+      if (art) for (const L of [art.far, art.near, art.wall, art.terr]) { L.canvas.width = 1; L.canvas.height = 1; }
       art = bakeStage(ctx.seed, bakedP);
     };
     bake();
-    const halftone = (() => {
-      const c = document.createElement('canvas'); c.width = c.height = 9;
-      const g = c.getContext('2d'); g.fillStyle = 'rgba(27,22,18,0.55)'; g.beginPath(); g.arc(4.5, 4.5, 1.5, 0, 6.283); g.fill();
-      return c;
-    })();
-    let halfPat = null, halfOf = null;
+    let sky = null, skyW = 0, skyH = 0;
+    // the sky is a paper gradient with a halftone dot fade (bigger dots lower down), baked per size
+    function bakeSky() {
+      skyW = V.cw; skyH = V.ch;
+      sky = document.createElement('canvas');
+      sky.width = Math.round(skyW * ctx.dpr); sky.height = Math.round(skyH * ctx.dpr);
+      const sg = sky.getContext('2d');
+      sg.scale(ctx.dpr, ctx.dpr);
+      const grd = sg.createLinearGradient(0, 0, 0, skyH);
+      grd.addColorStop(0, '#d3c7ab'); grd.addColorStop(0.4, '#f1e8d3'); grd.addColorStop(1, '#e8dec6');
+      sg.fillStyle = grd; sg.fillRect(0, 0, skyW, skyH);
+      sg.fillStyle = 'rgba(27,22,18,0.5)';
+      const step = 9, y0 = skyH * 0.12, y1 = skyH * 0.62;
+      for (let y = y0, row = 0; y < y1; y += step * 0.866, row++) {
+        const r = 0.2 + 2.5 * Math.pow((y - y0) / (y1 - y0), 1.4);
+        for (let x = (row & 1) * step * 0.5; x < skyW; x += step) { sg.beginPath(); sg.arc(x, y, r, 0, 6.283); sg.fill(); }
+      }
+    }
     const E = { T: 0, pulse: 0, sway: 0, hatLean: 0, hatTilt: 0, look: [0, 0] };
     const scr = { x: 0, y: 0 };
     const arcBuf = new Float32Array(160);
@@ -284,7 +297,7 @@ export default {
         sound.stop(0.3);
         fx.clear();
         S.corks.length = 0; S.decoys.length = 0; S.holes.length = 0; S.hats.length = 0;
-        if (art) for (const L of [art.far, art.wall, art.terr]) { L.canvas.width = 1; L.canvas.height = 1; }
+        if (art) for (const L of [art.far, art.near, art.wall, art.terr]) { L.canvas.width = 1; L.canvas.height = 1; }
         art = null;
         ctx.canvas.style.cursor = '';
       },
@@ -322,6 +335,7 @@ export default {
           if (!e.paper) { e.paper = true; const a = ARCH[e.dir > 0 ? 0 : 1]; fx.chips(a.x, FLOOR - 80, 16, 520, '#f7f0de'); fx.text('RIIIP!', a.x + e.dir * 40, FLOOR - 190, 38, '#f7f0de', 1.1); }
         } else if (ts.warn < 1 && Math.random() < dt * 6) {
           const a = ARCH[e.dir > 0 ? 0 : 1];
+          if (!e.tt) { e.tt = true; fx.text('TOOT TOOT!', a.x, FLOOR - 220, 34, '#f7f0de', 1.4); }
           fx.puff(a.x + (Math.random() - 0.5) * 80, FLOOR - 150, 0, -50, 10, 0.8, '#f7f0de');
         }
       }
@@ -349,7 +363,7 @@ export default {
       if (p.dead) return p.k < 0.45 ? 'scared' : 'scorch';
       if (k && k.w === p && k.t > 0.4) return 'win';
       if (p.stun > 0) return 'dizzy';
-      if (p.charge > 0.05 || (p.rt <= 0 && p.aimHeld)) return 'aim';
+      if (p.charge > 0.05) return 'aim';
       if (p.scare > 0) return 'scared';
       return 'ok';
     }
@@ -358,16 +372,15 @@ export default {
       const T = S.T;
       // sky
       // far mesas bob to the beat
-      g.save();
-      g.translate(0, 560); g.scale(1, 1 + 0.02 * E.pulse); g.translate(0, -560);
-      const F = art.far; g.drawImage(F.canvas, F.x0, F.y0, F.w, F.h);
-      g.restore();
+      const F = art.far; g.drawImage(F.canvas, F.x0, F.y0 - E.pulse * 7, F.w, F.h + E.pulse * 7);
+      const Nr = art.near; g.drawImage(Nr.canvas, Nr.x0, Nr.y0 + E.pulse * 4, Nr.w, Nr.h - E.pulse * 4);
       // clouds drift and bounce
       for (let i = 0; i < CLOUDS.length; i++) {
         const [x0, y0, s, seed] = CLOUDS[i];
         const x = ((x0 + 300 + T * (5 + i * 1.6)) % 2600) - 450;
-        drawCloud(g, x, y0 + Math.sin(T * 1.9 + i) * 4 - E.pulse * 3, s * (1 + 0.02 * E.pulse), seed);
+        drawCloud(g, x, y0 + Math.sin(T * 1.9 + i) * 4 - E.pulse * 3, s * (1 + 0.02 * E.pulse), seed, i);
       }
+      drawSun(g, 1190, 118 + Math.sin(T * 1.4) * 3, T, E);
       const Wl = art.wall; g.drawImage(Wl.canvas, Wl.x0, Wl.y0, Wl.w, Wl.h);
       const Tt = art.terr; g.drawImage(Tt.canvas, Tt.x0, Tt.y0, Tt.w, Tt.h);
     }
@@ -380,33 +393,19 @@ export default {
       const cw = V.cw, ch = V.ch, T = S.T;
       const sh = shake.out;
       const weave = (Math.sin(boil.f * 12.9) * 0.5 + Math.sin(boil.f * 4.1) * 0.4) * 0.9;
-      // paper-white sky with a halftone fade at the top
-      const grd = g.createLinearGradient(0, 0, 0, ch);
-      grd.addColorStop(0, '#d8cdb4'); grd.addColorStop(0.5, '#efe6d0'); grd.addColorStop(1, '#e4d9c0');
-      g.fillStyle = grd;
-      g.fillRect(0, 0, cw, ch);
-      if (halfOf !== g) { halfOf = g; halfPat = g.createPattern(halftone, 'repeat'); }
-      if (halfPat) {
-        const hg = g.createLinearGradient(0, 0, 0, ch * 0.55);
-        hg.addColorStop(0, 'rgba(27,22,18,0.20)'); hg.addColorStop(1, 'rgba(27,22,18,0)');
-        g.save(); g.globalAlpha = 0.55; g.fillStyle = halfPat; g.fillRect(0, 0, cw, ch * 0.55);
-        g.globalCompositeOperation = 'destination-out';
-        g.fillStyle = 'rgba(0,0,0,0.6)'; g.fillRect(0, ch * 0.3, cw, ch * 0.25);
-        g.restore();
-        g.fillStyle = hg; g.fillRect(0, 0, cw, ch * 0.55);
-      }
+      if (!sky || skyW !== cw || skyH !== ch) bakeSky();
+      g.drawImage(sky, 0, 0, cw, ch);
       g.save();
       g.translate(cw / 2 + sh.x + weave, ch / 2 + sh.y + weave * 0.6);
       g.scale(V.s, V.s);
       g.translate(-cam.x, -cam.y);
       g.lineJoin = 'round'; g.lineCap = 'round';
-      drawSun(g, 1190, 118 + Math.sin(T * 1.4) * 3, T, E);
-      drawWorld(g);
-      drawDecor(g, T);
-      drawActors(g, T);
+      if (!(S.off && S.off.bg)) drawWorld(g);
+      if (!(S.off && S.off.decor)) drawDecor(g, T);
+      if (!(S.off && S.off.actors)) drawActors(g, T);
       g.restore();
       drawOverlay(g, T);
-      film.draw(g, cw, ch, T, 1);
+      if (!(S.off && S.off.film)) film.draw(g, cw, ch, T, 1);
       if (S.flashW > 0) { g.fillStyle = `rgba(255,252,240,${Math.min(1, S.flashW)})`; g.fillRect(0, 0, cw, ch); }
     }
 
@@ -430,6 +429,9 @@ export default {
           for (let i = -1; i <= 1; i++) { g.beginPath(); g.moveTo(a.x + i * 40, FLOOR - 40); g.lineTo(a.x + i * 40 + Math.sin(T * 40 + i) * 3, FLOOR - 120); g.stroke(); }
         }
       }
+      for (const l of w.ladders) if (l.k === 'pillar') drawLadder(g, w, l, T);
+      drawCactus(g, 572, FLOOR + 2, 0.8, T, E, 3);
+      drawCactus(g, 1028, FLOOR + 2, 0.8, T + 0.2, E, 4);
       // handcar and train
       if (w.carOn) drawHandcar(g, w.car, cax, T, E);
       for (const e of w.ev) {
@@ -445,19 +447,26 @@ export default {
       }
       // the rock's ink, boiling
       g.save();
-      g.strokeStyle = C.ink; g.lineWidth = 5.5;
-      g.stroke(art.paths[boil.f % 3]);
+      const pv = art.paths[boil.f % 3];
+      g.strokeStyle = C.ink; g.lineWidth = 5.5; g.stroke(pv.edge);
+      g.lineWidth = 2.6; g.globalAlpha = 0.7; g.stroke(pv.strata); g.globalAlpha = 1;
       g.restore();
       // ladders, springs, the seesaw rock
-      for (const l of w.ladders) drawLadder(g, w, l, T);
+      for (const b of w.boards) drawBoard(g, b);
+      for (const l of w.ladders) if (l.k !== 'pillar') drawLadder(g, w, l, T);
       drawSeesaw(g, w, T, E);
       for (const c of w.tower.lost) crate(g, c.x, c.y, c.rot, CRATE, 120, false);
       for (let i = 0; i < 2; i++) drawSpring(g, w.springs[i], S.springHit[i], T, E);
       // cacti: the chorus line
       drawCactus(g, 46, GY + 4, 1.05, T, E, 1);
       drawCactus(g, W - 46, GY + 4, 1.05, T + 0.3, E, 2);
-      drawCactus(g, 572, FLOOR + 2, 0.8, T, E, 3);
-      drawCactus(g, 1028, FLOOR + 2, 0.8, T + 0.2, E, 4);
+      // the cover rocks watch the duel
+      for (let r = 0; r < 2; r++) {
+        const rx = r ? W - 286 - 48 : 286 + 48, foe = P[1 - r];
+        let lx = Math.sign(foe.x - rx), ly = clamp((foe.y - 60 - (GY - 24)) / 400, -1, 1), alarm = false;
+        for (const c of S.corks) if (c.live && Math.abs(c.x - rx) < 260 && c.owner !== r) { lx = Math.sign(c.x - rx); ly = clamp((c.y - (GY - 24)) / 200, -1, 1); alarm = true; break; }
+        drawRockFace(g, rx, GY - 28, lx, ly, T, r * 7 + 3, alarm);
+      }
     }
 
     function drawActors(g, T) {
@@ -465,8 +474,8 @@ export default {
       for (const e of w.ev) {
         if (e.k !== 'anvil' || ctx.time < e.t0 || ctx.time > e.t0 + e.dur) continue;
         anvilState(e, ctx.time, w, as);
-        if (as.ph === 0) drawAnvilShadow(g, e.x, as.ground, as.k);
-        else if (as.ph === 1) drawAnvilShadow(g, e.x, as.ground, 1);
+        if (as.ph === 0) drawAnvilShadow(g, e.x, as.ground, as.k, T);
+        else if (as.ph === 1) drawAnvilShadow(g, e.x, as.ground, 1, T);
       }
       for (const q of S.holes) {
         drawHole(g, q.a, T, P[q.owner].col, true);
@@ -504,7 +513,7 @@ export default {
       if (k && !k.hat.land) drawHat(g, k.v.i, k.v.col, k.hat.x, k.hat.y, k.hat.rot, 1, 9);
       for (const h of S.hats) drawHat(g, h.style, h.col, h.x, h.y, h.rot, 1, 3);
       // corks
-      for (const c of S.corks) if (c.live) drawCork(g, c, P[c.owner].col, T);
+      for (const c of S.corks) if (c.live) drawCork(g, c, P[c.owner].col, T, V.u);
       // slapstick
       for (const e of w.ev) {
         if (ctx.time < e.t0 - 0.2 || ctx.time > e.t0 + e.dur + 0.2) continue;
@@ -528,7 +537,7 @@ export default {
         for (const p of P) drawTag(g, p.x, p.y - (p.st === 1 ? 92 : 134) - (p.hat ? 20 : 4), p.name, p.i === ctx.me, p.col, u, T);
         if (!ctx.autopilot && ctx.phase === 'live' && !me.lad && !me.tele) drawPreview(g, me, u);
         if (!ctx.autopilot && ctx.phase === 'live') drawPrompt(g, me, u);
-        if (me.a1msgT > 0) bubble(g, me.x, me.y - 150, [me.a1msg], u, T, me.col);
+        if (me.a1msgT > 0) bubble(g, me.x, me.y - 150 - 46 * u, me.a1msg.split('|'), u, T, me.col, Math.min(1, me.a1msgT * 3), cam.x - V.cw / 2 / V.s, cam.x + V.cw / 2 / V.s);
       }
     }
 
@@ -551,7 +560,7 @@ export default {
       } else if (!S.usedAlt && !S.tookAim && S.firstShot && ctx.time < 40 && S.shots[ctx.me] >= 1 && S.shots[ctx.me] < 4) {
         lines = dev === 'touch' ? ['TAP TAKE AIM, then', 'aim: longer & flatter'] : dev === 'gamepad' ? ['HOLD LT: longer,', 'flatter shot'] : ['HOLD RIGHT-CLICK:', 'longer, flatter shot'];
       }
-      if (lines && me.alive) bubble(g, me.x + me.face * 4, me.y - (me.hat ? 150 : 134) - 24 * u, lines, u, S.T, me.col);
+      if (lines && me.alive) bubble(g, me.x + me.face * 4, me.y - 150 - 46 * u, lines, u, S.T, me.col, 1, cam.x - V.cw / 2 / V.s, cam.x + V.cw / 2 / V.s);
     }
 
     function drawOverlay(g, T) {
@@ -578,6 +587,7 @@ export default {
       if (k && k.t > 0.85) {
         const u = clamp((k.t - 0.85) / 1.5, 0, 1);
         const maxR = Math.hypot(cw, ch);
+        S.dbgIris = [tx(k.v.x), ty(k.v.y - 92), maxR * (1 - ease.inOutCubic(u)) + 34 * V.s * (1 - u) + 8, u];
         drawIris(g, cw, ch, tx(k.v.x), ty(k.v.y - 92), maxR * (1 - ease.inOutCubic(u)) + 34 * V.s * (1 - u) + 8);
       }
       // the opening: an iris-in from the local sniper

@@ -9,12 +9,12 @@ const FOV = 55, ZOOM = 4.6, BOOM = 3.6, ARC_N = 14;
 const ZERO_SAFE = { left: 0, right: 0, top: 0, bottom: 0 };
 
 export function makeView(ctx, THREE, renderer, X) {
-  const { scene, W, fx, post, P, G, letters, Q, city } = X;
+  const { scene, W, fx, post, P, G, letters, Q } = X;
   const camera = new THREE.PerspectiveCamera(FOV, ctx.width / Math.max(1, ctx.height), 0.3, 900);
   camera.rotation.order = 'YXZ';
+  camera.layers.enable(1);
   const me = P[ctx.me], foe = P[1 - ctx.me];
   const E = new THREE.Vector3(), F = new THREE.Vector3(), Rt = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), aimPt = new THREE.Vector3(), look = new THREE.Vector3();
-  const size = new THREE.Vector2();
   const mkArc = () => ({ a: 0, n: 0, pts: new Float32Array(ARC_N * 2), color: '#fff' });
   const S = {
     w: 1, h: 1, t: 0, ui: 1, touch: false, safeL: 0, safeR: 0, safeB: 0, live: false, alive: true, scope: 0, spreadPx: 10, blocked: false,
@@ -25,7 +25,7 @@ export function makeView(ctx, THREE, renderer, X) {
   for (let i = 0; i < 5; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: '', color: '#fff', hollow: false, text: '' });
   for (let i = 0; i < 14; i++) S.pops.push({ on: false, word: 'BLAM', wx: 0, wy: 0, wz: 0, t: 0, dur: 1, rot: 0, size: 1, rise: 1, x: 0, y: 0, px: 10, pin: false });
   let wt = 0, boom = BOOM, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, flashA = 0, speedA = 0, suddenA = 0, popN = 0;
-  let frames = 0, fresh = false, shadowDirty = true, glintT = 0, tPrev = 0, cost = 0, skip = 0;
+  let frames = 0, fresh = false, held = false, shadowDirty = true, glintT = 0, tPrev = 0, cost = 0, drawAfter = 0, drew = false;
   const lt = { ok: false, x: 0, z: 0, roof: 0 };
   const api = { camera, shot: null, force: 0, lt, S };
 
@@ -59,20 +59,21 @@ export function makeView(ctx, THREE, renderer, X) {
   function project(x, y, z, m) {
     tmp.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
     m.ang = Math.atan2(tmp.x, -tmp.z);
-    if (tmp.z > -0.3) { m.on = false; return m; }
+    m.front = tmp.z <= -0.3;
+    if (!m.front) { m.on = false; return m; }
     tmp.applyMatrix4(camera.projectionMatrix);
     m.x = (tmp.x * 0.5 + 0.5) * ctx.width; m.y = (-tmp.y * 0.5 + 0.5) * ctx.height;
     m.on = Math.abs(tmp.x) < 0.97 && Math.abs(tmp.y) < 0.93;
     return m;
   }
   // Sample a leap's arc into screen points; returns how many landed in front of the lens.
-  const pm = { on: false, x: 0, y: 0, ang: 0 };
+  const pm = { on: false, front: false, x: 0, y: 0, ang: 0 };
   function arcPts(L, u0, u1, pts) {
     let n = 0;
     for (let i = 0; i < ARC_N; i++) {
       const u = lerp(u0, u1, i / (ARC_N - 1));
       project(lerp(L.x0, L.x1, u), lerp(L.y0, L.y1, u) + L.H * 4 * u * (1 - u) + 0.3, lerp(L.z0, L.z1, u), pm);
-      if (tmp.z > 1 || tmp.z < -1) { if (n) break; continue; }
+      if (!pm.front) { if (n) break; continue; }
       pts[n * 2] = pm.x; pts[n * 2 + 1] = pm.y; n++;
     }
     return n;
@@ -87,7 +88,8 @@ export function makeView(ctx, THREE, renderer, X) {
     kick(k) { kickV += 0.3 * k; trauma = Math.min(1, trauma + 0.2 * k); },
     flash(k) { flashA = Math.max(flashA, k); },
     shadows() { shadowDirty = true; },
-    beginIntro() { introT = 0; },
+    beginIntro() { introT = 0; drawAfter = 0; },
+    poke() { drawAfter = 0; }, // whatever the pacing says, draw the next frame
     /** A sound effect, lettered into the world at (x, y, z). pin: keep it on the page even if the place is off it. */
     pop(word, x, y, z, size = 1, dur = 0.9, pin = false) {
       const p = S.pops[popN]; popN = (popN + 1) % S.pops.length;
@@ -100,18 +102,17 @@ export function makeView(ctx, THREE, renderer, X) {
       const l = Math.hypot(dx, dz) || 1, ux = dx / l, uz = dz / l, T = G.time();
       let cx = v.x, cy = v.y + 3.2, cz = v.z, found = false;
       // a low angle off to one side, looking back along the shot: the first that has a clear view
-      for (const d of [4.2, 3.2, 2.4]) { for (const sd of [1, -1]) for (const bk of [0.7, 0, 1.4]) {
+      for (const d of [4.2, 3.2, 2.4]) for (const sd of [1, -1]) for (const bk of [0.7, 0, 1.4]) {
+        if (found) break;
         const x = v.x + -uz * sd * d - ux * d * bk, z = v.z + ux * sd * d - uz * d * bk, r = W.roofAt(x, z, null), y = (r ? Math.max(r.h, v.y) : v.y) + 0.75;
-        if (r && r.h > v.y + 1.2) continue;
-        if (!W.los(v.x, v.y + 1.2, v.z, x, y, z, T, true)) continue;
+        if ((r && r.h > v.y + 1.2) || !W.los(v.x, v.y + 1.2, v.z, x, y, z, T, true)) continue;
         cx = x; cy = y; cz = z; found = true;
-        break;
-      } if (found) break; }
+      }
       kc = { v, t: 0, x: cx, y: cy, z: cz, roll: (Math.random() < 0.5 ? -1 : 1) * 0.13, depth: Math.hypot(cx - v.x, cy - v.y - 1, cz - v.z) + 1.3 };
       look.set(v.x, v.y + 1.1, v.z);
       S.splash.word = word; S.splash.caption = text; S.splash.t = 0; S.splash.a = 1;
       for (const p of S.pops) p.on = false;
-      skip = 0;
+      drawAfter = 0;
     },
     focus() {
       const r = ctx.result, v = P[r && r.victim >= 0 ? r.victim : 1 - ctx.me], m = project(v.x, v.y + 1, v.z, S.marks[4]);
@@ -125,19 +126,27 @@ export function makeView(ctx, THREE, renderer, X) {
     },
 
     update(dt, rdt) {
-      fresh = true;
-      wt += rdt;
       const phase = ctx.phase, T = G.time(), human = !me.bot;
+      // Clocks run every frame...
+      wt += rdt;
       kickV -= kickA * 70 * dt; kickV *= Math.exp(-10 * dt); kickA = Math.max(-0.02, kickA + kickV * dt);
       trauma = Math.max(0, trauma - rdt * 1.6);
+      flashA = Math.max(0, flashA - rdt * 7);
+      if (phase === 'intro' && introT >= 0) introT += rdt;
+      if (phase === 'over' && kc) kc.t += rdt;
+      for (const p of S.pops) if (p.on && (p.t += rdt) >= p.dur) p.on = false;
+      // ...but with no GPU the page is redrawn only now and then (see render), and between
+      // draws the lens and the 2D layer hold still with it, so what is on screen stays one picture.
+      if (!fresh) held = !Q.rich && frames > 1 && !api.force && performance.now() < drawAfter;
+      fresh = true;
+      if (held) return;
       rig(me, dt, play);
       scopeAmt = me.alive ? me.scope : 0;
       if (phase === 'intro' || introT < 0) {
         // The establishing shot: start across the street on the other sniper's roof, crane up
         // over the canyon and come down behind your own shoulder as the count ends.
-        if (introT >= 0) introT += rdt;
         const u = clamp(introT / 3.3, 0, 1), e = u * u * (3 - 2 * u), s = Math.sign(me.z) || 1, drift = Math.sin(wt * 0.3) * 1.5;
-        const ax = foe.x - 13 + drift, ay = foe.y + 6.5, az = foe.z + s * 15, bx = -24, by = me.y + 26, bz = s * 22;
+        const ax = foe.x - 7 + drift, ay = foe.y + 4.2, az = foe.z + s * 9, bx = -26, by = me.y + 24, bz = s * 20;
         const q0 = (1 - e) * (1 - e), q1 = 2 * e * (1 - e), q2 = e * e;
         camera.position.set(q0 * ax + q1 * bx + q2 * play.pos.x, q0 * ay + q1 * by + q2 * play.pos.y, q0 * az + q1 * bz + q2 * play.pos.z);
         dirOf(play.yaw, play.pitch, F);
@@ -147,8 +156,7 @@ export function makeView(ctx, THREE, renderer, X) {
         camera.fov = lerp(44, FOV, e);
         scopeAmt = 0;
       } else if (phase === 'over' && kc) {
-        kc.t += rdt;
-        const v = kc.v, k = 1 - Math.exp(-rdt * 3.2);
+        const v = kc.v, k = 1 - Math.exp(-Math.min(0.1, rdt) * 3.2);
         look.x += (v.x - look.x) * k; look.y += (v.y + 1 - look.y) * k; look.z += (v.z - look.z) * k;
         camera.position.set(kc.x, kc.y + kc.t * 0.12, kc.z);
         camera.up.set(Math.sin(kc.roll), Math.cos(kc.roll), 0);
@@ -248,7 +256,6 @@ export function makeView(ctx, THREE, renderer, X) {
       u.uSpeed.value = speedA;
       u.uFlash.value = flashA;
       u.uSudden.value = suddenA * (0.6 + 0.4 * Math.sin(wt * 5));
-      flashA = Math.max(0, flashA - rdt * 7);
       const spl = S.splash;
       if (phase === 'over' && kc) {
         spl.t = kc.t;
@@ -274,19 +281,16 @@ export function makeView(ctx, THREE, renderer, X) {
       // pops: pinned to their place in the world, sized by distance
       for (const p of S.pops) {
         if (!p.on) continue;
-        p.t += rdt;
-        if (p.t >= p.dur) { p.on = false; continue; }
         project(p.wx, p.wy, p.wz, pm);
         const d = Math.hypot(p.wx - camera.position.x, p.wy - camera.position.y, p.wz - camera.position.z) || 1;
         p.px = clamp((pointScale * 1.3 * p.size) / d, h * 0.045 * p.size, h * 0.15 * p.size);
-        if (tmp.z > 1 || tmp.z < -1) { if (!p.pin) { p.x = -9999; continue; } pm.x = w * (0.5 + Math.sin(pm.ang) * 0.4); pm.y = h * 0.5; }
+        if (!pm.front) { if (!p.pin) { p.x = -9999; continue; } pm.x = w * (0.5 + Math.sin(pm.ang) * 0.4); pm.y = h * 0.5; }
         p.x = p.pin ? clamp(pm.x, w * 0.14, w * 0.86) : pm.x; p.y = p.pin ? clamp(pm.y, h * 0.2, h * 0.8) : pm.y;
       }
       // the other sniper: marked once you have had eyes on them for a moment, or they give themselves away
       const m0 = S.marks[0];
       m0.a = 0;
       if (foe.alive && phase !== 'over') {
-        E.set(camera.position.x, camera.position.y, camera.position.z);
         const los = W.los(me.x, me.y + EYE, me.z, foe.x, foe.y + 1.5, foe.z, T) || W.los(me.x, me.y + EYE, me.z, foe.x, foe.y + 0.8, foe.z, T);
         project(foe.x, foe.y + 2.25, foe.z, m0);
         const loud = T - foe.shotT < 2.5 || foe.leap.on || foe.speed > 4 || foe.scope > 0.7;
@@ -312,12 +316,13 @@ export function makeView(ctx, THREE, renderer, X) {
       const now = performance.now(), iv = tPrev ? now - tPrev : 0, inBand = fresh;
       tPrev = now;
       fresh = false;
-      let draw = true;
+      // The wait after a drawn frame is what that frame cost; no more than two fifths of the
+      // time may go on drawing. (A render with no update before it is the core photographing
+      // the world for a transition: that one is always drawn.)
+      if (drew) { cost = iv; drawAfter = now + Math.min(4000, cost * 1.5); }
+      const draw = Q.rich || !inBand || !held;
       if (api.force > 0) api.force--;
-      else if (!Q.rich && inBand && frames > 2) {
-        if (skip > 0) { skip--; draw = false; cost = Math.max(cost, iv); }
-        else { cost = Math.max(cost * 0.5, iv); skip = cost > 140 ? 2 : cost > 70 ? 1 : 0; }
-      }
+      drew = draw;
       drawOverlay(ctx.g, S, letters);
       if (!draw) return;
       frames++;
@@ -326,7 +331,6 @@ export function makeView(ctx, THREE, renderer, X) {
       post.render(scene, camera);
     },
   });
-  void city; void size;
   return api;
 }
 const GLINT = [1, 1, 0.92];

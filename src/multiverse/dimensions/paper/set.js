@@ -1,9 +1,9 @@
 // Everything in the yard that moves: the gantry crane and its box, the forklifts, gulls, windsocks, a drifting paper
 // plane and — in sudden death — the paper curtains closing in. Anything that touches the fight is a pure function of
 // ctx.time (craneAt, forkAt, windAt in layout.js); the rest is dressing on a private clock.
-import { INK, PAPER, ID, CONT, faceTone, darker, lighter } from './style.js';
+import { INK, PAPER, ID, GROUND_SHADE, faceTone, darker } from './style.js';
 import { FillBuf, LineBuf, LineSet } from './lines.js';
-import { craneAt, forkAt, windAt, CH, CW, FORK_X, yardLimit, YARD_Z } from './layout.js';
+import { craneAt, forkAt, CH, CW, FORK_X, yardLimit } from './layout.js';
 import { HOLES, RING, HOLE_R } from './world.js';
 
 const TAU = Math.PI * 2;
@@ -32,6 +32,45 @@ export function makeSet(ctx, THREE, mats, W) {
     geos.push(m.geometry, ls.geo);
     return { m, ls };
   };
+
+  // ---- flat cast shadows for the things that move (the static ones are baked into the ground layer) ----
+  const shadowMat = new THREE.MeshBasicMaterial({ color: GROUND_SHADE, polygonOffset: true, polygonOffsetFactor: 3, polygonOffsetUnits: 3, side: THREE.DoubleSide });
+  mls.push(shadowMat);
+  const hullPts = [], hullOut = [];
+  function dynShadow() {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(9 * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setIndex(Array.from({ length: 7 }, (_, i) => [0, i + 1, i + 2]).flat());
+    geo.setDrawRange(0, 0);
+    const mesh = new THREE.Mesh(geo, shadowMat);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = -1;
+    geos.push(geo);
+    root.add(mesh);
+    return {
+      mesh,
+      /** Shadow of a box x0..x1, z0..z1 spanning heights y0..y1 under a sun over +x. */
+      set(x0, z0, x1, z1, y0, y1) {
+        hullPts.length = 0;
+        for (const [x, z] of [[x0, z0], [x1, z0], [x1, z1], [x0, z1]]) { hullPts.push([x - 0.62 * y0, z + 0.16 * y0], [x - 0.62 * y1, z + 0.16 * y1]); }
+        hullPts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+        const lo = [], up = [];
+        for (const q of hullPts) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+        for (let i = hullPts.length - 1; i >= 0; i--) { const q = hullPts[i]; while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+        lo.pop(); up.pop();
+        hullOut.length = 0;
+        for (const q of lo) hullOut.push(q);
+        for (const q of up) hullOut.push(q);
+        const n = Math.min(9, hullOut.length), a = geo.attributes.position.array;
+        for (let i = 0; i < n; i++) { a[i * 3] = hullOut[i][0]; a[i * 3 + 1] = 0; a[i * 3 + 2] = hullOut[i][1]; }
+        geo.attributes.position.needsUpdate = true;
+        geo.setDrawRange(0, Math.max(0, n - 2) * 3);
+      },
+    };
+  }
+  const shadows = [dynShadow(), dynShadow(), dynShadow()];
 
   // ---- the gantry's box ----
   const crane = new THREE.Group();
@@ -89,7 +128,7 @@ export function makeSet(ctx, THREE, mats, W) {
 
   // ---- windsocks ----
   const flags = [];
-  const flagGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 2.0, 0.1, 0, 0, -0.9, 0]), 3));
+  const flagGeo = new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1.5, 0.08, 0, 0, -0.7, 0]), 3));
   geos.push(flagGeo);
   for (const [x, z, k] of [[6.5, -8, 0], [-6.5, 8, 1], [23, 3, 0], [-23, -3, 1]]) {
     const F = new FillBuf(), L = new LineBuf();
@@ -101,7 +140,7 @@ export function makeSet(ctx, THREE, mats, W) {
     piv.position.set(x, 5.0, z);
     const mesh = new THREE.Mesh(flagGeo, m);
     const ls = new LineSet(THREE, 3, mats.ink);
-    ls.add(0, 0, 0, 2.0, 0.1, 0, INK, 0.9); ls.add(2.0, 0.1, 0, 0, -0.9, 0, INK, 0.9); ls.add(0, -0.9, 0, 0, 0, 0, INK, 0.9);
+    ls.add(0, 0, 0, 1.5, 0.08, 0, INK, 0.9); ls.add(1.5, 0.08, 0, 0, -0.7, 0, INK, 0.9); ls.add(0, -0.7, 0, 0, 0, 0, INK, 0.9);
     ls.flush();
     geos.push(ls.geo);
     const arm = new THREE.Group();
@@ -225,6 +264,7 @@ export function makeSet(ctx, THREE, mats, W) {
     const blink = cs.warn && Math.floor(anim * 4) % 2 === 0;
     for (const m of lamps) m.color.set(blink ? '#ff3b30' : '#4a1410');
     const top = cs.y + CH;
+    shadows[0].set(cs.x - 3, -CW / 2, cs.x + 3, CW / 2, cs.y, top);
     let n = 0;
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) cables.set(n++, cs.x + sx * 2.3, 8.6, sz * 1.0, cs.x + sx * 2.5 + (cs.moving ? Math.sin(anim * 1.3) * 0.1 : 0), top, sz * 1.0, INK, 0.45);
     cables.flush(n);
@@ -232,6 +272,7 @@ export function makeSet(ctx, THREE, mats, W) {
       forkAt(t, 0, fk);
       const s = k ? -1 : 1, g = forks[k];
       g.position.set(s * -FORK_X, 0, s * fk.z);
+      shadows[1 + k].set(s * -FORK_X - 0.7, s * fk.z - 1.5, s * -FORK_X + 0.7, s * fk.z + 1.5, 0, 2.1);
       g.rotation.y = fk.dz * s > 0 ? 0 : Math.PI;
     }
     for (let i = 0; i < flags.length; i++) {

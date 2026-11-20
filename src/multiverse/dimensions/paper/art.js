@@ -215,4 +215,11 @@ export function drawFlash(g, S) { // a muzzle flash: a hard-edged starburst
   g.beginPath(); g.arc(S / 2, S / 2, S * 0.17, 0, TAU); ink(g, '#fffdf0', S * 0.03);
 }
 
+export function drawGlint(g, S) { // the sparkle of a scope lens catching the sun: a four-point paper star
+  g.clearRect(0, 0, S, S);
+  g.beginPath();
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU - Math.PI / 2, r = S * (i % 2 ? 0.1 : 0.48); g.lineTo(S / 2 + Math.cos(a) * r, S / 2 + Math.sin(a) * r); }
+  g.closePath(); ink(g, '#ffffff', S * 0.06);
+}
+
 export { rr, ink, poly, lighter };

@@ -1,6 +1,6 @@
 // The paper people: a sniper is a printed card on a thin core — a full target face-on, a ruled line edge-on.
 // Standees are the same card in cardboard. The mascots dotted round the yard are plain scenery cut-outs.
-import { drawSniper, drawMascot } from './art.js';
+import { drawSniper, drawMascot, drawGlint } from './art.js';
 import { ID, ID_DARK, INK, PAPER, KRAFT, GROUND_SHADE, lighter } from './style.js';
 import { LineSet } from './lines.js';
 
@@ -126,15 +126,18 @@ export function makeFigureKit(THREE, mats) {
     tilt.add(cr.mesh);
     const flash = new THREE.Sprite(flashMat);
     flash.visible = false;
-    root.add(flash);
+    const glint = new THREE.Sprite(glintMat);
+    glint.visible = false;
+    root.add(flash, glint);
     const f = {
-      root, pivot, tilt, ball, flash, shadow, kind, creases: cr.mesh,
+      root, pivot, tilt, ball, flash, glint, shadow, kind, creases: cr.mesh,
       dispose() { ls.dispose(); bl.dispose(); cr.dispose(); bg.dispose(); bm.dispose(); },
     };
     return f;
   }
   const flashMat = new THREE.SpriteMaterial({ map: null, depthWrite: false, transparent: true });
-  matl.push(flashMat);
+  const glintMat = new THREE.SpriteMaterial({ map: canvasTex((g) => drawGlint(g, 128), 128, 128), depthWrite: false, transparent: true });
+  matl.push(flashMat, glintMat);
   return {
     sniper: (i) => build('live', i),
     standee: (i) => build('standee', i),
@@ -167,7 +170,7 @@ export function poseFigure(f, x, z, yaw, edge, speed, clock, side) {
 /** The kill: the card crumples into a ball, bounces once and unfolds flat on the ground. t is seconds since the hit. */
 export function crumpleFigure(f, t, bounceSeed) {
   const c1 = 0.34, b1 = 0.95, u1 = 1.7;
-  f.flash.visible = false;
+  f.flash.visible = false; f.glint.visible = false;
   if (t < c1) {
     const k = t / c1, e = k * k * (3 - 2 * k);
     f.tilt.scale.set(1 - e * 0.85, 1 - e * 0.88, 1 - e * 0.85);

@@ -14,7 +14,7 @@ export const STEEL = [
 ];
 // [kind, cx, cz, width, height, y0, yaw] — paper stops your view but never a bullet
 export const PAPER = [
-  ['up', 0, 31.2, 5.8, 1.4, 0, 0],
+  ['up', 0, 33.0, 4.4, 2.15, 0, 0],
   ['fragile', -6.5, 24, 3.2, 2.5, 0, 0.25],
   ['hazard', 6, 17.5, 3.0, 2.4, 0, -0.3],
   ['crate', 0.6, 10.5, 2.6, 2.2, 0, 0.12],

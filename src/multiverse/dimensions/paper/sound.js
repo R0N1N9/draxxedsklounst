@@ -58,6 +58,15 @@ export function makeSound(ctx) {
       A.tone({ type: 'square', freq: stage ? 520 : 360, freqEnd: stage ? 880 : 240, dur: 0.07, gain: 0.07 });
       A.tone({ type: 'triangle', freq: stage ? 150 : 200, freqEnd: 70, dur: 0.09, gain: 0.2 });
     },
+    scope(on) {
+      A.noise({ filter: 'bandpass', freq: on ? 900 : 2200, freqEnd: on ? 2400 : 800, q: 1.2, dur: 0.16, gain: 0.3, attack: 0.03 });
+      A.tone({ type: 'triangle', freq: on ? 520 : 380, freqEnd: on ? 760 : 260, dur: 0.06, gain: 0.07 });
+    },
+    whiz(p, near) {
+      const pn = pan(p);
+      A.noise({ filter: 'bandpass', freq: 3800, freqEnd: 1100, q: 1.6, dur: 0.22, gain: near ? 0.5 : 0.3, attack: 0.03, pan: pn });
+      A.tone({ type: 'sine', freq: 1500, freqEnd: 700, dur: 0.18, gain: near ? 0.07 : 0.04, pan: pn });
+    },
     dry() { A.tone({ type: 'square', freq: 220, freqEnd: 160, dur: 0.05, gain: 0.08 }); A.noise({ filter: 'highpass', freq: 4000, dur: 0.02, gain: 0.2 }); },
     hole(p) {
       const pn = pan(p);

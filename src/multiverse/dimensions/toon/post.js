@@ -1,6 +1,6 @@
 // Old film on top of everything (grain, scratches, dust, flicker, vignette, cue marks) and the world's
 // own interface: the reticle, the dotted arc, speech-bubble prompts, name tags, the iris and the spotlights.
-import { makeCanvas } from '../../kit.js';
+import { clamp, makeCanvas } from '../../kit.js';
 import { C, FONT, boil, hash1, blobPath, blob, jit } from './ink.js';
 
 export function makeFilm() {
@@ -40,10 +40,9 @@ export function makeFilm() {
       if (g.fillStyle) g.fillRect(-160, -160, w + 320, h + 320);
       g.restore();
       // vignette + flicker
+      g.globalAlpha = clamp(0.88 + (hash1(f * 1.9) - 0.5) * 0.3 + Math.sin(T * 7.3) * 0.05, 0.6, 1); // the lamp flickers
       g.drawImage(vig.canvas, 0, 0, w, h);
-      const fl = (hash1(f * 1.9) - 0.5) * 0.05 + (Math.sin(T * 7.3) * 0.012);
-      g.fillStyle = fl > 0 ? `rgba(255,248,230,${fl})` : `rgba(27,22,18,${-fl})`;
-      g.fillRect(0, 0, w, h);
+      g.globalAlpha = 1;
       // scratches: a couple of long vertical hairlines that jump about
       g.lineCap = 'round';
       for (let k = 0; k < 3; k++) {
@@ -79,7 +78,7 @@ export function drawIris(g, w, h, cx, cy, r) {
   g.fillStyle = C.ink;
   g.beginPath();
   g.rect(-10, -10, w + 20, h + 20);
-  if (r > 1) g.arc(cx, cy, r, 0, 6.283, true);
+  if (r > 1) { g.moveTo(cx + r, cy); g.arc(cx, cy, r, 0, 6.283, false); }
   g.fill('evenodd');
   if (r > 1) { g.strokeStyle = 'rgba(242,234,216,0.5)'; g.lineWidth = 3; g.beginPath(); g.arc(cx, cy, r, 0, 6.283); g.stroke(); }
   g.restore();
@@ -91,7 +90,7 @@ export function drawSpots(g, w, h, spots, alpha, T) {
   g.fillStyle = `rgba(20,16,12,${alpha})`;
   g.beginPath();
   g.rect(-10, -10, w + 20, h + 20);
-  for (const s of spots) g.arc(s.x, s.y, s.r, 0, 6.283, true);
+  for (const s of spots) { g.moveTo(s.x + s.r, s.y); g.arc(s.x, s.y, s.r, 0, 6.283, false); }
   g.fill('evenodd');
   g.lineWidth = 3;
   for (const s of spots) {
@@ -110,12 +109,12 @@ function textW(g, s, px) {
 }
 
 /** A speech bubble: tail at (x, y), body above it. u = world units per screen pixel. */
-export function bubble(g, x, y, lines, u, T, col, alpha = 1) {
+export function bubble(g, x, y, lines, u, T, col, alpha = 1, lo = -1e9, hi = 1e9) {
   const px = Math.round(13 * u * 100) / 100, pad = 8 * u, lh = px * 1.25;
   let wmax = 0;
   for (const l of lines) wmax = Math.max(wmax, textW(g, l, px));
   const bw = wmax + pad * 2, bh = lines.length * lh + pad * 1.6;
-  const bx = x - bw / 2, by = y - 16 * u - bh + Math.sin(T * 4) * 1.5 * u;
+  const bx = clamp(x - bw / 2, lo + 6 * u, Math.max(lo + 6 * u, hi - bw - 6 * u)), by = y - 16 * u - bh + Math.sin(T * 4) * 1.5 * u;
   g.save();
   g.globalAlpha = alpha;
   g.lineJoin = 'round';
@@ -123,7 +122,8 @@ export function bubble(g, x, y, lines, u, T, col, alpha = 1) {
   g.moveTo(bx + 6 * u, by);
   g.lineTo(bx + bw - 6 * u, by); g.quadraticCurveTo(bx + bw, by, bx + bw, by + 6 * u);
   g.lineTo(bx + bw, by + bh - 6 * u); g.quadraticCurveTo(bx + bw, by + bh, bx + bw - 6 * u, by + bh);
-  g.lineTo(x + 7 * u, by + bh); g.lineTo(x, y); g.lineTo(x - 7 * u, by + bh);
+  const tx = clamp(x, bx + 14 * u, bx + bw - 14 * u);
+  g.lineTo(tx + 7 * u, by + bh); g.lineTo(x, y); g.lineTo(tx - 7 * u, by + bh);
   g.lineTo(bx + 6 * u, by + bh); g.quadraticCurveTo(bx, by + bh, bx, by + bh - 6 * u);
   g.lineTo(bx, by + 6 * u); g.quadraticCurveTo(bx, by, bx + 6 * u, by);
   g.closePath();
@@ -133,7 +133,7 @@ export function bubble(g, x, y, lines, u, T, col, alpha = 1) {
   g.font = `700 ${px}px ${FONT}`;
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillStyle = C.ink;
-  lines.forEach((l, i) => g.fillText(l, x, by + pad * 0.8 + lh * (i + 0.5)));
+  lines.forEach((l, i) => g.fillText(l, bx + bw / 2, by + pad * 0.8 + lh * (i + 0.5)));
   g.restore();
 }
 
@@ -158,17 +158,18 @@ export function drawReticle(g, x, y, u, col, charge, T, ready) {
 }
 
 /** The predicted arc as ink dots; `n` points in pts (x, y pairs), the first `lit` seconds worth drawn. */
-export function drawArc(g, pts, n, u, col, fadeFrom) {
+export function drawArc(g, pts, n, u, col, fadeFrom, T = 0) {
   g.save();
   for (let i = 2; i < n; i++) {
     const k = i / n, a = k > fadeFrom ? 1 - (k - fadeFrom) / (1 - fadeFrom) : 1;
     if (a <= 0.02) break;
     const x = pts[i * 2], y = pts[i * 2 + 1];
-    g.globalAlpha = a * 0.9;
+    const r = (6.4 - k * 2.4) * u;
+    g.globalAlpha = a;
     g.fillStyle = C.ink;
-    g.beginPath(); g.arc(x, y, 4.6 * u * (1 - k * 0.3), 0, 6.283); g.fill();
+    g.beginPath(); g.arc(x, y, r + 1.8 * u, 0, 6.283); g.fill();
     g.fillStyle = i & 1 ? col : '#f7f0de';
-    g.beginPath(); g.arc(x, y, 2.8 * u * (1 - k * 0.3), 0, 6.283); g.fill();
+    g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
   }
   g.restore();
 }

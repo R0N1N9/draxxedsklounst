@@ -30,6 +30,17 @@ export function drawLadder(g, w, l, T) {
   g.restore();
 }
 
+/** A one-way plank on two poles (the perch). */
+export function drawBoard(g, b) {
+  g.strokeStyle = C.ink; g.lineWidth = 7; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(b.x + 14, b.y + 10); g.lineTo(b.x + 14, GY); g.moveTo(b.x + b.w - 14, b.y + 10); g.lineTo(b.x + b.w - 14, GY); g.stroke();
+  g.strokeStyle = C.g2; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(b.x + 14, b.y + 10); g.lineTo(b.x + 14, GY); g.moveTo(b.x + b.w - 14, b.y + 10); g.lineTo(b.x + b.w - 14, GY); g.stroke();
+  poly(g, [b.x, b.y, b.x + b.w, b.y, b.x + b.w, b.y + b.h, b.x, b.y + b.h], 33 + b.x, '#e3d6b8', 3.6, 0.7, C.ink, 0.5);
+  g.strokeStyle = 'rgba(27,22,18,0.35)'; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(b.x + 10, b.y + 5); g.lineTo(b.x + b.w - 10, b.y + 6); g.stroke();
+}
+
 export function drawSpring(g, sp, squash, T, E) {
   const cx = (sp.x0 + sp.x1) / 2, wd = sp.x1 - sp.x0;
   const h = 24 * (1 - 0.62 * squash) * (1 + 0.05 * E.pulse);
@@ -186,16 +197,23 @@ export function drawTrainBody(g, T, E, dist) {
   g.strokeStyle = C.ink; g.lineWidth = 5.5; g.beginPath(); g.moveTo(-160 + rod, -20 + rod * 0.5); g.lineTo(-60 + rod, -21 + rod * 0.5); g.stroke();
 }
 
-export function drawAnvilShadow(g, x, y, k) {
-  const r = 10 + k * 46;
+export function drawAnvilShadow(g, x, y, k, T) {
+  const r = 14 + k * 46;
   g.save();
   g.translate(x, y + 2);
+  g.save();
   g.scale(1, 0.22);
-  g.fillStyle = `rgba(27,22,18,${0.28 + 0.3 * k})`;
+  g.fillStyle = `rgba(27,22,18,${0.34 + 0.4 * k})`;
   blobPath(g, 0, 0, r, r, 5, 1.6, 12); g.fill();
-  g.strokeStyle = C.ink; g.lineWidth = 6; g.setLineDash([16, 12]);
-  blobPath(g, 0, 0, r + 8, r + 8, 5, 1.6, 12); g.stroke();
-  g.setLineDash([]);
+  g.strokeStyle = C.ink; g.lineWidth = 9; g.setLineDash([18, 12]); g.lineDashOffset = -T * 40;
+  blobPath(g, 0, 0, r + 10, r + 10, 5, 1.6, 12); g.stroke();
+  g.restore();
+  // a warning triangle bobbing over it
+  const by = -64 - Math.abs(Math.sin(T * 7)) * 10 - k * 8;
+  g.translate(0, by);
+  const sz = 20 + k * 6;
+  poly(g, [0, -sz, sz, sz * 0.7, -sz, sz * 0.7], 91, '#fff', 4, 0.8, C.ink, 0.5);
+  letters(g, '!', 0, sz * 0.15, sz * 1.35, 0, C.ink, 0);
   g.restore();
 }
 
@@ -285,17 +303,18 @@ export function drawHole(g, h, T, col, armed) {
   g.restore();
 }
 
-export function drawCork(g, c, col, T) {
+export function drawCork(g, c, col, T, u = 1) {
   const sp = Math.hypot(c.vx, c.vy) || 1, ux = c.vx / sp, uy = c.vy / sp;
-  const len = clamp(sp * 0.05, 18, 66);
+  const len = clamp(sp * 0.05, 18, 66) * Math.max(1, u * 0.7);
+  const k = Math.max(1, u * 0.62); // keep it a clear size on a phone
   g.save();
   // a ribbon of the owner's colour behind it
   g.fillStyle = col; g.globalAlpha = 0.42;
   g.beginPath();
-  g.moveTo(c.x + uy * 4.5, c.y - ux * 4.5);
+  g.moveTo(c.x + uy * 4.5 * k, c.y - ux * 4.5 * k);
   g.lineTo(c.x - ux * len + uy * 0.6, c.y - uy * len - ux * 0.6);
   g.lineTo(c.x - ux * len - uy * 0.6, c.y - uy * len + ux * 0.6);
-  g.lineTo(c.x - uy * 4.5, c.y + ux * 4.5);
+  g.lineTo(c.x - uy * 4.5 * k, c.y + ux * 4.5 * k);
   g.fill();
   g.globalAlpha = 1;
   g.strokeStyle = C.ink; g.lineWidth = 2; g.lineCap = 'round';
@@ -304,6 +323,7 @@ export function drawCork(g, c, col, T) {
   g.stroke();
   g.translate(c.x, c.y);
   g.rotate(T * 14);
+  g.scale(k, k);
   blob(g, 0, 0, 7.4, 6.6, c.seed, '#fff', 3.4, 0.5, 8);
   g.strokeStyle = col; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 3.5, 0.3, 2.4); g.stroke();
   g.restore();
@@ -335,7 +355,7 @@ export function drawSun(g, x, y, T, E) {
   g.restore();
 }
 
-export function drawCloud(g, x, y, s, seed) {
+export function drawCloud(g, x, y, s, seed, idx = 1) {
   g.save();
   g.translate(x, y);
   g.scale(s, s);
@@ -345,6 +365,29 @@ export function drawCloud(g, x, y, s, seed) {
   for (const [cx, cy, r] of cs) { blobPath(g, cx, cy, r, r, seed + cx, 1.6, 12); g.fill(); }
   g.strokeStyle = 'rgba(27,22,18,0.16)'; g.lineWidth = 3; g.lineCap = 'round';
   g.beginPath(); g.arc(14, -4, 18, 0.6, 1.9); g.arc(-18, 6, 14, 0.7, 1.9); g.stroke();
+  if (idx % 2 === 0) { // a sleepy face: closed eyes, a tiny smile
+    g.strokeStyle = C.ink; g.lineWidth = 3.2;
+    g.beginPath(); g.arc(-2, 2, 5, 0.2, 2.9); g.arc(22, 2, 5, 0.2, 2.9); g.moveTo(5, 12); g.quadraticCurveTo(11, 17, 17, 12); g.stroke();
+    g.fillStyle = 'rgba(27,22,18,0.12)'; g.beginPath(); g.ellipse(-8, 12, 6, 3.6, 0, 0, 6.283); g.ellipse(30, 12, 6, 3.6, 0, 0, 6.283); g.fill();
+  }
+  g.restore();
+}
+
+/** The cover rocks have faces and watch the duel: eyes follow (lx, ly) and blink. */
+export function drawRockFace(g, cx, cy, lx, ly, T, seed, alarmed) {
+  const blink = (T * 0.7 + seed) % 3.1 < 0.13;
+  g.save();
+  g.translate(cx, cy);
+  for (const ex of [-13, 13]) {
+    if (blink) { g.strokeStyle = C.ink; g.lineWidth = 3; g.beginPath(); g.moveTo(ex - 6, 0); g.lineTo(ex + 6, 0); g.stroke(); continue; }
+    blob(g, ex, 0, 7.5, alarmed ? 10 : 8.5, seed + ex, '#fff', 2.8, 0.5, 9);
+    g.fillStyle = C.ink; g.beginPath(); g.arc(ex + lx * 3.4, ly * 3.2, alarmed ? 1.8 : 3.2, 0, 6.283); g.fill();
+  }
+  g.strokeStyle = C.ink; g.lineWidth = 3; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(-21, -11); g.lineTo(-6, alarmed ? -14 : -8); g.moveTo(21, -11); g.lineTo(6, alarmed ? -14 : -8); g.stroke();
+  g.beginPath();
+  if (alarmed) g.ellipse(0, 19, 5, 6.5, 0, 0, 6.283); else { g.moveTo(-8, 18); g.quadraticCurveTo(0, 14 + Math.sin(T * 2 + seed) * 2, 8, 18); }
+  g.stroke();
   g.restore();
 }
 

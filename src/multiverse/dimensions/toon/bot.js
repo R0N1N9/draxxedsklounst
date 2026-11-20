@@ -16,7 +16,7 @@ export function makeBot(ctx, w, S, p) {
   const X = (x) => (me ? W - x : x); // a coordinate written for the left side, mirrored for the right
   const cmd = { mx: 0, my: 0, jump: false, jumpBtn: false, a: p.aim, fire: false, alt: false, a1: false, a2: false };
   const b = {
-    plan: '', planT: 0, stage: 0, goalX: p.x, wait: 0, readyAt: 7.5 + Math.random() * 4 + (1 - skill) * 3, held: 0, chargeGoal: 0, seen: 0,
+    plan: '', planT: 0, stage: 0, goalX: p.x, wait: 0, readyAt: 9.5 + Math.random() * 5 + (1 - skill) * 4, fired: 0, held: 0, chargeGoal: 0, seen: 0,
     err: 0, errT: 0, target: null, lockT: 0, dodgeT: 0, dodgeKind: 0, spotted: 0, react: 0.62 - 0.46 * skill, jumpT: 0, side: 0, sideT: 0, strafeT: 1,
     noOk: 0, leadK: 1, charging: false, stuck: 0, lastX: p.x, lastY: p.y, decoyT: 4 + Math.random() * 8, holeStage: 0, holeT: 14 + Math.random() * 10, desired: p.aim, fireWait: 0, spot: [0, 0],
     pose: 0,
@@ -71,10 +71,11 @@ export function makeBot(ctx, w, S, p) {
   /** Where am I going and how do I get there: the plan's current step. */
   function navigate(dt) {
     const onTop = p.ground && Math.abs(p.y - GY) < 6;
-    const perchTop = 215;
+    const perchTop = 205;
     switch (b.plan) {
       case 'hold': {
         if (!onTop && p.ground && p.y > GY + 20) { b.plan = 'descend'; break; }
+        if (p.ground && p.y < GY - 30) { break; } // up on the perch: stay put
         if (b.stage === 0) { b.goalX = X(130 + Math.random() * 120); b.stage = 1; }
         if (b.stage === 1 && onTop && walk(b.goalX, 12)) { b.stage = 2; b.wait = 0.8 + Math.random() * 1.6; }
         if (b.stage === 2) { b.wait -= dt; if (b.wait <= 0) { b.goalX = X(80 + Math.random() * 200); b.stage = 1; } }
@@ -250,7 +251,7 @@ export function makeBot(ctx, w, S, p) {
     const c = p.charge;
     // predicted target position: lead by the flight time, with skill deciding how well it is judged
     let tx = tg.x, ty = tg.y - tg.h * 0.45;
-    if (b.errT <= 0) { b.errT = 0.6 + Math.random() * 0.8; b.err = gauss(Math.random) * (0.06 - 0.047 * skill) * (1 - 0.5 * c); b.leadK = 0.3 + 0.7 * skill + gauss(Math.random) * 0.15 * (1 - skill); }
+    if (b.errT <= 0) { b.errT = 0.6 + Math.random() * 0.8; b.err = gauss(Math.random) * (0.06 - 0.047 * skill) * (1 - 0.5 * c) * (1 + 1.5 * Math.max(0, 1 - b.fired / 3)); b.leadK = 0.3 + 0.7 * skill + gauss(Math.random) * 0.15 * (1 - skill); }
     let ok = false;
     for (let pass = 0; pass < 2 && !ok; pass++) {
       const high = pass === 1;
@@ -279,7 +280,7 @@ export function makeBot(ctx, w, S, p) {
     if (live && ok && S.tl >= b.readyAt * nerve && p.rt <= 0 && p.stun <= 0 && !p.lad && settled && b.seen > b.react * 0.6 + 0.1) {
       if (b.charging) { if (c >= b.chargeGoal) { cmd.fire = true; b.charging = false; } } else if (!wantsCharge) cmd.fire = true;
     }
-    if (cmd.fire) { b.seen = 0; b.fireWait = 0; }
+    if (cmd.fire) { b.seen = 0; b.fired++; b.errT = 0; }
     return cmd;
   }
 
