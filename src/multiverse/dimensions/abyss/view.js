@@ -208,9 +208,10 @@ export function makeView(ctx, THREE, renderer, S) {
         const on = p.alive ? 1 : Math.max(0, 1 - p.dead * 0.5);
         U.uLampCol.value[li].set(p.r * 1.7 * on, p.g * 1.7 * on, p.b * 1.7 * on);
         if (p !== ME || kill) {
-          const lp = U.uLampPos.value[li];
-          glow.put(lp.x, lp.y, lp.z, 1.3, p.r * 1.6 * on, p.g * 1.6 * on, p.b * 1.6 * on, 0.9);
-          glow.put(lp.x, lp.y, lp.z, 4.5, p.r * 0.25 * on, p.g * 0.25 * on, p.b * 0.25 * on, 0.7);
+          // a small lamp up close, a beacon far off: the glow grows with distance
+          const lp = U.uLampPos.value[li], cd = Math.max(1, camera.position.distanceTo(lp)), sc = clamp(cd / 22, 0.35, 2.2);
+          glow.put(lp.x, lp.y, lp.z, 0.9 * sc, p.r * 1.6 * on, p.g * 1.6 * on, p.b * 1.6 * on, 0.9);
+          glow.put(lp.x, lp.y, lp.z, 3.6 * sc, p.r * 0.2 * on, p.g * 0.2 * on, p.b * 0.2 * on, 0.6 * clamp(cd / 15, 0.2, 1));
         }
       }
       for (const d of S.decoys) {
