@@ -1,0 +1,27 @@
+{
+"shooter": {
+"copy": "shooter/f84e2e2dad.mp3",
+"cover me": "shooter/96ecf7ec5a.mp3",
+"enemy marked": "shooter/d18b0c986c.mp3",
+"eyes on my mark": "shooter/e2cb948e9f.mp3",
+"hold position": "shooter/8e1db45844.mp3",
+"i m down i need a pickup on my position": "shooter/5062e29ed6.mp3",
+"moving to my mark": "shooter/fcbd3673de.mp3",
+"need you set up there good sightline on the compound": "shooter/a64b0d4b87.mp3",
+"on me": "shooter/4596989415.mp3",
+"roger": "shooter/a61a1add71.mp3",
+"sync target marked get on him": "shooter/a9efa46bd0.mp3"
+},
+"spotter": {
+"cover me": "spotter/96ecf7ec5a.mp3",
+"enemy marked": "spotter/d18b0c986c.mp3",
+"eyes on my mark": "spotter/e2cb948e9f.mp3",
+"hold position": "spotter/8e1db45844.mp3",
+"i m down i need a pickup on my position": "spotter/5062e29ed6.mp3",
+"moving to my mark": "spotter/fcbd3673de.mp3",
+"need you set up there good sightline on the compound": "spotter/a64b0d4b87.mp3",
+"on me": "spotter/4596989415.mp3",
+"roger": "spotter/a61a1add71.mp3",
+"sync target marked get on him": "spotter/a9efa46bd0.mp3"
+}
+}
