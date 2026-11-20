@@ -25,6 +25,8 @@ export const DIMENSIONS = [
   { id: 'toybox', wip: true, load: () => import('./dimensions/toybox/index.js') },
   { id: 'tapestry', wip: true, load: () => import('./dimensions/tapestry/index.js') },
   { id: 'petri', wip: true, load: () => import('./dimensions/petri/index.js') },
+  { id: 'paper', wip: true, load: () => import('./dimensions/paper/index.js') },
+  { id: 'snow', wip: true, load: () => import('./dimensions/snow/index.js') },
   { id: 'example-2d', dev: true, load: () => import('./dimensions/example-2d/index.js') },
   { id: 'example-3d', dev: true, load: () => import('./dimensions/example-3d/index.js') },
 ];
