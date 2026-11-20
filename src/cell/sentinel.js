@@ -376,7 +376,7 @@ export class Sentinel {
     for (const k of ['yardS', 'yardN', 'yardW', 'yardE']) this.spawnGuard({ route: P(routes[k]), start: routes[k][0] });
     if (keep()) this.spawnGuard({ route: P(routes.yardS).reverse(), start: [22, 50] });
     this.spawnGuard({ route: P(routes.chief), start: routes.chief[0], chief: true });
-    for (const t of this.fac.towers) if (keep(t.z < 0)) this.spawnGuard({ post: { x: t.x, z: t.z, y: t.y, face: t.face, sweep: 1.2 }, tower: true });
+    for (const t of this.fac.towers) this.spawnGuard({ post: { x: t.x, z: t.z, y: t.y, face: t.face, sweep: 1.2 }, tower: true });
     this.spawnGuard({ post: { x: -3, z: 56, face: Math.PI, sweep: 0.7 } });
     if (keep()) this.spawnGuard({ post: { x: 4, z: 57, face: Math.PI + 0.4, sweep: 0.5 } });
     if (keep()) this.spawnGuard({ post: { x: 42, z: 24, face: -Math.PI / 2, sweep: 0.6 } });
@@ -396,6 +396,7 @@ export class Sentinel {
     this.spawnGuard({ route: U.offices, y: 3.8 });
     this.spawnGuard({ post: { x: 11, z: -30, y: 3.8, face: Math.PI / 2, sweep: 0.8 } });
     if (keep()) this.spawnGuard({ post: { x: 0, z: -9, y: 3.8, face: Math.PI, sweep: 1 } });
+    this._securityPosts(false);
     this._drones();
     this.garrison = this.guards.length;
   }
@@ -421,10 +422,8 @@ export class Sentinel {
     this.spawnGuard({ type: 'bulwark', route: P(routes.yardE), start: routes.yardE[0] });
     this.spawnGuard({ type: 'overseer', route: P(routes.chief), start: routes.chief[0], chief: true });
     // Bulwark snipers on the north towers (beam rifles), scav lookouts on the south ones.
-    for (const t of this.fac.towers) {
-      if (t.z < 0) this.spawnGuard({ type: 'bulwark', post: { x: t.x, z: t.z, y: t.y, face: t.face, sweep: 1.1 }, tower: true });
-      else if (keep()) this.spawnGuard({ type: 'scav', post: { x: t.x, z: t.z, y: t.y, face: t.face, sweep: 1.3 }, tower: true });
-    }
+    // Every tower carries a beam-rifle sniper watching the ground outside the fence.
+    for (const t of this.fac.towers) this.spawnGuard({ type: 'bulwark', post: { x: t.x, z: t.z, y: t.y, face: t.face, sweep: 1.1 }, tower: true });
     // The gate: a bulwark and a scav.
     this.spawnGuard({ type: 'bulwark', post: { x: -3, z: 56, face: Math.PI, sweep: 0.6 } });
     if (keep()) this.spawnGuard({ type: 'scav', post: { x: 4, z: 57, face: Math.PI + 0.4, sweep: 0.8 } });
@@ -453,8 +452,41 @@ export class Sentinel {
     this.spawnGuard({ type: 'jugg', route: U.dhb, y: 3.8 });
     this.spawnGuard({ type: 'bulwark', post: { x: 11, z: -30, y: 3.8, face: Math.PI / 2, sweep: 0.8 } });
     this.spawnGuard({ type: 'titan', post: { x: 24, z: -31, y: 3.8, face: 0, sweep: 0.9 } });
+    this._securityPosts(true);
     this._drones();
     this.garrison = this.guards.length;
+  }
+
+  // Static posts that make sense for a site like this, both missions:
+  //   door sentries outside each ground-floor entrance, a CCTV operator at the monitor desk,
+  //   someone on break, sentries in the corridors outside the rack-room doors on both floors,
+  //   and a walking patrol around the inside of the fence.
+  _securityPosts(nw) {
+    const R = this.rng, keep = (p) => R() < this.D.count || p;
+    const T = (a, b) => (nw ? a : 'guard') || b;
+    const up = 3.8;
+    // Door sentries (outside, facing out).
+    this.spawnGuard({ type: T('bulwark'), post: { x: -3.6, z: 2.6, face: Math.PI, sweep: 0.7 } }); // front
+    if (keep()) this.spawnGuard({ type: T('scav'), post: { x: 3.6, z: 2.8, face: Math.PI + 0.3, sweep: 0.7 } });
+    this.spawnGuard({ type: T('scav'), post: { x: 38.6, z: -13.2, face: -Math.PI / 2, sweep: 0.8 } }); // side
+    this.spawnGuard({ type: T('jugg'), post: { x: 39, z: -24.5, face: -Math.PI / 2 + 0.3, sweep: 0.7 } }); // dock
+    if (keep()) this.spawnGuard({ type: T('scav'), post: { x: -38.6, z: -6.8, face: Math.PI / 2, sweep: 0.8 } }); // maintenance
+    // CCTV operator watching the monitor wall (security office, ground floor).
+    this.spawnGuard({ type: T('scav'), post: { x: 15, z: -11.2, face: 0, sweep: 0.35 } });
+    // On break, by the coffee machine upstairs.
+    this.spawnGuard({ type: T('scav'), post: { x: 3.6, z: -15.2, y: up, face: 0.4, sweep: 0.5 } });
+    // Corridor sentries outside the rack-room doors.
+    this.spawnGuard({ type: T('bulwark'), post: { x: -17.8, z: -20.4, face: Math.PI / 2, sweep: 0.9 } });
+    this.spawnGuard({ type: T('scav'), post: { x: 6, z: -20.4, face: -Math.PI / 2, sweep: 0.9 } });
+    if (keep()) this.spawnGuard({ type: T('scav'), post: { x: 28, z: -20.4, face: Math.PI / 2, sweep: 0.9 } });
+    this.spawnGuard({ type: T('jugg'), post: { x: -17.8, z: -20.4, y: up, face: Math.PI / 2, sweep: 0.9 } });
+    if (keep()) this.spawnGuard({ type: T('scav'), post: { x: 6, z: -20.4, y: up, face: -Math.PI / 2, sweep: 0.9 } });
+    this.spawnGuard({ type: T('bulwark'), post: { x: 28, z: -20.4, y: up, face: Math.PI / 2, sweep: 0.9 } });
+    // Perimeter patrol: a walking loop just inside the fence, two guards half a lap apart.
+    const lap = [[-72, 50], [0, 52], [72, 50], [74, 0], [72, -50], [0, -52], [-72, -50], [-74, 0]].map(([x, z]) => ({ x, z }));
+    this.spawnGuard({ type: T('scav'), route: lap, start: [lap[0].x, lap[0].z] });
+    const lap2 = lap.slice(4).concat(lap.slice(0, 4));
+    this.spawnGuard({ type: T('jugg'), route: lap2, start: [lap2[0].x, lap2[0].z] });
   }
 
   static upper() {
@@ -474,7 +506,10 @@ export class Sentinel {
     ];
     const nd = this.D.count >= 0.9 ? 3 : 2;
     for (let i = 0; i < nd; i++) this.spawnDrone(loops[i].map(([x, z]) => ({ x, z })), i);
-    this.droneCap = nd;
+    // Outside the gates: a drone orbiting beyond the fence, the towers' eyes in the sky.
+    const outer = [[-96, 76], [0, 84], [96, 76], [104, 0], [96, -74], [0, -82], [-96, -74], [-104, 0]];
+    this.spawnDrone(outer.map(([x, z]) => ({ x, z })), 3);
+    this.droneCap = nd + 1;
   }
 
   _cameras() {

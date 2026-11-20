@@ -131,6 +131,28 @@ Headshots kill anything except a helmet's first hit.
 - **Solo · lone operative:** one sniper carrying both kits.
 - **Co-op:** the host picks a role and the friend who joins gets the other.
 
+### Security layout
+
+**Outside the fence:**
+
+- Snipers in all four watchtowers.
+- A drone orbiting beyond the wire.
+
+**Inside the fence:**
+
+- Two guards walk the perimeter just inside the fence.
+- Drones patrol the yard.
+- Packs and patrols work the yard.
+
+**Static posts:**
+
+- Sentries outside the front, side, maintenance and dock doors.
+- An operator at the CCTV desk.
+- Someone on break upstairs.
+- Sentries in the corridors outside the rack-room doors, on both floors.
+
+**Inside the building:** patrols on both floors.
+
 ### The building
 
 The data center has **two storeys** with two stairwells. Guards, cameras and patrols are on both floors.
