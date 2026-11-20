@@ -48,6 +48,7 @@ function build(bpm, trans, hot) {
     { type: 'square', gain: 0.058, decay: 0.2, cutoff: 3000, notes: mel },
     { type: 'triangle', gain: 0.075, decay: 0.3, notes: mel2 },
     { type: 'triangle', gain: 0.23, decay: 0.26, notes: bass },
+    { type: 'sawtooth', gain: 0.06, decay: 0.2, cutoff: 650, notes: bass }, // the tuba's overtones, for small speakers
     { type: 'triangle', gain: 0.06, decay: 0.15, notes: chord(0) },
     { type: 'triangle', gain: 0.055, decay: 0.15, notes: chord(1) },
     { type: 'triangle', gain: 0.05, decay: 0.15, notes: chord(2) },
