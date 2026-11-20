@@ -218,7 +218,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 - **Breaking contact:** the HUD shows DETECTED, then HUNTED. Break line of sight for long enough and the hunt is called off. While they hunt, a **white silhouette** marks your last known position.
 - **Light and night vision:**
   - **N** to reach up and pull the goggles down: your hand comes up, the goggles flip down with a click and a tube whine, and the picture irises open as the tubes warm.
-  - The goggles and scope use a smooth, modern blue grade.
+  - The goggles and scope are smooth, near-white phosphor with a slight blue cast.
   - Bright lights, including a weapon light in your face, wash it out.
   - **IR strobes** on both operators' helmets and shoulders, and **IR lasers** from both weapons, show only in night vision and the ISR IR view.
 - **Weapon lights (L):** a weapon light makes you easy to see. Guards also walk over to wherever the beam lands, so it works as a distraction.

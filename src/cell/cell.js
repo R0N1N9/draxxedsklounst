@@ -109,13 +109,13 @@ const CellShader = {
         vec3 tint = uMode > 2.5 ? vec3(0.95) : uMode > 1.5 ? vec3(0.84, 0.93, 1.0) : uMode > 0.5 ? vec3(0.8, 0.9, 1.0) : vec3(0.78, 0.89, 1.0);
         vec3 nv;
         if (uMode < 1.5) {
-          // Goggles and scope: a modern blue grade: deep navy shadows, cyan-blue mids, near-white
+          // Goggles and scope: near-white phosphor with a slight cold blue cast: dark shadows, grey-blue mids, near-white
           // highlights. Smooth, with only a whisper of grain and no scanlines.
-          vec3 lo = vec3(0.01, 0.05, 0.12), mid = vec3(0.16, 0.48, 0.86), hi = vec3(0.82, 0.95, 1.0);
+          vec3 lo = vec3(0.02, 0.035, 0.06), mid = vec3(0.46, 0.53, 0.62), hi = vec3(0.94, 0.97, 1.0);
           nv = mix(lo, mid, smoothstep(0.0, 0.55, v));
           nv = mix(nv, hi, smoothstep(0.55, 1.0, v));
           nv += g * 0.018 * (1.0 + uWash * 1.5);
-          tint = vec3(0.55, 0.8, 1.0);
+          tint = vec3(0.86, 0.92, 1.0);
         } else {
           nv = tint * (v * 0.95 + 0.03) + g * 0.07 * (1.0 + uWash * 2.0);
           nv *= 0.92 + 0.08 * sin(uv.y * uRes.y * 1.4);
