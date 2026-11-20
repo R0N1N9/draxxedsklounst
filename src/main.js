@@ -718,6 +718,12 @@ $('btn-cell-share').onclick = async () => {
   (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? text : link) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied to clipboard!'), () => prompt('Copy this link:', link));
 };
 $('btn-cell-copy').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? hostCode : inviteLink()) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied!'), () => prompt('Copy:', FILE_MODE ? hostCode : inviteLink()));
+// Direct link: …/#nightwatch (or ?nightwatch) opens Sniper Cell with NightWatch selected;
+// #infiltration does the same for the other mission.
+{
+  const want = ['nightwatch', 'infiltration'].find((m) => location.hash === '#' + m || params.has(m));
+  if (want && !params.get('join') && !params.get('cell')) { cellSet.mission = want; store.set('cellMission', want); $('btn-cell').onclick(); }
+}
 if (params.get('cell')) { audio.unlock(); startCell(params.get('cell') === 'lone' ? 'operative' : 'solo', { cell: { role: params.get('role') === 'spotter' ? 'spotter' : 'shooter', diff: params.get('diff') || 'operative', mission: params.get('mission') || 'nightwatch', seed: 7 } }); }
 
 if (params.get('join')) {
