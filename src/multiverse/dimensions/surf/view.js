@@ -42,9 +42,8 @@ export function makeView(ctx, THREE, renderer, W) {
 
   function rig(p, dt) {
     const k = p.alive ? p.brace : 0, ks = k * k * (3 - 2 * k);
-    const yaw = p.yaw, pitch = clamp(p.pitch + kickA, -0.75, 0.62);
-    // The boom swings with the aim, but less on the long lens (it would dig into the sea).
-    dirOf(yaw, pitch * lerp(1, 0.3, ks), F);
+    const yaw = p.yaw, pitch = clamp(p.pitch + kickA * (1 - 0.6 * ks), -0.75, 0.62);
+    dirOf(yaw, pitch, F);
     Rt.set(Math.cos(yaw), 0, -Math.sin(yaw));
     camY = damp(camY, p.y, lerp(4.5, 9, ks), dt); // the lens rides the swell, not every ripple
     const back = lerp(9.2, 13, ks), up = lerp(2.3, 1.75, ks), right = lerp(1.15, 0.75, ks);
@@ -86,7 +85,7 @@ export function makeView(ctx, THREE, renderer, W) {
     // C — in behind them to the boil of foam where they went under, and through it
     pC.set(k.ex - ux * 3.4 + rx * 0.6, k.ey + 0.55, k.ez - uz * 3.4 + rz * 0.6);
     lC.set(k.ex + ux * 0.6, k.ey - 0.5, k.ez + uz * 0.6);
-    const ab = smoothstep(KILL.squat - 0.35, KILL.jump + 0.15, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
+    const ab = smoothstep(KILL.squat, KILL.jump + 0.1, t), bc = smoothstep(KILL.jump + KILL.flight - 0.3, KILL.sink + 0.25, t);
     pA.lerp(pB, ab).lerp(pC, bc);
     lA.lerp(lB, ab).lerp(lC, bc);
     const floor = sea.height(pA.x, pA.z) + lerp(0.9, 0.3, bc);
@@ -268,7 +267,7 @@ export function makeView(ctx, THREE, renderer, W) {
       const inBand = fresh;
       fresh = false;
       frames++;
-      if (!inBand && frames > 2) {
+      if (!inBand && frames > 1) {
         // A render with no update before it is the core photographing the world (the last
         // frame of a round is the next transition's first), or a paused game: the canvas must
         // hold the picture as it is NOW, so the first such call draws; after that the graded
@@ -278,17 +277,19 @@ export function makeView(ctx, THREE, renderer, W) {
       } else {
         stills = 0;
         if (api.force > 0) api.force--; // (test scripts: draw now)
-        else if (Q.soft && frames > 2) {
-          // A software rasteriser pays for a draw over the next several frames, not in one:
-          // add up everything it stalled since, do not draw again while it is still catching
-          // up, and let no more than a sixth of the time go on drawing — the duel runs true.
+        else if (Q.soft && frames > 1) {
+          // A software rasteriser pays for a draw over the next several frames, not in one —
+          // and for the first one, which builds every shader, most of all. Add up everything
+          // it stalled since, do not draw again while it is still catching up, and let no
+          // more than a sixth of the time go on drawing: the duel itself runs true.
           if (iv > 40) debt += iv - 17;
-          if (frames < 14 || iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
-          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && debt > 0) post.setScale(Math.min(0.72, post.scale * 1.08));
+          if (iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
+          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && api.draws > 2) post.setScale(Math.min(0.72, post.scale * 1.08));
         }
       }
+      if (W.stage) W.stage(api.draws);
       drawAt = now;
-      debt = 0;
+      debt = api.draws ? 0 : 500;
       api.draws++;
       post.render(scene, camera, raysK > 0.01 && !Q.soft);
     },

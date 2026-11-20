@@ -31,7 +31,7 @@ void main() {
 }`;
 
 const FRAG = (soft) => `precision highp float;
-#define SKY_LOD ${soft ? '2.0' : '3.0'}
+#define SKY_LOD ${soft ? '4.5' : '5.5'}
 uniform vec3 uCam, uSunDir, uSunCol;
 uniform sampler2D tDetail;
 uniform vec4 uCast[2];  // each rider: feet (xyz), height (0 = none)
@@ -73,7 +73,7 @@ void main() {
   float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
   vec3 R = reflect(-V, N);
   R.y = abs(R.y);
-  vec3 refl = skyTex(normalize(R + vec3(0.0, 0.03, 0.0)), mix(SKY_LOD, SKY_LOD - 1.5, far));
+  vec3 refl = skyTex(normalize(R + vec3(0.0, 0.03, 0.0)), mix(SKY_LOD, 1.0, smoothstep(4.0, 140.0, dist))) * 0.9; // (close water mirrors a blur: no hard cloud edges at your feet)
   float sd = max(dot(R, uSunDir), 0.0);
   // glitter: the broad road, the hot core, and sparks where a ripple happens to face the sun
   float spark = smoothstep(0.82, 1.0, d3.z + d1.w * 0.5) * (1.0 - far * 0.5);
@@ -97,7 +97,7 @@ void main() {
 
   // foam: where the surface folds, in streaks on the high water, and along the sand
   float lace = d3.z * 0.6 + texture2D(tDetail, vP0 * 0.071 + rip * 0.05 - t * vec2(0.013, 0.006)).z * 0.75 * (0.5 + d1.w);
-  float foam = smoothstep(0.8, 0.44, J) * (0.3 + lace) + smoothstep(1.0, 2.8, h) * smoothstep(0.95, 1.3, lace + d2.w * 0.7) * 0.5;
+  float foam = smoothstep(0.3, 0.72, smoothstep(0.8, 0.44, J) * (0.72 + lace * 0.7)) + smoothstep(1.2, 3.0, h) * smoothstep(1.0, 1.35, lace + d2.w * 0.7) * 0.35;
   float band = sin(depth * 2.6 + t * 1.25 + d2.w * 3.0 + vP0.x * 0.02);
   foam += (smoothstep(0.55, 1.0, band) * (0.35 + lace) * smoothstep(4.5, 0.6, depth) + smoothstep(0.55, 0.05, depth) * (0.6 + lace)) * step(-0.3, depth);
   foam = clamp(foam, 0.0, 1.0);

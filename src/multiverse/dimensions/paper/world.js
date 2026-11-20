@@ -40,7 +40,7 @@ export function buildWorld(ctx, THREE, mats) {
   const tex = (draw, w, h, mip = true) => {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
-    draw(c.getContext('2d'), w, h);
+    draw(c.getContext('2d', { willReadFrequently: true }), w, h);
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
@@ -236,11 +236,12 @@ export function buildWorld(ctx, THREE, mats) {
   let pid = 0;
   const mascotTex = tex((g) => { drawMascot(g); dieCut(g, 256, 512, 7, '#fffdf5'); }, 256, 512);
   function panel(kind, cx, cz, w, h, y0, yaw, idCol) {
-    const key = `${kind}|${w}|${h}|${idCol || ''}`;
+    const band = kind === 'up' ? idCol : ''; // only the spawn barricades wear a sniper's colour: every other sheet is shared by both halves
+    const key = `${kind}|${w}|${h}|${band}`;
     let t = texCache.get(key);
     if (!t) {
-      const px = Math.min(1024, Math.round(w * 150)), py = Math.min(1024, Math.round(h * 150));
-      t = kind === 'mascot' ? mascotTex : tex((g, W, H) => drawSheet(g, W, H, kind, idCol), px, py);
+      const px = Math.min(768, Math.round(w * 120)), py = Math.min(768, Math.round(h * 120));
+      t = kind === 'mascot' ? mascotTex : tex((g, W, H) => drawSheet(g, W, H, kind, band), px, py);
       texCache.set(key, t);
     }
     const uniforms = { uMap: { value: t }, uSize: { value: new THREE.Vector2(w, h) }, uHoles: { value: Array.from({ length: HOLES }, () => new THREE.Vector3(0, 0, 0)) } };

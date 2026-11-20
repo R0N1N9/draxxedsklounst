@@ -52,7 +52,7 @@ export function buildFx(THREE, mats, W) {
     return b;
   }
   const boxes = dyn(new THREE.BoxGeometry(1, 1, 1), 260, { shadow: true });
-  const puffs = dyn(new THREE.SphereGeometry(1, 12, 9), 150, { shadow: true });
+  const puffs = dyn(new THREE.SphereGeometry(1, 20, 14), 150, { shadow: true });
   const stars = dyn(starGeo(THREE, 5, 0.46, 0), 56, { side: THREE.DoubleSide });
   const bursts = dyn(starGeo(THREE, 9, 0.5, 0.16), 24, { side: THREE.DoubleSide });
 
@@ -147,7 +147,8 @@ export function buildFx(THREE, mats, W) {
   /** Where the el train's nose is at time T (it passes through the canyon every 23 s), or null. */
   api.train = (T) => { const u = (T + 9) % TRAIN.period, x = -230 + u * TRAIN.speed; return x < 320 ? x : null; };
 
-  api.update = (dt, T, wt, cam) => {
+  // dt: the duel's clock (slow in the kill moment); rdt: the reader's (flashes never linger)
+  api.update = (dt, T, wt, cam, rdt) => {
     for (const b of batches) b.n = 0;
     // traffic
     for (let i = 0; i < cars.length; i++) {
@@ -232,7 +233,7 @@ export function buildFx(THREE, mats, W) {
     for (let i = 0; i < F.length; i++) {
       const p = F[i];
       if (!p.on) continue;
-      p.age += dt;
+      p.age += rdt;
       if (p.age >= p.life) { p.on = false; continue; }
       const u = p.age / p.life, s = p.s * (0.55 + 0.75 * Math.sqrt(u)) * (u > 0.6 ? 1 - (u - 0.6) / 0.4 : 1);
       facing(bursts, p.x, p.y, p.z, s, p.spin, p.r, p.g, p.b);

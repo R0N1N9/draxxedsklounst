@@ -110,7 +110,8 @@ export function buildCity(THREE, W, mats, art, seed) {
         PB.add(p.x + k * p.w, y + lo * 0.9, p.z + s * 0.95, 0.12, 2.9, 0.12, PAL.dark, 0, 0, -s * 0.5);
       }
       if (p.kind === 'bill') {
-        PB.add(p.x, y + (lo + hi) / 2, p.z + s * 0.06, p.w, hi - lo, 0.14, PAL.dark);
+        PB.add(p.x, y + (lo + hi) / 2, p.z + s * 0.06, p.w, hi - lo, 0.14, '#8f7fb8');
+        for (const yy of [0.25, 0.5, 0.75]) PB.add(p.x, y + lo + (hi - lo) * yy, p.z + s * 0.16, p.w, 0.14, 0.08, PAL.dark); // battens across the back
         PB.add(p.x, y + lo - 0.1, p.z - s * 0.2, p.w + 0.3, 0.14, 0.7, PAL.stone); // the bill-poster's walkway
       } else for (const yy of [lo + 0.1, hi - 0.1]) PB.add(p.x, y + yy, p.z + s * 0.1, p.w, 0.12, 0.12, PAL.dark);
       boards.push(p);

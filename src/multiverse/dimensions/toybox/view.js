@@ -116,7 +116,7 @@ export function makeView(ctx, THREE, renderer, o) {
       camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
       api.pxPerUnit = s;
       // The sharp band of the tilt-shift follows the rug.
-      const mid = cy - 0.5 * L.cp * s, half = (RUG_B * L.sp + 1.2) * s;
+      const mid = cy - 0.5 * L.cp * s, half = RUG_B * L.sp * 0.82 * s;
       post.u.uFocus.value.set(1 - mid / h, Math.min(0.46, (half / h) * (kc ? 1.4 : 1)));
       post.u.uTime.value = wt; post.u.uPunch.value = punch; post.u.uFlash.value = flashA;
     },

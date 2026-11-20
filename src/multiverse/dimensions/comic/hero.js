@@ -9,12 +9,12 @@ import { PAL } from './art.js';
 export const EYE = 1.62, HEAD = 1.66;
 
 export function makeHeroKit(THREE, mats) {
-  const box = new THREE.BoxGeometry(1, 1, 1), cyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 12), ball = new THREE.SphereGeometry(1, 14, 10);
+  const box = new THREE.BoxGeometry(1, 1, 1), cyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 12), ball = new THREE.SphereGeometry(1, 18, 12);
   const coatG = new THREE.CylinderGeometry(0.33, 0.22, 0.62, 8), cone = new THREE.ConeGeometry(0.5, 1, 8);
   const dark = mats.make({ color: '#3a2b63', minL: 0.5 }), skin = mats.make({ color: '#f6d3ae', minL: 0.55 }), steel = mats.make({ color: '#8a80ad', minL: 0.5 }), flame = mats.make({ color: '#ffb02e', lit: true }), core = mats.make({ color: '#fff3b0', lit: true });
 
   function hero(color) {
-    const coat = mats.make({ color, minL: 0.5 }), light = mats.make({ color: mixHex(color, '#ffffff', 0.55), minL: 0.6 }), glow = mats.make({ color: mixHex(color, '#ffffff', 0.35), lit: true }), deep = mats.make({ color: mixHex(color, PAL.dark, 0.4), minL: 0.5 });
+    const coat = mats.make({ color, minL: 0.5 }), light = mats.make({ color: mixHex(color, '#ffffff', 0.55), minL: 0.6 }), glow = mats.make({ color: mixHex(color, '#ffffff', 0.35), lit: true }), deep = mats.make({ color: mixHex(color, PAL.dark, 0.72), minL: 0.5 });
     const root = new THREE.Group(), body = new THREE.Group(), torso = new THREE.Group(), head = new THREE.Group(), rifle = new THREE.Group();
     const mesh = (geo, m, parent, x, y, z, sx, sy, sz) => { const q = new THREE.Mesh(geo, m); q.position.set(x, y, z); q.scale.set(sx, sy, sz); q.castShadow = true; q.receiveShadow = true; parent.add(q); return q; };
     const pivot = (parent, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); return g; };
@@ -23,7 +23,7 @@ export function makeHeroKit(THREE, mats) {
     const legs = [-1, 1].map((s) => {
       const p = pivot(body, s * 0.12, 0.95, 0);
       mesh(box, dark, p, 0, -0.44, 0, 0.15, 0.88, 0.17);
-      mesh(box, deep, p, 0, -0.87, -0.07, 0.19, 0.15, 0.36);
+      mesh(box, deep, p, 0, -0.88, -0.05, 0.18, 0.13, 0.3);
       return p;
     });
     // torso: broad at the shoulder, belted at the waist
@@ -50,7 +50,7 @@ export function makeHeroKit(THREE, mats) {
     hat.rotation.x = -0.14;
     // scarf: a knot and five streaming lengths
     mesh(box, light, torso, 0, 0.67, 0.02, 0.27, 0.1, 0.26);
-    const scarf = [0, 1, 2, 3, 4].map((i) => mesh(box, light, torso, 0, 0.7, 0.2 + i * 0.2, 0.15 - i * 0.018, 0.03, 0.26));
+    const scarf = [0, 1, 2, 3, 4].map((i) => mesh(box, light, torso, 0, 0.7, 0.2 + i * 0.2, 0.13 - i * 0.016, 0.03, 0.25));
     // rifle: long, with a fat scope
     rifle.position.set(0.17, 0.5, -0.2);
     torso.add(rifle);
@@ -107,7 +107,9 @@ export function makeHeroKit(THREE, mats) {
           for (let i = 0; i < 2; i++) { const j = jets[i]; j.visible = air; if (air) { const f = 0.8 + Math.sin(tw * 60 + i * 2) * 0.25; j.scale.set(f, f * (1.1 + Math.sin(tw * 43) * 0.3), f); } }
         }
         // scarf: trails against the motion, droops when still, always alive in the wind
-        let dx = -s.lvx * 0.22 + 0.25 * Math.sin(tw * 0.7), dy = -0.8 + (run + (air ? 1 : 0) + (ko ? 1 : 0)) * 0.7, dz = 0.55 + Math.max(0, -s.lvz) * 0.25 + (air ? 1.2 : 0);
+        // (the evening wind blows down the street, towards +x: in the sniper's own frame that turns with them)
+        const wx = Math.cos(s.yaw) * 0.85, wz = Math.sin(s.yaw) * 0.85;
+        let dx = wx - s.lvx * 0.22 + 0.2 * Math.sin(tw * 0.7), dy = -0.42 + (run + (air ? 1 : 0) + (ko ? 1 : 0)) * 0.4, dz = 0.3 + wz + Math.max(0, -s.lvz) * 0.3 + (air ? 1.2 : 0);
         const l = Math.hypot(dx, dy, dz) || 1;
         dx /= l; dy /= l; dz /= l;
         for (let i = 0; i < 5; i++) {

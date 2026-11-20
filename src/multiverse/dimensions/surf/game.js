@@ -198,7 +198,7 @@ export function makeGame(ctx, sea, world, fx) {
   // ---- one sniper, one slice of time ----
   function step(p, cmd, dt) {
     p.yaw = cmd.yaw;
-    p.pitch = cmd.pitch;
+    p.pitch = clamp(cmd.pitch, lerp(-0.6, -0.3, p.brace), lerp(0.5, 0.12, p.brace)); // (on the long lens the rider must stay in the frame)
     p.recoil = Math.max(0, p.recoil - dt * 4.5);
     p.flinch = Math.max(0, p.flinch - dt * 1.3);
     if (!p.alive) return;
@@ -348,7 +348,7 @@ export function makeGame(ctx, sea, world, fx) {
     const b = v.body, s = v.brd;
     // knocked off the back of the board, down the face of whatever they were riding
     const fl = sea.flow(v.x, v.z), sxl = sea.slope(v.x, v.z, 1, 0), szl = sea.slope(v.x, v.z, 0, 1);
-    b.x = v.x; b.y = v.y + 0.95; b.z = v.z; b.vx = dx * 3.2 - sxl * 9 + fl.vx; b.vy = 4.6; b.vz = dz * 3.2 - szl * 9 + fl.vz; b.rot = 0; b.spin = 7.5; b.wet = false;
+    b.x = v.x; b.y = v.y + 0.95; b.z = v.z; b.vx = dx * 3.2 - sxl * 9 + fl.vx; b.vy = 4.0; b.vz = dz * 3.2 - szl * 9 + fl.vz; b.rot = 0; b.spin = 7.5; b.wet = false;
     s.x = v.x; s.y = v.y + 0.2; s.z = v.z; s.vx = -dx * 2.2 + dz * 1.5; s.vy = 25; s.vz = -dz * 2.2 - dx * 1.5; s.rot = 0; s.spin = 17; s.wet = false;
     kill.on = true; kill.t = 0; kill.v = v; kill.w = w; kill.splashed = false;
     kill.ux = (v.x - w.x) / l; kill.uz = (v.z - w.z) / l;
@@ -375,7 +375,7 @@ export function makeGame(ctx, sea, world, fx) {
   // dt here is real time: the choreography does not run in the core's slow motion.
   function stepKill(dt) {
     const k = kill, w = k.w, v = k.v, t = (k.t += dt);
-    stepDead(v, dt * lerp(0.42, 1, smoothstep(0.7, 1.4, t)));
+    stepDead(v, dt * lerp(0.5, 1, smoothstep(0.45, 1.0, t))); // slow at the hit, then the sea comes up fast
     w.recoil = Math.max(0, w.recoil - dt * 4.5);
     w.brace = damp(w.brace, 0, 8, dt);
     w.lean = damp(w.lean, 0, 6, dt);

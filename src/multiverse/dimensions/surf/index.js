@@ -85,7 +85,7 @@ export default {
     const Q = { soft: false, scale: 1 };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.62; }
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.52; }
     } catch { /* masked: assume a real GPU */ }
     if (globalThis.__surfRich) { Q.soft = false; Q.scale = 1; } // test scripts: the full build, whatever draws it
 
@@ -200,9 +200,12 @@ export default {
     const brain = makeBot(ctx, sea, world, game);
     for (const p of P) if (!p.remote && (p.i !== ctx.me || ctx.autopilot)) p.bot = brain.create(p);
     const post = makePost(THREE, renderer, { msaa: !Q.soft, scale: Q.scale, lens: !Q.soft });
+    // A software rasteriser builds its shaders as it first draws with them: the cast and the
+    // spray join the picture one draw after the sea, the riders and the shore.
+    const stage = (draws) => { life.group.visible = fx.group.visible = !Q.soft || draws > 0; };
     // If the clock ran ahead of the frames (a hitch), run the hand-off out before the round's last picture is taken.
     const settle = () => { for (let i = 0; i < 200 && ctx.phase === 'over' && game.kill.on && game.kill.t < KILL.end - 0.02; i++) frame(0.05 * SLOW, T + 0.05 * SLOW, true); };
-    view = makeView(ctx, THREE, renderer, { scene, sea, world, game, post, ocean, haze, Q, sfx, settle });
+    view = makeView(ctx, THREE, renderer, { scene, sea, world, game, post, ocean, haze, Q, sfx, settle, stage });
 
     let T = -4.6, introRate = 1, introOn = false, suddenSeen = false, sprayAcc = [0, 0], wallAcc = 0, driftAcc = 0, wasTurn = 0, boilAcc = 0;
     const bp = game.bullets.map(() => ({ on: false, x: 0, y: 0, z: 0 }));

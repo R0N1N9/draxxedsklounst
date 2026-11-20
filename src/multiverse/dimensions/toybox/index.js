@@ -389,7 +389,8 @@ export default {
       if (me.k > 0.8 && live) flags.braced += dt;
       const since = T - flags.firstShotT;
       S.step = flags.shots ? 1 : 0;
-      S.prompt = damp(S.prompt, human && live && me.alive && (!flags.shots || (flags.braced < 0.3 && since > 1.4 && since < 11)) ? 1 : 0, 8, dt);
+      const aiming = inp.device !== 'kbm' && Math.hypot(inp.stickX, inp.stickY) > 0.25; // (the thumb is already where the words are)
+      S.prompt = damp(S.prompt, human && live && me.alive && !aiming && (!flags.shots || (flags.braced < 0.3 && since > 1.4 && since < 11)) ? 1 : 0, 8, dt);
       const spotted = cop[foe.i].on > 0 && cop[foe.i].lit > 0.4 && Math.hypot(me.x - cop[foe.i].x, me.z - cop[foe.i].z) < SPOT_R + 0.5;
       S.spotted = damp(S.spotted, spotted && human ? 1 : 0, 10, dt);
       S.litTag = damp(S.litTag, human && me.lit > 0.55 && !ctx.sudden && !spotted ? 1 : 0, 6, dt);

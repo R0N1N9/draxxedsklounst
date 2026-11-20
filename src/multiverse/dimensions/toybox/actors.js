@@ -92,7 +92,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
   });
 
   // ---- pellets: a hot bead, its streak, and its own little shadow ----
-  const pelGeo = keep(new THREE.SphereGeometry(0.16, 10, 8));
+  const pelGeo = keep(new THREE.SphereGeometry(0.2, 10, 8));
   const pellets = [];
   for (let k = 0; k < 6; k++) {
     const m = new THREE.Mesh(pelGeo, keep(new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 4, 4) })));
@@ -275,7 +275,7 @@ export function buildActors(THREE, room, toys, colors, me, Q, sfx) {
       v.m.position.set(b.x, b.y, b.z);
       const c = pc[b.owner], l = Math.min(3.2, b.age * b.sp), sp = b.sp || 1;
       v.tail.mat.uniforms.uCol.value.setRGB(1.5 + c[0] * 3, 1.5 + c[1] * 3, 1.5 + c[2] * 3);
-      v.tail.set(b.x - (b.vx / sp) * l, b.y, b.z - (b.vz / sp) * l, b.x, b.y, b.z, 0.2, 1);
+      v.tail.set(b.x - (b.vx / sp) * l, b.y, b.z - (b.vz / sp) * l, b.x, b.y, b.z, 0.26, 1);
     },
 
     // c: { on (0 idle, 1 out, 2 over them, 3 running down), x, y, z, yaw, t, lit }

@@ -86,7 +86,7 @@ export default {
     const kit = makeFigureKit(THREE, mats);
     const flashCanvas = document.createElement('canvas');
     flashCanvas.width = flashCanvas.height = 128;
-    drawFlash(flashCanvas.getContext('2d'), 128);
+    drawFlash(flashCanvas.getContext('2d', { willReadFrequently: true }), 128);
     kit.setFlash(flashCanvas);
     const fx = makeFx(THREE, mats);
     scene.add(fx.root);

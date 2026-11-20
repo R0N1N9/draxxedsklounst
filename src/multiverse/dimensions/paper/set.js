@@ -155,7 +155,7 @@ export function makeSet(ctx, THREE, mats, W) {
   for (let f = 0; f < 3; f++) {
     const c = document.createElement('canvas');
     c.width = 192; c.height = 96;
-    const g = c.getContext('2d');
+    const g = c.getContext('2d', { willReadFrequently: true });
     const lift = [-34, 0, 30][f];
     g.lineJoin = 'round'; g.lineCap = 'round';
     const wing = (s) => { g.beginPath(); g.moveTo(96, 52); g.quadraticCurveTo(96 + s * 40, 52 + lift * 0.4 - 22, 96 + s * 84, 52 + lift); g.quadraticCurveTo(96 + s * 50, 52 + lift * 0.3 + 4, 96 + s * 12, 62); g.closePath(); g.fillStyle = PAPER; g.fill(); g.lineWidth = 6; g.strokeStyle = INK; g.stroke(); };

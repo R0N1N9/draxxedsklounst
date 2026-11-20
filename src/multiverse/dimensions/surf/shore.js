@@ -182,7 +182,7 @@ export function buildShore(THREE, haze, seed, Q, sun, renderer) {
   for (let i = 0; i < 5; i++) M.add(cyl(0.09, 0.11, 1.5, 5), [FIRE[0], FIRE[1] + 0.4, FIRE[2]], '#3a2a1e', [0.9, (i / 5) * TAU, 0]);
   GLOW.add(cone(0.4, 1.1, 6), [FIRE[0], FIRE[1] + 0.75, FIRE[2]], '#ffffff');
 
-  const props = new THREE.Mesh(M.build(), lit({})), rocks = new THREE.Mesh(ROCK.build(), haze.patch(new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true }), '#40261a'));
+  const props = new THREE.Mesh(M.build(), lit({})), rocks = new THREE.Mesh(ROCK.build(), haze.patch(new THREE.MeshLambertMaterial({ vertexColors: true }), '#40261a')); // (faceted by its normals: no second shader)
   const glow = new THREE.Mesh(GLOW.build(), haze.patch(new THREE.MeshLambertMaterial({ color: '#000000', emissive: new THREE.Color(1, 0.62, 0.26), emissiveIntensity: 7 })));
   props.castShadow = props.receiveShadow = rocks.castShadow = rocks.receiveShadow = true;
   group.add(props, rocks, glow);

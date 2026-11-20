@@ -415,9 +415,9 @@ export default {
       const l = Math.hypot(dx, dz) || 1;
       dx /= l; dz /= l;
       v.alive = false; v.ko = 0; v.scoped = false; v.leap.on = false;
-      v.kvx = dx * 12 + (Math.random() - 0.5) * 3; v.kvy = 12.5; v.kvz = dz * 12 + (Math.random() - 0.5) * 3;
-      fx.flash(v.x - dx * 0.4, v.y + 1.2, v.z - dz * 0.4, 2.6, 0.5, STAR[0]);
-      for (let i = 0; i < 16; i++) { const a = Math.random() * 6.283, s = 4 + Math.random() * 9; fx.star(v.x, v.y + 1.2, v.z, Math.cos(a) * s + dx * 5, 2 + Math.random() * 9, Math.sin(a) * s + dz * 5, 0.22 + Math.random() * 0.3, 1.1 + Math.random() * 0.8, 9, i % 4 === 3 ? w.c : STAR[i % 3]); }
+      v.kvx = dx * 9 + (Math.random() - 0.5) * 3; v.kvy = 11.5; v.kvz = dz * 9 + (Math.random() - 0.5) * 3;
+      fx.flash(v.x - dx * 0.4, v.y + 1.2, v.z - dz * 0.4, 1.5, 0.42, STAR[0]);
+      for (let i = 0; i < 22; i++) { const a = Math.random() * 6.283, s = 3 + Math.random() * 8; fx.star(v.x, v.y + 1.2, v.z, Math.cos(a) * s + dx * 5, 2 + Math.random() * 9, Math.sin(a) * s + dz * 5, 0.18 + Math.random() * 0.3, 1.1 + Math.random() * 0.8, 9, i % 4 === 3 ? w.c : STAR[i % 3]); }
       const wn = ctx.players[w.i].name, ln = ctx.players[v.i].name;
       const word = ki && ki.head ? 'ZOK' : pick(Math.random, ['KAPOW', 'WHAM', 'KAPOW']);
       view.killCam(v, dx, dz, word, pick(Math.random, [`${ln} EXITS, PANEL RIGHT.`, `ONE SHOT. ONE PANEL. ${wn}.`, `MEANWHILE, ${ln} LEARNS TO FLY…`, `AND THAT, DEAR READER, WAS ${ln}.`]));
@@ -449,7 +449,7 @@ export default {
           }
         }
       }
-      fx.update(phase === 'over' ? dt : rdt, T, wt, view.camera);
+      fx.update(phase === 'over' ? dt : rdt, T, wt, view.camera, rdt);
       if (fx.trainNow) { sfx.train(); view.pop('RATTLE', 0, 16, 0, 1.5, 1.6); }
       tick ^= 1; // neither sniper always moves first
       for (let n = 0; n < 2; n++) {
@@ -510,7 +510,7 @@ export default {
           return;
         }
         if (ctx.phase !== 'live') { frame(dt, ctx.time, true, dt); return; }
-        const t0 = T, span = Math.max(0, ctx.time - t0), n = clamp(Math.ceil(span / 0.034), 1, me.bot ? 60 : 6);
+        const t0 = T, span = Math.max(0, ctx.time - t0), n = clamp(Math.ceil(span / 0.0505), 1, me.bot ? 60 : 6);
         for (let i = 1; i <= n && (i === 1 || ctx.phase === 'live'); i++) frame(Math.min(span / n, 0.05), t0 + (span * i) / n, i === 1, span / n);
       },
 

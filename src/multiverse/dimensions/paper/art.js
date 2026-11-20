@@ -219,9 +219,9 @@ export function drawFlash(g, S) { // a muzzle flash: a hard-edged starburst
 export function dieCut(g, W, H, halo, paper) {
   const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
   const src = mk();
-  src.getContext('2d').drawImage(g.canvas, 0, 0);
+  src.getContext('2d', { willReadFrequently: true }).drawImage(g.canvas, 0, 0);
   const grow = (r, col) => {
-    const c = mk(), q = c.getContext('2d');
+    const c = mk(), q = c.getContext('2d', { willReadFrequently: true });
     for (let i = 0; i < 20; i++) { const a = (i / 20) * TAU; q.drawImage(src, Math.cos(a) * r, Math.sin(a) * r); }
     q.globalCompositeOperation = 'source-in';
     q.fillStyle = col; q.fillRect(0, 0, W, H);

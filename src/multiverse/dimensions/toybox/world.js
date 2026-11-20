@@ -6,7 +6,7 @@ import { clamp, lerp, smoothstep, rand, shuffle, TAU } from '../../kit.js';
 
 export const RUG_A = 21, RUG_B = 12.5;      // the rug is an ellipse; soldiers never leave it
 export const BODY_R = 0.66, FIG = 1.36;     // a soldier's footprint; how much bigger than the model it is drawn
-export const MUZZLE = 1.56;                 // how far in front of its feet the muzzle is
+export const MUZZLE = 1.9;                  // how far in front of its feet the muzzle is
 export const gunY = (k) => 1.7 - 0.34 * k;  // muzzle height, standing (k = 0) to kneeling (k = 1)
 export const SPAWN = [{ x: -17, z: -1.3 }, { x: 17, z: -1.3 }];
 export const LOOP = { x: 0, z: 0.6, a: 10.2, b: 4.7 }; // centre line of the train track

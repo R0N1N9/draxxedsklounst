@@ -290,7 +290,7 @@ export function makeFx(THREE, sky, detail, sunCol, Q) {
 
     if (bowT >= 0) {
       bowT += dt;
-      bowU.uA.value = clamp((bowT - 0.2) * 2.2, 0, 0.85);
+      bowU.uA.value = clamp(bowT * 7, 0, 0.9);
       bow.scale.set(44, 22, 1);
       bow.rotation.set(0, Math.atan2(camera.position.x - bow.position.x, camera.position.z - bow.position.z), 0);
     }

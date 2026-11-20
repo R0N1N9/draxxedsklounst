@@ -32,19 +32,20 @@ function rifleman(G, kneel) {
     const el = kneel ? [0.3, 0.72, -0.14] : [0.3, sy - 0.18, -0.14];
     b.limb([0.06, sy, -0.21], el, 0.085, 0.07); b.limb(el, [0.56, ry - 0.05, 0.07], 0.07, 0.065);
   });
-  part('head', (b) => { b.add(G.ball(0.135, 14, 10), { p: [0.1, sy + 0.22, 0.03] }); b.add(G.cyl(0.07, 0.08, 0.1, 8), { p: [0.06, sy + 0.1, 0.02] }); });
+  part('head', (b) => { b.add(G.ball(0.15, 14, 10), { p: [0.1, sy + 0.22, 0.03] }); b.add(G.cyl(0.07, 0.08, 0.1, 8), { p: [0.06, sy + 0.1, 0.02] }); });
   part('helmet', (b) => {
-    b.add(G.dome(0.18, 16, 8), { p: [0.09, sy + 0.24, 0.03], s: [1.08, 0.9, 1] });
-    b.add(G.cyl(0.2, 0.215, 0.03, 16), { p: [0.09, sy + 0.24, 0.03], s: [1.08, 1, 1] });
+    b.add(G.dome(0.215, 16, 8), { p: [0.09, sy + 0.25, 0.03], s: [1.1, 0.92, 1] });
+    b.add(G.cyl(0.235, 0.255, 0.035, 16), { p: [0.09, sy + 0.25, 0.03], s: [1.1, 1, 1] });
   });
   part('rifle', (b) => {
     const z = 0.1;
-    b.add(G.rbox(0.34, 0.13, 0.07, 0.03, 2), { p: [0.03, ry - 0.03, z], r: [0, 0, -0.12] }); // stock
-    b.add(G.rbox(0.42, 0.1, 0.075, 0.03, 2), { p: [0.38, ry, z] }); // receiver
-    b.add(G.cyl(0.03, 0.03, 0.62, 8), { p: [0.86, ry + 0.01, z], r: [0, 0, Math.PI / 2] }); // barrel
-    b.add(G.cyl(0.045, 0.045, 0.09, 8), { p: [1.15, ry + 0.01, z], r: [0, 0, Math.PI / 2] }); // muzzle
-    b.add(G.cyl(0.045, 0.045, 0.32, 10), { p: [0.4, ry + 0.1, z], r: [0, 0, Math.PI / 2] }); // scope
-    b.add(G.cyl(0.058, 0.045, 0.06, 10), { p: [0.58, ry + 0.1, z], r: [0, 0, Math.PI / 2] });
+    // (a toy's rifle is always too big for it: that is what makes the silhouette)
+    b.add(G.rbox(0.36, 0.15, 0.09, 0.035, 2), { p: [0.03, ry - 0.03, z], r: [0, 0, -0.12] }); // stock
+    b.add(G.rbox(0.46, 0.12, 0.1, 0.035, 2), { p: [0.38, ry, z] }); // receiver
+    b.add(G.cyl(0.042, 0.042, 0.78, 8), { p: [0.98, ry + 0.01, z], r: [0, 0, Math.PI / 2] }); // barrel
+    b.add(G.cyl(0.06, 0.06, 0.11, 8), { p: [1.36, ry + 0.01, z], r: [0, 0, Math.PI / 2] }); // muzzle
+    b.add(G.cyl(0.055, 0.055, 0.36, 10), { p: [0.42, ry + 0.115, z], r: [0, 0, Math.PI / 2] }); // scope
+    b.add(G.cyl(0.07, 0.055, 0.07, 10), { p: [0.62, ry + 0.115, z], r: [0, 0, Math.PI / 2] });
   });
   return parts;
 }

@@ -1,6 +1,6 @@
 // The paper people: a sniper is a printed card on a thin core — a full target face-on, a ruled line edge-on.
 // Standees are the same card in cardboard. The mascots dotted round the yard are plain scenery cut-outs.
-import { drawSniper, drawMascot, drawGlint, dieCut } from './art.js';
+import { drawSniper, drawGlint, dieCut } from './art.js';
 import { ID, ID_DARK, INK, PAPER, GROUND_SHADE, lighter } from './style.js';
 import { LineSet } from './lines.js';
 
@@ -23,7 +23,7 @@ export function makeFigureKit(THREE, mats) {
   const canvasTex = (draw, w, h) => {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
-    draw(c.getContext('2d'));
+    draw(c.getContext('2d', { willReadFrequently: true })); // CPU-backed: uploading it to the GPU needs no readback stall
     const t = new THREE.CanvasTexture(c);
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
@@ -44,9 +44,8 @@ export function makeFigureKit(THREE, mats) {
   const tex = {
     live: [0, 1].map((i) => canvasTex((g) => { drawSniper(g, ID[i], ID_DARK[i], 'live'); dieCut(g, 256, 512, 7, '#fffdf5'); }, 256, 512)),
     standee: [0, 1].map((i) => canvasTex((g) => { drawSniper(g, ID[i], ID_DARK[i], 'standee'); dieCut(g, 256, 512, 7, '#e8c48e'); }, 256, 512)),
-    mascot: canvasTex((g) => { drawMascot(g); dieCut(g, 256, 512, 7, '#fffdf5'); }, 256, 512),
   };
-  const mLive = tex.live.map(cardMat), mStand = tex.standee.map(cardMat), mMascot = cardMat(tex.mascot);
+  const mLive = tex.live.map(cardMat), mStand = tex.standee.map(cardMat);
   const coreMats = ID.map((c) => { const m = new THREE.MeshBasicMaterial({ color: c, side: THREE.DoubleSide }); matl.push(m); return m; });
   const standCore = new THREE.MeshBasicMaterial({ color: '#b98a55', side: THREE.DoubleSide });
   const shadowMat = new THREE.MeshBasicMaterial({ color: GROUND_SHADE, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
@@ -71,12 +70,12 @@ export function makeFigureKit(THREE, mats) {
     const pivot = new THREE.Group(), tilt = new THREE.Group();
     root.add(pivot);
     pivot.add(tilt);
-    const front = new THREE.Mesh(quad, kind === 'standee' ? mStand[i] : kind === 'mascot' ? mMascot : mLive[i]);
+    const front = new THREE.Mesh(quad, kind === 'standee' ? mStand[i] : mLive[i]);
     front.position.z = HOLD;
     const back = new THREE.Mesh(quad, front.material);
     back.rotation.y = Math.PI;
     back.position.z = -HOLD;
-    const core = new THREE.Mesh(slabGeo, kind === 'standee' || kind === 'mascot' ? standCore : coreMats[i]);
+    const core = new THREE.Mesh(slabGeo, kind === 'standee' ? standCore : coreMats[i]);
     tilt.add(core, front, back);
     // ruled edge of the core: visible as a thin black line from the side, hidden behind the card from the front
     const ls = new LineSet(THREE, 12, mats.fig);
@@ -141,7 +140,6 @@ export function makeFigureKit(THREE, mats) {
   return {
     sniper: (i) => build('live', i),
     standee: (i) => build('standee', i),
-    mascot: () => build('mascot', 0),
     setFlash(canvas) {
       const t = new THREE.CanvasTexture(canvas);
       t.colorSpace = THREE.SRGBColorSpace;

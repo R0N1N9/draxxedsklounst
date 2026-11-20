@@ -36,7 +36,7 @@ export function makeView(ctx, THREE, renderer, X) {
     } catch { /* a lost context: carry on as if it had finished */ }
     sync = null;
     cost = performance.now() - syncAt;
-    drawAfter = performance.now() + Math.min(9000, cost * 3);
+    drawAfter = performance.now() + Math.min(9000, cost * 6); // a seventh of the time on drawing, no more
   }
   const lt = { ok: false, x: 0, z: 0, roof: 0 };
   const api = { camera, shot: null, force: 0, lt, S, get frames() { return frames; }, get busy() { pollSync(); return !!sync; }, get cost() { return cost; } };
@@ -124,6 +124,7 @@ export function makeView(ctx, THREE, renderer, X) {
       look.set(v.x, v.y + 1.1, v.z);
       S.splash.word = word; S.splash.caption = text; S.splash.t = 0; S.splash.a = 1;
       for (const p of S.pops) p.on = false;
+      S.leap.a = 0; S.arcs[0].a = S.arcs[1].a = 0;
       drawAfter = 0; since = 99;
     },
     focus() {
@@ -223,7 +224,7 @@ export function makeView(ctx, THREE, renderer, X) {
         } else lt.ok = false;
       } else lt.ok = false;
       const lp = S.leap;
-      lp.a = damp(lp.a, lt.ok && scopeAmt < 0.3 ? 1 : 0, 12, rdt);
+      lp.a = phase === 'live' ? damp(lp.a, lt.ok && scopeAmt < 0.3 ? 1 : 0, 12, rdt) : 0;
       if (lt.ok) {
         const L = G.arcOf(me, lt.x, lt.z, lt.roof);
         lp.n = arcPts(L, 0.12, 1, lp.pts);
