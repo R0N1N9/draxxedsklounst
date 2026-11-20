@@ -3,7 +3,7 @@
 // kill, and the small in-world marks (aim line, reticle, pointers, captions).
 import { clamp, ease, damp, TAU } from '../../kit.js';
 import { C, drawSfx, radialLines, inkFrame, taperInto } from './ink.js';
-import { drawSniper, drawUmbrella } from './figures.js';
+import { drawSniper, drawUmbrella, drawFlung } from './figures.js';
 
 const FONT = '"Arial Narrow", "Futura", "Avenir Next Condensed", "Rajdhani", Impact, sans-serif';
 
@@ -290,16 +290,16 @@ export function drawSplash(g, v, s) {
   g.fillStyle = C.ink;
   g.fill();
   g.fillStyle = C.white;
-  radialLines(g, cx, cy, R * 0.45, R * 0.82 * pop, 64, R * 0.03, s.seed + 3, 0.9, -t * 0.05);
+  radialLines(g, cx, cy, R * 0.6, R * 0.86 * pop, 64, R * 0.03, s.seed + 3, 0.9, -t * 0.05);
   g.fill();
-  spikes(R * 0.5, 0.06);
+  spikes(R * 0.64, 0.06);
   g.fillStyle = C.paper;
   g.fill();
   g.strokeStyle = C.ink;
   g.lineWidth = 2;
   g.stroke();
   g.fillStyle = C.ink;
-  radialLines(g, cx, cy, R * 0.28, R * 0.5 * pop, 40, R * 0.012, s.seed + 9, 0.9, t * 0.04);
+  radialLines(g, cx, cy, R * 0.36, R * 0.64 * pop, 40, R * 0.012, s.seed + 9, 0.9, t * 0.04);
   g.fill();
 
   // the shooter, far side, frozen
@@ -318,19 +318,15 @@ export function drawSplash(g, v, s) {
     g.beginPath(); g.moveTo(mx, my); g.lineTo(ex, ey); g.stroke();
   }
   // the victim, thrown back
-  const vs = ph * 0.46 / 3.4, ease1 = ease.outCubic(clamp((t - 0.1) / 0.7, 0, 1)), vx = cx - sgn * pw * 0.02 * ease1, vy = py + ph * 0.76 - ease1 * ph * 0.02;
-  g.save();
-  g.translate(vx, vy);
-  g.rotate(-sgn * (0.1 + 0.26 * ease1));
-  g.translate(-vx, -vy);
-  drawSniper(g, { sx: vx, sy: vy, S: vs, f: sgn > 0 ? -1 : 1, a: sgn > 0 ? -0.75 : -0.75, ph: 0, spd: 0, focus: 0, recoil: 0, stun: false, col: s.lcol, t, wind: 0, umb: false, sil: true, x: 0, z: 0 });
-  g.restore();
+  const vs = ph * 0.5 / 3.4, ease1 = ease.outCubic(clamp((t - 0.1) / 0.7, 0, 1)), vx = cx + sgn * pw * 0.03 * ease1, vy = py + ph * 0.8 - ease1 * ph * 0.025;
+  drawFlung(g, vx, vy, vs, sgn, s.lcol, sgn * (0.12 + 0.1 * ease1), t);
+  const vf = vs;
   // the umbrella, knocked clean off, tumbling away
-  const ut = Math.max(0, t - 0.1), ux = vx - sgn * pw * 0.02 - sgn * ut * pw * 0.3, uy = vy - vs * 2.4 - ut * ph * 0.42 + ut * ut * ph * 0.34;
+  const ut = Math.max(0, t - 0.1), ux = vx + sgn * vs * 0.5 + sgn * ut * pw * 0.3, uy = vy - vs * 3.6 - ut * ph * 0.42 + ut * ut * ph * 0.34;
   if (uy < py + ph + 200) {
     g.save();
     g.translate(ux, uy);
-    g.rotate(-sgn * ut * 7);
+    g.rotate(sgn * ut * 7);
     g.lineJoin = 'round';
     g.scale(vs * 0.85, vs * 0.85);
     drawUmbrella(g, s.lcol, 3 / vs);
@@ -338,7 +334,7 @@ export function drawSplash(g, v, s) {
     g.strokeStyle = C.ink; // its speed lines
     g.lineWidth = 2;
     g.beginPath();
-    for (let i = -1; i <= 1; i++) { g.moveTo(ux + sgn * (vs * 2 + i * 6), uy - i * vs * 0.5); g.lineTo(ux + sgn * (vs * 5 + i * 10 + ut * pw * 0.08), uy - i * vs * 0.5 + ut * ph * 0.15); }
+    for (let i = -1; i <= 1; i++) { g.moveTo(ux - sgn * (vs * 2 + i * 6), uy - i * vs * 0.5); g.lineTo(ux - sgn * (vs * 5 + i * 10 + ut * pw * 0.08), uy - i * vs * 0.5 + ut * ph * 0.15); }
     g.stroke();
   }
   // the one enormous sound effect, lettered across the lower page over the figure's feet
@@ -406,7 +402,7 @@ export function drawReload(g, x, y, r, f) {
 }
 
 // A caption box (the narration boxes of a manga page) with a tail pointing at (tx, ty).
-export function drawCaption(g, x, y, lines, size, tx, ty, t) {
+export function drawCaption(g, x, y, lines, size, tx, ty, t, x0 = 6, x1 = 1e5) {
   g.save();
   g.font = `700 ${size}px ${FONT}`;
   g.textBaseline = 'middle';
@@ -414,7 +410,7 @@ export function drawCaption(g, x, y, lines, size, tx, ty, t) {
   let w = 0;
   for (const l of lines) w = Math.max(w, g.measureText(l).width);
   const pad = size * 0.7, h = lines.length * size * 1.25 + pad * 1.1, bw = w + pad * 2, bob = Math.sin(t * 3) * 1.6;
-  x -= bw / 2;
+  x = clamp(x - bw / 2, x0, Math.max(x0, x1 - bw));
   y -= h + bob;
   g.fillStyle = C.ink;
   g.fillRect(x + 4, y + 4, bw, h);

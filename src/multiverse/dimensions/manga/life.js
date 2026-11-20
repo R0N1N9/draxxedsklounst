@@ -2,9 +2,9 @@
 // passers-by under their umbrellas, a stray umbrella that cartwheels down the street on every gust.
 // Only the lantern sway and the stray umbrella are tied to the clock (they telegraph the gusts the same way
 // on both screens); the rest is decoration and may be random.
-import { clamp, mulberry32 } from '../../kit.js';
+import { mulberry32 } from '../../kit.js';
 import { C } from './ink.js';
-import { WX, WZ, DY } from './world.js';
+import { WX, DY } from './world.js';
 
 const TAU = Math.PI * 2;
 

@@ -19,8 +19,12 @@ const TONE_DEF = {
   h1: { p: 5.5, hatch: 0.9 }, h2: { p: 3.6, hatch: 1 },
 };
 
+// flat stand-ins for the tones, used when the device cannot keep up
+const FLAT = { d1: '#e9dfc9', d2: '#cfc4ad', d3: '#8d8677', d4: '#4b463f', v1: '#cfc9b9', v2: '#9d988b', v3: '#5f5b52', h1: '#d9cfb8', h2: '#bdb29a' };
+
 export class Tones {
   constructor() {
+    this.lite = false;
     this.dpr = 0;
     this.pat = {};
     this.grads = new Map();
@@ -53,6 +57,7 @@ export class Tones {
 
   // Fill style for a tone whose lattice is anchored to the local origin of a context scaled by s.
   use(g, name, s) {
+    if (this.lite) { g.fillStyle = FLAT[name]; return; }
     const p = this.pat[name];
     if (this.m && p && p.setTransform) { this.m.a = this.m.d = 1 / (s * this.dpr); this.m.e = this.m.f = 0; p.setTransform(this.m); }
     g.fillStyle = p;

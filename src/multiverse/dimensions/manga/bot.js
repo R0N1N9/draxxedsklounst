@@ -56,6 +56,7 @@ export function makeBot(ctx, world, env) {
   return function think(p, e, dt) {
     const c = b.cmd, V = BULLET_V;
     c.fire = c.alt = c.a1 = c.a2 = false;
+    if (ctx.phase !== 'live') { c.mx = c.mz = 0; c.a = p.aim; return c; } // the countdown is not part of the plan
     b.t += dt;
     b.goalT -= dt;
     b.errT -= dt;

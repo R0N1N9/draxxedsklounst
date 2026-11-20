@@ -261,3 +261,45 @@ export function drawShadow(g, sx, sy, S, k = 1) {
 }
 
 export const FIG_H = FIG;
+
+// The victim of the splash page: a silhouette caught mid-air, arms flung wide, coat and scarf whipping away.
+// (sx, sy) = the feet; `dir` = +1 when the blow came from the left (the body is thrown to the right).
+export function drawFlung(g, sx, sy, S, dir, col, rot, t) {
+  g.save();
+  g.translate(sx, sy);
+  g.rotate(rot);
+  g.scale(dir * S, S);
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+  const hw = (HALO * 2.4) / S;
+  // scarf streaming forward over the shoulder, in the identity colour
+  for (let i = 0; i < 7; i++) { const u = i / 6; T[i * 2] = -0.1 - u * 2.6; T[i * 2 + 1] = -2.6 - u * 0.9 + Math.sin(t * 9 - u * 5) * 0.2 * u; }
+  g.beginPath();
+  taperInto(g, T, 7, 0.4, 0.12);
+  g.strokeStyle = C.white; g.lineWidth = hw; g.stroke();
+  g.fillStyle = col; g.fill();
+  g.strokeStyle = C.ink; g.lineWidth = 0.07; g.stroke();
+  g.beginPath();
+  // head thrown back, torso arched
+  g.arc(-0.35, -3.1, 0.44, 0, TAU);
+  const P = (a, n, w0, w1) => { for (let i = 0; i < n; i++) { T[i * 2] = a[i * 2]; T[i * 2 + 1] = a[i * 2 + 1]; } taperInto(g, T, n, w0, w1); };
+  P([-0.2, -2.7, 0.2, -2.0, 0.5, -1.35], 3, 1.0, 0.85); // torso
+  P([-0.1, -2.5, -1.2, -3.1, -2.3, -3.2], 3, 0.42, 0.28); // rear arm flung up
+  P([0.2, -2.4, 1.3, -2.8, 2.2, -2.2], 3, 0.42, 0.28); // front arm
+  P([0.45, -1.4, 1.2, -0.75, 1.0, 0.0], 3, 0.6, 0.42); // leg planted
+  P([0.4, -1.4, -0.2, -0.7, -1.3, -0.95], 3, 0.6, 0.42); // leg kicked back
+  g.moveTo(0.9, 0.15); g.quadraticCurveTo(1.0, -0.4, 1.5, -0.2); g.lineTo(1.5, 0.15); g.closePath();
+  g.moveTo(-0.1, -2.35); g.lineTo(0.9, -2.2); g.lineTo(1.4, -0.9); g.lineTo(-1.5, -0.6); g.lineTo(-0.9, -1.9); g.closePath(); // coat
+  g.strokeStyle = C.white; g.lineWidth = hw; g.stroke();
+  g.fillStyle = C.ink; g.fill();
+  // the rifle spinning away on its own
+  g.save();
+  g.translate(-2.3, -3.9);
+  g.rotate(-0.5 - t * 3);
+  g.beginPath();
+  g.rect(-1.4, -0.14, 2.9, 0.28); g.rect(0.2, -0.36, 0.9, 0.2);
+  g.strokeStyle = C.white; g.lineWidth = hw * 0.7; g.stroke();
+  g.fill();
+  g.restore();
+  g.restore();
+}

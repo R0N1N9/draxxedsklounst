@@ -23,9 +23,9 @@
 //           snipers frozen in silhouette, one enormous sound effect and an umbrella tumbling away.
 // SUDDEN    Both snipers get a beacon, the bolt cycles faster, trains run every ~8 s and the page's panels
 //           close in from both ends until the street is a few paces wide.
-import { clamp, lerp, ease, damp, angDiff, Shake, segCircle, raycastRects, rgba, TAU } from '../../kit.js';
+import { clamp, lerp, ease, damp, Shake, segCircle, raycastRects, rgba, TAU } from '../../kit.js';
 import { C, Tones, drawSheet } from './ink.js';
-import { WX, WZ, DY, R_BODY, R_WALK, V_X, V_Z, BULLET_V, CHEST, XING, TRAIN, SPAWN, buildWorld, trainPhase, trainHead, syncTrain, gustAt, aimDir, aimAngleOf, pushOut, limits, makeView } from './world.js';
+import { WX, WZ, DY, R_BODY, R_WALK, V_X, V_Z, BULLET_V, CHEST, XING, TRAIN, SPAWN, buildWorld, trainHead, syncTrain, gustAt, aimDir, pushOut, limits, makeView } from './world.js';
 import { buildScenery } from './scenery.js';
 import { makeSet, drawBackdrop, drawGround, drawGates, drawTrain, drawRain } from './stage.js';
 import { drawSniper, drawShadow } from './figures.js';
@@ -33,8 +33,10 @@ import { Panels, drawFrame, drawSplash, drawSight, drawReticle, drawReload, draw
 import { SfxPool, Ripples, makeParticles, inkBurst, chips } from './fx.js';
 import { makeSound } from './sound.js';
 import { makeBot } from './bot.js';
+import { drawSteam, drawBullet, drawSmoke, drawTrails, drawWalls, drawFront, drawFocusLines } from './draw.js';
 import { makeLife, updateLife, startleCats, drawLanterns, drawCats, drawCrows, drawWalkers, strayAt, drawStray } from './life.js';
 
+const QUALITY_AUTO = true; // step the tones down to flat greys if the device cannot hold the frame rate
 const RELOAD = 1.5, RELOAD_SD = 1.0, FLASH_CD = 5, FLASH_DIST = 13, SUB_CD = 8.5, SUB_LIFE = 7, SMOKE_LIFE = 3.4, SMOKE_R = 4.4;
 const ROUND = 45;
 const r1 = (v) => Math.round(v * 10) / 10;
@@ -81,7 +83,7 @@ export default {
     const pos = { x: 0, y: 0 }, uv = { x: 0, z: 0 };
     const S = {
       t: 0, introT: 0, overT: 0, kill: null, sd: false, bulletN: 0, decoyN: 0, trainD: 0, lastTrainD: 0, gustIdx: -1, flash: 0, flashT: 12 + Math.random() * 10,
-      firstShot: false, firstFocus: false, wind: 0, steam: 0, shotsMine: 0, readyFlash: 0, bellAt: -1,
+      firstShot: false, firstFocus: false, lastRender: 0, ft: 16, slow: 0, wind: 0, steam: 0, shotsMine: 0, readyFlash: 0, bellAt: -1,
     };
     const list = [];
     for (let i = 0; i < 90; i++) list.push({ z: 0, k: 0, o: null });
@@ -419,6 +421,7 @@ export default {
       const g = ctx.g, W = ctx.width, H = ctx.height;
       layout();
       tones.ensure(g, ctx.dpr);
+      watchFrameRate();
       g.fillStyle = C.paper;
       g.fillRect(0, 0, W, H);
       const over = ctx.phase === 'over' && S.kill;
@@ -442,8 +445,8 @@ export default {
       drawWalkers(g, v, life, S.t);
       ripples.draw(g, v);
       drawGates(g, v, st, false);
-      drawTrails(g);
-      drawWalls(g);
+      drawTrails(g, v, trails);
+      drawWalls(g, v, lim, S.t);
 
       // everything standing on the street, back to front
       nList = 0;
@@ -459,11 +462,11 @@ export default {
       for (let i = 1; i < nList; i++) { const it = list[i]; let j = i - 1; while (j >= 0 && list[j].z > it.z) { swapList(j, j + 1); j--; } }
       for (let i = 0; i < nList; i++) drawItem(g, list[i]);
       drawGates(g, v, st, true);
-      drawFront(g);
+      drawFront(g, v);
 
-      drawRain(g, v, set, frameDt, S.wind, ctx.sudden);
+      drawRain(g, v, set, frameDt, S.wind, tones.lite ? 2 : ctx.sudden ? 1 : 0);
       parts.draw(g);
-      drawFocusLines(g);
+      if (ctx.phase === 'live' && P[ctx.me].alive) drawFocusLines(g, v, P[ctx.me].fz, S.t);
       if (S.flash > 0.02) { // lightning: the whole picture goes negative for a few frames
         g.globalCompositeOperation = 'difference';
         g.fillStyle = '#fff';
@@ -476,6 +479,15 @@ export default {
       panels.draw(g, v, colOf(ctx.me), colOf(1 - ctx.me), ctx.input.device === 'touch');
       drawFrame(g, v);
       if (over && S.overT < 0.09) { g.fillStyle = `rgba(255,253,246,${0.9 * (1 - S.overT / 0.09)})`; g.fillRect(v.px, v.py, v.pw, v.ph); }
+    }
+
+    function watchFrameRate() {
+      if (!QUALITY_AUTO) return;
+      const now = performance.now(), d = now - S.lastRender;
+      S.lastRender = now;
+      if (d > 250 || d <= 0 || ctx.phase === 'intro') return;
+      S.ft += (d - S.ft) * 0.06;
+      if (S.ft > 24) { if (++S.slow > 150 && !tones.lite) { tones.lite = true; S.slow = 0; } } else S.slow = Math.max(0, S.slow - 2);
     }
 
     function swapList(a, b) {
@@ -496,7 +508,7 @@ export default {
           g.translate(v.sx(c.x), v.sy(c.z + c.d));
           g.scale(S_, S_);
           drawSheet(g, sh, tones, S_);
-          if (c.kind === 'cart') drawSteam(g, c);
+          if (c.kind === 'cart') drawSteam(g, v, S.t, c);
           g.restore();
           break;
         }
@@ -511,8 +523,8 @@ export default {
         }
         case 3: drawPlayer(g, it.o); break;
         case 4: drawDecoy(g, it.o); break;
-        case 5: drawBullet(g, it.o); break;
-        case 6: drawSmoke(g, it.o); break;
+        case 5: drawBullet(g, v, it.o, colOf(it.o.owner)); break;
+        case 6: drawSmoke(g, v, tones, S.t, it.o); break;
         case 7: {
           const q = it.o;
           g.globalAlpha = Math.max(0, 0.7 * (1 - q.age / 0.4));
@@ -525,17 +537,6 @@ export default {
       }
     }
 
-    function drawSteam(g, c) {
-      g.strokeStyle = C.ink;
-      g.lineWidth = 1.2 / v.S;
-      g.fillStyle = C.white;
-      for (let i = 0; i < 3; i++) {
-        const u = ((S.t * 0.5 + i / 3) % 1), x = 1.4 + Math.sin(S.t + i * 2) * 0.35, y = -c.h * 0.55 - 0.4 - u * 3.4, r = 0.28 + u * 0.55;
-        g.globalAlpha = 1 - u;
-        g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); g.stroke();
-      }
-      g.globalAlpha = 1;
-    }
 
     function drawPlayer(g, p) {
       const me = P[ctx.me];
@@ -573,126 +574,13 @@ export default {
       g.globalAlpha = 1;
     }
 
-    function drawBullet(g, b) {
-      const S_ = v.S, tip = { x: v.sx(b.x), y: v.sy(b.z, CHEST) }, tl = b.live ? 7 : 7 * (1 - b.age / 0.25);
-      if (tl <= 0) return;
-      const tx = v.sx(b.x - b.ux * tl), ty = v.sy(b.z - b.uz * tl, CHEST);
-      g.lineCap = 'round';
-      g.strokeStyle = C.white;
-      g.lineWidth = 5.5;
-      g.beginPath(); g.moveTo(tx, ty); g.lineTo(tip.x, tip.y); g.stroke();
-      g.strokeStyle = C.ink;
-      g.lineWidth = 2.6;
-      g.beginPath(); g.moveTo(tx, ty); g.lineTo(tip.x, tip.y); g.stroke();
-      const nx = -(tip.y - ty), ny = tip.x - tx, nl = Math.hypot(nx, ny) || 1;
-      g.lineWidth = 1.1;
-      g.beginPath();
-      for (const o of [-1, 1]) { g.moveTo(tx + (nx / nl) * o * 4, ty + (ny / nl) * o * 4); g.lineTo(tx - (tip.x - tx) * 0.9 + (nx / nl) * o * 4, ty - (tip.y - ty) * 0.9 + (ny / nl) * o * 4); }
-      g.stroke();
-      if (b.live) {
-        g.fillStyle = colOf(b.owner);
-        g.strokeStyle = C.ink;
-        g.lineWidth = 1.6;
-        g.beginPath(); g.arc(tip.x, tip.y, 3.4, 0, TAU); g.fill(); g.stroke();
-      }
-    }
 
-    function drawSmoke(g, s) {
-      const k = ease.outCubic(Math.min(1, s.age / 0.38)) * (s.age > s.life - 0.6 ? Math.max(0, (s.life - s.age) / 0.6) : 1), S_ = v.S;
-      if (k <= 0.02) return;
-      const cx = v.sx(s.x), cy = v.sy(s.z, 1.2);
-      g.lineWidth = 2.2;
-      g.strokeStyle = C.ink;
-      g.fillStyle = C.white;
-      for (const q of s.puffs) {
-        const r = s.r * 0.5 * q.rr * k * S_, wob = Math.sin(S.t * 2.3 + q.dx) * 0.05 * S_;
-        g.beginPath();
-        g.ellipse(cx + q.dx * S_ * k, cy + q.dz * S_ * k * 1.0 + wob - (q.rr * 0.8) * k * S_ * 0.5, r, r * 0.86, 0, 0, TAU);
-        g.fill();
-        g.stroke();
-      }
-      tones.use(g, 'd1', 1);
-      for (const q of s.puffs) { const r = s.r * 0.5 * q.rr * k * S_; g.beginPath(); g.ellipse(cx + q.dx * S_ * k + r * 0.2, cy + q.dz * S_ * k - q.rr * 0.4 * k * S_ + r * 0.25, r * 0.75, r * 0.6, 0, 0, TAU); g.fill(); }
-      if (s.age < 0.3) { // the pop: ink speed lines blasting outward
-        g.strokeStyle = C.ink;
-        g.lineWidth = 2;
-        g.beginPath();
-        for (let i = 0; i < 18; i++) { const a = (i / 18) * TAU + 0.3, r0 = s.r * S_ * 0.45 * k, r1 = r0 + S_ * (1.5 + (i % 3)) * (1 - s.age / 0.3); g.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * 0.7); g.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1 * 0.7); }
-        g.stroke();
-      }
-    }
 
-    function drawTrails(g) {
-      for (const q of trails) {
-        const k = 1 - q.age / 0.35;
-        if (k <= 0) continue;
-        g.strokeStyle = C.ink;
-        g.lineCap = 'round';
-        g.globalAlpha = k;
-        const ax = v.sx(q.x0), ay = v.sy(q.z0, 1.7), bx = v.sx(q.x1), by = v.sy(q.z1, 1.7);
-        for (let i = -3; i <= 3; i++) { g.lineWidth = i === 0 ? 3 : 1.4; const o = i * v.S * 0.32; g.beginPath(); g.moveTo(ax, ay + o); g.lineTo(bx + (bx - ax) * 0.05, by + o); g.stroke(); }
-        g.globalAlpha = 1;
-      }
-    }
 
     // the closing page: black masses with torn edges slide in from both ends in sudden death
-    function drawWalls(g) {
-      if (!ctx.sudden && lim.x0 < 3) return;
-      const top = v.py - 20, bot = v.py + v.ph + 20;
-      for (const side of [0, 1]) {
-        const ex = side ? v.sx(lim.x1) : v.sx(lim.x0), dir = side ? 1 : -1;
-        g.beginPath();
-        g.moveTo(ex, top);
-        for (let y = top; y < bot; y += 22) g.lineTo(ex + Math.sin(y * 0.37 + side) * 7 + ((y / 22) & 1 ? 9 : -3) * -dir * -1, y + 11);
-        g.lineTo(ex + dir * 900, bot);
-        g.lineTo(ex + dir * 900, top);
-        g.closePath();
-        g.fillStyle = C.ink;
-        g.fill();
-        g.strokeStyle = C.white;
-        g.lineWidth = 1.4;
-        g.beginPath();
-        for (let i = 0; i < 16; i++) { const x = ex + dir * (14 + i * 22 + ((S.t * 90 * (1 + (i % 3))) % 24)), y0 = ((i * 193) % 700) + top; g.moveTo(x, y0); g.lineTo(x, y0 + 80 + (i % 4) * 40); }
-        g.stroke();
-      }
-    }
 
-    function drawFront(g) {
-      // low-hanging power lines and the canal railing in the foreground
-      const S_ = v.S, y = v.sy(WZ + 0.6);
-      g.strokeStyle = C.ink;
-      g.lineWidth = Math.max(2, S_ * 0.2);
-      g.lineCap = 'round';
-      const pitch = 7 * S_, x0 = (v.ox % pitch) - pitch;
-      g.beginPath();
-      for (let x = x0; x < v.px + v.pw + pitch; x += pitch) { g.moveTo(x, y); g.lineTo(x, y - S_ * 1.5); }
-      g.stroke();
-      g.lineWidth = 1.5;
-      g.beginPath();
-      g.moveTo(v.px - 20, y - S_ * 1.1); g.lineTo(v.px + v.pw + 20, y - S_ * 1.1);
-      g.moveTo(v.px - 20, y - S_ * 0.55); g.lineTo(v.px + v.pw + 20, y - S_ * 0.55);
-      g.stroke();
-    }
 
     // concentration lines close in from the edges of the page while you focus
-    function drawFocusLines(g) {
-      const me = P[ctx.me], k = me.fz;
-      if (k < 0.05 || !me.alive || ctx.phase !== 'live') return;
-      const cx = v.px + v.pw / 2, cy = v.py + v.ph / 2, R = Math.hypot(v.pw, v.ph) * 0.5;
-      g.fillStyle = C.ink;
-      g.beginPath();
-      const n = 110;
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * TAU + Math.sin(i * 12.9) * 0.02, w = 0.004 + 0.011 * ((i * 7) % 5) / 5, r0 = R * (1.0 - 0.3 * k - 0.16 * ((i * 13) % 7) / 7), r1 = R * 1.3, wob = Math.sin(S.t * 14 + i) * 0.004;
-        g.moveTo(cx + Math.cos(a + wob) * r0, cy + Math.sin(a + wob) * r0);
-        g.lineTo(cx + Math.cos(a - w) * r1, cy + Math.sin(a - w) * r1);
-        g.lineTo(cx + Math.cos(a + w) * r1, cy + Math.sin(a + w) * r1);
-        g.closePath();
-      }
-      g.globalAlpha = Math.min(1, k * 1.2);
-      g.fill();
-      g.globalAlpha = 1;
-    }
 
     function drawUi(g) {
       const me = P[ctx.me], foe = P[1 - ctx.me], inp = ctx.input;
@@ -736,7 +624,7 @@ export default {
           const dev = inp.device;
           const lines = dev === 'touch' ? ['DRAG TO AIM · LET GO TO FIRE', 'tap FOCUS to steady the line'] : dev === 'gamepad' ? ['RIGHT STICK AIMS · RT FIRES', 'hold LT to FOCUS'] : ['CLICK TO FIRE', 'hold RIGHT-CLICK to FOCUS'];
           const sz = clamp(v.W / 80, 12, 17);
-          drawCaption(g, mx, my - 3.1 * v.S, S.firstFocus ? lines.slice(0, 1) : lines, sz, mx, my - 2.9 * v.S, S.t);
+          drawCaption(g, mx, my - 3.1 * v.S, S.firstFocus ? lines.slice(0, 1) : lines, sz, mx, my - 2.9 * v.S, S.t, v.px + 8, v.px + v.pw - 8);
         }
       }
       // sudden death: beacons

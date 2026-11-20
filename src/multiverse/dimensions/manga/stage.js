@@ -17,21 +17,45 @@ export function makeSet(seed) {
 }
 
 // ---------------------------------------------------------------------------
+// The sky (ink, a gradation tone glowing up from the rooftops, the moon and its stippled rings) never changes
+// for a given page size, so it is painted once into an off-screen canvas and blitted.
+const skyCache = { c: null, key: '' };
+function drawSky(g, v, tones) {
+  const { px, py, pw, ph } = v, k = Math.min(1, 4000 / ((pw + 28) * v.dpr)), key = `${pw}|${ph}|${v.dpr}`;
+  if (skyCache.key !== key) {
+    const c = skyCache.c || (skyCache.c = document.createElement('canvas'));
+    c.width = Math.max(2, Math.round((pw + 28) * v.dpr * k));
+    c.height = Math.max(2, Math.round((ph + 28) * v.dpr * k));
+    const q = c.getContext('2d');
+    q.setTransform(v.dpr * k, 0, 0, v.dpr * k, 14 * v.dpr * k, 14 * v.dpr * k);
+    q.fillStyle = C.ink;
+    q.fillRect(-14, -14, pw + 28, ph + 28);
+    // the haze: white dots swelling toward the horizon (anchored to the page, so the pattern origin is 0, 0)
+    const yH = ph * 0.62;
+    const pat = tones.grad(g, yH, true, 2.9);
+    if (tones.m && pat.setTransform) { tones.m.a = tones.m.d = 1 / v.dpr; tones.m.e = 0; tones.m.f = 0; pat.setTransform(tones.m); }
+    q.fillStyle = pat;
+    q.fillRect(-14, -14, pw + 28, yH + 14);
+    const mx = pw * 0.8, my = ph * 0.19, mr = Math.max(26, ph * 0.07);
+    for (const [kk, tn] of [[2.6, 'v1'], [1.9, 'v2'], [1.45, 'v3']]) {
+      const p = tones.pat[tn];
+      if (tones.m && p.setTransform) { tones.m.a = tones.m.d = 1 / v.dpr; tones.m.e = tones.m.f = 0; p.setTransform(tones.m); }
+      q.fillStyle = p;
+      q.beginPath(); q.arc(mx, my, mr * kk, 0, TAU); q.fill();
+    }
+    q.fillStyle = C.white;
+    q.beginPath(); q.arc(mx, my, mr, 0, TAU); q.fill();
+    q.strokeStyle = C.ink;
+    q.lineWidth = 1.2;
+    q.beginPath(); q.arc(mx - mr * 0.25, my + mr * 0.1, mr * 0.28, 0.5, 4); q.moveTo(mx + mr * 0.5, my - mr * 0.3); q.arc(mx + mr * 0.35, my - mr * 0.3, mr * 0.15, 0, 5); q.stroke();
+    skyCache.key = key;
+  }
+  g.drawImage(skyCache.c, px - 14, py - 14, pw + 28, ph + 28);
+}
+
 export function drawBackdrop(g, v, tones, sc, set, st) {
   const { px, py, pw, ph, S } = v, t = st.t;
-  // sky: ink, with a gradation tone glowing up from the rooftops
-  g.fillStyle = C.ink;
-  g.fillRect(px, py, pw, ph);
-  const yH = v.y0 - 3.2 * S;
-  tones.fillGrad(g, px, py, pw, Math.max(8, yH - py), true, 2.9);
-  // the moon, half hidden by cloud, ringed with stippled light
-  const mx = px + pw * 0.8 - (v.cx - WX / 2) * 0.05 * S, my = py + ph * 0.19, mr = Math.max(26, 3.8 * S);
-  for (const [k, tn] of [[2.6, 'v1'], [1.9, 'v2'], [1.45, 'v3']]) { tones.use(g, tn, 1); g.beginPath(); g.arc(mx, my, mr * k, 0, TAU); g.fill(); }
-  g.fillStyle = C.white;
-  g.beginPath(); g.arc(mx, my, mr, 0, TAU); g.fill();
-  g.strokeStyle = C.ink;
-  g.lineWidth = 1.2;
-  g.beginPath(); g.arc(mx - mr * 0.25, my + mr * 0.1, mr * 0.28, 0.5, 4); g.moveTo(mx + mr * 0.5, my - mr * 0.3); g.arc(mx + mr * 0.35, my - mr * 0.3, mr * 0.15, 0, 5); g.stroke();
+  drawSky(g, v, tones);
   // ink clouds sliding across
   g.lineCap = 'round';
   for (const c of set.clouds) {
@@ -65,7 +89,7 @@ export function drawBackdrop(g, v, tones, sc, set, st) {
     g.restore();
   }
   // lamps and windows spill light: stippled glows on the wall
-  for (const l of sc.lamps) {
+  if (!tones.lite) for (const l of sc.lamps) {
     const x = v.sx(l.x), y = v.y0 - l.y * S;
     if (x < px - 100 || x > px + pw + 100) continue;
     const fl = 1 - 0.1 * Math.sin(t * 9 + l.x * 3) * (st.flick || 0);
@@ -250,49 +274,64 @@ export function drawGates(g, v, st, front) {
 // the train: head-on, a black column with headlights, hurtling toward the camera
 // ---------------------------------------------------------------------------
 export function drawTrain(g, v, tones, head, t, sc) {
-  const S = v.S, x = v.sx(XING.x), hy = v.sy(head), w = TRAIN.w * S, h = 5 * S, roof = TRAIN.len * DY * S;
-  const top = hy - h - roof, bot = hy;
+  const S = v.S, x = v.sx(XING.x), hy = v.sy(head), w = (TRAIN.w + 0.8) * S, h = 5.4 * S, roof = TRAIN.len * DY * S;
+  const top = hy - h - roof;
   g.save();
   g.beginPath(); g.rect(v.px, v.py, v.pw, v.ph); g.clip();
-  // roof: a long black strip seen from above
+  // the glare of its lamps washing down the street ahead of it
+  g.fillStyle = C.paper;
+  g.beginPath(); g.ellipse(x, hy + 1.2 * S, w * 1.25, 2.8 * S, 0, 0, TAU); g.fill();
+  g.fillStyle = C.white;
+  g.beginPath(); g.ellipse(x, hy + 0.9 * S, w * 0.8, 1.7 * S, 0, 0, TAU); g.fill();
+  // roof: a long black strip seen from above, with ribs, vents and a pantograph
   g.fillStyle = C.ink;
   g.fillRect(x - w / 2, top, w, roof + 2);
   g.strokeStyle = C.white;
-  g.lineWidth = 1.5;
+  g.lineWidth = 1.6;
   g.beginPath();
   for (let y = hy - h - 0.9 * S; y > top; y -= 1.3 * S) { g.moveTo(x - w / 2 + 0.5 * S, y); g.lineTo(x + w / 2 - 0.5 * S, y); }
-  g.moveTo(x - w * 0.28, top); g.lineTo(x - w * 0.28, hy - h);
-  g.moveTo(x + w * 0.28, top); g.lineTo(x + w * 0.28, hy - h);
+  g.moveTo(x - w * 0.3, top); g.lineTo(x - w * 0.3, hy - h);
+  g.moveTo(x + w * 0.3, top); g.lineTo(x + w * 0.3, hy - h);
   g.stroke();
-  // the front: windscreen, headlights, destination board
+  g.fillStyle = C.white;
+  for (let y = hy - h - 4 * S; y > top; y -= 6.5 * S) g.fillRect(x - 0.9 * S, y, 1.8 * S, 1.1 * S);
+  g.strokeStyle = C.ink;
+  g.lineWidth = 2;
+  for (let y = hy - h - 6 * S; y > top; y -= 13 * S) { g.beginPath(); g.moveTo(x - w * 0.36, y); g.lineTo(x + w * 0.36, y - 1.6 * S); g.moveTo(x + w * 0.36, y); g.lineTo(x - w * 0.36, y - 1.6 * S); g.stroke(); }
+  // the front: windscreen, wipers, headlights, destination board, a fat white keyline
   g.fillStyle = C.ink;
   g.fillRect(x - w / 2, hy - h, w, h);
   g.fillStyle = C.paper;
-  g.fillRect(x - w * 0.4, hy - h + 0.45 * S, w * 0.8, h * 0.42);
+  g.fillRect(x - w * 0.42, hy - h + 0.5 * S, w * 0.84, h * 0.4);
   g.strokeStyle = C.ink;
-  g.lineWidth = 2;
-  g.beginPath(); g.moveTo(x, hy - h + 0.45 * S); g.lineTo(x, hy - h + 0.45 * S + h * 0.42); g.stroke();
+  g.lineWidth = 2.5;
+  g.beginPath(); g.moveTo(x, hy - h + 0.5 * S); g.lineTo(x, hy - h + 0.5 * S + h * 0.4); g.stroke();
   g.fillStyle = C.ink;
-  g.fillRect(x - w * 0.4, hy - h + 0.45 * S, w * 0.8, 0.5 * S);
+  g.fillRect(x - w * 0.42, hy - h + 0.5 * S, w * 0.84, 0.6 * S);
+  g.fillStyle = C.white;
+  g.fillRect(x - w * 0.12, hy - h + 0.62 * S, w * 0.24, 0.36 * S);
+  g.strokeStyle = C.white;
+  g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(x - w * 0.3, hy - h * 0.62); g.lineTo(x - w * 0.12, hy - h * 0.48); g.moveTo(x + w * 0.3, hy - h * 0.62); g.lineTo(x + w * 0.12, hy - h * 0.48); g.stroke();
   for (const o of [-1, 1]) {
-    const lx = x + o * w * 0.3, ly = hy - h * 0.2;
+    const lx = x + o * w * 0.32, ly = hy - h * 0.2;
     g.fillStyle = C.white;
-    g.beginPath(); g.arc(lx, ly, 0.5 * S, 0, TAU); g.fill();
+    g.beginPath(); g.arc(lx, ly, 0.62 * S, 0, TAU); g.fill();
     g.strokeStyle = C.white;
-    g.lineWidth = 2;
+    g.lineWidth = 2.2;
     g.beginPath();
-    for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU + t * 3; g.moveTo(lx + Math.cos(a) * 0.7 * S, ly + Math.sin(a) * 0.7 * S); g.lineTo(lx + Math.cos(a) * (1.5 + (i & 1) * 1.2) * S, ly + Math.sin(a) * (1.5 + (i & 1) * 1.2) * S); }
+    for (let i = 0; i < 14; i++) { const a = (i / 14) * TAU + t * 3, l0 = 0.85 * S, l1 = (1.7 + (i & 1) * 1.6) * S; g.moveTo(lx + Math.cos(a) * l0, ly + Math.sin(a) * l0); g.lineTo(lx + Math.cos(a) * l1, ly + Math.sin(a) * l1); }
     g.stroke();
   }
   g.strokeStyle = C.white;
-  g.lineWidth = 2;
-  g.strokeRect(x - w / 2 + 1, hy - h + 1, w - 2, h - 2);
+  g.lineWidth = 3;
+  g.strokeRect(x - w / 2 + 1.5, hy - h + 1.5, w - 3, h - 3);
   // speed lines streaming off the sides, running up the page
   g.strokeStyle = C.ink;
-  g.lineWidth = 1.5;
+  g.lineWidth = 1.8;
   g.beginPath();
-  for (let i = 0; i < 22; i++) {
-    const side = i & 1 ? 1 : -1, o = (0.6 + ((i * 7919) % 11) * 0.45) * S, y = hy - ((i * 131 + t * 900) % (roof + h)) , l = (2 + (i % 5)) * S;
+  for (let i = 0; i < 30; i++) {
+    const side = i & 1 ? 1 : -1, o = (0.5 + ((i * 7919) % 13) * 0.45) * S, y = hy - ((i * 131 + t * 1100) % (roof + h)), l = (2.5 + (i % 5) * 1.3) * S;
     g.moveTo(x + side * (w / 2 + o), y); g.lineTo(x + side * (w / 2 + o), y - l);
   }
   g.stroke();
@@ -309,12 +348,12 @@ export function drawRain(g, v, set, dt, wind, heavy) {
   g.globalCompositeOperation = 'difference';
   g.strokeStyle = '#fff';
   g.lineCap = 'round';
-  for (let pass = 0; pass < 2; pass++) {
+  for (let pass = 0; pass < (heavy === 2 ? 1 : 2); pass++) {
     g.lineWidth = pass ? 1.8 : 1;
     g.beginPath();
     for (let i = pass; i < n; i += 2) {
       const o = i * 4, sp = d[o + 2];
-      d[o + 1] += dt * (1.3 + sp * 1.1) * (heavy ? 1.2 : 1);
+      d[o + 1] += dt * (1.3 + sp * 1.1) * (heavy === 1 ? 1.2 : 1);
       d[o] += dt * slant * 1.3;
       if (d[o + 1] > 1.05) { d[o + 1] -= 1.15; d[o] = Math.random(); }
       if (d[o] > 1.1) d[o] -= 1.2;
