@@ -70,7 +70,9 @@ const settings = {
   sensitivity: store.get('sens', 1),
   invertY: store.get('invert', false),
   scopeToggle: store.get('toggle', 'ontouchstart' in window),
-  loadout: store.get('loadout', null),
+  // The Pollo Hermano skin is never remembered between visits: every fresh load starts on the
+  // standard poncho, the classic title and the default operator.
+  loadout: (() => { const lo = store.get('loadout', null); if (lo && lo.skin === 'pollo') { lo.skin = 'std'; store.set('loadout', lo); } return lo; })(),
   touchSensR: store.get('touchSensR', 1),
   touchSensL: store.get('touchSensL', 1),
   gyroMode: store.get('gyroMode', 'ontouchstart' in window ? 'scoped' : 'off'),
@@ -123,7 +125,7 @@ function primeGyro() {
   const DM = window.DeviceMotionEvent;
   if (settings.gyroMode !== 'off' && DM && typeof DM.requestPermission === 'function') DM.requestPermission().catch(() => {});
 }
-settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); updateTitle(); };
+settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo && lo.skin === 'pollo' ? { ...lo, skin: 'std' } : lo); updateTitle(); };
 
 // Easter egg: with the Pollo Hermano skin selected, the main menu becomes The Reckoning.
 // (Main menu only, and only for your own Pollo Hermano skin.)
