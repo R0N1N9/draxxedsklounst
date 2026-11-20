@@ -231,6 +231,7 @@ $('in-toggle').onchange = (e) => store.set('toggle', (settings.scopeToggle = e.t
 
 function showPanel(id) {
   document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('on', p.id === id));
+  document.querySelector('.menu-card').classList.toggle('cell-open', id === 'panel-cell');
 }
 document.querySelectorAll('.back').forEach((b) => (b.onclick = () => {
   if (net) { net.close(); net = null; }
@@ -569,6 +570,7 @@ $('btn-join-open').onclick = () => {
   $('in-code').focus();
 };
 $('btn-join').onclick = async () => {
+  primeTalk();
   audio.unlock();
   primeGyro();
   const code = $('in-code').value.trim().toUpperCase();
@@ -585,7 +587,8 @@ $('btn-join').onclick = async () => {
     goFullscreen();
     const o = { net, pal: PALETTES[m.pal] ? m.pal : 'dusk', oppName: String(m.name || 'Opponent').replace(/[<>&"]/g, '').slice(0, 16) };
     // The host decides the mode: a Multiverse host says so in its hello.
-    if (m.mv) startMultiverse('guest', { ...o, match: m.mv });
+    if (m.cell) startCell('guest', { net, cell: m.cell, partnerName: o.oppName });
+    else if (m.mv) startMultiverse('guest', { ...o, match: m.mv });
     else startGame('guest', o);
   });
   net.on('open', () => {
@@ -599,6 +602,119 @@ $('btn-join').onclick = async () => {
     $('join-status').textContent = e.message || 'Could not connect.';
   }
 };
+
+// ---- Sniper Cell (co-op stealth) ----
+// iOS lets speech start only from a tap: say nothing once on the way in.
+function primeTalk() { try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch {} }
+const CELL_CALL = { shooter: 'Ra', spotter: 'R\u014dnin' };
+// Staging-area loadouts (both roles), applied at mission start.
+let cellLoadout = store.get('cellLoadout', null);
+async function renderStaging() {
+  const { normLoadout, PERKS } = await import('./cell/arms.js');
+  const L = (cellLoadout = normLoadout(cellLoadout));
+  const opt = (k, v, label, on) => `<button class="${on ? 'on' : ''}" data-k="${k}" data-v="${v}">${label}</button>`;
+  const perks = (r) => Object.entries(PERKS[r]).map(([v, p]) => opt(r + '.perk', v, p.name, L[r].perk === v)).join('');
+  $('panel-staging').querySelector('.stg').innerHTML = `
+    <div class="stg-col" data-r="shooter"><h3>SHOOTER \u00B7 ${CELL_CALL.shooter}</h3><p>KR-50 Nightjar (integral suppressor), active camo, lock-pick set, weapon light, chest rig, dark urban-digital poncho.</p>
+      <div class="stg-k">SECONDARY</div><div class="stg-opts">${opt('shooter.secondary', 'smg', 'K9 HUSH SMG \u00B7 full/burst/semi', L.shooter.secondary === 'smg')}${opt('shooter.secondary', 'mag50', 'M50 MAGNUM', L.shooter.secondary === 'mag50')}</div>
+      <div class="stg-k">SECONDARY SUPPRESSOR</div><div class="stg-opts">${opt('shooter.secSup', '1', 'FITTED', L.shooter.secSup)}${opt('shooter.secSup', '0', 'OFF', !L.shooter.secSup)}</div>
+      <div class="stg-k">PERK</div><div class="stg-opts">${perks('shooter')}</div></div>
+    <div class="stg-col" data-r="spotter"><h3>SPOTTER \u00B7 ${CELL_CALL.spotter}</h3><p>P-9 pistol, CYBER OPS tablet, recon quad, ISR drone, keycard duty, weapon light, plate carrier, cap.</p>
+      <div class="stg-k">P-9 SUPPRESSOR</div><div class="stg-opts">${opt('spotter.pistolSup', '1', 'FITTED', L.spotter.pistolSup)}${opt('spotter.pistolSup', '0', 'OFF', !L.spotter.pistolSup)}</div>
+      <div class="stg-k">PERK</div><div class="stg-opts">${perks('spotter')}</div></div>`;
+}
+$('panel-staging').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-k]');
+  if (!b) return;
+  const [r, k] = b.dataset.k.split('.');
+  cellLoadout[r][k] = k.endsWith('Sup') ? b.dataset.v === '1' : b.dataset.v;
+  store.set('cellLoadout', cellLoadout);
+  renderStaging();
+});
+const cellSet = { role: store.get('cellRole', 'shooter'), diff: store.get('cellDiff', 'operative'), names: store.get('cellNames', {}), mission: store.get('cellMission', 'nightwatch') };
+const MISSION_DESC = { nightwatch: 'NightWatch: SENTINEL\u2019s augmented night garrison \u2014 cowardly officers, shielded juggernauts with energy blades, bulwarks behind hard-light walls, beam-rifle snipers on the towers.', infiltration: 'Infiltration: the original op against a crew of human security guards.' };
+const cellName = (role) => ((cellSet.names[role] || '').trim() || CELL_CALL[role]).replace(/[<>&"]/g, '').slice(0, 16);
+function syncCell() {
+  document.querySelectorAll('#panel-cell .cell-role').forEach((b) => b.classList.toggle('on', b.dataset.role === cellSet.role));
+  document.querySelectorAll('#cell-diff button').forEach((b) => b.classList.toggle('on', b.dataset.d === cellSet.diff));
+  document.querySelectorAll('#cell-mission button').forEach((b) => b.classList.toggle('on', b.dataset.m === cellSet.mission));
+  document.querySelectorAll('#cell-look button').forEach((b) => b.classList.toggle('on', b.dataset.look === settings.rules.look));
+  $('cell-mission-desc').textContent = MISSION_DESC[cellSet.mission];
+  $('in-cell-name').value = cellSet.names[cellSet.role] || '';
+  $('in-cell-name').placeholder = CELL_CALL[cellSet.role];
+}
+document.querySelectorAll('#panel-cell .cell-role').forEach((b) => (b.onclick = () => { cellSet.role = b.dataset.role; store.set('cellRole', cellSet.role); syncCell(); }));
+document.querySelectorAll('#cell-diff button').forEach((b) => (b.onclick = () => { cellSet.diff = b.dataset.d; store.set('cellDiff', cellSet.diff); syncCell(); }));
+document.querySelectorAll('#cell-mission button').forEach((b) => (b.onclick = () => { cellSet.mission = b.dataset.m; store.set('cellMission', cellSet.mission); syncCell(); }));
+// Graphics look: the same setting as the Sniping style panel's Graphics row (host decides).
+document.querySelectorAll('#cell-look button').forEach((b) => (b.onclick = () => { saveRules({ ...settings.rules, look: b.dataset.look }); syncCell(); }));
+$('in-cell-name').oninput = (e) => { cellSet.names[cellSet.role] = e.target.value; store.set('cellNames', cellSet.names); };
+$('btn-cell-stage').onclick = () => { renderStaging(); showPanel('panel-staging'); };
+$('btn-stage-done').onclick = () => showPanel('panel-cell');
+$('btn-cell').onclick = () => { $('panel-cell').classList.remove('hosting'); syncCell(); showPanel('panel-cell'); };
+syncCell();
+
+async function startCell(mode, opts = {}) {
+  if (game || director) return;
+  showPanel('panel-loading');
+  $('loading-text').textContent = 'Inserting at Kestrel Ridge\u2026';
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+  const quality = settings.quality === 'auto' ? detectQuality() : settings.quality;
+  const { CellGame } = await import('./cell/cell.js');
+  const c = opts.cell || { role: cellSet.role, diff: cellSet.diff, mission: cellSet.mission, seed: (Math.random() * 1e6) | 0 };
+  // The guest plays whichever role the host didn't take.
+  const role = mode === 'operative' ? 'shooter' : mode === 'guest' ? (c.role === 'shooter' ? 'spotter' : 'shooter') : c.role;
+  game = new CellGame({ mode, net: opts.net || null, role, diff: c.diff, seed: c.seed, mission: c.mission || 'nightwatch', look: c.look === 'og' || c.look === 'inked' ? c.look : settings.rules.look, quality, settings: { ...settings, cellLoadout }, audio, name: cellName(role), partnerName: opts.partnerName || CELL_CALL[role === 'shooter' ? 'spotter' : 'shooter'] });
+  if (opts.hello) game.hello = opts.hello;
+  window.__game = game;
+  document.body.classList.toggle('touch', game.input.touch);
+  $('menu').classList.remove('on');
+  $('touch').classList.add('active');
+  game.input.enabled = true;
+  game.input.requestLock();
+}
+$('btn-cell-solo').onclick = () => { primeTalk(); audio.unlock(); primeGyro(); goFullscreen(); startCell('solo'); };
+$('btn-cell-lone').onclick = () => { primeTalk(); audio.unlock(); primeGyro(); goFullscreen(); startCell('operative'); };
+$('btn-cell-join').onclick = () => { showPanel('panel-join'); $('in-code').focus(); };
+$('btn-cell-cancel').onclick = () => { if (net) { net.close(); net = null; } $('panel-cell').classList.remove('hosting'); };
+$('btn-cell-host').onclick = async () => {
+  primeTalk();
+  audio.unlock();
+  primeGyro();
+  $('panel-cell').classList.add('hosting');
+  net = new Net();
+  $('cell-status').textContent = 'Setting up\u2026';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    hostCode = randomCode(5);
+    $('cell-code').textContent = hostCode;
+    try { await net.host(hostCode, { local: LOCAL }); break; } catch (e) {
+      console.warn(e);
+      if (attempt === 3) { $('cell-status').textContent = 'Could not reach the matchmaking server. Check your connection and try again.'; return; }
+      net.close();
+      net = new Net();
+    }
+  }
+  const other = cellSet.role === 'shooter' ? 'spotter' : 'shooter';
+  $('cell-status').textContent = `Waiting for your ${other}\u2026 You are the ${cellSet.role}.`;
+  const cell = { role: cellSet.role, diff: cellSet.diff, mission: cellSet.mission, seed: (Math.random() * 1e6) | 0, look: settings.rules.look };
+  const hello = { t: 'hello', name: cellName(cellSet.role), cell };
+  net.on('hello', () => net.send(hello));
+  net.on('open', () => {
+    if (game) return;
+    net.send(hello);
+    $('cell-status').textContent = 'Friend connected!';
+    goFullscreen();
+    startCell('host', { net, cell, hello, partnerName: CELL_CALL[other] });
+  });
+};
+$('btn-cell-share').onclick = async () => {
+  const link = inviteLink();
+  const text = `Join my Sniper Cell op in Draxxed Sklounst \u2014 code ${hostCode}`;
+  if (navigator.share) { try { await navigator.share(FILE_MODE ? { title: 'Sniper Cell', text } : { title: 'Sniper Cell', text, url: link }); return; } catch {} }
+  (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? text : link) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied to clipboard!'), () => prompt('Copy this link:', link));
+};
+$('btn-cell-copy').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? hostCode : inviteLink()) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied!'), () => prompt('Copy:', FILE_MODE ? hostCode : inviteLink()));
+if (params.get('cell')) { audio.unlock(); startCell(params.get('cell') === 'lone' ? 'operative' : 'solo', { cell: { role: params.get('role') === 'spotter' ? 'spotter' : 'shooter', diff: params.get('diff') || 'operative', mission: params.get('mission') || 'nightwatch', seed: 7 } }); }
 
 if (params.get('join')) {
   showPanel('panel-join');
