@@ -25,7 +25,6 @@ export function makeView(ctx, THREE, renderer, X) {
   for (let i = 0; i < 14; i++) S.pops.push({ on: false, word: 'BLAM', wx: 0, wy: 0, wz: 0, t: 0, dur: 1, rot: 0, size: 1, rise: 1, x: 0, y: 0, px: 10, pin: false });
   let wt = 0, boom = BOOM, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, flashA = 0, speedA = 0, suddenA = 0, popN = 0;
   let frames = 0, fresh = false, held = false, shadowDirty = true, glintT = 0, drawAfter = 0, since = 0;
-  const px = new Uint8Array(4);
   let cost = 0;
   const lt = { ok: false, x: 0, z: 0, roof: 0 };
   const api = { camera, shot: null, force: 0, lt, S, get frames() { return frames; }, get cost() { return cost; } };
@@ -54,7 +53,9 @@ export function makeView(ctx, THREE, renderer, X) {
     out.pos.set(px + tmp.x * boom, py + tmp.y * boom, pz + tmp.z * boom);
     out.pos.lerp(tmp2.set(p.x + F.x * 0.35, p.y + EYE + F.y * 0.35, p.z + F.z * 0.35), ss);
     out.yaw = yaw; out.pitch = pitch;
-    out.fov = (2 * Math.atan(Math.tan((FOV * Math.PI) / 360) / lerp(1, ZOOM, ss)) * 180) / Math.PI;
+    // a leap opens the lens out as you fly and snaps it back as you land
+    const L = p.leap, lu = L.on && !L.mini ? Math.sin(Math.PI * clamp(L.t / L.dur, 0, 1)) : 0;
+    out.fov = (2 * Math.atan(Math.tan((FOV * Math.PI) / 360) / lerp(1, ZOOM, ss)) * 180) / Math.PI + lu * 9;
     return out;
   }
   function project(x, y, z, m) {
@@ -155,7 +156,7 @@ export function makeView(ctx, THREE, renderer, X) {
       for (const p of S.pops) if (p.on && (p.t += rdt) >= p.dur) p.on = false;
       // ...but with no GPU the page is redrawn only now and then (see render), and between
       // draws the lens and the 2D layer hold still with it, so what is on screen stays one picture.
-      if (!fresh) held = !Q.rich && frames > 1 && !api.force && (performance.now() < drawAfter || since < 3);
+      if (!fresh) held = !Q.rich && frames > 3 && !api.force && (performance.now() < drawAfter || since < 3); // (the staged first pages go straight out)
       fresh = true;
       if (held) return;
       rig(me, dt, play);
@@ -235,7 +236,7 @@ export function makeView(ctx, THREE, renderer, X) {
         project(L.x1, L.y1 + 0.05, L.z1, pm);
         const d = Math.hypot(L.x1 - cp.x, L.y1 - cp.y, L.z1 - cp.z) || 1;
         lp.x = pm.x; lp.y = pm.y; lp.ry = clamp((pointScale * 1.2) / d, 7, 90) * clamp((cp.y - L.y1) / d + 0.12, 0.16, 0.9);
-        lp.seen = pm.on && W.los(cp.x, cp.y, cp.z, L.x1, L.y1 + 0.35, L.z1, T, true);
+        lp.seen = pm.on && W.los(cp.x, cp.y, cp.z, L.x1, L.y1 + 1, L.z1, T, true); // (a ray grazing your own roof's edge does not hide it)
         lp.ready = me.leapCd <= 0;
         lp.tag = G.taught.leap ? '' : ctx.input.device === 'touch' ? 'TAP LEAP' : ctx.input.device === 'gamepad' ? 'LB: LEAP' : 'SHIFT: LEAP';
         if (lp.a > 0.05) ring(L.x1, L.y1, L.z1, d, lp.ready, lp.a);
@@ -349,9 +350,8 @@ export function makeView(ctx, THREE, renderer, X) {
       shadowDirty = false;
       if (!Q.rich && frames <= 4) X.stage(frames - 1);
       const t0 = performance.now();
-      post.render(scene, camera);
+      post.render(scene, camera, !Q.rich);
       if (!Q.rich) {
-        try { const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); } catch { /* a lost context: nothing to wait for */ }
         cost = performance.now() - t0;
         drawAfter = performance.now() + clamp(cost * 7, 600, 6000);
       }

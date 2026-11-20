@@ -128,7 +128,7 @@ export function buildCity(THREE, W, mats, art, seed) {
   owned.push(quad);
   boards.forEach((p, i) => {
     const sgn = p.kind === 'sign', s = p.side ? -1 : 1;
-    const m = mats.make({ map: sgn ? art.signs[(i + (p.seed * 4 | 0)) % art.signs.length] : art.ads[(i + (p.seed * 4 | 0)) % art.ads.length], cut: sgn, erase: true, lit: sgn, side: sgn ? THREE.DoubleSide : THREE.FrontSide });
+    const m = mats.make({ map: sgn ? art.signs[(i + (p.seed * 4 | 0)) % art.signs.length] : art.ads[(i + (p.seed * 4 | 0)) % art.ads.length], cut: true, erase: true, lit: sgn, side: sgn ? THREE.DoubleSide : THREE.FrontSide });
     erasable.push(m);
     const mesh = new THREE.Mesh(quad, m);
     boardMeshes.push(mesh);
@@ -177,7 +177,7 @@ export function buildCity(THREE, W, mats, art, seed) {
   const blimp = new THREE.Group();
   const hullG = new THREE.SphereGeometry(1, 28, 18).rotateZ(Math.PI / 2); // poles fore and aft: u runs round the hull
   owned.push(hullG);
-  const hull = new THREE.Mesh(hullG, mats.make({ map: art.livery }));
+  const hull = new THREE.Mesh(hullG, mats.make({ map: art.livery, cut: true, erase: true })); // (one shader for everything painted)
   hull.scale.set(BLIMP.rx, BLIMP.ry, BLIMP.rz);
   const dark = mats.make({ color: '#3a2d5c' }), teal = mats.make({ color: '#2bb3a3' }), lamp = mats.make({ color: '#ffe9a0', lit: true });
   const part = (geo, m, x, y, z, sx, sy, sz, rx = 0, rz = 0) => { const q = new THREE.Mesh(geo, m); q.position.set(x, y, z); q.scale.set(sx, sy, sz); q.rotation.set(rx, 0, rz); blimp.add(q); return q; };

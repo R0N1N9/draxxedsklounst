@@ -189,6 +189,8 @@ function roundRect(g, x, y, w, h, r) {
 // a bracket round an on-screen contact, or an arrow at the edge pointing to it
 function marker(g, p, w, h, color, label, k, a, safe, phone) {
   const m = 30 * k;
+  // the top-centre strip belongs to the score: a contact up there sits just under it
+  if (Math.abs(p.x - w / 2) < 200 * k) p.y = Math.max(p.y, 92 * k);
   const on = !p.behind && p.x > m && p.x < w - m && p.y > m && p.y < h - m;
   g.globalAlpha = a;
   if (on) {

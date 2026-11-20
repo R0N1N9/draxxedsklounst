@@ -196,7 +196,8 @@ export function drawOverlay(g, S, L) {
   }
 
   // ---- narration: ammunition, the reload, the things a newcomer must be told ----
-  const cpx = Math.max(11, 16 * ui), midX = S.safeL + (w - S.safeL - S.safeR) / 2, lowY = h - 12 * ui - cpx * 1.75 - (S.touch ? 0 : 4);
+  // (on a narrow desktop window the core's ability chips run along the bottom: sit above them)
+  const cpx = Math.max(11, 16 * ui), midX = S.safeL + (w - S.safeL - S.safeR) / 2, lowY = h - 12 * ui - cpx * 1.75 - (S.touch ? 0 : w < 1000 ? 40 : 4);
   if (S.live && S.alive) {
     if (S.reload > 0) {
       const bw = caption(g, 'MEANWHILE… RELOADING', midX, lowY, cpx, { align: 'center', maxW: w - S.safeL - S.safeR - 16 });

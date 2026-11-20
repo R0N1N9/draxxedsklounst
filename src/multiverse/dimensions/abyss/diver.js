@@ -162,7 +162,7 @@ export function makeDiverKit(THREE, mats) {
   const glove = keep(mergeInto(THREE, [
     (() => { const g = new THREE.SphereGeometry(0.05, 10, 8); g.scale(1, 0.75, 1.35); return colored(THREE, g, ...SUIT2); })(),
     box(THREE, 0.07, 0.035, 0.07, 0, 0.02, -0.06, SUIT2),
-    box(THREE, 0.06, 0.025, 0.05, 0, 0.03, 0.03, TEAM),
+    box(THREE, 0.062, 0.012, 0.018, 0, 0.022, 0.05, TEAM), // a cuff of your colour
   ]));
   const shader = (frag, o = {}) => mats.shader({ vertexShader: GEAR_VERT, fragmentShader: frag, vertexColors: true, uniforms: { uTeam: { value: new THREE.Color() }, uGhost: { value: 0 }, uGlow: { value: 1 }, uFade: { value: 1 } }, side: THREE.DoubleSide, ...o });
   return { geos, body, mask, upperArm, foreArm, thigh, calf, finBlade, gun, spear, band, glove, shader, dispose() { for (const g of geos) g.dispose(); } };

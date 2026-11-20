@@ -157,7 +157,7 @@ export function makeGame(ctx, sea, world, fx) {
           A.x = b.x; A.y = b.y; A.z = b.z; B.x = b.x + mx; B.y = b.y + my; B.z = b.z + mz;
           C.x = D.x = foe.x; C.z = D.z = foe.z; C.y = foe.y + 0.3; D.y = topY(foe) - R.hitR * 0.7;
           const r = segSegClosest(A, B, C, D);
-          if (b.judge && ctx.phase === 'live' && r.d2 < R.hitR * R.hitR && !(P[b.owner].bot && T < 10)) tH = Math.max(0, r.s * len - Math.sqrt(R.hitR * R.hitR - r.d2));
+          if (b.judge && ctx.phase === 'live' && r.d2 < R.hitR * R.hitR && !(P[b.owner].bot && T < (ctx.autopilot ? 2.8 : 10))) tH = Math.max(0, r.s * len - Math.sqrt(R.hitR * R.hitR - r.d2));
           else if (!b.near && r.d2 < 9 && b.run > 6) { b.near = true; foe.flinch = Math.max(foe.flinch, 0.7); if (foe.bot) foe.bot.underFire = 2.4; fx.near(foe, b); }
         }
         const first = Math.min(tW, tC, tH);

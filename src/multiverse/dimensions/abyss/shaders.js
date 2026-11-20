@@ -193,14 +193,14 @@ void main() {
   float flt = smoothstep(0.55, 0.85, n.y);
   // sand: ripples across the current, combed by noise
   float rip = sin(vW.x * 1.7 + vW.z * 0.6 + big.r * 9.0) * 0.5 + 0.5;
-  vec3 sand = vec3(0.78, 0.7, 0.55) * (0.82 + rip * 0.16 + fine.b * 0.12);
+  vec3 sand = vec3(0.6, 0.55, 0.45) * (0.78 + rip * 0.2 + fine.b * 0.16);
   vec3 rock = mix(vec3(0.3, 0.27, 0.25), vec3(0.46, 0.4, 0.35), big.g) * (0.7 + fine.r * 0.5);
   // banded strata on the wall
   rock *= 0.85 + 0.2 * sin(vW.y * 2.3 + big.r * 6.0);
   float sandy = flt * smoothstep(0.35, 0.6, vC.r + big.a * 0.5 - 0.25);
   alb = mix(rock * vC.g * 1.3, sand, sandy);
   // encrusting life on the rock: green algae on top faces, purple coralline under
-  alb = mix(alb, vec3(0.2, 0.32, 0.12), (1.0 - sandy) * smoothstep(0.3, 0.8, n.y) * smoothstep(0.45, 0.7, big.r) * 0.6);
+  alb = mix(alb, vec3(0.2, 0.3, 0.13), (1.0 - sandy) * smoothstep(0.3, 0.8, n.y) * smoothstep(0.5, 0.75, big.r) * 0.45);
   alb = mix(alb, vec3(0.42, 0.18, 0.34), (1.0 - sandy) * smoothstep(0.55, 0.8, fine.g) * 0.35);
   ao = mix(0.55, 1.0, vC.b);
 #endif

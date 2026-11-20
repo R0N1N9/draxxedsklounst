@@ -186,6 +186,7 @@ export function makePost(THREE, renderer, U, q) {
   sunCam.layers.set(1);
   const bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
   let scale = q.scale, tier = q.tier, bloomDone = false;
+  const px = new Uint8Array(4);
 
   function setShadowSize(s) {
     if (s === shadowSize) return;
@@ -293,6 +294,13 @@ export function makePost(THREE, renderer, U, q) {
       pass(mFinal, scene, ldr, w, h);
       pass(mPresent, ldr, null, w, h);
       renderer.autoClear = auto;
+    },
+    // Wait for the GPU to finish the last frame (a one-pixel read of it). Only the software
+    // build does this: there drawing is far slower than the page, and frames queued faster
+    // than they execute pile up in memory until the tab dies.
+    sync() {
+      if (ldr.width < 8) return;
+      try { renderer.readRenderTargetPixels(ldr, 0, 0, 1, 1, px); } catch { /* lost context: nothing to wait for */ }
     },
     // the last graded frame again, with fresh grain: all a skipped frame costs (the canvas does
     // not keep its picture between frames)

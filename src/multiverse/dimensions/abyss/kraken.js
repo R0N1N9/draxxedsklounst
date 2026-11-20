@@ -343,7 +343,7 @@ void main() {
   float t = uTime;
 #ifdef ARM
   vec4 nz = texture2D(tNoise, vec2(uv.x * 2.0, uv.y * 7.0));
-  float under = smoothstep(0.24, 0.06, abs(uv.x - 0.5));
+  float under = smoothstep(0.17, 0.05, abs(uv.x - 0.5));
   float top = smoothstep(0.2, 0.0, min(uv.x, 1.0 - uv.x));
 #else
   vec4 nz = texture2D(tNoise, vO.xz * 0.06 + vO.y * 0.02);
@@ -356,7 +356,7 @@ void main() {
   // chromatophores: speckles that flush darker and brighter, slowly
   float sp = texture2D(tNoise, uv * vec2(6.0, 30.0) + vec2(t * 0.013, -t * 0.02)).b;
   skin *= 0.7 + 0.6 * smoothstep(0.45, 0.65, sp);
-  skin = mix(skin, vec3(0.75, 0.62, 0.55), under * 0.75);
+  skin = mix(skin, vec3(0.78, 0.5, 0.46), under * 0.7);
   vec3 emit = vec3(0.0);
 #ifdef ARM
   // suckers: two rows of pale rings down the inside of each arm
@@ -364,7 +364,7 @@ void main() {
   float row = fract(uv.y * cnt + step(0.5, uv.x) * 0.5);
   float dd = length(vec2((row - 0.5) * 1.7, (abs(uv.x - 0.5) - 0.07) * 13.0));
   float ring = smoothstep(0.5, 0.38, dd) * under;
-  skin = mix(skin, vec3(0.9, 0.78, 0.72), ring * 0.9);
+  skin = mix(skin, vec3(0.92, 0.68, 0.62), ring * 0.85);
   skin *= 1.0 - smoothstep(0.24, 0.12, dd) * under * 0.6;
   // photophores along the top, a wave of light running out to the tips
   float dots = smoothstep(0.32, 0.12, length(vec2(fract(uv.y * 36.0) - 0.5, (min(uv.x, 1.0 - uv.x) - 0.04) * 9.0)));

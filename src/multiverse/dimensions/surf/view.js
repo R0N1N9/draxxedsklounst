@@ -225,6 +225,14 @@ export function makeView(ctx, THREE, renderer, W) {
       raysK = ahead ? 1 - smoothstep(1.0, 2.0, Math.max(Math.abs(tmp.x), Math.abs(tmp.y))) : 0;
       const pu = post.u, under = me.dive > 0 && me.alive && phase === 'live';
       pu.uTime.value = wt;
+      // The eye adapts: a lens pointed down the sun's road (or at the sun) stops down, so a long
+      // lens into the glitter still shows what is standing in it instead of a white page.
+      {
+        const e = camera.matrixWorld.elements, fx0 = -e[8], fy0 = -e[9], fz0 = -e[10];
+        const road = fx0 * SUN.x - fy0 * SUN.y + fz0 * SUN.z, at = fx0 * SUN.x + fy0 * SUN.y + fz0 * SUN.z;
+        const tele = clamp((60 - camera.fov) / 45, 0.35, 1), glare = smoothstep(0.9, 0.995, Math.max(road, at)) * tele;
+        pu.uExposure.value = damp(pu.uExposure.value, 1 - 0.5 * glare, 3, dt);
+      }
       pu.uRays.value = raysK * 0.8;
       pu.uFlinch.value = me.alive && phase === 'live' ? me.flinch * 0.7 : 0;
       pu.uBrace.value = me.alive && phase === 'live' ? me.brace : 0;
@@ -304,6 +312,7 @@ export function makeView(ctx, THREE, renderer, W) {
         // frame is simply put back.
         if (stills++ > 0) return post.present();
         if (W.settle) W.settle(); // (a round that ends on a hitch still ends on its last frame)
+        fresh = false;
       } else {
         stills = 0;
         if (api.force > 0) api.force--; // (test scripts: draw now)

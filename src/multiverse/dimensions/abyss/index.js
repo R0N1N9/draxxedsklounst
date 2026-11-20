@@ -199,7 +199,7 @@ export default {
           if (!s.on || s.stuck || s.owner === p.i) continue;
           const dx = p.x - s.x, dy = p.y - s.y, dz = p.z - s.z, sp = Math.hypot(s.vx, s.vy, s.vz) || 1;
           const along = (dx * s.vx + dy * s.vy + dz * s.vz) / sp;
-          if (along < 0 || along > 30) continue;
+          if (along < 0 || along > 20) continue;
           const miss = Math.hypot(dx - (s.vx / sp) * along, dy - (s.vy / sp) * along, dz - (s.vz / sp) * along);
           if (miss < 2.5) return s;
         }
@@ -319,7 +319,7 @@ export default {
           if (s.judge && foe.alive && ctx.phase === 'live') {
             capsule(foe);
             const u = segCap(s.x, s.y, s.z, mx, my, mz, capA, capB, HIT_R);
-            if (u >= 0 && u * len < best) { best = u * len; what = capT < 0.05 ? 'head' : 'diver'; }
+            if (u >= 0 && u * len < best) { best = u * len; what = capT < 0.05 && capD < 0.05 ? 'head' : 'diver'; }
           }
           for (const d of decoys) {
             if (!d.alive || d.owner === s.owner) continue;
@@ -379,7 +379,7 @@ export default {
     }
     function stickFree(s, x, y, z) { s.stuck = true; s.x = x; s.y = y; s.z = z; s.mesh.visible = false; }
     // segment o + m·u against a capsule a–b of radius r: first u in [0,1], or -1
-    let capT = 0;
+    let capT = 0, capD = 0;
     function segCap(ox, oy, oz, mx, my, mz, a, b, r) {
       let best = -1;
       for (let i = 0; i <= 6; i++) {
@@ -389,7 +389,7 @@ export default {
         const ex = ox + mx * u - cx, ey = oy + my * u - cy, ez = oz + mz * u - cz, d2 = ex * ex + ey * ey + ez * ez;
         if (d2 < r * r) {
           const back = Math.sqrt((r * r - d2) / l2), uu = Math.max(0, u - back);
-          if (best < 0 || uu < best) { best = uu; capT = w; }
+          if (best < 0 || uu < best) { best = uu; capT = w; capD = d2; }
         }
       }
       return best;
@@ -456,12 +456,13 @@ export default {
     }
 
     // ---- one diver, one frame
-    function humanCmd(p) {
-      const inp = ctx.input, c = p.cmd, z = view.zoom, k = LOOK * lerp(1, 0.42, z);
+    // `first`: a frame's look and button presses are spent once, however many slices it is cut into
+    function humanCmd(p, first) {
+      const inp = ctx.input, c = p.cmd, z = view.zoom, k = first ? LOOK * lerp(1, 0.42, z) : 0;
       c.mx = inp.moveX; c.my = inp.moveY;
       c.yaw = p.yaw - inp.lookX * k;
       c.pitch = clamp(p.pitch - inp.lookY * k, -1.35, 1.35);
-      c.fire = inp.firePressed; c.alt = inp.alt; c.a1 = inp.a1Pressed; c.a2 = inp.a2Pressed; c.jump = inp.jumpPressed;
+      c.fire = first && inp.firePressed; c.alt = inp.alt; c.a1 = first && inp.a1Pressed; c.a2 = first && inp.a2Pressed; c.jump = first && inp.jumpPressed;
       c.wish = null;
       return c;
     }
@@ -588,32 +589,26 @@ export default {
       view.killCam(v, ki);
     }
 
-    function frame(dt) {
+    function frame(dt, now, first) {
       const phase = ctx.phase;
       if (phase === 'intro') introT += dt;
-      T = phase === 'live' ? ctx.time : phase === 'over' ? T + dt : 0;
+      T = phase === 'live' ? now : phase === 'over' ? T + dt : 0;
       clock += dt;
       if (ctx.sudden && suddenAt < 0) { suddenAt = T; sfx.sudden(); sfx.music(true); view.note('THE KRAKEN IS CLOSING IN', 3); }
       // the animal: during the intro it is already moving, on its way to time 0
       const kt = phase === 'intro' ? Math.min(0, introT - 3.6) : T;
-      const pr = prof.on ? performance : null;
-      let t0 = pr ? pr.now() : 0;
-      const lap = (k) => { if (pr) { const t = pr.now(); prof[k] = (prof[k] || 0) + t - t0; t0 = t; } };
       sim.snapshot();
       sim.update(kt);
-      lap('kraken');
       tick ^= 1;
       for (let n = 0; n < 2; n++) {
         const p = P[n ^ tick];
         if (p.remote) puppet(p, dt);
         else if (p.bot && phase === 'live' && p.alive) step(p, brain.think(p, P[1 - p.i], dt, p.cmd), dt);
         else if (p.bot) step(p, p.cmd, dt);
-        else step(p, humanCmd(p), dt);
+        else step(p, humanCmd(p, first), dt);
         if (p.dead >= 0) p.dead += dt;
       }
-      lap('divers');
       if (phase !== 'intro') { stepSpears(dt); stepPings(dt); stepDecoys(dt); }
-      lap('spears');
       for (let i = inks.length - 1; i >= 0; i--) if (T - inks[i].t0 > 9.5) inks.splice(i, 1);
       breathedT = Math.max(0, breathedT - dt);
 
@@ -625,12 +620,8 @@ export default {
       bubbles.update(dt, clock, true);
       smoke.update(dt, clock, false);
       glow.update(dt, clock, false);
-      lap('clouds');
       life.update(dt, clock, { divers: P.filter((p) => p.alive || p.dead < 3), extra: extra.slice(0, ne), glow, kraken: sim.S });
-
-      lap('life');
       view.update(dt, T, introT);
-      lap('view');
       sfx.update(dt, sim.distance(ME.x, ME.y, ME.z), sim.S.pass);
       // the network and the HUD
       ctx.net.sendState({
@@ -642,9 +633,7 @@ export default {
       ctx.hud.cooldown('a2', ME.decoyCd / DECOY_CD);
       ctx.hud.cooldown('alt', ME.holdLock ? 1 - ME.air / 0.4 : 0);
       ctx.hud.cooldown('jump', ME.kickCd / KICK_CD);
-      lap('rest');
     }
-    const prof = { on: false }; // test scripts: per-section update timings
 
     const view = makeView(ctx, THREE, renderer, {
       scene, hands, viewModel, P, ME, FOE, U, Q, W, sim, kraken, life, reef, bubbles, glow, smoke, snow, spears, pings, decoys, inks, inkR, sfx, eyeOf, dirOf,
@@ -652,7 +641,15 @@ export default {
     });
 
     const inst = {
-      update(dt) { frame(dt); },
+      // The core clamps a frame's step but the round clock keeps real time: a client that draws
+      // slowly would swim in slow motion and fall behind its opponent. So a live frame simulates
+      // however long the clock says has passed, in slices (a person gets at most a third of a
+      // second made up — nobody should swim on blind through a hitch — a bot all of it).
+      update(dt) {
+        if (ctx.phase !== 'live') { frame(dt, T, true); return; }
+        const t0 = T, span = Math.max(0, ctx.time - t0), n = clamp(Math.ceil(span / 0.05), 1, ME.bot ? 60 : 6);
+        for (let i = 1; i <= n && (i === 1 || ctx.phase === 'live'); i++) frame(Math.min(span / n, 0.05), t0 + (span * i) / n, i === 1);
+      },
       render() { view.render(); },
       resize(w, h) { view.resize(w, h); },
       onPhase(phase) {
@@ -703,7 +700,7 @@ export default {
       },
     };
     inst.view = view; // test scripts: view.shot = {x,y,z,tx,ty,tz,fov} pins the camera
-    inst.P = P; inst.sim = sim; inst.prof = prof;
+    inst.P = P; inst.sim = sim;
     view.resize(ctx.width, ctx.height);
     return inst;
   },

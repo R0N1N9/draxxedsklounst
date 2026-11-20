@@ -413,6 +413,7 @@ export default {
     }
 
     const pose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, speed: 0, lvx: 0, lvz: 0, aim: 0, recoil: 0, air: 0, land: 0, ko: -1 };
+    const netState = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, sc: 0, vx: 0, vz: 0, air: 0, am: MAG }; // (the core sends the latest values at 20 Hz)
 
     function fell(v) {
       const ki = killInfo && killInfo.v === v.i ? killInfo : null, w = P[1 - v.i];
@@ -455,7 +456,12 @@ export default {
         }
       }
       fx.update(phase === 'over' ? dt : rdt, T, wt, view.camera, rdt);
-      if (fx.trainNow) { sfx.train(); view.pop('RATTLE', 0, 16, 0, 1.5, 1.6); }
+      if (fx.trainNow) {
+        sfx.train();
+        // lettered on the train itself, and only if the reader can see down into the street
+        const cp = view.camera.position, tx = clamp(fx.train(T) || 0, -40, 40);
+        if (W.los(cp.x, cp.y, cp.z, tx, 15.5, 0, T, true)) view.pop('RATTLE', tx, 16, 0, 1.3, 1.6);
+      }
       tick ^= 1; // neither sniper always moves first
       for (let n = 0; n < 2; n++) {
         const p = P[n ^ tick];
@@ -496,7 +502,10 @@ export default {
       fx.end();
 
       const m = me;
-      ctx.net.sendState({ x: +m.x.toFixed(2), y: +m.y.toFixed(2), z: +m.z.toFixed(2), yaw: +m.yaw.toFixed(3), pitch: +m.pitch.toFixed(3), sc: m.scoped ? 1 : 0, vx: +m.mvx.toFixed(1), vz: +m.mvz.toFixed(1), air: m.leap.on && !m.leap.mini ? 1 : 0, am: m.ammo });
+      const ns = netState;
+      ns.x = +m.x.toFixed(2); ns.y = +m.y.toFixed(2); ns.z = +m.z.toFixed(2); ns.yaw = +m.yaw.toFixed(3); ns.pitch = +m.pitch.toFixed(3);
+      ns.sc = m.scoped ? 1 : 0; ns.vx = +m.mvx.toFixed(1); ns.vz = +m.mvz.toFixed(1); ns.air = m.leap.on && !m.leap.mini ? 1 : 0; ns.am = m.ammo;
+      ctx.net.sendState(ns);
       ctx.hud.cooldown('fire', m.reload > 0 ? m.reload / RELOAD : Math.max(0, m.bolt) / BOLT);
       ctx.hud.charges('fire', m.ammo);
       ctx.hud.cooldown('a1', m.duel ? 1 : m.leapCd / LEAP_CD);

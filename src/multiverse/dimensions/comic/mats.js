@@ -78,7 +78,7 @@ float sunShadow() {
     sc.z += directionalLightShadows[0].shadowBias;
     if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) return 1.0;
     #ifdef SOFT
-      vec2 t = 1.1 / directionalLightShadows[0].shadowMapSize;
+      vec2 t = 1.7 / directionalLightShadows[0].shadowMapSize; // wide enough that a close-up shows no stair-steps
       return 0.25 * (texture2DCompare(directionalShadowMap[0], sc.xy + t * vec2(-0.9, -0.3), sc.z) + texture2DCompare(directionalShadowMap[0], sc.xy + t * vec2(0.3, -0.9), sc.z)
         + texture2DCompare(directionalShadowMap[0], sc.xy + t * vec2(0.9, 0.3), sc.z) + texture2DCompare(directionalShadowMap[0], sc.xy + t * vec2(-0.3, 0.9), sc.z));
     #else
