@@ -50,6 +50,7 @@ export class Ops {
     if ((this.cd[k] || 0) > 0) return 'COOLING DOWN';
     if (this.bw < p.bw) return 'NOT ENOUGH BANDWIDTH';
     if (k === 'supply' && G.obj.drops <= 0) return 'NO DROPS LEFT';
+    if (k === 'supply' && target && G.fac.insideBuilding(target.x, target.z)) return 'CAN\u2019T DROP THROUGH A ROOF';
     if (k === 'quad' && !G.canQuad()) return 'QUAD UNAVAILABLE';
     if (k === 'medevac') {
       const v = G.downedAgent();
@@ -79,6 +80,13 @@ export class Ops {
       this.casts.push({ k: 'door', id, t: 0, dur: HACK.doorCast, name: 'DOOR HACK' });
       return null;
     }
+    if (kind === 'iot') {
+      if (G.obj.access < 2) return 'NO ACCESS \u2014 PLANT THE RELAY FIRST';
+      if (this.bw < 8) return 'NOT ENOUGH BANDWIDTH';
+      this.bw -= 8;
+      this.casts.push({ k: 'iot', id, t: 0, dur: 0.8, name: 'IOT HACK' });
+      return null;
+    }
     if (kind === 'cam') {
       const c = G.sentinel.cams.find((q) => q.id === id);
       if (!c) return 'NO CAMERA';
@@ -93,13 +101,14 @@ export class Ops {
 
   update(dt) {
     const G = this.game;
-    this.bw = clamp(this.bw + (2 + 1.5 * G.obj.access) * dt, 0, 100);
+    this.bw = clamp(this.bw + (2 + 1.5 * G.obj.access) * (this.bwMul || 1) * dt, 0, 100);
     for (const k in this.cd) this.cd[k] = Math.max(0, this.cd[k] - dt);
     for (const c of this.casts) {
       c.t += dt;
       if (c.t >= c.dur) {
         if (c.k === 'door') G.payload('door', { id: c.id });
         else if (c.k === 'cam') G.payload('cam', { id: c.id });
+        else if (c.k === 'iot') G.payload('iot', { id: c.id });
         else G.payload(c.k, c.target);
       }
     }
@@ -140,7 +149,7 @@ export class AiSpotter {
     // Ammo / health.
     const P = G.player;
     const low = P.arms.reduce((s, w) => s + w.mag + w.reserve, 0) < 14 || G.hp < 45;
-    if (low && ob.drops > 0 && O.ready('supply') && !G.crates.some((c) => Math.hypot(c.x - p.x, c.z - p.z) < 20)) { O.use('supply', { x: p.x + 2, z: p.z + 1 }); this.say('Supply drop on your position.'); return; }
+    if (low && ob.drops > 0 && O.ready('supply') && !G.fac.insideBuilding(p.x, p.z) && !G.crates.some((c) => Math.hypot(c.x - p.x, c.z - p.z) < 20)) { O.use('supply', { x: p.x + 2, z: p.z + 1 }); this.say('Supply drop on your position.'); return; }
     // Drones closing in: EMP.
     const hot = S.drones.find((d) => d.state !== 'dead' && d.aw > 0.5 && Math.hypot(d.x - p.x, d.z - p.z) < 26 && !(d.empT > 0));
     if (hot && O.ready('emp')) { O.use('emp', { x: hot.x, z: hot.z }); this.say('EMP on that drone.'); return; }

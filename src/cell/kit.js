@@ -18,7 +18,8 @@ export const KIT = {
   lure: { charges: 3, life: 7, radius: 16 },
   exec: { max: 2, start: 1, range: 35, targets: 3, gap: 0.22 },
 };
-const COMMS_LABEL = { look: 'LOOK HERE', enemy: 'ENEMY', move: 'MOVE HERE', hold: 'HOLD', regroup: 'ON ME', cover: 'COVER ME' };
+const CALL_LINE = { look: 'Eyes on my mark.', enemy: 'Enemy, marked.', move: 'Moving to my mark.', hold: 'Hold position.', regroup: 'On me.', cover: 'Cover me.', sync: 'Sync target marked. Get on him.' };
+const COMMS_LABEL = { look: 'LOOK HERE', enemy: 'ENEMY', move: 'MOVE HERE', hold: 'HOLD', regroup: 'ON ME', cover: 'COVER ME', sync: 'SYNC TARGET' };
 const REQ_LABEL = { supply: 'SUPPLY DROP', scan: 'PULSE SCAN', emp: 'EMP', decoy: 'DECOY', lights: 'CUT LIGHTS', drone: 'DRONE OVERWATCH' };
 const BOLT = {
   plasma: { color: '#60ff80', speed: 38, size: 0.5 },
@@ -239,7 +240,7 @@ export const KitMethods = {
     return best;
   },
   _openWheel() {
-    this._wheelAt = this.quad && this.quad.active ? { x: this.quad.x, z: this.quad.z } : this._aimPoint();
+    this._wheelAt = this.isr && this.isr.active ? { x: this.isr.spi.x, z: this.isr.spi.z, y: this.isr.spi.y } : this.quad && this.quad.active ? { x: this.quad.x, z: this.quad.z } : this._aimPoint();
     const e = this._crosshairEnemy();
     this._wheelEnemy = e ? e.id : null;
     this.wheel.show(innerWidth / 2, innerHeight / 2, this._wheelSub(), this._wheelLabels());
@@ -274,6 +275,13 @@ export const KitMethods = {
   _call(k, at, enemyId) {
     const P = this.player.pos;
     if (k === 'regroup') at = { x: P.x, z: P.z };
+    if (k === 'sync') {
+      if (!enemyId) { this.hud.flash('SYNC: aim at an enemy', 'red'); return; }
+      const e = this.sentinel.byId(enemyId);
+      this.payload('sync', { id: enemyId, on: true });
+      if (e && this.isHost) { e.sync = true; e.tagT = Math.max(e.tagT || 0, 60); }
+      if (e) at = { x: e.x, z: e.z };
+    }
     if (k === 'enemy' && enemyId) {
       const e = this.sentinel.byId(enemyId);
       if (e) { at = { x: e.x, z: e.z }; this.payload('tag', { id: enemyId }); if (this.isHost) e.tagT = 12; }
@@ -283,6 +291,7 @@ export const KitMethods = {
     this._addPin(pin);
     this.send({ t: 'cm', ...pin, id: enemyId || 0 });
     this.comms(label.charAt(0) + label.slice(1).toLowerCase() + '.', ROLES_COLOR[this.role], this.name);
+    this._voice('me', CALL_LINE[k] || label.toLowerCase());
     if (this.aiShoot) this._aiShooterCall(k, at, enemyId);
     if (this.aiSpot) this._aiSpotterCall(k, at, enemyId);
   },
@@ -291,6 +300,7 @@ export const KitMethods = {
     this._addPin({ x: m.x, z: m.z, label: m.label, by: m.by }, true);
     this.lastCm = { k: m.k, label: m.label, t: 10 };
     this.comms(`${m.label}${m.k === 'enemy' ? ' — marked' : ''}. (Y: roger)`, '#ffd040', this.partnerName);
+    this._voice('partner', CALL_LINE[m.k] || m.label.toLowerCase());
     this.sfx.ui(true);
   },
 
@@ -306,9 +316,11 @@ export const KitMethods = {
     // Solo with the AI spotter: Rōnin answers after a beat.
     if (this.aiSpot) {
       this.comms(`Requesting ${REQ_LABEL[k].toLowerCase()}.`, '#f2b35b', this.name);
+      this._voice('me', `Requesting ${REQ_LABEL[k].toLowerCase()}.`);
       setTimeout(() => {
         const why = this._runRequest(k, at);
         this.comms(why ? `Negative — ${why.toLowerCase()}.` : `${REQ_LABEL[k].toLowerCase()} — on it.`, 'cyan', this.partnerName);
+        this._voice('partner', why ? 'Negative. Can\'t do that.' : `Copy. ${REQ_LABEL[k].toLowerCase()} inbound.`);
       }, 900);
       return;
     }
@@ -317,6 +329,7 @@ export const KitMethods = {
     this.send({ t: 'rq', id: r.id, k, x: at.x, z: at.z, by: this.role });
     this._addPin({ x: at.x, z: at.z, label: REQ_LABEL[k], by: this.role });
     this.comms(`Requesting ${REQ_LABEL[k].toLowerCase()}.`, '#f2b35b', this.name);
+    this._voice('me', `Requesting ${REQ_LABEL[k].toLowerCase()}.`);
   },
 
   // Run a request with your own (or the AI's) console. Returns null or the reason it failed.
@@ -358,6 +371,7 @@ export const KitMethods = {
   },
   _onAnswer(m) {
     this.comms(m.ok ? 'on its way.' : `negative — ${String(m.why || 'denied').toLowerCase()}.`, m.ok ? 'cyan' : 'red', this.partnerName);
+    this._voice('partner', m.ok ? 'Copy. On its way.' : 'Negative.');
     this.sfx.ui(!!m.ok);
   },
   _answerTop(ok) {
@@ -366,13 +380,14 @@ export const KitMethods = {
     if (this.lastCm && ok) {
       this.send({ t: 'ack' });
       this.comms('Roger.', ROLES_COLOR[this.role], this.name);
+      this._voice('me', 'Roger.');
       this.lastCm = null;
     }
   },
 
   // AI partners hearing your calls.
   _aiShooterCall(k, at, enemyId) {
-    const A = this.aiShoot, say = (m) => this.comms(m, 'amber', this.partnerName);
+    const A = this.aiShoot, say = (m) => { this.comms(m, 'amber', this.partnerName); this._voice('partner', m); };
     if (k === 'hold') { A.holdT = 30; say('Holding fire.'); }
     else if (k === 'enemy') { A.holdT = 0; say(enemyId ? 'I see him.' : 'Nothing under your mark.'); }
     else if (k === 'move') {
@@ -382,7 +397,7 @@ export const KitMethods = {
     else if (k === 'look') say('Eyes on.');
   },
   _aiSpotterCall(k, at, enemyId) {
-    const say = (m) => this.comms(m, 'cyan', this.partnerName);
+    const say = (m) => { this.comms(m, 'cyan', this.partnerName); this._voice('partner', m); };
     if (k === 'look') {
       const near = this.sentinel.guards.filter((g) => g.state !== 'dead' && Math.hypot(g.x - at.x, g.z - at.z) < 15);
       for (const g of near) g.tagT = 12;
@@ -462,6 +477,8 @@ export const KitMethods = {
       if (e) e.hitFx = 1;
     }
     if (ev.t === 'laser' && pos) this.sfx.laser(pos);
+    if (ev.t === 'fx' && ev.k === 'helmet' && pos) { this.sfx.shieldPop(pos); this.effects.puff(pos, 'metal', 0.9, 0.4); }
+    if (ev.t === 'backup') this._voice('isr', 'Heads up, they called for backup. A fireteam is moving on your position.');
   },
 
   // Laser sights of tower snipers taking aim.

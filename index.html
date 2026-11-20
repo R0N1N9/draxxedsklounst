@@ -45,7 +45,7 @@
           <select data-setting="mode"><option value="classic">Duel</option><option value="app">Do you want to develop an app?</option></select></label>
         <label class="field" id="field-target" style="display:none"><span>Points to win</span>
           <select data-setting="mvTarget"><option value="3">First to 3</option><option value="5">First to 5</option><option value="7">First to 7</option><option value="10">First to 10</option></select></label>
-        <button id="btn-cell" class="cell-btn">SNIPER CELL <em>NightWatch · co-op stealth</em></button>
+        <button id="btn-cell" class="cell-btn"><span class="t-w">SNIPER</span>&nbsp;<span class="t-r">CELL</span> <em>NightWatch · co-op stealth</em></button>
         <button id="btn-host" class="primary">Host a match</button>
         <button id="btn-join-open">Join with code</button>
         <button id="btn-ai-open">Vs AI</button>
@@ -112,6 +112,7 @@
           </div>
           <label class="field"><span>Callsign for this role</span><input id="in-cell-name" maxlength="14" autocomplete="off" /></label>
           <div class="seg" id="cell-diff"><button data-d="recruit">Recruit</button><button data-d="operative">Operative</button><button data-d="ghost">Ghost</button></div>
+          <button id="btn-cell-stage">Staging area · loadout</button>
           <button id="btn-cell-solo" class="primary">Solo · AI partner</button>
           <button id="btn-cell-lone">Solo · lone operative <em class="cur">both roles, one sniper</em></button>
           <button id="btn-cell-host">Host co-op</button>
@@ -138,6 +139,12 @@
           <p class="hint small" id="cell-status">Setting up&hellip;</p>
           <button class="ghost" id="btn-cell-cancel">Cancel</button>
         </div>
+      </div>
+
+      <div id="panel-staging" class="panel">
+        <p class="hint small">Staging area. Kit up both operators &mdash; whichever role you play uses its column. Suppressors start fitted; take them off for a louder, faster fight.</p>
+        <div class="stg"></div>
+        <button class="primary" id="btn-stage-done">Done</button>
       </div>
 
       <div id="panel-host" class="panel">

@@ -28,15 +28,22 @@ import { Input } from '../input.js';
 import { WEAPON, PLAYER } from '../config.js';
 import { RULES, applyRules } from '../rules.js';
 import { clamp, segSegClosest } from '../util.js';
-import { Facility, SPOTS, FENCE, BUILDING, terrainHeight, lam, glowMat } from './facility.js';
+import { Facility, SPOTS, FENCE, BUILDING, ROOMS, terrainHeight, lam, glowMat } from './facility.js';
 import { Sentinel, DIFFS, guardCapsules, buildDrone, angDiff } from './sentinel.js';
 import { Ops, AiSpotter, PAYLOAD, HACK } from './ops.js';
 import { Tablet } from './tablet.js';
 import { Sfx } from './sfx.js';
 import { Wheel } from './wheel.js';
 import { installKit, KIT } from './kit.js';
+import { installKit2 } from './kit2.js';
 import { wallBlock } from './sentinel.js';
 import { Cinema } from './cinema.js';
+import { Radio } from './voice.js';
+import { Minigame } from './minigame.js';
+import { SMG, MAGNUM, P9, buildSMG, buildMagnum, buildKnife, normLoadout } from './arms.js';
+import { ISR } from './isr.js';
+import { addStrobes, blinkStrobes, IRLaser, ghostAvatar, tickGhosts, IR_LAYER } from './irfx.js';
+import { AtmosFX } from '../atmofx.js';
 import { Chat } from './chat.js';
 
 export const MISSIONS = {
@@ -55,19 +62,14 @@ const KR50 = {
   mag: 4, spareMags: 4, muzzle: 900, damage: { head: 400, torso: 260, legs: 130 }, cycle: 1.0, reload: 2.8, reloadEmpty: 3.4,
   zooms: [2, 8], scope: true, glint: 0, recoil: 0.034, sway: 0, fixedZero: 100,
 };
-const P9 = {
-  key: 'm18', name: 'P-9', short: 'P-9', caliber: '9 mm', slot: 'pistol', kind: 'semi',
-  mag: 12, spareMags: 2, muzzle: 380, damage: { head: 150, torso: 50, legs: 35 }, cycle: 0.24, reload: 1.4, reloadEmpty: 1.8,
-  zooms: [1], scope: false, adsFov: 46, fixedZero: 25, glint: 0, recoil: 0.03, sway: 0,
-};
 
 export const OBJECTIVES = [
   { k: 'perimeter', title: 'BREACH THE PERIMETER', hint: 'Get inside the fence — the cut on the west side or the south gate.' },
   { k: 'relay', title: 'TAP THE NETWORK', hint: 'Plant a relay in the Electrical Room (SE corner). Opens the data floor to Overwatch.' },
   { k: 'badge', title: 'LIFT THE SITE CHIEF’S BADGE', hint: 'Drop the Site Chief (violet visor) and take the badge off him.' },
-  { k: 'vault', title: 'BREACH THE COLD VAULT', hint: 'Badge-holder at the vault door; Overwatch holds CRACK on the tablet.' },
-  { k: 'upload', title: 'UPLOAD THE MALWARE', hint: 'Hold the vault console while it uploads. Overwatch fights SENTINEL’s trace.' },
-  { k: 'drive', title: 'PULL THE DRIVE', hint: 'Pull the archive drive (hold E). The whole facility locks down.' },
+  { k: 'find', title: 'FIND THE ARCHIVE SERVER', hint: 'Swipe into the rack rooms on both floors. Look for the cabinet with the slow amber beacon.' },
+  { k: 'upload', title: 'UPLOAD THE MALWARE', hint: 'Spotter: jack in at the lit rack (E), lock the signal, then hold the rack while it uploads. Shooter: cover them.' },
+  { k: 'drive', title: 'EXTRACT THE DRIVE', hint: 'Release the drive at the rack (E). The whole facility locks down.' },
   { k: 'exfil', title: 'EXFILTRATE', hint: 'Get the drive out the loading dock to the van east of the fence. Spotter drives, shooter rides shotgun.' },
 ];
 
@@ -79,11 +81,11 @@ const BLEED = 16;
 const CellShader = {
   uniforms: {
     tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) },
-    uNV: { value: 0 }, uMode: { value: 0 }, uCloak: { value: 0 }, uDamage: { value: 0 }, uDown: { value: 0 }, uStatic: { value: 0 },
+    uNV: { value: 0 }, uMode: { value: 0 }, uWash: { value: 0 }, uCloak: { value: 0 }, uDamage: { value: 0 }, uDown: { value: 0 }, uStatic: { value: 0 },
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
   fragmentShader: `
-    uniform sampler2D tDiffuse; uniform float uTime, uNV, uMode, uCloak, uDamage, uDown, uStatic; uniform vec2 uRes; varying vec2 vUv;
+    uniform sampler2D tDiffuse; uniform float uTime, uNV, uMode, uCloak, uDamage, uDown, uStatic, uWash; uniform vec2 uRes; varying vec2 vUv;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
     void main(){
       vec2 uv = vUv;
@@ -94,12 +96,23 @@ const CellShader = {
       float g = hash(uv * uRes + fract(uTime) * 91.7) - 0.5;
       if (uNV > 0.0) {
         float l = dot(c, vec3(0.3, 0.59, 0.11));
-        float amp = uMode > 1.5 ? 7.0 : 9.0;
+        // White phosphor with a cold blue cast (goggles, scope, quad, ISR EO); ISR IR is white-hot greyscale.
+        // The tube's auto-gain backs off when something bright is in view.
+        float amp = (uMode > 2.5 ? 6.0 : uMode > 1.5 ? 7.0 : 9.0) / (1.0 + uWash * 1.6);
         float v = 1.0 - exp(-l * amp);
-        vec3 tint = uMode > 1.5 ? vec3(0.85, 0.95, 1.0) : uMode > 0.5 ? vec3(0.35, 1.0, 0.75) : vec3(0.3, 1.0, 0.38);
-        vec3 nv = tint * (v * 0.95 + 0.03) + g * 0.07;
+        vec3 tint = uMode > 2.5 ? vec3(0.95) : uMode > 1.5 ? vec3(0.84, 0.93, 1.0) : uMode > 0.5 ? vec3(0.8, 0.9, 1.0) : vec3(0.78, 0.89, 1.0);
+        vec3 nv = tint * (v * 0.95 + 0.03) + g * 0.07 * (1.0 + uWash * 2.0);
         nv *= 0.92 + 0.08 * sin(uv.y * uRes.y * 1.4);
-        nv += tint * smoothstep(0.6, 3.0, l) * 0.25; // lamps bloom out
+        // Bright sources bloom into halos, and a light in your face washes the tube out.
+        float glow = 0.0;
+        for (int i = 0; i < 8; i++) {
+          float a = float(i) * 0.785398;
+          vec2 o = vec2(cos(a), sin(a)) * (0.012 + 0.02 * uWash) * vec2(uRes.y / uRes.x, 1.0);
+          glow += smoothstep(0.25, 1.4, dot(texture2D(tDiffuse, uv + o).rgb, vec3(0.3, 0.59, 0.11)));
+        }
+        nv += tint * glow * 0.05 * (1.0 + uWash * 1.5);
+        nv += tint * smoothstep(0.6, 3.0, l) * 0.25;
+        nv = mix(nv, tint * (0.55 + 0.35 * v), clamp(uWash, 0.0, 1.0) * 0.35);
         nv *= mix(1.0, smoothstep(0.95, 0.35, r), 0.55);
         nv += uStatic * (hash(vec2(floor(uv.y * uRes.y / 3.0), floor(uTime * 24.0))) - 0.5) * 0.25;
         c = mix(c, nv, uNV);
@@ -292,7 +305,7 @@ export class CellGame {
     this.scene.add(this.camera);
     this._lights();
     buildSky(this.scene);
-    this.fac = new Facility(this.scene, quality);
+    this.fac = new Facility(this.scene, quality, seed);
     this.sentinel = new Sentinel(this, { diff, seed, sim: this.isHost, mission: this.mission });
     this.sfx = new Sfx(audio);
     this.effects = new Effects(this.scene);
@@ -303,7 +316,7 @@ export class CellGame {
     for (const k of ['touchSensR', 'touchSensL', 'gyroMode', 'gyroSens', 'gyroInvertY']) if (this.settings[k] !== undefined) this.input[k] = this.settings[k];
 
     // Mission state (host-authoritative; mirrored on the guest).
-    this.obj = { perimeter: false, relay: false, badge: null, vault: false, upload: 0, uploading: false, trace: 0, traced: false, drive: null, driveAt: null, exfil: false, access: 1, drops: this.D.drops, canCrack: false, crack: 0, step: 0 };
+    this.obj = { perimeter: false, relay: false, badge: false, found: false, aligned: false, upload: 0, uploading: false, trace: 0, traced: false, drive: null, driveAt: null, exfil: false, access: 1, drops: this.D.drops, canCrack: false, crack: 0, step: 0 };
     this.crates = [];
     this.crateId = 1;
     this.prompts = {}; // role -> { label, p }
@@ -315,15 +328,25 @@ export class CellGame {
     this.commsLog = [];
     this.stats = { shots: 0, hits: 0, heads: 0, longest: 0, t0: 0 };
 
+    this.loadout = normLoadout(this.settings.cellLoadout);
     this._setupPlayer();
     this._setupPartner();
     this.ops = this.role === 'spotter' ? new Ops(this) : this.solo ? new Ops(this) : null;
+    if (this.ops && this.loadout.spotter.perk === 'bandwidth' && (this.role === 'spotter' || this.operative)) this.ops.bwMul = 1.4;
+    if ((this.role === 'spotter' || this.operative) && this.loadout.spotter.perk === 'drops') this.obj.drops += 2;
     this.aiSpot = this.aiPartner && this.role === 'shooter' ? new AiSpotter(this, this.ops) : null;
     this.aiShoot = this.aiPartner && this.role === 'spotter' ? { perch: 0, cool: 3, aim: null, aimT: 0, moveT: 0, sayT: 0, holdT: 0, coverT: 0 } : null;
     this.quad = null;
     this.quadCd = 0;
     this._kitInit();
     this.wheel = new Wheel();
+    this.radio = new Radio(audio);
+    this.mini = new Minigame();
+    this.isr = new ISR(this);
+    this.atmos = new AtmosFX(this.scene, { quality, night: true, color: '#b8c8ff', mistColor: '#5d6c90', bright: 0.45, lamps: this.fac.lightSources.filter((L) => L.kind === 'lamp') });
+    this._irInit();
+    this._wlInit();
+    this._mapPoints();
     this._buildHud();
     this.tablet = new Tablet(this);
     if (this.net) this._setupNet();
@@ -421,12 +444,24 @@ export class CellGame {
     this.bleed = BLEED;
     this.cloak = { on: false, bat: 100, flick: 0, regenT: 0 };
     this.nv = false;
-    this.pistolSup = true;
     this.viewmodel = new ViewModel(this.camera);
-    const kr = buildKR50();
-    kr.visible = false;
-    this.viewmodel.models.kr50 = kr;
-    this.viewmodel.holder.add(kr);
+    for (const [key, model] of [['kr50', buildKR50()], ['smg', buildSMG()], ['mag50', buildMagnum()]]) {
+      model.visible = false;
+      this.viewmodel.models[key] = model;
+      this.viewmodel.holder.add(model);
+    }
+    // Knife for takedowns (camera space).
+    this.knife = buildKnife();
+    this.knife.visible = false;
+    this.camera.add(this.knife);
+    this.knife.traverse((o) => { o.renderOrder = 11; o.frustumCulled = false; });
+    // The carried drive, strapped low on the left of your view.
+    this.carry = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.03, 0.12), new THREE.MeshBasicMaterial({ color: '#ff9a20' }));
+    this.carry.position.set(-0.2, -0.2, -0.32);
+    this.carry.rotation.set(0.4, 0.3, 0);
+    this.carry.renderOrder = 11;
+    this.carry.visible = false;
+    this.camera.add(this.carry);
     // Suppressor on the P-9 (toggle with B).
     const can = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.13, 12).rotateX(Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#1a1b1e', emissive: '#1a1b1e', emissiveIntensity: 0.14 }));
     const pm = this.viewmodel.models.m18;
@@ -440,8 +475,12 @@ export class CellGame {
 
   _arm() {
     const P = this.player;
-    const mk = (d) => ({ def: d, mag: d.mag, chamber: 1, reserve: d.mag * P._spare(d), zoomIdx: 0, zero: d.fixedZero || 100 });
-    P.arms = this.role === 'shooter' ? [mk(KR50), mk(P9)] : [mk(P9)];
+    const L = this.loadout;
+    if (!P._baseSpare) P._baseSpare = P._spare.bind(P);
+    const extra = this.role === 'shooter' && L.shooter.perk === 'mags' ? 2 : 0;
+    P._spare = (d) => P._baseSpare(d) + extra;
+    const mk = (d, sup) => ({ def: d, mag: d.mag, chamber: 1, reserve: d.mag * P._spare(d), zoomIdx: 0, zero: d.fixedZero || 100, sup, mode: d.modes ? d.modes[0] : null });
+    P.arms = this.role === 'shooter' ? [mk(KR50, true), mk(L.shooter.secondary === 'mag50' ? MAGNUM : SMG, L.shooter.secSup)] : [mk(P9, L.spotter.pistolSup)];
     P.slot = 0;
   }
 
@@ -449,8 +488,8 @@ export class CellGame {
     // Both operators wear the multicam-black kit. The shooter adds a chest rig and the
     // urban-digital poncho; the spotter wears the plate carrier with a quad on the pack.
     return role === 'shooter'
-      ? { outfit: 'wraith', theme: 'mcblack', vest: 'rig', poncho: true, ponchoTheme: 'urban', hat: 'none', eyes: 'goggles', kit: { stealth: 'suppressor' } }
-      : { outfit: 'wraith', theme: 'mcblack', vest: 'plate', poncho: false, hat: 'helmet', eyes: 'goggles', kit: { scout: 'drone' } };
+      ? { outfit: 'wraith', theme: 'mcblack', vest: 'rig', poncho: true, ponchoTheme: 'urbandark', hat: 'none', eyes: 'goggles', kit: { stealth: 'suppressor' } }
+      : { outfit: 'wraith', theme: 'mcblack', vest: 'plate', poncho: false, hat: 'cap', eyes: 'goggles', kit: { scout: 'drone' } };
   }
 
   _setupPartner() {
@@ -525,6 +564,8 @@ export class CellGame {
     P.cloak = !!m.ck; P.cloakFlicker = !!m.cf; P.hp = m.hp; P.downed = !!m.dn; P.kia = !!m.kia; P.alive = !m.kia;
     P.tablet = !!m.tb; P.e = !!m.e; P.quad = m.q || null; P.scoped = !!m.sc; P.ammo = m.am; P.lastT = this.t;
     P.nv = !!m.nv;
+    P.sy = m.sy || 0;
+    P.wl = !!m.wl;
   }
 
   _sendState() {
@@ -534,7 +575,7 @@ export class CellGame {
     this.send({
       t: 'cp', p: [r(P.pos.x), r(P.pos.y), r(P.pos.z)], y: r(P.yaw), pi: r(P.pitch), st: P.stance, w: P.def.slot === 'pistol' ? 1 : 0,
       mv: P.moving ? 1 : 0, sp: P.sprinting ? 1 : 0, ck: this.cloak.on ? 1 : 0, cf: this.cloak.flick > 0 ? 1 : 0, hp: Math.round(this.hp),
-      dn: this.downed ? 1 : 0, kia: this.kia ? 1 : 0, tb: this.tablet.visible ? 1 : 0, e: this._eHeld ? 1 : 0, q, sc: P.scoped ? 1 : 0, am: r(total / full), nv: this.nv ? 1 : 0,
+      dn: this.downed ? 1 : 0, kia: this.kia ? 1 : 0, tb: this.tablet.visible ? 1 : 0, e: this._eHeld ? 1 : 0, q, sc: P.scoped ? 1 : 0, am: r(total / full), nv: this.nv ? 1 : 0, sy: this.syncAim || 0, wl: this.wl.on ? 1 : 0,
     });
   }
 
@@ -542,7 +583,7 @@ export class CellGame {
     const doors = Object.values(this.fac.doors).map((d) => [d.id, (d.open ? 1 : 0) | (d.sealed ? 2 : 0) | (d.unlocked ? 4 : 0) | (d.hackT > 0 ? 8 : 0) | (d.perm ? 16 : 0)]);
     return {
       t: 'cw', s: this.sentinel.snap(), o: this.obj, dr: doors, cr: this.crates.map((c) => [c.id, Math.round(c.x * 10) / 10, Math.round(c.y * 10) / 10, Math.round(c.z * 10) / 10, c.landed ? 1 : 0]),
-      ia: this.prompts, lt: { ...this.fac.lightsOn }, md: this.medevac ? [this.medevac.x, this.medevac.y, this.medevac.z] : null,
+      ia: this.prompts, lt: this.fac.lightState(), dv: this.fac.devices.filter((d) => d.t > 0).map((d) => d.id), md: this.medevac ? [this.medevac.x, this.medevac.y, this.medevac.z] : null,
       ai: this.aiShoot ? this.aiShoot.perch : -1, pins: this.pins.filter((p) => p.by === 'host-ai').length,
     };
   }
@@ -560,7 +601,8 @@ export class CellGame {
     }
     this.crates = m.cr.map(([id, x, y, z, l]) => ({ id, x, y, z, landed: !!l }));
     this.prompts = m.ia || {};
-    for (const z of ['yard', 'floor', 'core']) if (m.lt[z] !== this.fac.lightsOn[z]) this.fac.setLights(z, m.lt[z]);
+    this.fac.applyLightState(m.lt || []);
+    for (const d of this.fac.devices) d.t = (m.dv || []).includes(d.id) ? Math.max(d.t, 0.3) : Math.min(d.t, 0);
     this.medevac = m.md ? { x: m.md[0], y: m.md[1], z: m.md[2] } : null;
     this.fac.relayPlanted = this.obj.relay;
   }
@@ -574,7 +616,7 @@ export class CellGame {
       case 'resupply': if (m.role === this.role) this._resupply(); break;
       case 'revive': if (m.role === this.role) this._revived(m.hp || 55); break;
       case 'kill': this._onKillEvent(m); break;
-      case 'takedown': if (m.role === this.role) { this.audio.hitConfirm(true); this.hud.flash('TAKEDOWN'); } break;
+      case 'takedown': if (m.role === this.role) this._knife(); break;
       case 'lockdown': this._lockdownFx(); break;
       case 'trace': this.hud.flash('TRACED', 'red'); break;
       case 'decoy': this.audio.beep(new THREE.Vector3(m.x, 1, m.z), true); break;
@@ -582,6 +624,11 @@ export class CellGame {
       case 'noise': if (this.isHost) this.sentinel.noise({ x: m.x, y: m.y, z: m.z }, m.r, !!m.loud); break;
       case 'fx': this._fx(m); break;
       case 'sfx': this._sentinelFx(m.ev); break;
+      case 'aligned': case 'extracted': if (this.isHost) this._serverResult(m); break;
+      case 'fumble': if (this.isHost) this.obj.trace = Math.min(0.99, this.obj.trace + 0.08); break;
+      case 'drop': if (this.isHost) this._dropDrive(m.role, m.at); break;
+      case 'light': if (this.isHost) this._shootLight(m.id, m.at); break;
+      case 'radio': this._voice(m.who, m.text); break;
       case 'emelee': this._onMelee(m.ev); break;
       case 'nearmiss': if (this.isHost) this.sentinel.nearMiss(m.at, m.from); break;
       case 'block': if (this.isHost) { const g = this.sentinel.byId(m.id); if (g) { this.sentinel._alert(g, null, m.from); this.sentinel.emit({ t: 'fx', k: 'shield', id: m.id }); } } break;
@@ -591,12 +638,12 @@ export class CellGame {
   // ---- helpers used by ops / tablet ------------------------------------------------
   localAgent() {
     const P = this.player;
-    return { role: this.role, pos: P.pos, stance: this.downed ? 2 : P.stance, moving: P.moving, sprinting: P.sprinting, cloak: this.cloak.on, cloakFlicker: this.cloak.flick > 0, alive: !this.kia, downed: this.downed };
+    return { role: this.role, light: this.wlMine || null, pos: P.pos, yaw: P.yaw, stance: this.downed ? 2 : P.stance, moving: P.moving, sprinting: P.sprinting, cloak: this.cloak.on, cloakFlicker: this.cloak.flick > 0, alive: !this.kia, downed: this.downed };
   }
   partnerAgent() {
     const Q = this.partner;
     if (Q.ai || !Q.seen) return null;
-    return { role: Q.role, pos: Q.pos, stance: Q.downed ? 2 : Q.st, moving: Q.moving, sprinting: Q.sprinting, cloak: Q.cloak, cloakFlicker: Q.cloakFlicker, alive: Q.alive && !Q.kia, downed: Q.downed };
+    return { role: Q.role, light: this.wlTheirs || null, pos: Q.pos, yaw: Q.yaw, stance: Q.downed ? 2 : Q.st, moving: Q.moving, sprinting: Q.sprinting, cloak: Q.cloak, cloakFlicker: Q.cloakFlicker, alive: Q.alive && !Q.kia, downed: Q.downed };
   }
   agents() {
     return [this.localAgent(), this.partnerAgent()].filter(Boolean);
@@ -662,7 +709,13 @@ export class CellGame {
       case 'scan': S.scanT = 4; for (const g of S.guards) if (g.state !== 'dead') g.scanT = 4; for (const d of S.drones) d.scanT = 4; this._toast('Pulse scan — every contact on the network for 4 s.', 'cyan'); break;
       case 'jam': S.jams.push({ x: target.x, z: target.z, r: PAYLOAD.jam.r, t: 5 }); this._toast('Earpieces jammed for 5 s.', 'cyan'); break;
       case 'emp':
-        S.emp(target.x, target.z, PAYLOAD.emp.r);
+        {
+          const room = this._roomFor(target);
+          // Inside a building the pulse fills the room: shells, walls, cameras, lights.
+          S.emp(target.x, target.z, room ? PAYLOAD.emp.r * 1.6 : PAYLOAD.emp.r);
+          if (room) this.fac.lightsOff((L) => L.room === room.id, 15);
+          else this.fac.lightsOff((L) => !L.interior && Math.hypot(L.x - target.x, L.z - target.z) < PAYLOAD.emp.r, 10);
+        }
         this._toast('EMP \u2014 drones, cameras and shields in the area dark for 7 s.', 'cyan');
         this._broadcastFx({ k: 'emp', x: target.x, z: target.z });
         break;
@@ -673,11 +726,10 @@ export class CellGame {
         this._toast(`Supply drop inbound (${ob.drops} left).`, 'cyan');
         break;
       case 'lights': {
-        const zone = this.fac.zoneAt(target.x, target.z);
-        const z = zone === 'out' ? 'yard' : zone;
-        this.fac.setLights(z, false);
-        this.fac.darkT[z] = 12;
-        this._toast(`Lights cut: ${z === 'yard' ? 'the yard' : z === 'core' ? 'the vault' : 'the data floor'} for 12 s.`, 'cyan');
+        // Inside, cyber reaches the whole room (20 s); outside, the lamps near the point (12 s).
+        const room = this._roomFor(target);
+        if (room) { this.fac.lightsOff((L) => L.room === room.id, 20); this._toast(`Lights cut: ${room.name} for 20 s.`, 'cyan'); }
+        else { this.fac.lightsOff((L) => !L.interior && Math.hypot(L.x - target.x, L.z - target.z) < 35, 12); this._toast('Yard lights near the mark cut for 12 s.', 'cyan'); }
         break;
       }
       case 'spoof': S.spoofT = 10; this._toast('Cameras looped for 10 s.', 'cyan'); break;
@@ -706,15 +758,23 @@ export class CellGame {
         this._toast('Camera hacked: looped 9 s, feeding the console.', 'cyan');
         break;
       }
-      case 'crack':
-        if (ob.canCrack && !ob.vault) {
-          ob.crack = Math.min(1, ob.crack + HACK.crackRate * (target.dt || 0.1));
-          if (ob.crack >= 1) this._openVault();
-        }
-        break;
       case 'fight':
         if (ob.uploading) ob.trace = Math.max(0, ob.trace - HACK.fightRate * (target.dt || 0.1) * 2);
         break;
+      case 'iot': {
+        const d = this.fac.devices.find((q) => q.id === target.id);
+        if (!d) break;
+        d.t = 5;
+        this.decoys = (this.decoys || []).concat([{ x: d.x, z: d.z, y: d.y, t: 4.5, tick: 0, r: 18, soft: true }]);
+        this._broadcastFx({ k: 'iot', id: d.id });
+        this._toast(`${d.kind.toUpperCase()} hacked \u2014 it\u2019s making a racket.`, 'cyan');
+        break;
+      }
+      case 'sync': {
+        const e = S.byId(target.id);
+        if (e && e.hp > 0) { e.sync = target.on ?? !e.sync; e.tagT = Math.max(e.tagT, 60); }
+        break;
+      }
       case 'tag': {
         const e = S.byId(target.id);
         if (e && e.hp > 0) { e.tagT = HACK.tag; }
@@ -732,6 +792,10 @@ export class CellGame {
     this._broadcast({ k: 'fx', ...ev });
   }
   _fx(ev) {
+    if (ev.k === 'iot') {
+      const d = this.fac.devices.find((q) => q.id === ev.id);
+      if (d) { d.t = 5; for (let i = 0; i < 6; i++) setTimeout(() => this.audio.beep(new THREE.Vector3(d.x, d.y, d.z), i % 2 === 0), i * 260); }
+    }
     if (ev.k === 'emp') {
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 1, 40).rotateX(-Math.PI / 2), glowMat('#60c0ff', 0.6));
       ring.position.set(ev.x, terrainHeight(ev.x, ev.z) + 0.5, ev.z);
@@ -782,6 +846,10 @@ export class CellGame {
   get missionTitle() {
     return MISSIONS[this.mission].title;
   }
+  // Title with the colour split: SNIPER (white) CELL (red) : MISSION (cyan).
+  get titleHTML() {
+    return `<span class="t-w">SNIPER</span> <span class="t-r">CELL</span><span class="t-w">:</span> <span class="t-c">${MISSIONS[this.mission].name}</span>`;
+  }
   get missionLine() {
     return MISSIONS[this.mission].line;
   }
@@ -790,6 +858,10 @@ export class CellGame {
   }
   _afterIntro() {
     this.comms('Weapons free on your call. Stay in the dark.', 'dim');
+    const chief = this.mission === 'nightwatch' ? 'the Overseer' : 'the Site Chief';
+    const brief = `Overwatch to Sniper Cell, ISR is on station. Your objective is the archive server inside the Kestrel Ridge data center. Two floors, six rack rooms behind keycard doors, and we don't know which one. Plant the relay in the electrical room, lift ${chief}'s badge, find the rack with the amber beacon, upload, pull the drive, and get to the van. ${this.mission === 'nightwatch' ? 'SENTINEL\'s night shift is augmented. Watch the towers.' : ''} Good hunting.`;
+    this._voice('isr', brief);
+    this.comms('ISR: objective \u2014 archive server, one of six rack rooms (both floors). Relay \u2192 badge \u2192 find the amber beacon \u2192 upload \u2192 drive \u2192 van.', 'cyan', 'ISR');
     this.input.requestLock();
   }
 
@@ -859,12 +931,21 @@ export class CellGame {
     const quad = this.quad && this.quad.active;
     // Keys for this mode.
     if (I.pressed('Tab') || I.pressed('cell-tab')) this.tablet.toggle();
+    if ((I.pressed('KeyL') || I.pressed('cell-light')) && !tab) this._wlToggle();
     if (I.pressed('KeyN') || I.pressed('cell-nv')) { this.nv = !this.nv; this.audio.click(); }
-    if ((I.pressed('KeyB') || I.pressed('cell-sup')) && !tab) { this.pistolSup = !this.pistolSup; this.hud.flash(this.pistolSup ? 'SUPPRESSOR ON' : 'SUPPRESSOR OFF'); this.audio.click(); }
+    // B: tap = fire mode (SMG) / suppressor (pistols); hold = suppressor on the SMG.
+    const bHeld = (I.held('KeyB') || I.held('T:cell-sup')) && !tab;
+    if (bHeld) { this._bT = (this._bT || 0) + dt; if (this._bT > 0.45 && !this._bDone) { this._bDone = true; this._toggleSup(); } }
+    else { if (this._bT > 0 && !this._bDone) { if (P.w.def.modes) this._cycleMode(); else this._toggleSup(); } this._bT = 0; this._bDone = false; }
+    if ((this.role === 'spotter' || this.operative) && (I.pressed('KeyI') || I.pressed('cell-isr')) && !tab && !quad && !this.downed) { if (this.isr.active) this.isr.exit(); else this.isr.enter(); }
+    if ((I.pressed('KeyJ') || I.pressed('cell-drop')) && this.obj.drive === this.role) { if (this.isHost) this._dropDrive(this.role, this.player.pos); else this._broadcast({ k: 'drop', role: this.role, at: { x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z } }); }
+    const pr = this.prompts[this.role];
+    if ((I.pressed('KeyE') || I.pressed('cell-use')) && pr && (pr.key === 'jack' || pr.key === 'extract') && !tab) this._serverMinigame(pr.key);
     if (this.role === 'shooter' && (I.pressed('KeyG') || I.pressed('cell-ability')) && !this.downed) this._toggleCloak();
     if ((this.role === 'spotter' || this.operative) && (I.pressed('KeyQ') || I.pressed(this.operative ? 'cell-quad' : 'cell-ability')) && !tab) { if (quad) this._endQuad(); else { const why = this.ops.use('quad'); if (why) this.hud.flash(why, 'red'); } }
     if (I.pressed('KeyF') || I.pressed('cell-tag')) this._tagAtCrosshair();
-    this._eHeld = (I.held('KeyE') || I.held('T:cell-use')) && !tab;
+    this._eHeld = (I.held('KeyE') || I.held('T:cell-use')) && !tab && !this.mini.open;
+    const isr = this.isr.active;
     if (this.ops) this.ops.update(dt);
     if (this.aiSpot) this.aiSpot.update(dt);
     this._kitUpdate(dt);
@@ -873,13 +954,14 @@ export class CellGame {
     // Cloak battery (Cold Archive: drain 14/s, regen 7 × camo/s).
     const C = this.cloak;
     C.flick = Math.max(0, C.flick - dt);
+    C.lockT = Math.max(0, (C.lockT || 0) - dt);
     if (C.on) {
       C.bat -= (P.moving ? 14 : 9) * dt;
       if (C.bat <= 0) { C.bat = 0; C.on = false; this.hud.flash('CAMO DEPLETED', 'red'); this.audio.click(); }
       C.regenT = 2;
     } else {
       C.regenT -= dt;
-      if (C.regenT <= 0) C.bat = Math.min(100, C.bat + 7 * this.D.camo * dt);
+      if (C.regenT <= 0) C.bat = Math.min(100, C.bat + 7 * this.D.camo * (this.loadout.shooter.perk === 'camo' && this.role === 'shooter' ? 1.5 : 1) * dt);
     }
 
     // Downed: bleed out unless your partner (or a medevac) gets you up.
@@ -900,6 +982,10 @@ export class CellGame {
       act.slot1 = act.slot2 = act.swap = false;
     }
     if (quad) { act.mx = 0; act.my = 0; act.sprint = false; act.lookX = 0; act.lookY = 0; }
+    if (isr || this.mini.open) {
+      if (isr) this.isr.control(dt, act, I);
+      act.mx = act.my = 0; act.sprint = act.jump = act.crouch = act.prone = false; act.fire = act.fireHeld = act.scope = false; act.lookX = act.lookY = 0; act.zoomIn = act.zoomOut = false; act.slot1 = act.slot2 = act.swap = false; act.reload = false;
+    }
     if (seat) { act.mx = act.my = 0; act.sprint = act.jump = act.crouch = act.prone = false; act.fire = act.fireHeld = false; act.scope = false; }
     if (this.role === 'spotter') { act.slot1 = act.slot2 = act.swap = false; if (!P.scoped) act.zoomIn = act.zoomOut = false; }
     act.zeroUp = act.zeroDown = false;
@@ -915,10 +1001,14 @@ export class CellGame {
     if (quad) this._updateQuad(dt, a);
 
     // Fire.
-    if (act.fire && live) {
-      if (P.canFire()) this._fire();
-      else if (P.w.chamber === 0 && P.w.mag === 0) { this.audio.click(); if (P.w.reserve > 0) P.startReload(); }
-    }
+    const mode = P.w.mode;
+    if (act.fire && live && P.w.chamber === 0 && P.w.mag === 0) { this.audio.click(); if (P.w.reserve > 0) P.startReload(); }
+    else if (live && mode === 'full') { if (act.fireHeld || act.fire) { if (P.canFire()) this._fire(); } }
+    else if (live && mode === 'burst') {
+      if (act.fire && !(this._burst > 0)) this._burst = 3;
+      if (this._burst > 0 && P.canFire()) { this._fire(); this._burst--; }
+      if (P.w.chamber === 0 && P.w.mag === 0) this._burst = 0;
+    } else if (act.fire && live && P.canFire()) this._fire();
     // Footsteps make noise (running only, cloak halves it).
     if (P.moving && P.onGround && live) {
       this._stepT = (this._stepT || 0) - dt * (P.sprinting ? 1.6 : 1);
@@ -928,7 +1018,9 @@ export class CellGame {
       }
     }
     // Camera.
-    if (quad) {
+    if (isr) {
+      this.isr.apply(this.camera);
+    } else if (quad) {
       const q = this.quad;
       this.camera.position.set(q.x, q.y, q.z);
       this.camera.rotation.set(q.pitch, q.yaw, 0);
@@ -949,8 +1041,11 @@ export class CellGame {
     this.camera.updateProjectionMatrix();
     // First-person weapon.
     const scopedRifle = P.def.scope && P.scopeT > 0.6;
-    this.viewmodel.visible = live && !scopedRifle && !quad && !tab && !seat;
-    this.pistolCan.visible = this.pistolSup;
+    this.viewmodel.visible = live && !scopedRifle && !quad && !tab && !seat && !isr && !(this.knifeT > 0);
+    this.pistolCan.visible = !!(P.arms.find((w) => w.def.key === 'm18') || {}).sup;
+    for (const w of P.arms) { const M = this.viewmodel.models[w.def.key]; if (M && M.userData.can) M.userData.can.visible = !!w.sup; }
+    this.carry.visible = this.obj.drive === this.role && live && !quad && !isr;
+    this._knifeTick(dt);
     this.viewmodel.update(dt, {
       def: P.def, scopeT: P.scopeT, speed: P.speed, sprint: P.sprinting, bobPhase: P.bobPhase, cycleT: P.cycleT,
       reloadT: P.reloadT, reloadDur: P.reloadDur, reloadEmpty: P.reloadEmpty, switchT: P.switchT, bipodT: 0, bipodState: 'stowed', bipodU: 0,
@@ -963,7 +1058,7 @@ export class CellGame {
 
   _toggleCloak() {
     const C = this.cloak;
-    if (!C.on && C.bat < 10) { this.hud.flash('CAMO RECHARGING', 'red'); return; }
+    if (!C.on && (C.bat < 10 || C.lockT > 0)) { this.hud.flash('CAMO RECHARGING', 'red'); return; }
     C.on = !C.on;
     this.audio.click();
     this.hud.flash(C.on ? 'ACTIVE CAMO' : 'CAMO OFF', C.on ? 'cyan' : 'dim');
@@ -983,19 +1078,21 @@ export class CellGame {
   _fire() {
     const P = this.player, def = P.def;
     const rifle = def.slot === 'rifle';
-    const sup = rifle || this.pistolSup;
+    const sup = rifle || !!P.w.sup;
     const o = P.eyePos(new THREE.Vector3());
     const dir = P.aimDir(new THREE.Vector3());
     // Hipfire spread on the pistol; the rifle is dead-on (Halo).
-    if (!rifle && P.scopeT < 0.5) { dir.x += (Math.random() - 0.5) * 0.03; dir.y += (Math.random() - 0.5) * 0.03; dir.normalize(); }
+    if (!rifle) { const sp = (def.spread || 0.03) * (P.scopeT > 0.5 ? 0.35 : 1) * (P.moving ? 1.5 : 1); dir.x += (Math.random() - 0.5) * sp; dir.y += (Math.random() - 0.5) * sp; dir.z += (Math.random() - 0.5) * sp; dir.normalize(); }
     if (rifle && P.scopeT < 0.5) { dir.x += (Math.random() - 0.5) * 0.02; dir.y += (Math.random() - 0.5) * 0.02; dir.normalize(); }
+    if (rifle && this.syncReady) this._syncFire();
     P.fireKick();
     this.viewmodel.fired();
     this.audio.shotLocal(sup, !rifle);
     this.stats.shots++;
     if (!sup) this.effects.muzzle(this.viewmodel.muzzleWorld(), dir);
     // Firing breaks the camo for a moment (it shimmers into view).
-    if (this.cloak.on) this.cloak.flick = 1.0;
+    // Firing drops the active camo entirely (and it can't come straight back).
+    if (this.cloak.on) { this.cloak.on = false; this.cloak.lockT = 1.5; this.cloak.flick = 1.0; this.hud.flash('CAMO BROKEN', 'red', 0.8); }
     const end = o.clone().addScaledVector(dir, 900);
     const res = this._hitscan(o, end);
     const hitP = res ? res.point : end;
@@ -1016,7 +1113,10 @@ export class CellGame {
         else this._broadcast({ k: 'nearmiss', at: { x: g.x, z: g.z }, from: { x: P.pos.x, z: P.pos.z } });
       }
     }
-    if (res && res.blocked) {
+    if (res && res.light !== undefined) {
+      this.effects.puff(hitP, 'metal', 0.6, 0.3);
+      if (this.isHost) this._shootLight(res.light, hitP); else this._broadcast({ k: 'light', id: res.light, at: { x: hitP.x, y: hitP.y, z: hitP.z } });
+    } else if (res && res.blocked) {
       // A bulwark's wall ate it: sparks, and now it knows.
       const g = res.blocked;
       this.effects.puff(hitP, 'metal', 0.8, 0.3);
@@ -1034,6 +1134,7 @@ export class CellGame {
       if (res.part === 'head') this.stats.heads++;
       this.effects.puff(hitP, e.kind === 'd' ? 'metal' : 'dust', 0.9, 0.7);
       if (e.maxShield && e.shield > 0 && res.part !== 'head') { this.sfx.shieldHit(hitP); this.hud.flash('SHELL', 'cyan', 0.5); }
+      if (e.helmet && res.part === 'head') { this.hud.flash('HELMET OFF \u2014 FOLLOW UP', 'amber', 0.9); }
       if (this.isHost) this._applyHit(e.id, dmg, rifle ? 'rifle' : 'pistol', { x: P.pos.x, z: P.pos.z }, this.role, res.part === 'head', dist);
       else this.send({ t: 'hit', id: e.id, dmg, how: rifle ? 'rifle' : 'pistol', from: { x: P.pos.x, z: P.pos.z }, head: res.part === 'head', dist });
     } else if (res) {
@@ -1063,6 +1164,9 @@ export class CellGame {
         }
       }
     }
+    // Lamps and ceiling panels can be shot out.
+    const lh = this.fac.lightHit(o, end);
+    if (lh && lh.t < bestT) { bestT = lh.t; best = { t: lh.t, point: o.clone().lerp(end, lh.t), light: lh.id }; }
     // Bulwark walls stand in front of the bodies behind them.
     for (const g of S.guards) {
       if (g.type !== 'bulwark' || g.state === 'dead') continue;
@@ -1158,6 +1262,7 @@ export class CellGame {
   }
 
   _damage(dmg, from) {
+    if ((this.role === 'spotter' || this.operative) && this.loadout.spotter.perk === 'armor') dmg *= 0.8;
     this.hp -= dmg;
     this.hud.damage(Math.atan2(from.x - this.player.pos.x, from.z - this.player.pos.z) - this.player.yaw);
     this.dmgFx = 1;
@@ -1212,6 +1317,15 @@ export class CellGame {
       if (d > 320) continue;
       const ang = v.normalize().angleTo(dir);
       if (ang < bs && this.fac.los(o, p)) { bs = ang; best = e; }
+    }
+    if (best && best.tagT > 0 && best.kind === 'g') {
+      // Second F on a marked enemy: make it a SYNC target.
+      const on = !best.sync;
+      this.payload('sync', { id: best.id, on });
+      if (this.isHost) best.sync = on;
+      this.hud.flash(on ? 'SYNC TARGET' : 'SYNC CLEARED', on ? 'cyan' : 'dim');
+      if (on) this._voice(this.role, 'Sync target marked.');
+      return;
     }
     if (best) {
       this.payload('tag', { id: best.id });
@@ -1287,10 +1401,9 @@ export class CellGame {
     // Revealed flags (console intel) for the snapshot.
     for (const e of [...S.guards, ...S.drones]) e.rev = S.revealed(e, ob.access, this.extraReveal);
     // Decoys keep pinging.
-    if (this.decoys) for (const d of this.decoys) { d.t -= dt; d.tick -= dt; if (d.tick <= 0) { d.tick = 0.6; S.noise({ x: d.x, y: 1, z: d.z }, 25, true); } }
+    if (this.decoys) for (const d of this.decoys) { d.t -= dt; d.tick -= dt; if (d.tick <= 0) { d.tick = 0.6; S.noise({ x: d.x, y: (d.y ?? 0) + 1, z: d.z }, d.r || 25, !d.soft); } }
     if (this.decoys) this.decoys = this.decoys.filter((d) => d.t > 0);
     // Lights come back on.
-    for (const z of ['yard', 'floor', 'core']) if (this.fac.darkT[z] > 0) { this.fac.darkT[z] -= dt; if (this.fac.darkT[z] <= 0) this.fac.setLights(z, true); }
     this._doors(dt);
     this._crates(dt);
     this._medevacTick(dt);
@@ -1421,41 +1534,48 @@ export class CellGame {
     S.noise({ x: b.x, y: b.y, z: b.z }, 7, false);
   }
 
+  // Who may work the server and swipe the badge: the spotter in co-op; anyone solo.
+  _techRole(role) {
+    return this.solo || role === 'spotter';
+  }
+
   _objectives(dt) {
-    const ob = this.obj, S = this.sentinel;
+    const ob = this.obj, S = this.sentinel, T = this.fac.target;
     const agents = this.agents();
     const inFence = (p) => Math.abs(p.x) < FENCE.x && Math.abs(p.z) < FENCE.z;
     if (!ob.perimeter && agents.some((a) => a.alive && inFence(a.pos))) { ob.perimeter = true; this._toast('Perimeter breached. Inside the wire.', 'cyan'); }
-    // Vault: badge-holder at the door; Overwatch cracks it.
-    const vd = this.fac.doors.vault;
-    const holder = ob.badge && ob.badge !== 'ground' ? agents.find((a) => a.role === ob.badge && a.alive && !a.downed) : null;
-    ob.canCrack = !ob.vault && !!holder && Math.hypot(holder.pos.x - vd.x, holder.pos.z - vd.z) < 4.5;
-    if (!ob.canCrack && !ob.vault) ob.crack = Math.max(0, ob.crack - dt * 0.05);
-    // Upload: anyone standing at the vault console; SENTINEL traces it.
-    const sv = SPOTS.server;
-    const atConsole = ob.vault && ob.upload < 1 && agents.some((a) => a.alive && !a.downed && Math.hypot(a.pos.x - sv.x, a.pos.z - sv.z) < 2.8);
-    ob.uploading = atConsole;
-    if (atConsole) {
-      ob.upload = Math.min(1, ob.upload + 0.11 * dt);
-      if (!ob.traced) ob.trace = Math.min(1, ob.trace + 0.055 * dt);
-      if (ob.upload >= 1) { this._toast('Malware uploaded. Evidence copied. Pull the drive.', 'cyan'); }
+    // Finding the archive server: eyes on the cabinet with the amber beacon.
+    const near = (a, r) => Math.hypot(a.pos.x - T.x, a.pos.z - T.z) < r && this.fac.floorOf(a.pos.y + 0.5) === T.floor;
+    if (!ob.found && ob.badge) for (const a of agents) {
+      if (!a.alive || !near(a, 7)) continue;
+      if (!this.fac.los({ x: a.pos.x, y: a.pos.y + 1.5, z: a.pos.z }, { x: T.x, y: T.y + 0.4, z: T.z + 0.2 })) continue;
+      ob.found = true;
+      ob.access = 3;
+      const room = ROOMS.find((r) => r.id === T.room);
+      this._toast(`Archive server found — ${room ? room.name : 'rack room'}${T.floor ? ' (upper floor)' : ''}.`, 'cyan');
+      this._voice(a.role, a.role === 'spotter' ? 'Found it. Amber beacon, this rack. Jacking in.' : 'Got the beacon. Spotter, on me.');
+      break;
+    }
+    // Upload runs while someone allowed stays at the rack after the signal lock.
+    const atRack = ob.aligned && ob.upload < 1 && agents.some((a) => a.alive && !a.downed && this._techRole(a.role) && near(a, 3));
+    ob.uploading = atRack;
+    if (atRack) {
+      ob.upload = Math.min(1, ob.upload + 0.1 * dt);
+      if (!ob.traced) ob.trace = Math.min(1, ob.trace + 0.05 * dt);
+      if (ob.upload >= 1) { this._toast('Malware uploaded. Evidence copied. Extract the drive.', 'cyan'); this._voice('isr', 'Upload complete. Pull the drive.'); }
       if (ob.trace >= 1 && !ob.traced) {
         ob.traced = true;
         S.raise(1, null);
         this._toast('SENTINEL traced the uplink!', 'red');
         this._broadcast({ k: 'trace' });
         this.hud.flash('TRACED', 'red');
-        for (const g of S.guards) if (g.state !== 'dead') S._alert(g, null, { x: sv.x, z: sv.z + 6 });
+        for (const g of S.guards) if (g.state !== 'dead') S._alert(g, null, { x: T.x, z: T.z + 4, y: T.y });
       }
-    } else if (ob.vault && ob.upload < 1) ob.trace = Math.max(0, ob.trace - 0.03 * dt);
-    // Per-agent interactions.
+    } else if (ob.aligned && ob.upload < 1) ob.trace = Math.max(0, ob.trace - 0.03 * dt);
     for (const a of agents) this._interact(a, a.role === this.role ? this._eHeld : this.partner.e, dt);
-    // A carrier who goes down drops the drive where they fell.
-    for (const a of agents) if (ob.drive === a.role && (a.downed || !a.alive)) { ob.drive = 'ground'; ob.driveAt = { x: a.pos.x, z: a.pos.z }; this._toast('The drive is on the ground!', 'red'); }
+    for (const a of agents) if (ob.drive === a.role && (a.downed || !a.alive)) this._dropDrive(a.role, a.pos, 'The drive is on the ground!');
     if (S.alarm >= 1 && !S.lockdown) this._loudAlarm = true;
-    // Exfil: everyone into the van with the drive.
     this._vanTick(dt);
-    // Fail: nobody left standing and nobody can be saved.
     const allOut = agents.length && agents.every((a) => !a.alive);
     if (allOut) this._lose();
     const prev = ob.step;
@@ -1467,10 +1587,10 @@ export class CellGame {
     const ob = this.obj;
     if (!ob.perimeter) return 0;
     if (!ob.relay) return 1;
-    if (!ob.badge && !ob.vault) return 2;
-    if (!ob.vault) return 3;
+    if (!ob.badge) return 2;
+    if (!ob.found) return 3;
     if (ob.upload < 1) return 4;
-    if (!ob.drive || ob.drive === 'server') return 5;
+    if (!ob.drive) return 5;
     return 6;
   }
 
@@ -1480,80 +1600,110 @@ export class CellGame {
     this.audio.ping && this.audio.ping();
   }
 
+  // Host: the drive lands on the floor where the carrier is.
+  _dropDrive(role, pos, msg = null) {
+    const ob = this.obj;
+    if (ob.drive !== role) return;
+    ob.drive = 'ground';
+    ob.driveAt = { x: pos.x, y: pos.y, z: pos.z };
+    this._toast(msg || `${role === this.role ? this.name : this.partnerName} dropped the drive.`, msg ? 'red' : 'cyan');
+  }
+
   _interact(a, held, dt) {
-    const ob = this.obj, S = this.sentinel, role = a.role, p = a.pos;
+    const ob = this.obj, S = this.sentinel, role = a.role, p = a.pos, T = this.fac.target;
     let best = null;
     const opt = (key, label, dur, fn, auto = false) => { if (!best) best = { key, label, dur, fn, auto }; };
     if (!a.alive || a.downed) { this.prompts[role] = a.downed ? { label: 'DOWNED — waiting for a revive', p: 0 } : null; return; }
     this._vanInteract(a, held, dt, opt);
-    // Revive your partner.
+    const sameFloor = (y) => Math.abs(y - p.y) < 1.6;
     const other = this.agents().find((b) => b.role !== role);
-    if (other && other.downed && other.alive && Math.hypot(other.pos.x - p.x, other.pos.z - p.z) < 2.2) opt('revive', `Hold E — revive ${other.role === this.role ? this.name : this.partnerName}`, 3, () => { if (other.role === this.role) this._revived(55); else this._broadcast({ k: 'revive', role: other.role, hp: 55 }); });
-    // Silent takedown from behind.
+    if (other && other.downed && other.alive && Math.hypot(other.pos.x - p.x, other.pos.z - p.z) < 2.2 && sameFloor(other.pos.y)) opt('revive', `Hold E — revive ${other.role === this.role ? this.name : this.partnerName}`, 3, () => { if (other.role === this.role) this._revived(55); else this._broadcast({ k: 'revive', role: other.role, hp: 55 }); });
+    // Knife takedown from behind (or on an unaware patrol at arm's length).
     for (const g of S.guards) {
-      if (g.state === 'dead' || g.state === 'alert' || g.tower) continue;
+      if (g.state === 'dead' || g.state === 'alert' || g.state === 'berserk' || g.tower) continue;
       const d = Math.hypot(g.x - p.x, g.z - p.z);
-      if (d > 1.8 || Math.abs(p.y - g.y) > 1) continue;
+      if (d > 1.9 || Math.abs(p.y - g.y) > 1) continue;
       const behind = Math.abs(angDiff(Math.atan2(-(p.x - g.x), -(p.z - g.z)), g.yaw + g.look)) > 1.9;
-      if (behind || g.state === 'patrol' && d < 1.2) {
-        opt('takedown', 'E — silent takedown', 0, () => {
+      if (behind || (g.state === 'patrol' && d < 1.2) || g.stagger > 0) {
+        opt('takedown', 'E — knife takedown', 0, () => {
           S.damage(g.id, 999, 'takedown', null, 'head');
           this._killFeed(g, 'takedown', role, false, 0);
-          if (role === this.role) { this.audio.hitConfirm(true); this.hud.flash('TAKEDOWN'); } else this._broadcast({ k: 'takedown', role });
-          if (g.chief) this._toast('Site Chief is down. Take his badge.', 'amber');
+          if (role === this.role) this._knife(); else this._broadcast({ k: 'takedown', role });
+          if (g.chief) this._toast(this.mission === 'nightwatch' ? 'The Overseer is down. Take its badge.' : 'Site Chief is down. Take his badge.', 'amber');
         });
         break;
       }
     }
-    // Loot the badge.
+    // Loot the badge (the team shares it; in co-op only the spotter can swipe it).
     if (!ob.badge) {
       const chief = S.guards.find((g) => g.chief && g.state === 'dead' && g.badge);
-      if (chief && Math.hypot(chief.x - p.x, chief.z - p.z) < 2.4) opt('badge', 'Hold E — take the badge', 1, () => { ob.badge = role; chief.badge = false; this._toast(`${role === this.role ? this.name : this.partnerName} has the badge. Get to the vault door.`, 'cyan'); });
+      if (chief && Math.hypot(chief.x - p.x, chief.z - p.z) < 2.4 && sameFloor(chief.y)) opt('badge', 'Hold E — take the badge', 1, () => { ob.badge = true; chief.badge = false; this._toast(`Badge cloned to the team${this.solo ? '' : ' — the spotter swipes the rack-room doors'}. Find the server with the amber beacon.`, 'cyan'); });
     }
-    // Plant the relay.
     const rl = SPOTS.relay;
-    if (!ob.relay && Math.hypot(rl.x - p.x, rl.z - p.z) < 2.4) opt('relay', 'Hold E — plant network relay', 2.2, () => { ob.relay = true; ob.access = Math.max(ob.access, 2); this.fac.relayPlanted = true; this._toast('Relay planted. Data floor is on the console: cameras, doors, contacts.', 'cyan'); });
-    // Pick the mechanical maintenance door.
+    if (!ob.relay && Math.hypot(rl.x - p.x, rl.z - p.z) < 2.4 && p.y < 2) opt('relay', 'Hold E — plant network relay', 2.2, () => { ob.relay = true; ob.access = Math.max(ob.access, 2); this.fac.relayPlanted = true; this._toast('Relay planted. The building is on the console: cameras, doors, devices, contacts.', 'cyan'); });
     const md = this.fac.doors.maint;
-    if (!md.unlocked && !md.sealed && Math.hypot(md.x - p.x, md.z - p.z) < 2.6) opt('pick', 'Hold E — pick the maintenance door', 3, () => { md.unlocked = true; this._toast('Maintenance door picked.', 'dim'); });
-    // Badge in at the vault (solo shooter: Rōnin cracks automatically).
-    const vd = this.fac.doors.vault;
-    if (!ob.vault && Math.hypot(vd.x - p.x, vd.z - p.z) < 4.5) {
-      if (ob.badge === role && this.operative) {
-        // One operator: badge in and crack it yourself (spends your bandwidth).
-        this.ops.cracking = !!held;
-        this.prompts[role] = { label: `Hold E — crack the vault ${Math.round(ob.crack * 100)} % (bandwidth ${Math.round(this.ops.bw)})`, p: ob.crack };
-      } else if (ob.badge === role) this.prompts[role] = { label: ob.crack > 0 ? `Cracking the vault… ${Math.round(ob.crack * 100)} %` : 'Badge accepted — Overwatch: hold CRACK on the tablet', p: ob.crack };
-      else if (!ob.badge) opt('vaultx', `Vault locked — needs the ${this.mission === 'nightwatch' ? 'Overseer' : 'Site Chief'}’s badge`, 0, null);
+    // The shooter carries a lock-pick set: faster on the mechanical door, and it can pick the
+    // electronic exterior doors too (slow and a little noisy). Keycard doors still need the badge.
+    const picker = role === 'shooter' || this.operative;
+    if (!md.unlocked && !md.sealed && Math.hypot(md.x - p.x, md.z - p.z) < 2.6) opt('pick', `Hold E \u2014 pick the maintenance door${picker ? ' (lock-pick set)' : ''}`, picker ? 1.8 : 3, () => { md.unlocked = true; this._toast('Maintenance door picked.', 'dim'); });
+    if (picker) for (const id of ['front', 'side']) {
+      const d = this.fac.doors[id];
+      if (d.unlocked || d.sealed || d.open || Math.hypot(d.x - p.x, d.z - p.z) > 2.6) continue;
+      opt('pick', 'Hold E \u2014 pick the lock (lock-pick set)', 6, () => { d.unlocked = true; this._toast('Lock picked. The door\u2019s yours.', 'dim'); });
+      break;
     }
-    // Pull the drive.
-    const sv = SPOTS.server;
-    if (ob.vault && ob.upload >= 1 && (!ob.drive || ob.drive === 'server') && Math.hypot(sv.x - p.x, sv.z - p.z) < 2.6) opt('drive', 'Hold E — pull the archive drive', 1.5, () => { ob.drive = role; this._lockdown(); });
-    // Pick up a dropped drive.
-    if (ob.drive === 'ground' && ob.driveAt && Math.hypot(ob.driveAt.x - p.x, ob.driveAt.z - p.z) < 2) opt('pickup', 'Hold E — pick up the drive', 0.6, () => { ob.drive = role; this._toast('Drive recovered.', 'cyan'); });
-    // Force the sealed dock by hand.
+    // Keycard doors on the rack rooms.
+    for (const d of Object.values(this.fac.doors)) {
+      if (d.kind !== 'badge' || d.unlocked || !sameFloor(d.y) || Math.hypot(d.x - p.x, d.z - p.z) > 2.4) continue;
+      if (!ob.badge) opt('badgex', `Keycard door — needs the ${this.mission === 'nightwatch' ? 'Overseer' : 'Site Chief'}’s badge`, 0, null);
+      else if (!this._techRole(role)) opt('badgex', 'Keycard door — the spotter has to swipe it', 0, null);
+      else opt('swipe', 'Hold E — swipe the badge', 0.8, () => { d.unlocked = true; this._toast('Keycard accepted.', 'dim'); });
+      break;
+    }
+    // The archive server: jack in (signal lock), then extract (drive release). Minigames run
+    // on the operator's own screen; the host just offers the prompt.
+    if (ob.found && Math.hypot(T.x - p.x, T.z - p.z) < 2.2 && this.fac.floorOf(p.y + 0.5) === T.floor) {
+      if (!this._techRole(role)) opt('techx', 'The spotter works the server — cover them', 0, null);
+      else if (!ob.aligned) opt('jack', 'E — jack in: upload the malware', 0, () => {});
+      else if (ob.upload >= 1 && !ob.drive) opt('extract', 'E — extract the drive', 0, () => {});
+      else if (ob.upload < 1) this.prompts[role] = { label: `UPLOADING ${Math.round(ob.upload * 100)} % · TRACE ${Math.round(ob.trace * 100)} % — stay at the rack`, p: ob.upload, key: 'upl' };
+    }
+    if (ob.drive === 'ground' && ob.driveAt && Math.hypot(ob.driveAt.x - p.x, ob.driveAt.z - p.z) < 2 && sameFloor(ob.driveAt.y || 0)) opt('pickup', 'Hold E — pick up the drive', 0.6, () => { ob.drive = role; this._toast(`${role === this.role ? this.name : this.partnerName} has the drive.`, 'cyan'); });
     const dk = this.fac.doors.dock;
     if (ob.drive && !dk.perm && Math.hypot(dk.x - p.x, dk.z - p.z) < 3.5) opt('force', 'Hold E — force the dock door', 8, () => { dk.perm = true; dk.sealed = false; this._toast('Dock forced open.', 'cyan'); this.sentinel.noise({ x: dk.x, y: 1, z: dk.z }, 30, true); });
-    if (ob.uploading && Math.hypot(sv.x - p.x, sv.z - p.z) < 2.8 && !best) this.prompts[role] = { label: `UPLOADING ${Math.round(ob.upload * 100)} % · TRACE ${Math.round(ob.trace * 100)} %`, p: ob.upload };
-    if (!best) { if (!this.prompts[role] || !(ob.uploading || (ob.badge === role && !ob.vault && Math.hypot(vd.x - p.x, vd.z - p.z) < 4.5))) this.prompts[role] = null; this.holdT[role] = null; return; }
-    if (!best.fn) { this.prompts[role] = { label: best.label, p: 0 }; return; }
+    if (!best) { if (!(this.prompts[role] && this.prompts[role].key === 'upl' && ob.uploading)) this.prompts[role] = null; this.holdT[role] = null; return; }
+    if (!best.fn) { this.prompts[role] = { label: best.label, p: 0, key: best.key }; return; }
     let h = this.holdT[role];
     if (!h || h.key !== best.key) h = this.holdT[role] = { key: best.key, t: 0 };
     if (held) h.t += dt; else h.t = 0;
-    this.prompts[role] = { label: best.label, p: best.dur ? clamp(h.t / best.dur, 0, 1) : 0 };
+    this.prompts[role] = { label: best.label, p: best.dur ? clamp(h.t / best.dur, 0, 1) : 0, key: best.key };
+    if (best.key === 'jack' || best.key === 'extract') return; // the operator's client opens the minigame
     if (held && h.t >= best.dur && !h.done) { h.done = true; best.fn(); }
     if (!held) h.done = false;
-    // Lockpicking makes a little noise.
     if (held && best.key === 'pick' && Math.random() < dt * 2) this.sentinel.noise(p, 6, false);
   }
 
-  _openVault() {
+  // Client: E on a jack/extract prompt opens the minigame; the result goes to the host.
+  _serverMinigame(key) {
+    if (this.mini.open) return;
+    const kind = key === 'jack' ? 'upload' : 'extract';
+    this.input.keys.clear();
+    document.exitPointerLock && document.exitPointerLock();
+    this._voice(this.role, kind === 'upload' ? 'Jacking in. Cover me.' : 'Pulling the drive. This’ll wake the whole building.');
+    this.mini.start(kind, (ok) => {
+      this.input.requestLock();
+      if (!ok) return;
+      const ev = { k: kind === 'upload' ? 'aligned' : 'extracted', role: this.role };
+      if (this.isHost) this._serverResult(ev); else this._broadcast(ev);
+    }, () => {
+      // A fumble spikes the trace (host-side).
+      if (this.isHost) this.obj.trace = Math.min(0.99, this.obj.trace + 0.08); else this._broadcast({ k: 'fumble' });
+    });
+  }
+  _serverResult(m) {
     const ob = this.obj;
-    ob.vault = true;
-    ob.access = 3;
-    const v = this.fac.doors.vault;
-    v.perm = true;
-    this._toast('Vault cracked. The cold archive is on the console.', 'cyan');
+    if (m.k === 'aligned' && !ob.aligned) { ob.aligned = true; this._toast('Signal locked. Upload running — hold the rack.', 'cyan'); }
+    if (m.k === 'extracted' && ob.upload >= 1 && !ob.drive) { ob.drive = m.role; this.fac.driveMesh.visible = false; this._lockdown(); }
   }
 
   _lockdown() {
@@ -1561,7 +1711,8 @@ export class CellGame {
     S.lockdown = true;
     S.raise(1, null);
     for (const id of ['front', 'side', 'dock']) { const d = this.fac.doors[id]; d.sealed = true; d.hackOpen = 0; }
-    for (const g of S.guards) if (g.state !== 'dead') S._alert(g, null, { x: SPOTS.server.x, z: SPOTS.server.z + 8 }), g.searchT = 20;
+    const T = this.fac.target;
+    for (const g of S.guards) if (g.state !== 'dead') S._alert(g, null, { x: T.x, z: T.z + 6, y: T.y }), g.searchT = 20;
     this._toast('SENTINEL: lockdown. The building is sealed.', 'red');
     this._toast('The van is hot on the east track. Get the dock open \u2014 spotter drives, shooter rides shotgun.', 'cyan');
     this._lockdownFx();
@@ -1638,9 +1789,9 @@ export class CellGame {
     if (Q.quad) { this.quadObj.visible = true; this.quadObj.position.set(Q.quad[0], Q.quad[1], Q.quad[2]); this.quadObj.rotation.y = Q.quad[3]; }
     else if (!(this.quad && this.quad.active)) this.quadObj.visible = false;
     // Your own body when down (third person).
-    const showSelf = this.downed && !this.kia;
+    const showSelf = (this.downed && !this.kia) || this.isr.active || !!(this.quad && this.quad.active);
     this.selfAvatar.setVisible(showSelf);
-    if (showSelf) this.selfAvatar.update(dt, { p: this.player.pos, yaw: this.player.yaw, pitch: 0, st: 2, moving: false, w: true });
+    if (showSelf) this.selfAvatar.update(dt, { p: this.player.pos, yaw: this.player.yaw, pitch: 0, st: this.downed ? 2 : 1, moving: false, w: true });
   }
 
   _visuals(dt) {
@@ -1690,9 +1841,67 @@ export class CellGame {
       this.audio.updateLoop('heli', this.heli.position);
     }
     // Light toggles drive the point lights too.
-    for (const pt of this.points) pt.L.intensity = this.fac.lightsOn[pt.zone] ? pt.I : 0;
+    for (const pt of this.points) pt.L.intensity = !pt.src || pt.src.on ? pt.I : 0;
+    this._irTick(dt);
+    this.atmos.update(dt, this.camera, hazeUniforms.uWind.value, (x, z) => this.fac.groundAt(x, z, this.camera.position.y + 1, 2));
+    this.isr.update(dt);
     // The drive model leaves the rack once pulled.
-    this.fac.driveMesh.visible = !this.obj.drive || this.obj.drive === 'server';
+    this.fac.driveMesh.visible = !this.obj.drive;
+    this._groundDrive();
+  }
+
+  // Render a camera into a small 2D canvas (via a hidden corner of the main canvas).
+  _renderToCanvas(cam, cv) {
+    const rect = cv.getBoundingClientRect();
+    const w = Math.max(16, Math.round(rect.width)), h = Math.max(10, Math.round(rect.height));
+    if (cv.width !== w) { cv.width = w; cv.height = h; }
+    cam.aspect = w / h;
+    cam.updateProjectionMatrix();
+    const r = this.renderer;
+    r.autoClear = false;
+    r.setScissorTest(true);
+    r.setScissor(0, 0, w, h);
+    r.setViewport(0, 0, w, h);
+    r.clear();
+    r.render(this.scene, cam);
+    r.setScissorTest(false);
+    r.setViewport(0, 0, innerWidth, innerHeight);
+    r.autoClear = true;
+    const pr = r.getPixelRatio(), src = r.domElement;
+    cv.getContext('2d').drawImage(src, 0, src.height - h * pr, w * pr, h * pr, 0, 0, w, h);
+  }
+
+  // How hard bright light in front of you blooms the night-vision tube (0..1.5).
+  _washout() {
+    const cam = this.camera, o = cam.position;
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    const zoom = WEAPON.baseFov / cam.fov;
+    let w = 0;
+    for (const L of this.fac.lightSources) {
+      if (!L.on) continue;
+      const dx = L.x - o.x, dy = L.y - o.y, dz = L.z - o.z, d = Math.hypot(dx, dy, dz);
+      if (d > 90 || d < 0.5) continue;
+      const dot = (dx * f.x + dy * f.y + dz * f.z) / d;
+      const cone = 1 - Math.min(1, (1 - dot) * 12 * zoom);
+      if (cone <= 0) continue;
+      if (L.interior && !this.fac.insideBuilding(o.x, o.z, o.y)) continue;
+      w += cone * (1 - d / 90) * (L.kind === 'panel' ? 0.25 : 0.7) * Math.min(2, zoom * 0.6 + 0.4);
+    }
+    if (this.wlTheirs) {
+      const L = this.wlTheirs, dx = o.x - L.x, dy = o.y - L.y, dz = o.z - L.z, d = Math.hypot(dx, dy, dz);
+      if (d < 40 && (dx * L.dx + dy * L.dy + dz * L.dz) / d > 0.96) w += (1 - d / 40) * 1.4;
+    }
+    // Weapon lights pointed straight at you.
+    for (const g of this.sentinel.guards) {
+      if (g.state === 'dead' || !g.obj.userData.beam.visible) continue;
+      const d = Math.hypot(g.x - o.x, g.z - o.z);
+      if (d > 18) continue;
+      const toMe = Math.atan2(-(o.x - g.x), -(o.z - g.z));
+      let a = toMe - (g.yaw + (g.look || 0));
+      a = Math.atan2(Math.sin(a), Math.cos(a));
+      if (Math.abs(a) < 0.35) w += (1 - d / 18) * 1.2;
+    }
+    return Math.min(1.2, w);
   }
 
   _render(dt) {
@@ -1700,15 +1909,25 @@ export class CellGame {
     u.uTime.value = this.t;
     const P = this.player;
     const quad = this.quad && this.quad.active;
-    const scopeNV = P.def.scope && P.scopeT > 0.6;
-    const nv = quad || scopeNV || this.nv;
+    const isr = this.isr.active;
+    const scopeNV = !isr && P.def.scope && P.scopeT > 0.6;
+    const nv = isr || quad || scopeNV || this.nv;
     u.uNV.value += ((nv ? 1 : 0) - u.uNV.value) * Math.min(1, dt * 10);
-    u.uMode.value = quad ? 2 : scopeNV ? 1 : 0;
+    u.uMode.value = isr ? (this.isr.mode === 'IR' ? 3 : 2) : quad ? 2 : scopeNV ? 1 : 0;
+    u.uWash.value += ((nv && !isr ? this._washout() : 0) - u.uWash.value) * Math.min(1, dt * 6);
     u.uCloak.value += ((this.cloak.on && !quad ? 1 : 0) - u.uCloak.value) * Math.min(1, dt * 6);
     this.dmgFx = Math.max(0, (this.dmgFx || 0) - dt * 1.5);
     u.uDamage.value = Math.max(this.dmgFx, this.hp < this.maxHp * 0.3 && !this.downed ? 0.35 + Math.sin(this.t * 4) * 0.1 : 0);
     u.uDown.value = this.downed || this.kia ? 1 : 0;
     u.uStatic.value = Math.max(0, u.uStatic.value - dt * 2) + (quad && this.quad.bat < 8 ? 0.4 : 0);
+    // (drawn first: the main frame then paints over the corner it borrowed)
+    // ISR picture-in-picture (spotter HUD), a few times a second.
+    if (this._pipIsr && this.hud.sqIsr && !this.isr.active && !this.tablet.visible) {
+      this._pipIsr = false;
+      const cam = this.isr.cam;
+      if (this.isr.mode === 'IR') cam.layers.enable(1); else cam.layers.disable(1);
+      this._renderToCanvas(cam, this.hud.sqIsr);
+    }
     this.composer.render();
     // Tablet camera feed: drawn straight into a hole in the console.
     // (rendered into the bottom-left corner of the main canvas, under the tablet, and copied
@@ -1724,6 +1943,7 @@ export class CellGame {
       r.setScissor(0, 0, w, h);
       r.setViewport(0, 0, w, h);
       r.clear();
+      f.cam.layers.disable(1);
       r.render(this.scene, f.cam);
       r.setScissorTest(false);
       r.setViewport(0, 0, innerWidth, innerHeight);
@@ -1770,6 +1990,9 @@ class CellHud {
       <div class="c-keys"></div>
       <div class="c-dmg"></div>
       <div class="c-vis"><span>EXPOSURE</span><i><em></em></i><b></b></div>
+      <div class="c-hunt"></div>
+      <div class="c-sync"><i class="a"></i><b>SYNC</b><i class="b"></i></div>
+      <div class="c-pip"><div class="c-sq" data-sq="ops"><span>CYBER OPS <em>TAB</em></span><canvas></canvas></div><div class="c-sq" data-sq="isr"><span>ISR \u00B7 PREDATOR <em>I</em></span><canvas></canvas></div></div>
       <div class="c-kit"></div>
       <div class="c-req"><span class="c-req-t"></span><button class="c-req-y">\u2713 <small>Y</small></button><button class="c-req-n">\u2715 <small>U</small></button></div>
       <div class="c-intro"><div class="c-intro-k">KESTREL RIDGE // DC-3</div><h1></h1><p class="c-intro-l"></p><p class="c-intro-r"></p></div>
@@ -1783,6 +2006,7 @@ class CellHud {
       partner: $('.c-partner'), feed: $('.c-feed'), comms: $('.c-comms'), hp: $('.c-hp em'), camo: $('.c-camo em'), camoBox: $('.c-camo'), chips: $('.c-chips'),
       amN: $('.c-am-n'), amR: $('.c-am-r'), amW: $('.c-am-w'), amS: $('.c-am-s'), prompt: $('.c-prompt'), promptT: $('.c-prompt span'), promptB: $('.c-prompt em'),
       flash: $('.c-flash'), keys: $('.c-keys'), dmg: $('.c-dmg'), pause: $('.c-pause'), debrief: $('.c-debrief'),
+      hunt: $('.c-hunt'), sync: $('.c-sync'), pip: $('.c-pip'),
       vis: $('.c-vis em'), visL: $('.c-vis b'), visBox: $('.c-vis'), kit: $('.c-kit'), req: $('.c-req'), reqT: $('.c-req-t'), intro: $('.c-intro'),
     };
     $('.c-req-y').addEventListener('pointerdown', (e) => { e.preventDefault(); game._answerTop(true); });
@@ -1793,11 +2017,25 @@ class CellHud {
     const K = (k, l) => `<b>${k}</b> ${l}`;
     const shooterKeys = [K('G', 'camo'), K('H', 'deadeye'), K('X', 'lure'), K('T', 'execute'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('1/2', 'rifle/pistol'), K('B', 'suppressor'), K('N', 'NV'), K('TAB', game.operative ? 'CYBER OPS' : 'map')];
     const spotterKeys = [K('TAB', 'CYBER OPS'), K('Q', 'quad'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('Y/U', 'approve/deny'), K('B', 'suppressor'), K('N', 'NV')];
-    shooterKeys.push(K('\u21B5', 'chat'));
+    shooterKeys.push(K('L', 'light'), K('\u21B5', 'chat'));
+    spotterKeys.push(K('L', 'light'), K('I', 'ISR'));
     spotterKeys.push(K('\u21B5', 'chat'));
     if (game.net) { shooterKeys.push(K('M', 'mic'), K('K', 'talk')); spotterKeys.push(K('M', 'mic'), K('K', 'talk')); }
     this.el.keys.innerHTML = (game.operative ? [...shooterKeys, K('Q', 'quad')] : game.role === 'shooter' ? shooterKeys : spotterKeys).join('');
     this.objective(0, OBJECTIVES[0], false);
+    // Spotter (and lone operative): picture-in-picture squares for the console and the drone.
+    const pipOn = game.role === 'spotter' || game.operative;
+    this.el.pip.style.display = pipOn ? '' : 'none';
+    root.querySelectorAll('.c-sq').forEach((sq) => sq.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (sq.dataset.sq === 'ops') game.tablet.open();
+      else { if (game.isr.active) game.isr.exit(); else game.isr.enter(); }
+    }));
+    this.sqOps = root.querySelector('[data-sq="ops"] canvas');
+    this.sqIsr = root.querySelector('[data-sq="isr"] canvas');
+    // The shooter's HUD stays minimal: hints fade once you've read them.
+    if (game.role === 'shooter' && !game.operative) root.classList.add('minimal');
+    setTimeout(() => this.el.keys.classList.add('gone'), 25000);
     this.hits = [];
     // Pause: losing pointer lock (Esc) opens it, except while the tablet has the mouse.
     document.addEventListener('pointerlockchange', () => {
@@ -1818,7 +2056,8 @@ class CellHud {
     if (!t) return;
     const bar = document.createElement('div');
     bar.className = 'cell-tbar';
-    const common = [['cell-ping', 'PING \u25CE'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
+    const extra = (g.role === 'spotter' || g.operative) ? [['cell-isr', 'ISR']] : [];
+    const common = [...extra, ['cell-light', 'LIGHT'], ['cell-drop', 'DROP'], ['cell-ping', 'PING \u25CE'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
     const pills = g.operative
       ? [['cell-tab', 'TABLET'], ['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-quad', 'QUAD'], ...common]
       : g.role === 'shooter'
@@ -1841,7 +2080,7 @@ class CellHud {
 
   intro(M, who) {
     const el = this.el.intro;
-    el.querySelector('h1').textContent = M.title;
+    el.querySelector('h1').innerHTML = this.g.titleHTML;
     el.querySelector('.c-intro-l').textContent = M.line;
     el.querySelector('.c-intro-r').textContent = who;
     el.classList.add('on');
@@ -1858,6 +2097,9 @@ class CellHud {
     this.el.objN.textContent = `OBJECTIVE ${i + 1} / ${OBJECTIVES.length}`;
     this.el.objT.textContent = o.title;
     this.el.objH.textContent = o.hint;
+    this.el.objH.classList.remove('gone');
+    clearTimeout(this._hintT);
+    this._hintT = setTimeout(() => this.el.objH.classList.add('gone'), 12000);
     if (announce) this.flash(o.title, 'cyan', 3);
   }
 
@@ -1945,8 +2187,9 @@ class CellHud {
     this.el.amN.textContent = w.mag + w.chamber;
     this.el.amR.textContent = '/ ' + w.reserve;
     this.el.amW.textContent = P.def.name + (P.def.slot === 'rifle' ? ' · SUPPRESSED' : '');
-    this.el.amS.textContent = P.def.slot === 'pistol' ? (g.pistolSup ? 'SUPPRESSOR ON (B)' : 'SUPPRESSOR OFF (B) — LOUD') : P.scoped ? `${P.zoom}× · NIGHT VISION` : '';
-    this.el.amS.classList.toggle('loud', P.def.slot === 'pistol' && !g.pistolSup);
+    const sec = P.def.slot === 'pistol';
+    this.el.amS.textContent = sec ? `${w.mode ? w.mode.toUpperCase() + ' (B) \u00B7 ' : ''}${w.sup ? 'SUPPRESSED' : 'UNSUPPRESSED \u2014 LOUD'}${w.mode ? ' (hold B)' : ' (B)'}` : P.scoped ? `${P.zoom}\u00D7 \u00B7 NIGHT VISION` : '';
+    this.el.amS.classList.toggle('loud', sec && !w.sup);
     // Prompt.
     let pr = g.prompts[g.role];
     if (g.downed && !g.kia) pr = { label: `BLEEDING OUT ${Math.ceil(g.bleed)} s — ${g.solo ? 'medevac drone is your only way up' : g.partnerName + ' can revive you (hold E)'}`, p: g.bleed / BLEED };
@@ -1954,6 +2197,31 @@ class CellHud {
     this.el.prompt.classList.toggle('on', !!pr && !g.tablet.visible);
     if (pr) { this.el.promptT.textContent = pr.label; this.el.promptB.style.width = `${Math.round((pr.p || 0) * 100)}%`; this.el.prompt.classList.toggle('bar', pr.p > 0); }
     this.root.classList.toggle('tablet', g.tablet.visible);
+    this.root.classList.toggle('isr', g.isr.active);
+    // Detection: DETECTED / HUNTED (break line of sight) / contact broken.
+    const H = g._huntInfo(g.role);
+    const hs = H ? H.state : 'hidden';
+    if (hs !== this._hs) {
+      if (this._hs === 'hunted' && hs === 'hidden') { this.flash('CONTACT BROKEN', 'cyan', 2); g._voice('isr', 'You\u2019re clear. They\u2019ve lost you.'); }
+      if (hs === 'detected' && this._hs !== 'detected') g._voice('isr', 'You\u2019ve been spotted. Break line of sight.');
+      this._hs = hs;
+    }
+    this.el.hunt.className = 'c-hunt ' + hs;
+    this.el.hunt.textContent = hs === 'detected' ? 'DETECTED' : hs === 'hunted' ? `HUNTED \u2014 break line of sight \u00B7 ${Math.max(0, 25 - Math.round(H.since || 0))} s` : '';
+    // SYNC light: one dot per rifle; green when both are on marked heads.
+    const sm = g.syncMarks || 0;
+    this.el.sync.style.display = sm && !g.ended ? '' : 'none';
+    if (sm) {
+      this.el.sync.classList.toggle('go', g.syncReady);
+      this.el.sync.querySelector('.a').className = 'a' + (g.syncAim ? ' on' : '');
+      this.el.sync.querySelector('.b').className = 'b' + (g.syncPartner ? ' on' : '');
+      this.el.sync.querySelector('b').textContent = g.syncReady ? 'SYNC \u2014 FIRE' : g.aiSpot || g.operative ? 'SYNC \u2014 needs a second rifle' : `SYNC \u00B7 ${sm} MARKED`;
+    }
+    // PiP squares (~4 Hz).
+    if (this.el.pip.style.display !== 'none') {
+      this._pipT = (this._pipT || 0) - dt;
+      if (this._pipT <= 0) { this._pipT = 0.25; g.tablet.drawMini(this.sqOps); g._pipIsr = true; }
+    }
     // Exposure meter (how visible you are right now) + the most-aware enemy.
     const v = g.vVis;
     this.el.vis.style.width = `${Math.round(v * 100)}%`;
@@ -2038,9 +2306,11 @@ class CellHud {
       c.fillText(pin.label, p.x, p.y - 14);
     }
     g.pins = g.pins.filter((p) => p.t > 0);
-    if (S.lkp && S.lkpT > 0) {
-      const p = proj(S.lkp.x, 1, S.lkp.z);
-      if (!p.behind) { c.strokeStyle = 'rgba(255,255,255,0.6)'; c.setLineDash([3, 3]); c.strokeRect(p.x - 6, p.y - 14, 12, 28); c.setLineDash([]); c.fillStyle = 'rgba(255,255,255,0.7)'; c.fillText('LAST KNOWN', p.x, p.y - 18); }
+    for (const role of ['shooter', 'spotter']) {
+      const H = g._huntInfo(role);
+      if (!H || H.state !== 'hunted' || !H.lkp) continue;
+      const p = proj(H.lkp.x, H.lkp.y + 2.1, H.lkp.z);
+      if (!p.behind) { c.fillStyle = 'rgba(255,255,255,0.8)'; c.fillText(`LAST KNOWN \u00B7 ${role === g.role ? 'YOU' : g.partnerName}`, p.x, p.y); }
     }
     // Supply crates.
     for (const cr of g.crates) { if (!cr.landed) continue; const p = proj(cr.x, cr.y + 1.2, cr.z); if (!p.behind) { c.fillStyle = '#40ffb0'; c.fillText('SUPPLY', p.x, p.y); } }
@@ -2071,7 +2341,8 @@ class CellHud {
       for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { c.beginPath(); c.moveTo(W / 2 + sx * o, H / 2 + sy * o); c.lineTo(W / 2 + sx * s, H / 2 + sy * s); c.stroke(); }
     }
     // Scope (Halo-style ring with a range readout) or a small crosshair.
-    if (scoped) this._scope(c, W, H);
+    if (g.isr.active) this._isrHud(c, W, H);
+    else if (scoped) this._scope(c, W, H);
     else if (g.quad && g.quad.active) this._quadHud(c, W, H);
     else if (!g.downed && !g.kia) {
       c.strokeStyle = 'rgba(220,240,255,0.75)';
@@ -2087,8 +2358,8 @@ class CellHud {
       case 0: return { x: -80, y: 2, z: 11, label: 'FENCE GAP' };
       case 1: return { x: SPOTS.relay.x, y: 1.5, z: SPOTS.relay.z, label: 'RELAY' };
       case 2: { const c = g.sentinel.guards.find((q) => q.chief); return c ? { x: c.x, y: c.y + 2.6, z: c.z, label: c.state === 'dead' ? 'BADGE' : g.mission === 'nightwatch' ? 'OVERSEER' : 'CHIEF', hide: c.state !== 'dead' && !(c.tagT > 0 || c.rev) } : null; }
-      case 3: return { x: g.fac.doors.vault.x, y: 2.2, z: g.fac.doors.vault.z + 0.6, label: 'VAULT' };
-      case 4: case 5: return { x: SPOTS.server.x, y: 1.6, z: SPOTS.server.z + 1, label: ob.step === 4 ? 'CONSOLE' : 'DRIVE' };
+      case 3: return null; // search: no marker until someone finds the beacon
+      case 4: case 5: { const T = g.fac.target; return { x: T.x, y: T.y + 1.2, z: T.z + 0.4, label: ob.step === 4 ? 'UPLOAD' : 'DRIVE' }; }
       case 6: {
         if (ob.drive === 'ground' && ob.driveAt) return { x: ob.driveAt.x, y: 1, z: ob.driveAt.z, label: 'DRIVE' };
         if (g._seat()) return null;
@@ -2107,7 +2378,7 @@ class CellHud {
     c.rect(0, 0, W, H);
     c.arc(W / 2, H / 2, R, 0, Math.PI * 2, true);
     c.fill('evenodd');
-    c.strokeStyle = 'rgba(120,255,190,0.85)';
+    c.strokeStyle = 'rgba(200,225,255,0.85)';
     c.lineWidth = 1.5;
     c.beginPath(); c.arc(W / 2, H / 2, R, 0, Math.PI * 2); c.stroke();
     c.beginPath(); c.arc(W / 2, H / 2, R * 0.12, 0, Math.PI * 2); c.stroke();
@@ -2117,7 +2388,7 @@ class CellHud {
     c.moveTo(W / 2, H / 2 + R * 0.14); c.lineTo(W / 2, H / 2 + R);
     c.moveTo(W / 2, H / 2 - R); c.lineTo(W / 2, H / 2 - R * 0.14);
     c.stroke();
-    c.fillStyle = 'rgba(120,255,190,0.9)';
+    c.fillStyle = 'rgba(210,232,255,0.9)';
     c.fillRect(W / 2 - 1, H / 2 - 1, 2, 2);
     // Range to whatever is under the reticle (refreshed a few times a second).
     this._rT = (this._rT || 0) - 1 / 60;
@@ -2135,6 +2406,28 @@ class CellHud {
     c.textAlign = 'center';
     if (this._onTarget) { c.strokeStyle = 'rgba(255,60,80,0.95)'; c.beginPath(); c.arc(W / 2, H / 2, R * 0.12, 0, Math.PI * 2); c.stroke(); }
     c.fillText('NIGHT VISION', W / 2, H / 2 + R * 0.86);
+  }
+
+  _isrHud(c, W, H) {
+    const I = this.g.isr;
+    c.strokeStyle = 'rgba(235,245,255,0.85)';
+    c.fillStyle = 'rgba(235,245,255,0.9)';
+    c.lineWidth = 1.5;
+    const cx = W / 2, cy = H / 2;
+    c.beginPath();
+    c.moveTo(cx - 60, cy); c.lineTo(cx - 12, cy); c.moveTo(cx + 12, cy); c.lineTo(cx + 60, cy);
+    c.moveTo(cx, cy - 60); c.lineTo(cx, cy - 12); c.moveTo(cx, cy + 12); c.lineTo(cx, cy + 60);
+    c.stroke();
+    c.strokeRect(cx - 4, cy - 4, 8, 8);
+    const m = 36;
+    for (const [x, y, sx, sy] of [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]]) { c.beginPath(); c.moveTo(x, y + sy * 40); c.lineTo(x, y); c.lineTo(x + sx * 40, y); c.stroke(); }
+    c.font = '600 13px JetBrains Mono, monospace';
+    c.textAlign = 'left';
+    c.fillText(`ISR // PREDATOR \u00B7 ${I.mode === 'IR' ? 'IR WHT-HOT' : 'EO'} \u00B7 FOV ${I.fov}\u00B0`, m + 10, m + 20);
+    c.fillText(`ALT ${Math.round(I.pos.y)} m \u00B7 SLANT ${Math.round(I.slant())} m \u00B7 SPI ${Math.round(I.spi.x)} ${Math.round(-I.spi.z)}`, m + 10, m + 38);
+    c.textAlign = 'right';
+    c.fillText('MOUSE/DRAG SLEW \u00B7 WHEEL ZOOM \u00B7 N IR/EO \u00B7 F TAG \u00B7 V PING \u00B7 I EXIT', W - m - 10, H - m - 12);
+    c.textAlign = 'center';
   }
 
   _quadHud(c, W, H) {
@@ -2157,3 +2450,4 @@ function esc(s) {
 void PLAYER;
 
 installKit(CellGame);
+installKit2(CellGame);

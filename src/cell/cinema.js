@@ -72,6 +72,7 @@ export class Cinema {
     this.vz0 = 196;
     this.vz1 = 143;
     this.title.textContent = '';
+    this._voiced = new Set();
     this._fadeTo(1);
   }
 
@@ -153,7 +154,14 @@ export class Cinema {
     let line = '';
     for (const [at, l] of lines) if (t >= at && t < at + 2.2) line = l;
     this._say(line);
-    if (t > 1.2 && !this._titled) { this._titled = true; this.title.innerHTML = `<b>${g.missionTitle}</b><span>${g.missionLine}</span>`; this.title.classList.add('on'); }
+    // Voice each line once, over the radio.
+    for (const [at, l] of lines) if (t >= at && !this._voiced.has(at)) {
+      this._voiced.add(at);
+      const m = /^([^:]+):\s*(.*)$/.exec(l);
+      const who = m ? (m[1] === g._nameFor('spotter') ? 'spotter' : 'shooter') : g.role;
+      g._voice(who, m ? m[2] : l);
+    }
+    if (t > 1.2 && !this._titled) { this._titled = true; this.title.innerHTML = `<b>${g.titleHTML}</b><span>${g.missionLine}</span>`; this.title.classList.add('on'); }
     if (t > 5.2) this.title.classList.remove('on');
     this._fadeTo(t < 1.2 ? 1 - t / 1.2 : t > 14.6 ? (t - 14.6) / 0.8 : 0);
     if (t > 15.4) this._endIntro();
@@ -186,63 +194,103 @@ export class Cinema {
 
   _buildOutro() {
     const s = (this.oscene = new THREE.Scene());
-    // Sunrise: haze turns warm for the drive out.
-    hazeUniforms.uHazeColor.value.set('#e9a07e');
-    hazeUniforms.uHazeSunColor.value.set('#ffd6a0');
+    // Retro-future sunrise: violet sky, a striped sun, a neon grid to the horizon.
+    hazeUniforms.uHazeColor.value.set('#ff4fa0');
+    hazeUniforms.uHazeSunColor.value.set('#ffb35a');
     hazeUniforms.uSunDir.value.set(0, 0.08, -1).normalize();
-    hazeUniforms.uHazeDensity.value = 0.0011;
+    hazeUniforms.uHazeDensity.value = 0.0009;
     hazeUniforms.uHazeFloor.value = 0.3;
     hazeUniforms.uHazeFalloff.value = 60;
     const sky = new THREE.Mesh(new THREE.SphereGeometry(3000, 32, 16), new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false,
-      uniforms: { uSun: { value: new THREE.Vector3(0, 0.07, -1).normalize() } },
       vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
-      fragmentShader: `uniform vec3 uSun; varying vec3 vD;
+      fragmentShader: `varying vec3 vD;
+        float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,45.164))) * 43758.5453); }
         void main(){
           float y = vD.y;
-          vec3 top = vec3(0.16, 0.24, 0.48), mid = vec3(0.86, 0.52, 0.52), hor = vec3(1.0, 0.72, 0.42);
-          vec3 c = mix(hor, mid, smoothstep(0.0, 0.12, y));
-          c = mix(c, top, smoothstep(0.1, 0.6, y));
-          float s = max(dot(vD, uSun), 0.0);
-          c += vec3(1.0, 0.75, 0.45) * pow(s, 12.0) * 0.9 + vec3(1.0, 0.95, 0.8) * pow(s, 1500.0) * 6.0;
-          c = mix(c, vec3(0.4, 0.3, 0.32), smoothstep(0.0, -0.05, y));
+          vec3 top = vec3(0.07, 0.02, 0.2), mid = vec3(0.55, 0.1, 0.55), hor = vec3(1.0, 0.36, 0.48);
+          vec3 c = mix(hor, mid, smoothstep(0.0, 0.16, y));
+          c = mix(c, top, smoothstep(0.14, 0.55, y));
+          vec3 q = floor(vD * 380.0);
+          c += vec3(0.9, 0.85, 1.0) * step(0.9982, h(q)) * smoothstep(0.2, 0.5, y);
+          c = mix(c, vec3(0.12, 0.02, 0.18), smoothstep(0.0, -0.04, y));
           gl_FragColor = vec4(c, 1.0);
         }`,
     }));
     s.add(sky);
-    s.add(new THREE.HemisphereLight('#ffc9a0', '#4a3a3a', 1.6));
-    const sun = new THREE.DirectionalLight('#ffd0a0', 2.2);
-    sun.position.set(0, 120, -1000);
+    // The sun: a gradient disc sliced by horizontal bands toward its base.
+    const sun = new THREE.Mesh(new THREE.CircleGeometry(260, 64), new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false,
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: `varying vec2 vUv;
+        void main(){
+          vec3 c = mix(vec3(1.0, 0.2, 0.55), vec3(1.0, 0.86, 0.3), vUv.y);
+          float band = 0.0;
+          if (vUv.y < 0.55) { float k = (0.55 - vUv.y) / 0.55; band = step(fract(vUv.y * 14.0), 0.18 + k * 0.45); }
+          gl_FragColor = vec4(c * 1.6, 1.0 - band);
+        }`,
+    }));
+    sun.position.set(0, 150, -2600);
     s.add(sun);
-    // Ground: a wide plain with a long straight road toward the sun.
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(4000, 6000, 40, 60).rotateX(-Math.PI / 2), lam('#7a6a52'));
+    s.add(new THREE.HemisphereLight('#ff9ad8', '#3a1050', 1.8));
+    const key = new THREE.DirectionalLight('#ffb070', 2.0);
+    key.position.set(0, 120, -1000);
+    s.add(key);
+    // Neon grid floor.
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+      vertexShader: 'varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }',
+      fragmentShader: `varying vec3 vW;
+        void main(){
+          vec2 q = vW.xz / 12.0;
+          vec2 g = abs(fract(q) - 0.5) / max(fwidth(q), vec2(1e-4));
+          float line = 1.0 - min(min(g.x, g.y), 1.0);
+          float fade = exp(-length(vW.xz - cameraPosition.xz) / 900.0);
+          vec3 c = vec3(0.06, 0.0, 0.1) + vec3(1.0, 0.2, 0.8) * line * (0.35 + 0.65 * fade);
+          gl_FragColor = vec4(c, 1.0);
+        }`,
+    }));
     ground.position.z = -2400;
-    const pos = ground.geometry.attributes.position;
-    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i); pos.setY(i, Math.abs(x) > 30 ? (Math.sin(x * 0.01) + Math.sin(pos.getZ(i) * 0.013)) * 1.5 * Math.min(1, (Math.abs(x) - 30) / 80) : -0.05); }
-    ground.geometry.computeVertexNormals();
     s.add(ground);
-    const road = new THREE.Mesh(new THREE.PlaneGeometry(9, 6000).rotateX(-Math.PI / 2), lam('#2c2b2e'));
+    const road = new THREE.Mesh(new THREE.PlaneGeometry(9, 6000).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#120818' }));
     road.position.set(0, 0.02, -2400);
     s.add(road);
-    const dashes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.18, 0.02, 3), lam('#e8d8a8'), 400);
-    const m = new THREE.Matrix4();
-    for (let i = 0; i < 400; i++) { m.makeTranslation(0, 0.04, 200 - i * 14); dashes.setMatrixAt(i, m); }
-    s.add(dashes);
     for (const sx of [-1, 1]) {
-      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 6000).rotateX(-Math.PI / 2), lam('#d8d0c0'));
-      edge.position.set(sx * 4.2, 0.03, -2400);
+      const edge = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 6000).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#30f0ff' }));
+      edge.position.set(sx * 4.3, 0.04, -2400);
       s.add(edge);
     }
-    // Far mountains and roadside poles for speed.
-    for (let i = 0; i < 26; i++) {
-      const cone = new THREE.Mesh(new THREE.ConeGeometry(120 + Math.random() * 160, 60 + Math.random() * 120, 6), lam('#5a4558'));
+    const m = new THREE.Matrix4();
+    const dashes = new THREE.InstancedMesh(new THREE.BoxGeometry(0.2, 0.02, 3), new THREE.MeshBasicMaterial({ color: '#ffd0ff' }), 400);
+    for (let i = 0; i < 400; i++) { m.makeTranslation(0, 0.05, 200 - i * 14); dashes.setMatrixAt(i, m); }
+    s.add(dashes);
+    // Wireframe mountains in neon, and palm silhouettes along the road.
+    for (let i = 0; i < 22; i++) {
       const side = i % 2 ? 1 : -1;
-      cone.position.set(side * (300 + Math.random() * 900), 20, -900 - Math.random() * 1600);
-      s.add(cone);
+      const geo = new THREE.ConeGeometry(140 + Math.random() * 180, 70 + Math.random() * 140, 5, 3);
+      const pos = new THREE.Vector3(side * (260 + Math.random() * 900), 30, -700 - Math.random() * 1700);
+      const fill = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#170524' }));
+      fill.position.copy(pos);
+      const wire = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: i % 3 ? '#ff3fb0' : '#30e8ff' }));
+      wire.position.copy(pos);
+      s.add(fill, wire);
     }
-    const poles = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.08, 0.1, 6, 5), lam('#3a3030'), 160);
-    for (let i = 0; i < 160; i++) { m.makeTranslation(i % 2 ? 9 : -9, 3, 150 - i * 40); poles.setMatrixAt(i, m); }
-    s.add(poles);
+    const palmMat = new THREE.MeshBasicMaterial({ color: '#12041c' });
+    for (let i = 0; i < 70; i++) {
+      const g = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.3, 9, 5), palmMat);
+      trunk.position.y = 4.5;
+      trunk.rotation.z = (Math.random() - 0.5) * 0.25;
+      g.add(trunk);
+      for (let f = 0; f < 7; f++) {
+        const leaf = new THREE.Mesh(new THREE.BoxGeometry(4, 0.08, 0.6), palmMat);
+        leaf.position.y = 9;
+        leaf.rotation.set(0, (f / 7) * Math.PI * 2, -0.45);
+        leaf.translateX(1.8);
+        g.add(leaf);
+      }
+      g.position.set((i % 2 ? 1 : -1) * (10 + Math.random() * 8), 0, 120 - i * 55);
+      s.add(g);
+    }
     this.ovan = buildVan();
     s.add(this.ovan);
     this.vz = 0;
@@ -280,7 +328,7 @@ export class Cinema {
     cam.aspect = innerWidth / innerHeight;
     cam.updateProjectionMatrix();
     this._fadeTo(t < 1.4 ? 1 - t / 1.4 : 0);
-    if (t > 7.6 && !this._out) { this._out = true; this.title.innerHTML = `<b>INTEL SECURED</b><span>${this.g.missionTitle} · the drive is out</span>`; this.title.classList.add('on'); }
+    if (t > 7.6 && !this._out) { this._out = true; this.title.innerHTML = `<b>INTEL SECURED</b><span>${this.g.titleHTML} · THE DRIVE IS OUT</span>`; this.title.classList.add('on'); }
     if (t > 10.5 && !this._deb) { this._deb = true; this.title.classList.remove('on'); this.el.classList.add('done'); if (this.onTitle) this.onTitle(); }
   }
 

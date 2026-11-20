@@ -10,7 +10,7 @@ import { segBox, clamp, smoothstep, fbm, mulberry32 } from '../util.js';
 
 export const BOUNDS = { x0: -175, x1: 175, z0: -150, z1: 205 };
 export const FENCE = { x: 80, z: 60 };
-export const BUILDING = { x0: -36, x1: 36, z0: -40, z1: 0, h: 7 };
+export const BUILDING = { x0: -36, x1: 36, z0: -40, z1: 0, h: 7.6, f1: 3.8 }; // two storeys; upper floor at f1
 export const CLIFF = { y: 22, z: 104 };
 
 // Named places the mission and the AI use.
@@ -30,14 +30,24 @@ export const SPOTS = {
 };
 
 export const ROOMS = [
-  { id: 'staging', name: 'STAGING / MECHANICAL', x0: -36, z0: -18, x1: -8, z1: 0, tier: 1 },
-  { id: 'lobby', name: 'ENTRY LOBBY', x0: -8, z0: -18, x1: 8, z1: 0, tier: 1 },
-  { id: 'security', name: 'SECURITY OFFICE', x0: 8, z0: -18, x1: 22, z1: 0, tier: 1 },
-  { id: 'electrical', name: 'ELECTRICAL ROOM', x0: 22, z0: -18, x1: 36, z1: 0, tier: 1 },
-  { id: 'corridor', name: 'MAIN CORRIDOR', x0: -36, z0: -22, x1: 36, z1: -18, tier: 1 },
-  { id: 'datahall', name: 'DATA HALL A', x0: -36, z0: -40, x1: -6, z1: -22, tier: 1 },
-  { id: 'noc', name: 'CORE NETWORK', x0: -6, z0: -40, x1: 12, z1: -22, tier: 2 },
-  { id: 'vault', name: 'COLD VAULT', x0: 12, z0: -40, x1: 36, z1: -22, tier: 2 },
+  // Ground floor
+  { id: 'staging', name: 'STAGING / STAIRS', x0: -36, z0: -18, x1: -8, z1: 0, tier: 1, floor: 0, y0: 0 },
+  { id: 'lobby', name: 'ENTRY LOBBY', x0: -8, z0: -18, x1: 8, z1: 0, tier: 1, floor: 0, y0: 0 },
+  { id: 'security', name: 'SECURITY OFFICE', x0: 8, z0: -18, x1: 22, z1: 0, tier: 1, floor: 0, y0: 0 },
+  { id: 'electrical', name: 'ELECTRICAL / STAIRS', x0: 22, z0: -18, x1: 36, z1: 0, tier: 1, floor: 0, y0: 0 },
+  { id: 'corridor', name: 'MAIN CORRIDOR', x0: -36, z0: -22, x1: 36, z1: -18, tier: 1, floor: 0, y0: 0 },
+  { id: 'dha', name: 'DATA HALL A', x0: -36, z0: -40, x1: -6, z1: -22, tier: 2, floor: 0, y0: 0, racks: true },
+  { id: 'noc', name: 'CORE NETWORK', x0: -6, z0: -40, x1: 12, z1: -22, tier: 2, floor: 0, y0: 0, racks: true },
+  { id: 'vault', name: 'COLD VAULT', x0: 12, z0: -40, x1: 36, z1: -22, tier: 2, floor: 0, y0: 0, racks: true },
+  // Upper floor
+  { id: 'offices', name: 'OFFICES / STAIRS', x0: -36, z0: -18, x1: -8, z1: 0, tier: 1, floor: 1, y0: 3.8 },
+  { id: 'break', name: 'BREAK ROOM', x0: -8, z0: -18, x1: 8, z1: 0, tier: 1, floor: 1, y0: 3.8 },
+  { id: 'comms', name: 'COMMS ROOM', x0: 8, z0: -18, x1: 22, z1: 0, tier: 1, floor: 1, y0: 3.8 },
+  { id: 'storage', name: 'STORAGE / STAIRS', x0: 22, z0: -18, x1: 36, z1: 0, tier: 1, floor: 1, y0: 3.8 },
+  { id: 'corridor2', name: 'UPPER CORRIDOR', x0: -36, z0: -22, x1: 36, z1: -18, tier: 1, floor: 1, y0: 3.8 },
+  { id: 'dhb', name: 'DATA HALL B', x0: -36, z0: -40, x1: -6, z1: -22, tier: 2, floor: 1, y0: 3.8, racks: true },
+  { id: 'srv', name: 'SERVER ROOM C', x0: -6, z0: -40, x1: 12, z1: -22, tier: 2, floor: 1, y0: 3.8, racks: true },
+  { id: 'arch', name: 'ARCHIVE', x0: 12, z0: -40, x1: 36, z1: -22, tier: 2, floor: 1, y0: 3.8, racks: true },
   { id: 'barracks', name: 'BARRACKS', x0: 46, z0: 14, x1: 70, z1: 30, tier: 0, solid: true },
 ];
 
@@ -105,13 +115,12 @@ function mergeBoxes(list, material) {
 // Facility
 // ---------------------------------------------------------------------------
 export class Facility {
-  constructor(scene, quality = 'medium') {
+  constructor(scene, quality = 'medium', seed = 7) {
     this.scene = scene;
     this.quality = quality;
+    this.rng = mulberry32((seed | 0) + 1013);
     this.boxes = [];
     this.doors = {};
-    this.lightsOn = { yard: true, floor: true, core: true };
-    this.darkT = { yard: 0, floor: 0, core: 0 };
     this.lightSources = []; // { x, y, z, r, zone }
     this.batches = new Map(); // material -> [{geo, m}]
     this.root = new THREE.Group();
@@ -172,15 +181,15 @@ export class Facility {
     mk(s, a1, y0, y1);
   }
 
-  door(id, kind, tier, x0, z0, x1, z1, color = '#3a3f48', height = 2.6) {
-    const b = this.box(x0, 0, z0, x1, height, z1, color, { mesh: true, kind: 'door' });
+  door(id, kind, tier, x0, z0, x1, z1, color = '#3a3f48', height = 2.6, y = 0) {
+    const b = this.box(x0, y, z0, x1, y + height, z1, color, { mesh: true, kind: 'door' });
     b.door = id;
     // Panel accent: a status light over the door (red locked, green open, amber hacked).
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.12, 0.25), new THREE.MeshBasicMaterial({ color: '#ff3040' }));
-    lamp.position.set((x0 + x1) / 2, height + 0.25, (z0 + z1) / 2);
+    lamp.position.set((x0 + x1) / 2, y + height + 0.25, (z0 + z1) / 2);
     this.root.add(lamp);
     const horiz = Math.abs(x1 - x0) > Math.abs(z1 - z0);
-    this.doors[id] = { id, kind, tier, box: b, lamp, open: false, openT: 0, hackT: 0, sealed: false, unlocked: kind === 'auto', x: (x0 + x1) / 2, z: (z0 + z1) / 2, horiz, home: b.mesh.position.clone(), w: horiz ? Math.abs(x1 - x0) : Math.abs(z1 - z0) };
+    this.doors[id] = { id, kind, tier, box: b, lamp, open: false, openT: 0, hackT: 0, sealed: false, unlocked: kind === 'auto', x: (x0 + x1) / 2, z: (z0 + z1) / 2, y, horiz, home: b.mesh.position.clone(), w: horiz ? Math.abs(x1 - x0) : Math.abs(z1 - z0) };
     return this.doors[id];
   }
 
@@ -302,7 +311,7 @@ export class Facility {
   }
 
   _light(x, y, z, r, zone, color, visible, aim) {
-    const L = { x, y, z, r, zone, color, aim };
+    const L = { id: this.lightSources.length, x, y, z, r, zone, color, aim, kind: 'lamp', broken: false, offT: 0, on: true };
     this.lightSources.push(L);
     if (visible) {
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.25, 0.5), new THREE.MeshBasicMaterial({ color }));
@@ -328,123 +337,200 @@ export class Facility {
   }
 
   _building() {
-    const { x0, x1, z0, z1, h } = BUILDING;
+    const { x0, x1, z0, z1, h, f1 } = BUILDING;
     const wall = '#5a5f66', inner = '#41454c', trim = '#2d3036';
-    // Floor slab and roof (roof stops sight and bullets from above).
+    const G = 3.6; // ground-floor ceiling (the upper slab runs 3.6 – 3.8)
+    // Ground slab, upper slab with two stairwell holes, roof.
     this.box(x0, -0.2, z0, x1, 0.02, z1, '#3a3d42', { solid: false, sight: false, shot: false });
     this.deco(new THREE.BoxGeometry(x1 - x0, 0.02, z1 - z0), (x0 + x1) / 2, 0.03, (z0 + z1) / 2, '#2f3237');
-    this.box(x0 - 0.4, h, z0 - 0.4, x1 + 0.4, h + 0.5, z1 + 0.4, '#3b3f45', { solid: false });
+    this.stairHoles = [{ x0: -34.4, x1: -27.5, z0: -17.8, z1: -15.3 }, { x0: 23.2, x1: 30, z0: -2.3, z1: -0.25 }];
+    this._slab(x0, x1, z0, z1, G, f1, this.stairHoles, '#34373d');
+    this.box(x0 - 0.4, h, z0 - 0.4, x1 + 0.4, h + 0.5, z1 + 0.4, '#3b3f45', { solid: true });
     this.deco(new THREE.BoxGeometry(x1 - x0 + 1.2, 0.5, 0.6), 0, h + 0.75, z1 + 0.1, trim);
     this.deco(new THREE.BoxGeometry(x1 - x0 + 1.2, 0.5, 0.6), 0, h + 0.75, z0 - 0.1, trim);
-    // Exterior walls. South facade: front door and windows into the lobby and security office.
-    const win = (a, b) => ({ a, b, y0: 1.1, y1: 2.4 });
-    this.wallX(z1, x0, x1, 0, h, [{ a: -2, b: 2 }, win(-7, -3), win(3, 7), win(10, 14), win(16, 20), win(-30, -26), win(-20, -16)], wall);
-    this.wallX(z0, x0, x1, 0, h, [win(-30, -24), win(-18, -12)], wall);
-    this.wallZ(x0, z0, z1, 0, h, [{ a: -11, b: -9 }, win(-34, -30)], wall);
-    this.wallZ(x1, z0, z1, 0, h, [{ a: -11, b: -9 }, { a: -22, b: -18, y1: 4 }], wall);
-    // Glass: visual only (sight and bullets pass).
+    this.deco(new THREE.BoxGeometry(x1 - x0 + 0.8, 0.3, 0.4), 0, f1 - 0.05, z1 + 0.05, trim); // floor band outside
+    // Exterior walls, both storeys: doors on the ground floor, windows on both.
+    const win = (a, b, up = false) => ({ a, b, y0: up ? f1 + 1.1 : 1.1, y1: up ? f1 + 2.4 : 2.4 });
+    const southWins = [[-7, -3], [3, 7], [10, 14], [16, 20], [-30, -26], [-20, -16]];
+    this._wallSplit('x', z1, x0, x1, [{ a: -2, b: 2 }, ...southWins.map(([a, b]) => win(a, b)), ...southWins.map(([a, b]) => win(a, b, true))], wall);
+    this._wallSplit('x', z0, x0, x1, [win(-30, -24), win(-18, -12), win(-30, -24, true), win(4, 10, true), win(18, 24, true)], wall);
+    this._wallSplit('z', x0, z0, z1, [{ a: -11, b: -9 }, win(-34, -30), win(-30, -26, true), win(-10, -6, true)], wall);
+    this._wallSplit('z', x1, z0, z1, [{ a: -11, b: -9 }, { a: -22, b: -18, y1: 4 }, win(-34, -30, true), win(-12, -8, true)], wall);
     const glass = new THREE.MeshLambertMaterial({ color: '#7fa6c8', transparent: true, opacity: 0.16, emissive: '#18303f' });
-    for (const [a, b] of [[-7, -3], [3, 7], [10, 14], [16, 20], [-30, -26], [-20, -16]]) {
+    for (const [a, b] of southWins) for (const y of [1.75, f1 + 1.75]) {
       const g = new THREE.Mesh(new THREE.PlaneGeometry(b - a, 1.3), glass);
-      g.position.set((a + b) / 2, 1.75, z1 + 0.02);
+      g.position.set((a + b) / 2, y, z1 + 0.02);
       this.root.add(g);
     }
-    // Corridor walls with doorways, then the room dividers.
-    this.wallX(-18, x0, x1, 0, h, [{ a: -24, b: -21.5 }, { a: -1.5, b: 1.5 }, { a: 13.8, b: 16.2 }, { a: 27.8, b: 30.2 }], inner, 0.3);
-    this.wallX(-22, x0, x1, 0, h, [{ a: -22, b: -19.5 }, { a: 1.8, b: 4.2 }, { a: 22.5, b: 26.5 }], inner, 0.3);
-    this.wallZ(-8, -18, 0, 0, h, [], inner, 0.3);
-    this.wallZ(8, -18, 0, 0, h, [{ a: -14, b: -12 }], inner, 0.3);
-    this.wallZ(22, -18, 0, 0, h, [], inner, 0.3);
-    this.wallZ(-6, -40, -22, 0, h, [{ a: -31, b: -28.5 }], inner, 0.3);
-    this.wallZ(12, -40, -22, 0, h, [], '#4a3f44', 0.5);
-    // Doors.
+    // ---- Interior walls, per floor ----
+    for (const [y0, y1, up] of [[0, G, false], [f1, h, true]]) {
+      const gate = (a, b) => ({ a, b, y1: y0 + 2.6 });
+      // Corridor: south side has open doorways; north side rack rooms have keycard doors.
+      this.wallX(-18, x0, x1, y0, y1, [gate(-24, -21.5), gate(-1.5, 1.5), gate(13.8, 16.2), gate(27.8, 30.2)], inner, 0.3);
+      this.wallX(-22, x0, x1, y0, y1, [gate(-22, -19.5), gate(1.8, 4.2), gate(23.5, 26)], inner, 0.3);
+      this.wallZ(-8, -18, 0, y0, y1, [], inner, 0.3);
+      this.wallZ(8, -18, 0, y0, y1, up ? [] : [gate(-14, -12)], inner, 0.3);
+      this.wallZ(22, -18, 0, y0, y1, [], inner, 0.3);
+      this.wallZ(-6, -40, -22, y0, y1, [], inner, 0.3);
+      this.wallZ(12, -40, -22, y0, y1, [], '#4a3f44', 0.5);
+    }
+    // Stairwell railings around the holes upstairs (waist high; shots and sight pass).
+    for (const H of this.stairHoles) {
+      this.box(H.x0, f1, H.z0 - 0.08, H.x1, f1 + 1.0, H.z0, '#5b6068', { sight: false, shot: false });
+      this.box(H.x0 - 0.08, f1, H.z0, H.x0, f1 + 1.0, H.z1, '#5b6068', { sight: false, shot: false });
+    }
+    // Stairs: 13 risers of 0.29 m. West flight climbs east along the staging room's north wall;
+    // east flight climbs east along the electrical room's south wall.
+    const flight = (xa, z0s, z1s) => {
+      for (let i = 0; i < 13; i++) {
+        const top = Math.min(f1, (i + 1) * (f1 / 13));
+        this.box(xa + i * 0.5, 0, z0s, xa + (i + 1) * 0.5, top, z1s, i % 2 ? '#4a4e55' : '#454950');
+      }
+    };
+    flight(-34, -17.75, -15.4);
+    flight(23.5, -2.2, -0.3);
+    // ---- Doors ----
     this.door('front', 'elec', 1, -2, -0.15, 2, 0.15);
     this.door('maint', 'mech', 0, x0 - 0.15, -11, x0 + 0.15, -9);
     this.door('side', 'elec', 1, x1 - 0.15, -11, x1 + 0.15, -9);
     this.door('dock', 'dock', 1, x1 - 0.2, -22, x1 + 0.2, -18, '#59544a', 4);
-    this.door('vault', 'vault', 2, 22.5, -22.25, 26.5, -21.75, '#6a5a3a');
-    // ---- Interior furnishing (cover + flavour) ----
-    // Lobby: reception desk, benches.
+    // Keycard doors on every rack room, both floors.
+    const rk = [['dha', -22, -19.5, 0], ['noc', 1.8, 4.2, 0], ['vault', 23.5, 26, 0], ['dhb', -22, -19.5, f1], ['srv', 1.8, 4.2, f1], ['arch', 23.5, 26, f1]];
+    for (const [room, a, b, y] of rk) {
+      const d = this.door('badge-' + room, 'badge', 2, a, -22.25, b, -21.75, '#6a5a3a', 2.6, y);
+      d.room = room;
+    }
+    // ---- Furnishing ----
+    // Lobby, security, electrical (relay), staging — ground floor.
     this.box(-4, 0, -9, 4, 1.1, -7.8, '#2f3a46');
-    this.box(-6.5, 0, -3, -5.5, 0.5, 2 - 3.5, '#333840');
-    // Security office: monitor wall + desks.
     this.box(9, 0, -17.6, 21, 2.6, -17.2, '#22262c');
     for (let i = 0; i < 6; i++) this.deco(new THREE.BoxGeometry(1.6, 0.9, 0.05), 10.2 + i * 1.9, 1.7, -17.12, '#3a6ea0', 0, { emissive: '#3a6ea0', emissiveIntensity: 0.8 });
     this.box(11, 0, -14, 19, 0.85, -12.8, '#3b3f46');
-    // Electrical: switchgear cabinets; the relay port is on the east cabinet.
     for (let i = 0; i < 4; i++) this.box(24 + i * 3, 0, -16.8, 26 + i * 3, 2.4, -15.6, '#4d555a');
     this.box(34.6, 0, -8.5, 35.7, 2.2, -3.5, '#4d555a');
     this.relayMesh = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.4, 0.6), new THREE.MeshBasicMaterial({ color: '#ffb020' }));
     this.relayMesh.position.set(34.5, 1.2, -6);
     this.root.add(this.relayMesh);
-    // Staging / mechanical: crates and a forklift-sized block.
-    for (const [x, z, w, d, hh] of [[-31, -14, 3, 2, 1.6], [-26, -5, 2.4, 2.4, 1.2], [-17, -12, 4, 2, 2.2], [-12, -3, 2, 2, 1.0]]) this.box(x - w / 2, 0, z - d / 2, x + w / 2, hh, z + d / 2, '#4b4436');
-    // Data hall A: rows of racks (hot/cold aisles).
+    for (const [x, z, w, d, hh] of [[-26, -5, 2.4, 2.4, 1.2], [-17, -12, 4, 2, 2.2], [-12, -3, 2, 2, 1.0]]) this.box(x - w / 2, 0, z - d / 2, x + w / 2, hh, z + d / 2, '#4b4436');
+    // Upstairs: offices (desks), break room, comms, storage.
+    for (const [x, z] of [[-30, -6], [-24, -6], [-18, -6], [-30, -11], [-18, -11]]) this.box(x - 1.2, f1, z - 0.6, x + 1.2, f1 + 0.78, z + 0.6, '#3b3f46');
+    this.box(-5, f1, -12, 5, f1 + 0.76, -10, '#3a3530');
+    this.box(10, f1, -6, 20, f1 + 0.8, -4.8, '#3b3f46');
+    for (const [x, z] of [[26, -12], [31, -8], [27, -5]]) this.box(x - 1.2, f1, z - 1, x + 1.2, f1 + 1.6, z + 1, '#4b4436');
+    // ---- Rack rooms: rows of server racks on both floors ----
     this.racks = [];
-    for (let r = 0; r < 4; r++) for (let c = 0; c < 2; c++) {
-      const zz = -37.5 + r * 4, xa = c === 0 ? -34 : -21, xb = c === 0 ? -24 : -9;
-      this.box(xa, 0, zz - 0.5, xb, 2.3, zz + 0.5, '#1d2026');
-      this.racks.push({ x0: xa, x1: xb, z: zz + 0.52, y0: 0.3, y1: 2.1 });
-    }
-    // Core network: switch cabinets.
-    for (let i = 0; i < 3; i++) {
-      this.box(-3.5 + i * 5, 0, -37, -1 + i * 5, 2.2, -35.8, '#1f242a');
-      this.racks.push({ x0: -3.5 + i * 5, x1: -1 + i * 5, z: -35.78, y0: 0.4, y1: 2 });
-    }
-    this.box(-4, 0, -27, 2, 0.9, -25.8, '#30353c');
-    // Cold vault: dense racks, the target server with its console.
-    for (let r = 0; r < 3; r++) {
-      this.box(14, 0, -38 + r * 4.2, 24, 2.4, -37 + r * 4.2, '#181b20');
-      this.racks.push({ x0: 14, x1: 24, z: -36.98 + r * 4.2, y0: 0.3, y1: 2.2 });
-    }
-    this.box(28, 0, -38.5, 32, 2.6, -37, '#232830');
-    this.racks.push({ x0: 28, x1: 32, z: -36.98, y0: 0.4, y1: 2.4 });
-    this.serverScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.9), new THREE.MeshBasicMaterial({ color: '#30ffd0' }));
-    this.serverScreen.position.set(30, 1.5, -36.95);
-    this.root.add(this.serverScreen);
-    this.driveMesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.42), new THREE.MeshBasicMaterial({ color: '#ff9a20' }));
-    this.driveMesh.position.set(31.3, 1.12, -36.8);
-    this.root.add(this.driveMesh);
-    this._rackLeds();
-    // Ceiling light panels per room (emissive, switched by zone power).
-    this.ceil = { floor: [], core: [] };
-    const panel = (x, z, zone) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(3, 0.08, 0.6), new THREE.MeshBasicMaterial({ color: zone === 'core' ? '#b8d8ff' : '#e8f0ff' }));
-      m.position.set(x, h - 0.1, z);
-      this.root.add(m);
-      this.ceil[zone].push(m);
+    const rackRow = (room, floor, xa, xb, zz) => {
+      const y = floor ? f1 : 0;
+      this.box(xa, y, zz - 0.5, xb, y + 2.3, zz + 0.5, '#1b1e24');
+      for (let x = xa + 0.3; x < xb - 0.2; x += 0.62) this.deco(new THREE.BoxGeometry(0.02, 2.1, 1.02), x + 0.29, y + 1.15, zz, '#2a2e36');
+      // Each row is a run of individual cabinets (for the hidden target).
+      for (let x = xa + 0.31; x < xb; x += 0.62) this.racks.push({ room, floor, x, z: zz + 0.52, zb: zz - 0.52, y0: y + 0.3, y1: y + 2.1, x0: x - 0.3, x1: x + 0.3 });
     };
-    for (let x = -30; x <= 30; x += 12) panel(x, -20, 'floor');
-    for (const [x, z] of [[-22, -9], [0, -9], [15, -9], [29, -9], [-28, -31], [-14, -31], [3, -31]]) panel(x, z, 'floor');
-    for (const [x, z] of [[18, -31], [28, -31]]) panel(x, z, 'core');
-    for (const [x, z] of [[-22, -9], [0, -9], [15, -9], [29, -9], [-21, -31], [3, -31], [-20, -20], [12, -20]]) this.lightSources.push({ x, y: h - 0.5, z, r: 11, zone: 'floor', interior: true });
-    for (const [x, z] of [[18, -31], [28, -31]]) this.lightSources.push({ x, y: h - 0.5, z, r: 10, zone: 'core', interior: true });
-    // Exterior wall lamps over the doors.
-    this._light(0, 3.6, 1.2, 14, 'yard', '#ffd9a0', true);
+    for (const floor of [0, 1]) {
+      const A = floor ? 'dhb' : 'dha', N = floor ? 'srv' : 'noc', V = floor ? 'arch' : 'vault';
+      for (let r = 0; r < 4; r++) { rackRow(A, floor, -34, -24, -37.5 + r * 4); rackRow(A, floor, -21, -9, -37.5 + r * 4); }
+      for (let r = 0; r < 3; r++) rackRow(N, floor, -4, 10, -37 + r * 4.5);
+      for (let r = 0; r < 3; r++) { rackRow(V, floor, 14, 22, -37.5 + r * 4.2); rackRow(V, floor, 26, 34, -37.5 + r * 4.2); }
+    }
+    this._rackLeds();
+    // The archive server: one cabinet somewhere in the six rack rooms, marked by a slow amber beacon.
+    const pick = this.racks[Math.floor(this.rng() * this.racks.length)];
+    this.target = { x: pick.x, y: pick.y0 + 0.9, z: pick.z + 0.05, room: pick.room, floor: pick.floor, rack: pick };
+    this.beacon = new THREE.Group();
+    const bm = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.06, 0.03), new THREE.MeshBasicMaterial({ color: '#ffb020' }));
+    bm.position.y = 1.2;
+    const port = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.12, 0.03), new THREE.MeshBasicMaterial({ color: '#30ffd0' }));
+    port.position.y = 0.6;
+    this.beacon.add(bm, port);
+    this.beacon.position.set(pick.x, pick.y0, pick.z + 0.03);
+    this.root.add(this.beacon);
+    this.beaconMat = bm.material;
+    this.driveMesh = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.4), new THREE.MeshBasicMaterial({ color: '#ff9a20' }));
+    this.driveMesh.position.set(pick.x, pick.y0 + 0.3, pick.z + 0.1);
+    this.root.add(this.driveMesh);
+    // ---- IoT devices (hackable distractions) ----
+    this.devices = [];
+    const dev = (kind, x, z, floor, w, hh, d, color, glowC) => {
+      const y = floor ? f1 : 0;
+      this.box(x - w / 2, y, z - d / 2, x + w / 2, y + hh, z + d / 2, color);
+      const face = new THREE.Mesh(new THREE.BoxGeometry(w * 0.7, hh * 0.35, 0.02), new THREE.MeshBasicMaterial({ color: glowC }));
+      face.position.set(x, y + hh * 0.65, z + d / 2 + 0.012);
+      this.root.add(face);
+      this.devices.push({ id: this.devices.length + 1, kind, x, y: y + hh / 2, z, floor, face, base: new THREE.Color(glowC), t: 0 });
+    };
+    dev('vending', -6.6, -15.5, 1, 1.0, 1.9, 0.8, '#3a2a3a', '#ff5fd0');
+    dev('vending', -5.4, -15.5, 1, 1.0, 1.9, 0.8, '#2a2f3a', '#40c8ff');
+    dev('coffee', 4, -16.6, 1, 0.6, 1.1, 0.5, '#2e2a26', '#ffb060');
+    dev('printer', 13, -2, 1, 1.0, 1.0, 0.7, '#4a4d52', '#80ffb0');
+    dev('speaker', -20, -0.8, 1, 0.6, 0.6, 0.3, '#2a2c30', '#ff8040');
+    dev('printer', -30, -1, 0, 1.0, 1.0, 0.7, '#4a4d52', '#80ffb0');
+    dev('vending', -6.6, -3, 0, 1.0, 1.9, 0.8, '#3a2a3a', '#ffd040');
+    dev('tv', 15, -0.6, 0, 1.6, 1.2, 0.15, '#1a1c20', '#5080ff');
+    dev('speaker', 0, -21.4, 0, 0.6, 0.6, 0.3, '#2a2c30', '#ff8040');
+    dev('fan', -15, -39.2, 0, 1.4, 1.4, 0.6, '#3a3f44', '#60ff90');
+    dev('fan', 3, -39.2, 1, 1.4, 1.4, 0.6, '#3a3f44', '#60ff90');
+    // ---- Ceiling panel lights: one light source per panel, per room ----
+    const rooms = ROOMS.filter((r) => r.y0 !== undefined && !r.solid);
+    for (const r of rooms) {
+      const y = (r.floor ? h : G) - 0.12;
+      const nx = Math.max(1, Math.round((r.x1 - r.x0) / 10)), nz = Math.max(1, Math.round((r.z1 - r.z0) / 9));
+      for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) {
+        const x = r.x0 + ((i + 0.5) * (r.x1 - r.x0)) / nx, z = r.z0 + ((k + 0.5) * (r.z1 - r.z0)) / nz;
+        const color = r.tier >= 2 ? '#b8d8ff' : '#e8f0ff';
+        const m = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.08, 0.6), new THREE.MeshBasicMaterial({ color }));
+        m.position.set(x, y, z);
+        this.root.add(m);
+        this.lightSources.push({ id: this.lightSources.length, x, y, z, r: 9, zone: r.tier >= 2 ? 'core' : 'floor', room: r.id, floor: r.floor, interior: true, kind: 'panel', fx: [m], color, broken: false, offT: 0, on: true });
+      }
+    }
+    this._light(0, 3.2, 1.2, 14, 'yard', '#ffd9a0', true);
     this._light(37.2, 4.6, -20, 14, 'yard', '#ffd9a0', true);
-    this._light(-37.2, 3.6, -10, 10, 'yard', '#ffd9a0', true);
-    // Signage.
+    this._light(-37.2, 3.2, -10, 10, 'yard', '#ffd9a0', true);
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(10, 1.2), new THREE.MeshBasicMaterial({ map: textTexture('KESTREL RIDGE · DC-3', '#9fd8ff'), transparent: true }));
-    sign.position.set(0, 5.6, z1 + 0.32);
+    sign.position.set(0, h - 1.2, z1 + 0.32);
     this.root.add(sign);
   }
 
+  // A horizontal slab with rectangular holes (split into strips).
+  _slab(x0, x1, z0, z1, y0, y1, holes, color) {
+    const xs = [...new Set([x0, x1, ...holes.flatMap((H) => [H.x0, H.x1])])].sort((a, b) => a - b);
+    for (let i = 0; i < xs.length - 1; i++) {
+      const a = xs[i], b = xs[i + 1], mid = (a + b) / 2;
+      const cuts = holes.filter((H) => mid > H.x0 && mid < H.x1).sort((p, q) => p.z0 - q.z0);
+      let z = z0;
+      for (const H of cuts) { if (H.z0 > z) this.box(a, y0, z, b, y1, H.z0, color); z = H.z1; }
+      if (z < z1) this.box(a, y0, z, b, y1, z1, color);
+    }
+  }
+
+  // An exterior wall with gaps running the full building height.
+  _wallSplit(axis, c, a0, a1, gaps, color) {
+    const H = BUILDING.h;
+    // Solid wall with per-gap lintels/sills: build as vertical bands between gap edges.
+    const edges = [...new Set([a0, a1, ...gaps.flatMap((g) => [g.a, g.b])])].sort((p, q) => p - q);
+    for (let i = 0; i < edges.length - 1; i++) {
+      const s0 = edges[i], s1 = edges[i + 1], mid = (s0 + s1) / 2;
+      const holes = gaps.filter((g) => mid > g.a && mid < g.b).map((g) => [g.y0 || 0, g.y1 ?? 2.6]).sort((p, q) => p[0] - q[0]);
+      let y = 0;
+      const mk = (h0, h1) => { if (h1 - h0 < 0.01) return; if (axis === 'x') this.box(s0, h0, c - 0.25, s1, h1, c + 0.25, color); else this.box(c - 0.25, h0, s0, c + 0.25, h1, s1, color); };
+      for (const [h0, h1] of holes) { mk(y, h0); y = h1; }
+      mk(y, H);
+    }
+  }
+
   _rackLeds() {
-    // Blinking server LEDs: one instanced mesh, colours shuffled every few frames.
-    const n = this.racks.reduce((s, r) => s + Math.floor((r.x1 - r.x0) / 0.6) * 5, 0);
+    const n = this.racks.length * 5;
     const geo = new THREE.PlaneGeometry(0.06, 0.03);
     const mat = new THREE.MeshBasicMaterial({ color: '#ffffff' });
     const im = new THREE.InstancedMesh(geo, mat, n);
     const m = new THREE.Matrix4(), c = new THREE.Color();
     let i = 0;
     const rng = mulberry32(5);
-    for (const r of this.racks) {
-      for (let x = r.x0 + 0.3; x < r.x1 - 0.2 && i < n; x += 0.6) for (let k = 0; k < 5 && i < n; k++) {
-        m.makeTranslation(x + rng() * 0.3, r.y0 + (r.y1 - r.y0) * (k / 5 + rng() * 0.1), r.z + 0.01);
-        im.setMatrixAt(i, m);
-        im.setColorAt(i, c.set(rng() < 0.7 ? '#36ff9a' : rng() < 0.5 ? '#3aa0ff' : '#ffb030'));
-        i++;
-      }
+    for (const r of this.racks) for (let k = 0; k < 5 && i < n; k++) {
+      m.makeTranslation(r.x + (rng() - 0.5) * 0.3, r.y0 + (r.y1 - r.y0) * (k / 5 + rng() * 0.1), r.z + 0.01);
+      im.setMatrixAt(i, m);
+      im.setColorAt(i, c.set(rng() < 0.7 ? '#36ff9a' : rng() < 0.5 ? '#3aa0ff' : '#ffb030'));
+      i++;
     }
     im.count = i;
     this.leds = im;
@@ -536,39 +622,55 @@ export class Facility {
     this.root.add(it, ic);
   }
 
-  // ---- navigation graph for guards -------------------------------------------
+  // ---- navigation graph for guards (two storeys: nodes carry a floor height) ----------
   _nav() {
-    const pts = [
-      // yard ring
+    const F = BUILDING.f1, I = 0.02;
+    const out = [
       [-66, 48], [-40, 50], [-20, 52], [0, 54], [22, 50], [50, 44], [68, 40], [72, 6], [74, -23], [66, -52], [40, -52], [10, -54], [-20, -52], [-44, -52], [-68, -50], [-70, -24], [-72, 11], [-68, 32],
       [-44, 10], [-44, -10], [-44, -36], [44, -10], [42, -20], [44, -36], [0, 6], [-20, 8], [20, 8], [0, 28], [30, 20], [-30, 18], [40, 4], [42, 22],
-      // outside the fence
       [-90, 11], [0, 68], [86, -23], [0, 88], [-90, 50], [90, 30], [100, -60], [-100, -40], [110, -16],
-      // interior
-      [-34, -10], [-22, -9], [-22.7, -16.6], [-22.7, -20], [0, -9], [0, -16.5], [-33, -20], [-12, -20], [0, -20], [3, -20], [15, -20], [24.5, -20], [29, -20], [34, -20],
-      [15, -9], [15, -16.5], [9.5, -13], [29, -9], [29, -16.5], [34, -10], [-20.7, -23.6], [-21, -31], [-30, -24], [-12, -24], [-8, -29.7], [-4, -29.7], [3, -23.6], [3, -31], [24.5, -23.8], [18, -27], [27, -28], [30, -34], [-29, -40.5]
-    ];
-    this.nav = pts.map(([x, z], i) => ({ i, x, z, y: this.groundAt(x, z, 50, 0.5), n: [] }));
+    ].map(([x, z]) => [x, z, null]);
+    const g0 = [
+      [-34, -10], [-22, -9], [-22.7, -16.6], [-22.7, -20], [0, -9], [0, -16.5], [-33, -20], [-12, -20], [0, -20], [3, -20], [15, -20], [24.7, -20], [29, -20], [34, -20],
+      [15, -9], [15, -16.5], [9.5, -13], [29, -9], [29, -16.5], [34, -10], [-20.7, -23.6], [-21, -31], [-30, -24], [-12, -24], [3, -23.6], [3, -31], [24.7, -23.8], [18, -27], [30, -28], [24, -31],
+      [-35, -14.5], [-33.6, -16.6], [22.8, -3.2], [23, -1.2],
+    ].map(([x, z]) => [x, z, I]);
+    const g1 = [
+      [-33, -20], [-20, -20], [-10, -20], [0, -20], [3, -20], [15, -20], [24.7, -20], [34, -20],
+      [-22.7, -16.6], [-20, -9], [-30, -9], [-26.5, -16.6], [0, -16.5], [0, -8], [15, -16.5], [15, -9], [29, -16.5], [29, -9], [31.2, -1.2], [33, -4],
+      [-20.7, -23.6], [-21, -31], [-30, -24], [-12, -24], [3, -23.6], [3, -31], [24.7, -23.8], [18, -27], [30, -28], [24, -31],
+    ].map(([x, z]) => [x, z, F]);
+    const pts = [...out, ...g0, ...g1];
+    this.nav = pts.map(([x, z, y], i) => ({ i, x, z, y: y === null ? this.groundAt(x, z, 2, 0.5) : y, n: [] }));
     for (let a = 0; a < this.nav.length; a++) for (let b = a + 1; b < this.nav.length; b++) {
       const A = this.nav[a], B = this.nav[b];
+      if (Math.abs(A.y - B.y) > 0.6 && (this.insideBuilding(A.x, A.z) || this.insideBuilding(B.x, B.z))) continue;
       const d = Math.hypot(A.x - B.x, A.z - B.z);
       if (d > 48) continue;
-      if (this.walkable(A.x, A.z, B.x, B.z)) { A.n.push(b); B.n.push(a); }
+      if (this.walkable(A.x, A.z, B.x, B.z, 0.4, Math.max(A.y, B.y) > 2 ? F : 0)) { A.n.push(b); B.n.push(a); }
     }
+    // The two flights of stairs link the floors.
+    const link = (ax, az, bx, bz) => {
+      const A = this.nav.find((n) => n.x === ax && n.z === az && n.y < 1), B = this.nav.find((n) => n.x === bx && n.z === bz && n.y > 2);
+      if (A && B) { A.n.push(B.i); B.n.push(A.i); }
+    };
+    link(-33.6, -16.6, -26.5, -16.6);
+    link(23, -1.2, 31.2, -1.2);
   }
 
-  // Clear walking line between two points (doors count as passable; guards open them).
-  walkable(ax, az, bx, bz, r = 0.4) {
+  // Clear walking line at a floor height (doors count as passable; guards open them).
+  walkable(ax, az, bx, bz, r = 0.4, y = 0) {
     const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz) || 1;
     const px = -dz / L * r, pz = dx / L * r;
+    const ry = y + 0.8;
     for (const o of [0, 1, -1]) {
       const ox = ax + px * o, oz = az + pz * o;
       for (const b of this.boxes) {
-        if (!b.solid || b.door || b.max[1] < 0.35 || b.min[1] > 1.2) continue;
-        if (segBox(ox, 0.8, oz, dx, 0, dz, b)) return false;
+        if (!b.solid || b.door || b.max[1] < ry - 0.45 || b.min[1] > ry + 0.4) continue;
+        if (segBox(ox, ry, oz, dx, 0, dz, b)) return false;
       }
     }
-    // Terrain too steep (the cliff) breaks the edge.
+    if (y > 1) return true;
     const steps = Math.ceil(L / 3);
     let prev = terrainHeight(ax, az);
     for (let i = 1; i <= steps; i++) {
@@ -579,19 +681,26 @@ export class Facility {
     return true;
   }
 
-  nearestNode(x, z) {
-    const sorted = this.nav.map((n) => [(n.x - x) ** 2 + (n.z - z) ** 2, n]).sort((a, b) => a[0] - b[0]);
-    for (let k = 0; k < Math.min(8, sorted.length); k++) if (this.walkable(x, z, sorted[k][1].x, sorted[k][1].z, 0.2)) return sorted[k][1];
+  floorOf(y) {
+    return y > BUILDING.f1 - 0.5 && y < BUILDING.h ? 1 : 0;
+  }
+
+  nearestNode(x, z, y = 0) {
+    const inside = this.insideBuilding(x, z);
+    const fy = inside && this.floorOf(y) ? BUILDING.f1 : 0;
+    const sorted = this.nav.filter((n) => !inside || !this.insideBuilding(n.x, n.z) || Math.abs(n.y - fy) < 1).map((n) => [(n.x - x) ** 2 + (n.z - z) ** 2, n]).sort((a, b) => a[0] - b[0]);
+    for (let k = 0; k < Math.min(8, sorted.length); k++) if (this.walkable(x, z, sorted[k][1].x, sorted[k][1].z, 0.2, fy)) return sorted[k][1];
     return sorted.length ? sorted[0][1] : null;
   }
 
-  // A* over the nav graph. Returns [{x,z}] ending at the target point.
-  path(fx, fz, tx, tz) {
-    if (this.walkable(fx, fz, tx, tz)) return [{ x: tx, z: tz }];
-    const s = this.nearestNode(fx, fz), e = this.nearestNode(tx, tz);
+  // A* over the nav graph. Returns [{x,z,y}] ending at the target point.
+  path(fx, fz, tx, tz, fy = 0, ty = fy) {
+    const sameFloor = this.floorOf(fy) === this.floorOf(ty) || !(this.insideBuilding(fx, fz) || this.insideBuilding(tx, tz));
+    if (sameFloor && this.walkable(fx, fz, tx, tz, 0.4, this.floorOf(fy) ? BUILDING.f1 : 0)) return [{ x: tx, z: tz }];
+    const s = this.nearestNode(fx, fz, fy), e = this.nearestNode(tx, tz, ty);
     if (!s || !e) return [{ x: tx, z: tz }];
     const N = this.nav, g = new Map([[s.i, 0]]), from = new Map(), open = new Set([s.i]);
-    const hh = (n) => Math.hypot(n.x - e.x, n.z - e.z);
+    const hh = (n) => Math.hypot(n.x - e.x, n.z - e.z, (n.y - e.y) * 3);
     let found = s.i === e.i;
     while (open.size && !found) {
       let cur = -1, cf = 1e18;
@@ -599,14 +708,14 @@ export class Facility {
       if (cur === e.i) { found = true; break; }
       open.delete(cur);
       for (const j of N[cur].n) {
-        const ng = g.get(cur) + Math.hypot(N[cur].x - N[j].x, N[cur].z - N[j].z);
+        const ng = g.get(cur) + Math.hypot(N[cur].x - N[j].x, N[cur].z - N[j].z, N[cur].y - N[j].y);
         if (ng < (g.has(j) ? g.get(j) : 1e18)) { g.set(j, ng); from.set(j, cur); open.add(j); }
       }
     }
     if (!found) return [{ x: tx, z: tz }];
     const out = [{ x: tx, z: tz }];
     let c = e.i;
-    while (c !== undefined) { out.unshift({ x: N[c].x, z: N[c].z }); c = from.get(c); }
+    while (c !== undefined) { out.unshift({ x: N[c].x, z: N[c].z, y: N[c].y }); c = from.get(c); }
     return out;
   }
 
@@ -697,44 +806,88 @@ export class Facility {
     return !this.ray(a, b, 'sight');
   }
 
-  insideBuilding(x, z) {
-    return x > BUILDING.x0 && x < BUILDING.x1 && z > BUILDING.z0 && z < BUILDING.z1;
+  insideBuilding(x, z, y = 0) {
+    return x > BUILDING.x0 && x < BUILDING.x1 && z > BUILDING.z0 && z < BUILDING.z1 && y < BUILDING.h - 0.1;
   }
 
-  roomAt(x, z) {
-    for (const r of ROOMS) if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1) return r;
+  roomAt(x, z, y = 0) {
+    const f = this.floorOf(y);
+    for (const r of ROOMS) if (x >= r.x0 && x <= r.x1 && z >= r.z0 && z <= r.z1 && (r.floor === undefined || r.floor === f)) return r;
     return null;
   }
 
-  // Security zone: 'out' (beyond the fence), 'yard', 'floor' (data floor) or 'core' (vault & core network).
-  zoneAt(x, z) {
-    if (this.insideBuilding(x, z)) {
-      const r = this.roomAt(x, z);
+  // Security zone: 'out' (beyond the fence), 'yard', 'floor' (offices, halls) or 'core' (rack rooms).
+  zoneAt(x, z, y = 0) {
+    if (this.insideBuilding(x, z, y)) {
+      const r = this.roomAt(x, z, y);
       return r && r.tier >= 2 ? 'core' : 'floor';
     }
     if (Math.abs(x) <= FENCE.x && Math.abs(z) <= FENCE.z) return 'yard';
     return 'out';
   }
 
-  // How lit a point is, 0 (pitch dark) .. 1 (floodlit). Moonlight gives the outdoors a floor.
+  // How lit a point is, 0 (pitch dark) .. 1 (floodlit). Moonlight gives the outdoors a floor;
+  // indoors only the panels of the room you're in count.
   lightAt(x, y, z) {
-    const zone = this.zoneAt(x, z);
-    const inside = zone === 'floor' || zone === 'core';
-    let l = inside ? 0.12 : 0.22;
+    const inside = this.insideBuilding(x, z, y);
+    let l = inside ? 0.1 : 0.22;
+    const room = inside ? this.roomAt(x, z, y) : null;
     for (const L of this.lightSources) {
-      if (!!L.interior !== inside) continue;
-      if (!this.lightsOn[L.zone]) continue;
+      if (!!L.interior !== inside || !L.on) continue;
+      if (inside) { if (room && L.room === room.id) l = Math.max(l, 0.78); continue; }
       const d = Math.hypot(x - L.x, (y - L.y) * 0.35, z - L.z);
-      if (d < L.r) l = Math.max(l, inside ? 0.75 : 1 - (d / L.r) * 0.6);
+      if (d < L.r) l = Math.max(l, 1 - (d / L.r) * 0.6);
     }
     return l;
   }
 
-  setLights(zone, on) {
-    this.lightsOn[zone] = on;
-    for (const L of this.lightSources) if (L.zone === zone && L.fx) for (const o of L.fx) o.visible = on;
-    if (this.ceil[zone]) for (const m of this.ceil[zone]) m.material.color.set(on ? (zone === 'core' ? '#b8d8ff' : '#e8f0ff') : '#1a1c20');
-    if (zone === 'floor' && this.leds) this.leds.visible = true;
+  roomLit(id) {
+    return this.lightSources.some((L) => L.room === id && L.on);
+  }
+
+  // Turn lights off for a while (cut lights, EMP) — or for good (shot out).
+  lightsOff(pred, dur) {
+    for (const L of this.lightSources) if (pred(L)) L.offT = Math.max(L.offT || 0, dur);
+    this._syncLights();
+  }
+  breakLight(id) {
+    const L = this.lightSources[id];
+    if (!L || L.broken) return false;
+    L.broken = true;
+    this._syncLights();
+    return true;
+  }
+  // Fixtures a shot can hit: lamps and ceiling panels. Returns { id, t } or null.
+  lightHit(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, L2 = dx * dx + dy * dy + dz * dz;
+    let best = null;
+    for (const L of this.lightSources) {
+      if (!L.fx || L.broken) continue;
+      const r = L.kind === 'panel' ? 0.75 : 0.5;
+      const t = clamp(((L.x - a.x) * dx + (L.y - a.y) * dy + (L.z - a.z) * dz) / L2, 0, 1);
+      const px = a.x + dx * t - L.x, py = a.y + dy * t - L.y, pz = a.z + dz * t - L.z;
+      if (px * px + py * py * (L.kind === 'panel' ? 16 : 1) + pz * pz < r * r && (!best || t < best.t)) best = { id: L.id, t };
+    }
+    return best;
+  }
+  lightState() {
+    return this.lightSources.filter((L) => L.broken || L.offT > 0).map((L) => [L.id, L.broken ? 1 : 0, Math.ceil(L.offT || 0)]);
+  }
+  applyLightState(arr) {
+    const m = new Map(arr.map((a) => [a[0], a]));
+    for (const L of this.lightSources) { const a = m.get(L.id); L.broken = !!(a && a[1]); L.offT = a ? a[2] : 0; }
+    this._syncLights();
+  }
+  _syncLights() {
+    for (const L of this.lightSources) {
+      const on = !L.broken && !(L.offT > 0);
+      if (on === L.on && L._synced) continue;
+      L.on = on;
+      L._synced = true;
+      if (!L.fx) continue;
+      if (L.kind === 'panel') L.fx[0].material.color.set(on ? L.color : L.broken ? '#0c0d10' : '#1a1c20');
+      else { L.fx[0].material.color.set(on ? L.color : '#15161a'); for (const o of L.fx.slice(1)) o.visible = on; }
+    }
   }
 
   // Doors: `open` is the authoritative state; the mesh slides to match.
@@ -747,6 +900,9 @@ export class Facility {
 
   update(dt) {
     this.t += dt;
+    let changed = false;
+    for (const L of this.lightSources) if (L.offT > 0) { L.offT -= dt; if (L.offT <= 0) { L.offT = 0; changed = true; } }
+    if (changed) this._syncLights();
     for (const d of Object.values(this.doors)) {
       d.openT = clamp(d.openT + (d.open ? dt : -dt) * 2.5, 0, 1);
       const m = d.box.mesh;
@@ -754,21 +910,25 @@ export class Facility {
       if (d.kind === 'dock') m.position.y += d.openT * 3.6;
       else if (d.horiz) m.position.x += d.openT * (d.w * 0.95);
       else m.position.z += d.openT * (d.w * 0.95);
-      const col = d.sealed ? '#ff2a40' : d.open ? '#30ff90' : d.unlocked ? '#30c0ff' : d.hackT > 0 ? '#ffb020' : '#ff3040';
+      const col = d.sealed ? '#ff2a40' : d.open ? '#30ff90' : d.unlocked ? '#30c0ff' : d.hackT > 0 ? '#ffb020' : d.kind === 'badge' ? '#ffd040' : '#ff3040';
       d.lamp.material.color.set(col);
     }
-    // LED shimmer.
     if (this.leds && Math.floor(this.t * 6) !== this._ledTick) {
       this._ledTick = Math.floor(this.t * 6);
       const c = new THREE.Color();
-      for (let k = 0; k < 12; k++) {
+      for (let k = 0; k < 16; k++) {
         const i = Math.floor(Math.random() * this.leds.count);
         this.leds.setColorAt(i, c.set(Math.random() < 0.15 ? '#101010' : Math.random() < 0.7 ? '#36ff9a' : '#3aa0ff'));
       }
       this.leds.instanceColor.needsUpdate = true;
     }
-    if (this.serverScreen) this.serverScreen.material.color.setHSL(0.47, 1, 0.45 + Math.sin(this.t * 3) * 0.08);
+    if (this.beaconMat) this.beaconMat.color.set(Math.sin(this.t * 3) > 0 ? '#ffb020' : '#402800');
     if (this.relayMesh) this.relayMesh.material.color.set(this.relayPlanted ? '#30ff90' : Math.sin(this.t * 5) > 0 ? '#ffb020' : '#553300');
+    // Hacked IoT devices go haywire: flashing faces.
+    for (const D of this.devices || []) {
+      if (D.t > 0) { D.t -= dt; D.face.material.color.setHSL((this.t * 3) % 1, 1, Math.sin(this.t * 30) > 0 ? 0.6 : 0.2); }
+      else D.face.material.color.copy(D.base);
+    }
   }
 }
 

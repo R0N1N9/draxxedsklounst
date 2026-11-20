@@ -31,9 +31,9 @@ export class Tablet {
     this.spot = spot;
     el.innerHTML = `
       <div class="ct-bezel">
-        <div class="ct-top"><b>CYBER OPS // CS-7</b><span class="ct-link"></span><span class="ct-clock"></span><button class="ct-x" title="Close (TAB)">✕</button></div>
+        <div class="ct-top"><b>CYBER OPS // CS-7</b><span class="ct-link"></span><button class="ct-isr" title="ISR drone view (I)">ISR ▸</button><span class="ct-clock"></span><button class="ct-x" title="Close (TAB)">✕</button></div>
         <div class="ct-body">
-          <div class="ct-mapwrap"><canvas class="ct-map"></canvas><div class="ct-mapbtns"><button data-z="1">＋</button><button data-z="-1">－</button><button data-z="0">◎</button></div><div class="ct-hint"></div></div>
+          <div class="ct-mapwrap"><canvas class="ct-map"></canvas><div class="ct-mapbtns"><button data-z="1">＋</button><button data-z="-1">－</button><button data-z="0">◎</button><button data-f="0" class="ct-fl">GROUND</button><button data-f="1" class="ct-fl">UPPER</button></div><div class="ct-hint"></div></div>
           <div class="ct-side">
             <div class="ct-sec ct-obj"></div>
             <div class="ct-sec ct-reqs"></div>
@@ -51,6 +51,10 @@ export class Tablet {
     this.ctx = this.canvas.getContext('2d');
     this.parts = { reqs: $('.ct-reqs'), obj: $('.ct-obj'), bw: $('.ct-bw'), pay: $('.ct-pay'), hold: $('.ct-hold'), feed: $('.ct-feed'), feedLbl: $('.ct-feedlbl'), log: $('.ct-log'), clock: $('.ct-clock'), link: $('.ct-link'), hint: $('.ct-hint') };
     $('.ct-x').onclick = () => this.close();
+    this.floor = 0;
+    el.querySelectorAll('[data-f]').forEach((b) => (b.onclick = () => { this.floor = +b.dataset.f; this._floorBtns(); }));
+    $('.ct-isr').style.display = game.role === 'spotter' || game.operative ? '' : 'none';
+    $('.ct-isr').onclick = () => { this.close(); game.isr.enter(); };
     el.querySelectorAll('[data-z]').forEach((b) => (b.onclick = () => {
       const z = +b.dataset.z;
       if (z === 0) this._centre();
@@ -60,7 +64,7 @@ export class Tablet {
     if (spot) {
       this.parts.pay.innerHTML = '<div class="ct-h">PAYLOADS</div>' + PAYLOADS.map((p) => `<button data-k="${p.k}" title="${p.desc}"><i>${p.key}</i><b>${p.name}</b><em class="c"></em><em class="w">${p.bw ? p.bw + ' BW' : ''}</em></button>`).join('');
       this.parts.pay.addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (b) this._pick(b.dataset.k); });
-      this.parts.hold.innerHTML = '<button class="ct-crack">HOLD — CRACK VAULT</button><button class="ct-fight">HOLD — FIGHT TRACE</button><div class="ct-perch"></div>';
+      this.parts.hold.innerHTML = '<button class="ct-crack" style="display:none"></button><button class="ct-fight">HOLD — FIGHT TRACE</button><div class="ct-perch"></div>';
       const hold = (sel, key) => {
         const b = $(sel);
         const on = (v) => (e) => { e.preventDefault(); this.g.ops[key] = v; b.classList.toggle('down', v); };
@@ -145,8 +149,37 @@ export class Tablet {
   toggle() {
     if (this.visible) this.close(); else this.open();
   }
+  _floorBtns() {
+    this.el.querySelectorAll('[data-f]').forEach((b) => b.classList.toggle('on', +b.dataset.f === this.floor));
+    this.dirty = true;
+  }
+  _onFloor(y) {
+    return (y > BUILDING.f1 - 0.6 && y < BUILDING.h) === (this.floor === 1);
+  }
+  // Mini map for the HUD's picture-in-picture square.
+  drawMini(cv) {
+    const g = this.g;
+    const keep = [this.canvas, this.ctx, this.cw, this.ch, { ...this.view }, this.floor];
+    const k = Math.min(devicePixelRatio, 2);
+    const r = cv.getBoundingClientRect();
+    if (r.width < 10) return;
+    if (cv.width !== Math.round(r.width * k)) { cv.width = Math.round(r.width * k); cv.height = Math.round(r.height * k); }
+    this.canvas = cv; this.ctx = cv.getContext('2d'); this.cw = r.width; this.ch = r.height;
+    const P = g.player.pos;
+    this.view = { x: P.x, z: P.z, s: 1.3 };
+    this.floor = g.fac.floorOf(P.y + 0.5);
+    this.mini = true;
+    try { this._draw(); } finally {
+      this.mini = false;
+      [this.canvas, this.ctx, this.cw, this.ch, this.view, this.floor] = keep;
+    }
+  }
+
   open() {
     if (this.g.downed || this.g.kia || this.g.ended) return;
+    if (this.g.isr && this.g.isr.active) this.g.isr.exit();
+    this.floor = this.g.fac.floorOf(this.g.player.pos.y + 0.5);
+    this._floorBtns();
     this.visible = true;
     this.el.classList.add('on');
     this.g.audio.click();
@@ -207,9 +240,11 @@ export class Tablet {
   _hit(px, py) {
     const g = this.g, S = g.sentinel;
     const near = (x, z, r = 11) => { const s = this._toScreen(x, z); return Math.hypot(s.x - px, s.y - py) < r; };
-    for (const e of [...S.guards, ...S.drones]) if (e.state !== 'dead' && e.rev && near(e.x, e.z)) return { kind: e.kind === 'g' ? 'guard' : 'drone', e };
-    for (const c of S.cams) if (near(c.x, c.z, 12)) return { kind: 'cam', e: c };
-    for (const d of Object.values(g.fac.doors)) if (near(d.x, d.z, 12)) return { kind: 'door', e: d };
+    for (const e of S.guards) if (e.state !== 'dead' && e.rev && this._onFloor(e.y + 0.5) && near(e.x, e.z)) return { kind: 'guard', e };
+    for (const e of S.drones) if (e.state !== 'dead' && e.rev && near(e.x, e.z)) return { kind: 'drone', e };
+    for (const d of g.fac.devices) if (this._onFloor(d.y) && near(d.x, d.z, 12)) return { kind: 'iot', e: d };
+    for (const c of S.cams) if (this._onFloor(c.y - 1.5) === true && near(c.x, c.z, 12)) return { kind: 'cam', e: c };
+    for (const d of Object.values(g.fac.doors)) if (this._onFloor((d.y || 0) + 0.5) && near(d.x, d.z, 12)) return { kind: 'door', e: d };
     if (g.aiShoot) SPOTS.perches.forEach((p, i) => { if (!this._ph && near(p.x, p.z, 14)) this._ph = { kind: 'perch', i }; });
     const ph = this._ph;
     this._ph = null;
@@ -229,13 +264,20 @@ export class Tablet {
     }
     if (spot && this.selected) {
       const k = this.selected;
-      const why = g.ops.use(k, p);
+      const why = g.ops.use(k, { ...p, y: this.floor ? BUILDING.f1 : 0 });
       this._say(why ? `${PAYLOAD[k].name}: ${why}` : `UPLOADING · ${PAYLOAD[k].name}`, !why);
       if (!why) this.selected = null;
       return;
     }
     const h = this._hit(px, py);
     if (!h) return;
+    if (h.kind === 'guard' && h.e.tagT > 0) {
+      const on = !h.e.sync;
+      g.payload('sync', { id: h.e.id, on });
+      if (g.isHost) h.e.sync = on;
+      this._say(on ? 'SYNC TARGET' : 'SYNC CLEARED', true);
+      return;
+    }
     if (h.kind === 'guard' || h.kind === 'drone') {
       g.payload('tag', { id: h.e.id });
       if (g.isHost) h.e.tagT = 12;
@@ -244,6 +286,11 @@ export class Tablet {
       return;
     }
     if (!spot) { if (h.kind === 'cam' && h.e.hacked) this.feedSrc = h.e.id; return; }
+    if (h.kind === 'iot') {
+      const why = g.ops.hack('iot', h.e.id);
+      this._say(why ? `DEVICE: ${why}` : `UPLOADING \u00B7 ${h.e.kind.toUpperCase()} HACK`, !why);
+      return;
+    }
     if (h.kind === 'cam') {
       if (h.e.hacked && this.feedSrc !== h.e.id) { this.feedSrc = h.e.id; this._say(`FEED · CAM-${h.e.id}`, true); return; }
       const why = g.ops.hack('cam', h.e.id);
@@ -316,8 +363,9 @@ export class Tablet {
     const net = ob.access >= 3 ? 'SECURE CORE' : ob.access >= 2 ? 'DATA FLOOR' : 'PERIMETER';
     P.obj.innerHTML = `<div class="ct-h">OBJ ${ob.step + 1}/${OBJECTIVES.length}</div><b>${o ? o.title : ''}</b><p>${o ? o.hint : ''}</p>
       <div class="ct-row"><span>SEC</span><em class="sec-${sec.toLowerCase()}">${sec}</em><span>NET</span><em>${net}</em></div>
-      ${ob.vault ? `<div class="ct-row"><span>EVIDENCE COPY</span><em>${Math.round(ob.upload * 100)}%</em><span>SENTINEL SWEEP</span><em class="${ob.trace > 0.6 ? 'sec-alarm' : ''}">${Math.round(ob.trace * 100)}%</em></div>` : ''}
-      <div class="ct-row"><span>DROPS</span><em>${ob.drops}</em><span>BADGE</span><em>${ob.badge ? (ob.badge === g.role ? 'YOU' : ob.badge === 'ground' ? 'ON BODY' : g.partnerName) : 'CHIEF'}</em></div>`;
+      ${ob.found ? `<div class="ct-row"><span>EVIDENCE COPY</span><em>${Math.round(ob.upload * 100)}%</em><span>SENTINEL SWEEP</span><em class="${ob.trace > 0.6 ? 'sec-alarm' : ''}">${Math.round(ob.trace * 100)}%</em></div>` : ''}
+      <div class="ct-row"><span>DROPS</span><em>${ob.drops}</em><span>BADGE</span><em>${ob.badge ? 'CLONED' : 'ON THE CHIEF'}</em></div>
+      <div class="ct-row"><span>SERVER</span><em>${ob.found ? (ROOMS.find((r) => r.id === g.fac.target.room) || {}).name || '?' : 'UNKNOWN'}</em><span>DRIVE</span><em>${ob.drive ? (ob.drive === 'ground' ? 'ON FLOOR' : ob.drive === g.role ? 'YOU' : g.partnerName) : '\u2014'}</em></div>`;
     if (spot) {
       const O = g.ops;
       P.bw.innerHTML = `<div class="ct-h">BANDWIDTH</div><i class="ct-bar"><em style="width:${Math.round(O.bw)}%"></em></i>${O.casts.map((c) => `<div class="ct-cast">UPLOADING · ${c.name} <i class="ct-bar"><em style="width:${Math.round((c.t / c.dur) * 100)}%"></em></i></div>`).join('')}`;
@@ -328,8 +376,7 @@ export class Tablet {
         b.querySelector('.c').textContent = cd > 0 ? Math.ceil(cd) + 's' : '';
       }
       const cr = P.hold.querySelector('.ct-crack'), fi = P.hold.querySelector('.ct-fight');
-      cr.classList.toggle('off', !ob.canCrack);
-      cr.textContent = ob.vault ? 'VAULT OPEN' : ob.canCrack ? `HOLD — CRACK VAULT ${Math.round(ob.crack * 100)}% (C)` : 'CRACK VAULT — badge-holder at the door';
+      void cr;
       fi.classList.toggle('off', !ob.uploading);
       fi.textContent = ob.uploading ? `HOLD — FIGHT TRACE ${Math.round(ob.trace * 100)}% (X)` : 'FIGHT TRACE — during the upload';
       const ph = P.hold.querySelector('.ct-perch');
@@ -376,10 +423,11 @@ export class Tablet {
     c.setLineDash([]);
     // Rooms.
     for (const r of ROOMS) {
+      if (r.floor !== undefined && r.floor !== this.floor) continue;
       const a = T(r.x0, r.z0), b = T(r.x1, r.z1);
       const locked = r.tier + 1 > ob.access && r.id !== 'barracks';
       c.fillStyle = r.solid ? 'rgba(0,255,224,0.06)' : TIER_COL[r.tier + 1] || TIER_COL[1];
-      if (!fac.lightsOn[r.tier >= 2 ? 'core' : 'floor'] && !r.solid) c.fillStyle = 'rgba(0,0,0,0.5)';
+      if (!r.solid && r.floor !== undefined && !fac.roomLit(r.id)) c.fillStyle = 'rgba(0,0,0,0.55)';
       c.fillRect(a.x, a.y, b.x - a.x, b.y - a.y);
       if (locked) {
         c.save(); c.beginPath(); c.rect(a.x, a.y, b.x - a.x, b.y - a.y); c.clip();
@@ -387,7 +435,7 @@ export class Tablet {
         for (let i = -H; i < W + H; i += 9) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i + H, H); c.stroke(); }
         c.restore();
       }
-      if (s > 1.8 && r.id !== 'corridor') {
+      if (s > 1.8 && r.id !== 'corridor' && r.id !== 'corridor2' && !this.mini) {
         c.fillStyle = locked ? 'rgba(255,42,109,0.6)' : 'rgba(0,255,224,0.55)';
         c.font = `600 ${Math.max(8, Math.min(11, s * 1.6))}px JetBrains Mono, monospace`;
         const name = c.measureText(r.name).width < b.x - a.x - 4 ? r.name : r.name.split(/[ /]/)[0];
@@ -397,7 +445,8 @@ export class Tablet {
     // Walls and solid cover.
     c.fillStyle = 'rgba(0,255,224,0.55)';
     for (const b of fac.boxes) {
-      if (b.door || !b.sight || b.max[1] < 1.6 || b.min[1] > 1.6) continue;
+      const cut = this.floor ? BUILDING.f1 + 1.6 : 1.6;
+      if (b.door || !b.sight || b.max[1] < cut || b.min[1] > cut) continue;
       const a = T(b.min[0], b.min[2]), e = T(b.max[0], b.max[2]);
       const w = Math.max(1, e.x - a.x), h = Math.max(1, e.y - a.y);
       if (w * h > 60 * s * s * 12) continue; // skip the big terrain-sized boxes
@@ -405,22 +454,39 @@ export class Tablet {
     }
     // Doors.
     for (const d of Object.values(fac.doors)) {
+      if (!this._onFloor((d.y || 0) + 0.5)) continue;
       const a = T(d.x, d.z);
-      c.fillStyle = d.sealed ? '#ff2a6d' : d.open ? '#30ff90' : d.unlocked ? '#30c0ff' : d.hackT > 0 ? '#ffb020' : '#ff5070';
+      c.fillStyle = d.sealed ? '#ff2a6d' : d.open ? '#30ff90' : d.unlocked ? '#30c0ff' : d.hackT > 0 ? '#ffb020' : d.kind === 'badge' ? '#ffd040' : '#ff5070';
       c.fillRect(a.x - 4, a.y - 4, 8, 8);
-      if (s > 3) { c.fillStyle = 'rgba(255,255,255,0.6)'; c.fillText(d.kind === 'mech' ? 'MECH' : d.kind === 'vault' ? 'VAULT' : d.kind === 'dock' ? 'DOCK' : 'ELEC', a.x, a.y - 7); }
+      if (s > 3 && !this.mini) { c.fillStyle = 'rgba(255,255,255,0.6)'; c.fillText(d.kind === 'mech' ? 'MECH' : d.kind === 'badge' ? 'KEYCARD' : d.kind === 'dock' ? 'DOCK' : 'ELEC', a.x, a.y - 7); }
+    }
+    // IoT devices (hackable distractions) and dark / shot-out lights.
+    for (const D of fac.devices) {
+      if (!this._onFloor(D.y)) continue;
+      const a = T(D.x, D.z);
+      c.strokeStyle = D.t > 0 ? '#ff5fd0' : 'rgba(255,95,208,0.6)';
+      c.strokeRect(a.x - 3, a.y - 3, 6, 6);
+      if (s > 3 && !this.mini) { c.fillStyle = 'rgba(255,95,208,0.8)'; c.fillText(D.kind.toUpperCase(), a.x, a.y + 12); }
+    }
+    for (const L of fac.lightSources) {
+      if (!L.fx || (L.interior && !this._onFloor(L.y - 2))) continue;
+      const a = T(L.x, L.z);
+      c.fillStyle = L.on ? 'rgba(255,230,160,0.7)' : L.broken ? 'rgba(255,60,80,0.6)' : 'rgba(120,120,120,0.6)';
+      c.fillRect(a.x - 1.5, a.y - 1.5, 3, 3);
     }
     // Objective ring, relay, server, LZ, perches.
     const ring = (x, z, r, col, lbl) => { const a = T(x, z); c.strokeStyle = col; c.lineWidth = 1.5; c.beginPath(); c.arc(a.x, a.y, r, 0, Math.PI * 2); c.stroke(); if (lbl) { c.fillStyle = col; c.fillText(lbl, a.x, a.y - r - 4); } };
-    ring(SPOTS.relay.x, SPOTS.relay.z, 6, ob.relay ? '#30ff90' : '#ffb020', ob.relay ? 'RELAY ✓' : 'RELAY');
-    ring(SPOTS.server.x, SPOTS.server.z, 7, '#30ffd0', 'ARCHIVE');
-    if (ob.uploading || (ob.upload > 0 && ob.upload < 1)) { const a = T(SPOTS.server.x, SPOTS.server.z); c.strokeStyle = '#30ffd0'; c.lineWidth = 3; c.beginPath(); c.arc(a.x, a.y, 11, -Math.PI / 2, -Math.PI / 2 + ob.upload * Math.PI * 2); c.stroke(); c.lineWidth = 1; }
+    if (this.floor === 0) ring(SPOTS.relay.x, SPOTS.relay.z, 6, ob.relay ? '#30ff90' : '#ffb020', ob.relay ? 'RELAY ✓' : 'RELAY');
+    const TG = fac.target;
+    if (ob.found && TG.floor === this.floor) ring(TG.x, TG.z, 7, '#30ffd0', 'ARCHIVE');
+    if (ob.found && TG.floor === this.floor && (ob.uploading || (ob.upload > 0 && ob.upload < 1))) { const a = T(TG.x, TG.z); c.strokeStyle = '#30ffd0'; c.lineWidth = 3; c.beginPath(); c.arc(a.x, a.y, 11, -Math.PI / 2, -Math.PI / 2 + ob.upload * Math.PI * 2); c.stroke(); c.lineWidth = 1; }
     ring(SPOTS.lz.x, SPOTS.lz.z, SPOTS.lz.r * s, ob.drive ? '#30ff90' : 'rgba(48,255,144,0.4)', 'LZ');
     SPOTS.perches.forEach((pp, i) => { const a = T(pp.x, pp.z); c.fillStyle = g.aiShoot && g.aiShoot.perch === i ? '#f2b35b' : 'rgba(242,179,91,0.45)'; c.beginPath(); c.moveTo(a.x, a.y - 6); c.lineTo(a.x + 5, a.y + 4); c.lineTo(a.x - 5, a.y + 4); c.closePath(); c.fill(); if (s > 2) c.fillText(pp.name, a.x, a.y + 14); });
     const om = g.hud._objPoint();
     if (om && !om.hide) { const a = T(om.x, om.z); c.strokeStyle = accent; c.lineWidth = 2; const r = 10 + Math.sin(g.t * 4) * 2; c.beginPath(); c.arc(a.x, a.y, r, 0, Math.PI * 2); c.stroke(); c.lineWidth = 1; }
     // Cameras.
     for (const cm of S.cams) {
+      if (fac.insideBuilding(cm.x, cm.z) && !this._onFloor(cm.y - 1.5)) continue;
       const a = T(cm.x, cm.z);
       const blind = cm.loopT > 0 || cm.empT > 0 || S.spoofT > 0;
       const col = cm.hacked ? 'rgba(48,255,208,' : blind ? 'rgba(140,140,140,' : cm.aw > 0.2 ? 'rgba(255,48,72,' : 'rgba(255,90,110,';
@@ -438,11 +504,18 @@ export class Tablet {
     for (const pin of g.pins) { const a = T(pin.x, pin.z); c.strokeStyle = c.fillStyle = pin.by === g.role ? '#ffffff' : '#ffd040'; c.beginPath(); c.arc(a.x, a.y, 6 + Math.sin(g.t * 6) * 1.5, 0, Math.PI * 2); c.stroke(); c.fillText(pin.label, a.x, a.y - 10); }
     if (ob.drive === 'ground' && ob.driveAt) { const a = T(ob.driveAt.x, ob.driveAt.z); c.fillStyle = '#ff9a20'; c.fillRect(a.x - 4, a.y - 4, 8, 8); c.fillText('DRIVE', a.x, a.y - 8); }
     // LKP silhouette.
-    if (S.lkp && S.lkpT > 0) { const a = T(S.lkp.x, S.lkp.z); c.strokeStyle = 'rgba(255,255,255,0.7)'; c.setLineDash([2, 2]); c.beginPath(); c.arc(a.x, a.y, 6, 0, Math.PI * 2); c.stroke(); c.setLineDash([]); c.fillStyle = 'rgba(255,255,255,0.7)'; c.fillText('LKP', a.x, a.y + 15); }
+    for (const role of ['shooter', 'spotter']) {
+      const H = g._huntInfo(role);
+      if (!H || H.state !== 'hunted' || !H.lkp) continue;
+      const a = T(H.lkp.x, H.lkp.z);
+      c.strokeStyle = 'rgba(255,255,255,0.8)'; c.setLineDash([2, 2]); c.beginPath(); c.arc(a.x, a.y, 6, 0, Math.PI * 2); c.stroke(); c.setLineDash([]);
+      c.fillStyle = 'rgba(255,255,255,0.8)'; c.fillText(`LKP ${role === g.role ? 'YOU' : g.partnerName}`, a.x, a.y + 15);
+    }
     // Contacts the network can see.
     let hov = null;
     for (const e of S.guards) {
       if (!e.rev) continue;
+      if (fac.insideBuilding(e.x, e.z) && !this._onFloor(e.y + 0.5)) continue;
       const a = T(e.x, e.z);
       if (e.state === 'dead') { c.strokeStyle = 'rgba(160,160,160,0.6)'; c.beginPath(); c.moveTo(a.x - 3, a.y - 3); c.lineTo(a.x + 3, a.y + 3); c.moveTo(a.x + 3, a.y - 3); c.lineTo(a.x - 3, a.y + 3); c.stroke(); continue; }
       const col = e.chief ? '#c070ff' : e.state === 'alert' || e.state === 'search' ? '#ff3048' : e.state === 'sus' ? '#ffd040' : '#4aa8ff';
@@ -455,6 +528,7 @@ export class Tablet {
       c.fillStyle = col;
       c.beginPath(); c.arc(a.x, a.y, 4, 0, Math.PI * 2); c.fill();
       if (e.tagT > 0) { c.strokeStyle = '#ff3048'; c.strokeRect(a.x - 7, a.y - 7, 14, 14); }
+      if (e.sync) { c.strokeStyle = '#30ff90'; c.beginPath(); c.arc(a.x, a.y, 10, 0, Math.PI * 2); c.stroke(); }
       if (e.chief) { c.fillText('CHIEF', a.x, a.y - 9); }
       if (this.mouse && Math.hypot(this.mouse.x - a.x, this.mouse.y - a.y) < 10) hov = e;
     }

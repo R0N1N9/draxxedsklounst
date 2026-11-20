@@ -199,6 +199,7 @@ export const THEMES = {
   mcblack: { name: 'Multicam black', base: '#2b2c2e', pattern: 0, colors: ['#2b2c2e', '#1a1b1c', '#3c3d3d', '#4b4c49', '#121314'] },
   ocp: { name: 'Multicam OCP', base: '#5c5644', pattern: 0, colors: ['#5c5644', '#454b3b', '#4f4335', '#6c6752', '#29281f'] },
   urban: { name: 'Urban digital', base: '#45484b', pattern: 1, colors: ['#4a4d50', '#303336', '#606366', '#777a7c', '#1f2124'] },
+  urbandark: { name: 'Urban digital (dark)', base: '#2f3336', pattern: 1, colors: ['#33373b', '#1f2225', '#454a4f', '#585d62', '#141618'] },
 };
 export const THEME_DEFAULT = { ghillie: 'ranger', wraith: 'mcblack' };
 export function themeOf(id, outfit = 'ghillie') {

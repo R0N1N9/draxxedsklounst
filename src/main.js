@@ -563,6 +563,7 @@ $('btn-join-open').onclick = () => {
   $('in-code').focus();
 };
 $('btn-join').onclick = async () => {
+  primeTalk();
   audio.unlock();
   primeGyro();
   const code = $('in-code').value.trim().toUpperCase();
@@ -595,8 +596,34 @@ $('btn-join').onclick = async () => {
   }
 };
 
-// ---- Sniper Cell: Infiltration (co-op stealth) ----
+// ---- Sniper Cell (co-op stealth) ----
+// iOS lets speech start only from a tap: say nothing once on the way in.
+function primeTalk() { try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch {} }
 const CELL_CALL = { shooter: 'Ra', spotter: 'R\u014dnin' };
+// Staging-area loadouts (both roles), applied at mission start.
+let cellLoadout = store.get('cellLoadout', null);
+async function renderStaging() {
+  const { normLoadout, PERKS } = await import('./cell/arms.js');
+  const L = (cellLoadout = normLoadout(cellLoadout));
+  const opt = (k, v, label, on) => `<button class="${on ? 'on' : ''}" data-k="${k}" data-v="${v}">${label}</button>`;
+  const perks = (r) => Object.entries(PERKS[r]).map(([v, p]) => opt(r + '.perk', v, p.name, L[r].perk === v)).join('');
+  $('panel-staging').querySelector('.stg').innerHTML = `
+    <div class="stg-col" data-r="shooter"><h3>SHOOTER \u00B7 ${CELL_CALL.shooter}</h3><p>KR-50 Nightjar (integral suppressor), active camo, lock-pick set, weapon light, chest rig, dark urban-digital poncho.</p>
+      <div class="stg-k">SECONDARY</div><div class="stg-opts">${opt('shooter.secondary', 'smg', 'K9 HUSH SMG \u00B7 full/burst/semi', L.shooter.secondary === 'smg')}${opt('shooter.secondary', 'mag50', 'M50 MAGNUM', L.shooter.secondary === 'mag50')}</div>
+      <div class="stg-k">SECONDARY SUPPRESSOR</div><div class="stg-opts">${opt('shooter.secSup', '1', 'FITTED', L.shooter.secSup)}${opt('shooter.secSup', '0', 'OFF', !L.shooter.secSup)}</div>
+      <div class="stg-k">PERK</div><div class="stg-opts">${perks('shooter')}</div></div>
+    <div class="stg-col" data-r="spotter"><h3>SPOTTER \u00B7 ${CELL_CALL.spotter}</h3><p>P-9 pistol, CYBER OPS tablet, recon quad, ISR drone, keycard duty, weapon light, plate carrier, cap.</p>
+      <div class="stg-k">P-9 SUPPRESSOR</div><div class="stg-opts">${opt('spotter.pistolSup', '1', 'FITTED', L.spotter.pistolSup)}${opt('spotter.pistolSup', '0', 'OFF', !L.spotter.pistolSup)}</div>
+      <div class="stg-k">PERK</div><div class="stg-opts">${perks('spotter')}</div></div>`;
+}
+$('panel-staging').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-k]');
+  if (!b) return;
+  const [r, k] = b.dataset.k.split('.');
+  cellLoadout[r][k] = k.endsWith('Sup') ? b.dataset.v === '1' : b.dataset.v;
+  store.set('cellLoadout', cellLoadout);
+  renderStaging();
+});
 const cellSet = { role: store.get('cellRole', 'shooter'), diff: store.get('cellDiff', 'operative'), names: store.get('cellNames', {}), mission: store.get('cellMission', 'nightwatch') };
 const MISSION_DESC = { nightwatch: 'NightWatch: SENTINEL\u2019s augmented night garrison \u2014 cowardly scavs, shielded juggernauts with energy blades, bulwarks behind hard-light walls, beam-rifle snipers on the towers.', infiltration: 'Infiltration: the original op against a crew of human security guards.' };
 const cellName = (role) => ((cellSet.names[role] || '').trim() || CELL_CALL[role]).replace(/[<>&"]/g, '').slice(0, 16);
@@ -612,6 +639,8 @@ document.querySelectorAll('#panel-cell .cell-role').forEach((b) => (b.onclick = 
 document.querySelectorAll('#cell-diff button').forEach((b) => (b.onclick = () => { cellSet.diff = b.dataset.d; store.set('cellDiff', cellSet.diff); syncCell(); }));
 document.querySelectorAll('#cell-mission button').forEach((b) => (b.onclick = () => { cellSet.mission = b.dataset.m; store.set('cellMission', cellSet.mission); syncCell(); }));
 $('in-cell-name').oninput = (e) => { cellSet.names[cellSet.role] = e.target.value; store.set('cellNames', cellSet.names); };
+$('btn-cell-stage').onclick = () => { renderStaging(); showPanel('panel-staging'); };
+$('btn-stage-done').onclick = () => showPanel('panel-cell');
 $('btn-cell').onclick = () => { $('panel-cell').classList.remove('hosting'); syncCell(); showPanel('panel-cell'); };
 syncCell();
 
@@ -625,7 +654,7 @@ async function startCell(mode, opts = {}) {
   const c = opts.cell || { role: cellSet.role, diff: cellSet.diff, mission: cellSet.mission, seed: (Math.random() * 1e6) | 0 };
   // The guest plays whichever role the host didn't take.
   const role = mode === 'operative' ? 'shooter' : mode === 'guest' ? (c.role === 'shooter' ? 'spotter' : 'shooter') : c.role;
-  game = new CellGame({ mode, net: opts.net || null, role, diff: c.diff, seed: c.seed, mission: c.mission || 'nightwatch', quality, settings: { ...settings }, audio, name: cellName(role), partnerName: opts.partnerName || CELL_CALL[role === 'shooter' ? 'spotter' : 'shooter'] });
+  game = new CellGame({ mode, net: opts.net || null, role, diff: c.diff, seed: c.seed, mission: c.mission || 'nightwatch', quality, settings: { ...settings, cellLoadout }, audio, name: cellName(role), partnerName: opts.partnerName || CELL_CALL[role === 'shooter' ? 'spotter' : 'shooter'] });
   if (opts.hello) game.hello = opts.hello;
   window.__game = game;
   document.body.classList.toggle('touch', game.input.touch);
@@ -634,11 +663,12 @@ async function startCell(mode, opts = {}) {
   game.input.enabled = true;
   game.input.requestLock();
 }
-$('btn-cell-solo').onclick = () => { audio.unlock(); primeGyro(); goFullscreen(); startCell('solo'); };
-$('btn-cell-lone').onclick = () => { audio.unlock(); primeGyro(); goFullscreen(); startCell('operative'); };
+$('btn-cell-solo').onclick = () => { primeTalk(); audio.unlock(); primeGyro(); goFullscreen(); startCell('solo'); };
+$('btn-cell-lone').onclick = () => { primeTalk(); audio.unlock(); primeGyro(); goFullscreen(); startCell('operative'); };
 $('btn-cell-join').onclick = () => { showPanel('panel-join'); $('in-code').focus(); };
 $('btn-cell-cancel').onclick = () => { if (net) { net.close(); net = null; } $('panel-cell').classList.remove('hosting'); };
 $('btn-cell-host').onclick = async () => {
+  primeTalk();
   audio.unlock();
   primeGyro();
   $('panel-cell').classList.add('hosting');

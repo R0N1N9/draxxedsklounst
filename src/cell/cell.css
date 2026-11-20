@@ -228,3 +228,63 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 #cell-chat .ch-in { width: 100%; padding: 8px 10px; font-size: 16px; background: rgba(0, 10, 14, 0.85); border: 1px solid var(--cell); color: #fff; font-family: var(--sans); outline: none; }
 #cell-chat .ch-voice { margin-top: 4px; font-family: var(--mono); font-size: 11px; color: rgba(232, 230, 240, 0.6); display: flex; gap: 12px; }
 #cell-chat .ch-voice .on { color: #30ff90; }
+
+/* ---- title colours ---- */
+.t-w { color: #ffffff; } .t-r { color: #ff3048; } .t-c { color: #00ffe0; }
+#cell-cine .cc-title b .t-w, #cell-hud .c-intro h1 .t-w { color: #fff; text-shadow: 0 0 18px rgba(255, 255, 255, 0.35); }
+#cell-cine .cc-title b .t-r, #cell-hud .c-intro h1 .t-r { color: #ff3048; text-shadow: 0 0 22px rgba(255, 48, 72, 0.55); }
+#cell-cine .cc-title b .t-c, #cell-hud .c-intro h1 .t-c { color: #00ffe0; text-shadow: 0 0 22px rgba(0, 255, 224, 0.45); }
+.cell-btn .t-w { color: #fff; } .cell-btn .t-r { color: #ff3048; }
+
+/* ---- detection, sync, PiP squares ---- */
+#cell-hud .c-hunt { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); font-family: var(--mono); font-size: 12px; letter-spacing: 0.16em; padding: 3px 10px; display: none; }
+#cell-hud .c-hunt.detected { display: block; color: #fff; background: rgba(255, 30, 60, 0.75); animation: cellblink 0.35s infinite alternate; }
+#cell-hud .c-hunt.hunted { display: block; color: #fff; background: rgba(255, 255, 255, 0.12); border: 1px solid rgba(255, 255, 255, 0.5); }
+#cell-hud .c-sync { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; color: rgba(232, 230, 240, 0.8); }
+#cell-hud .c-sync i { width: 12px; height: 12px; border-radius: 50%; background: rgba(255, 60, 80, 0.6); border: 1px solid rgba(255, 255, 255, 0.4); }
+#cell-hud .c-sync i.on { background: #ffb020; box-shadow: 0 0 8px #ffb020; }
+#cell-hud .c-sync.go i { background: #30ff90; box-shadow: 0 0 12px #30ff90; }
+#cell-hud .c-sync.go b { color: #30ff90; animation: cellblink 0.3s infinite alternate; }
+#cell-hud .c-pip { position: absolute; right: 18px; top: 84px; display: flex; flex-direction: column; gap: 6px; pointer-events: auto; }
+#cell-hud .c-sq { width: 168px; cursor: pointer; border: 1px solid rgba(0, 255, 224, 0.45); background: rgba(0, 10, 14, 0.7); }
+#cell-hud .c-sq span { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; color: var(--cell); padding: 2px 5px; }
+#cell-hud .c-sq span em { font-style: normal; opacity: 0.6; float: right; }
+#cell-hud .c-sq canvas { display: block; width: 100%; height: 96px; }
+#cell-hud .c-sq[data-sq="isr"] canvas { filter: grayscale(1) contrast(1.5) brightness(1.7); }
+#cell-hud.isr .c-pip, #cell-hud.tablet .c-pip { display: none !important; }
+#cell-hud.isr .c-obj, #cell-hud.isr .c-vis, #cell-hud.isr .c-kit { opacity: 0.4; }
+#cell-hud .c-feed { top: 50px; }
+#cell-hud.minimal .c-obj { background: none; border-left-width: 1px; padding: 4px 8px; }
+#cell-hud.minimal .c-obj-n { display: none; }
+#cell-hud .c-obj-h.gone, #cell-hud .c-keys.gone { opacity: 0; transition: opacity 1.5s; }
+#cell-hud.minimal .c-vitals > div > span { display: none; }
+#cell-hud.minimal .c-partner { opacity: 0.75; }
+#cell-hud .c-comms { bottom: 140px; }
+
+/* ---- minigame ---- */
+#cell-mini { position: fixed; inset: 0; z-index: 30; display: none; align-items: center; justify-content: center; background: rgba(0, 4, 8, 0.45); }
+#cell-mini.on { display: flex; }
+#cell-mini .mg-card { width: min(380px, 94vw); padding: 12px; background: #050c10; border: 1px solid var(--cell); box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); font-family: var(--mono); color: var(--cell); }
+#cell-mini .mg-top { display: flex; align-items: center; justify-content: space-between; font-size: 12px; letter-spacing: 0.14em; margin-bottom: 8px; }
+#cell-mini .mg-x { background: none; border: 1px solid rgba(0, 255, 224, 0.4); color: var(--cell); width: 30px; height: 28px; cursor: pointer; }
+#cell-mini .mg-cv { display: block; width: 100%; aspect-ratio: 340 / 240; touch-action: none; cursor: pointer; }
+#cell-mini .mg-hint { font-family: var(--sans); font-size: 13px; color: rgba(232, 230, 240, 0.75); margin: 8px 0; }
+#cell-mini .mg-act { width: 100%; min-height: 48px; font-family: var(--mono); font-size: 16px; letter-spacing: 0.2em; background: rgba(0, 255, 224, 0.12); border: 1px solid var(--cell); color: var(--cell); cursor: pointer; }
+
+/* ---- tablet: floors + ISR button ---- */
+#cell-tablet .ct-mapbtns .ct-fl { width: auto; padding: 0 8px; font-family: var(--mono); font-size: 10px; }
+#cell-tablet .ct-mapbtns .ct-fl.on { background: rgba(0, 255, 224, 0.3); }
+#cell-tablet .ct-isr { margin-left: 8px; background: rgba(0, 255, 224, 0.1); border: 1px solid rgba(0, 255, 224, 0.4); color: var(--cell); font-family: var(--mono); font-size: 10px; padding: 3px 8px; cursor: pointer; }
+
+/* ---- staging loadout ---- */
+#panel-staging .stg { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#panel-staging .stg-col { border: 1px solid var(--line); padding: 10px; background: rgba(8, 9, 15, 0.55); }
+#panel-staging .stg-col h3 { margin: 0 0 2px; font-size: 16px; letter-spacing: 0.12em; }
+#panel-staging .stg-col[data-r="shooter"] h3 { color: var(--ra); } #panel-staging .stg-col[data-r="spotter"] h3 { color: var(--ronin); }
+#panel-staging .stg-col p { margin: 0 0 6px; font-size: 12px; color: var(--ink-dim); line-height: 1.25; }
+#panel-staging .stg-k { font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em; color: var(--ink-dim); margin-top: 6px; }
+#panel-staging .stg-opts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+#panel-staging .stg-opts button { padding: 6px 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: none; }
+#panel-staging .stg-opts button::after { display: none; }
+#panel-staging .stg-opts button.on { border-color: var(--cell); color: var(--cell); background: rgba(0, 255, 224, 0.1); }
+@media (max-width: 560px) { #panel-staging .stg { grid-template-columns: 1fr; } }

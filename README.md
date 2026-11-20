@@ -109,95 +109,124 @@ Click the game view with the mouse and it switches to mouse mode: the mouse aims
 
 ## Sniper Cell
 
-A night stealth mode for one or two players, built around the feel of a classic night sniping level: a dark valley, a lit compound below, a suppressed rifle with a night-vision scope and a white vapour trail on every shot. Its rules are adapted from **Cold Archive**'s co-op infiltration (agent + Overwatch, SENTINEL's alarm, bandwidth-based payloads). Players use the Draxxed Sklounst operator models (Multicam Black).
+A night stealth mode for one or two players, built around the feel of a classic night sniping level: a dark valley, a lit compound below, a suppressed rifle with a night-vision scope and a white vapour trail on every shot. Its rules are adapted from **Cold Archive**'s co-op infiltration (agent + Overwatch, SENTINEL's alarm, bandwidth-based payloads). The players use the Draxxed Sklounst operator models in Multicam Black. The shooter wears a chest rig and a dark urban-digital poncho; the spotter wears a plate carrier and a cap.
 
-Pick **SNIPER CELL** on the main menu, then a mission and how to play.
+Pick **SNIPER CELL** on the main menu, then a mission, the **staging area** loadout, and how to play.
 
-**Missions**
+### Missions
 
-- **NightWatch** (default): SENTINEL's augmented night garrison, built to fight like a night-time alien patrol in an old shooter:
-  - **Scavs:** small, unshielded and cowardly. Shot at with no brave ally nearby, or after losing their pack leader, they shriek and run, and tell the first ally they reach.
-  - **Juggernauts:** big, with a recharging energy shell. A body shot breaks the shell and a second kills. When the shell is down, a pack-mate dies, or you get close, they go berserk and charge with an energy blade.
-  - **Bulwarks:** sharp-eyed, behind a hard-light wall. Shoot through its sight-port, catch them when they lower the wall to fire, flank them, or EMP the wall off. On the towers they carry beam rifles, and you can see the red laser for 1.6 s before they fire.
-  - **The Overseer:** a shielded officer carrying the vault badge.
-- **Infiltration:** the same op against plain human security guards.
+- **NightWatch** (default): SENTINEL's augmented night garrison.
+  - **Scavs:** cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
+  - **Juggernauts:** a recharging energy shell. When it breaks, they berserk with an energy blade.
+  - **Bulwarks:** behind a hard-light wall. Snipe through its sight-port, or catch them when they lower it to fire. Tower bulwarks carry beam rifles and you see a red laser before they fire.
+  - **Titans:** heavy armour. Body hits do half damage, and a helmet eats the first headshot; the follow-up kills.
+  - **The Overseer:** a shielded, helmeted officer carrying the badge.
+- **Infiltration:** the same op against human guards.
 
-**Headshots kill anything, with any weapon.**
+Headshots kill anything except a helmet's first hit.
 
-**How to play**
+### How to play
 
-- **Solo · AI partner:** pick a role and the AI plays the other. AI **Ra** takes the shots you tag, holds or covers on command, and moves between perches. AI **Rōnin** runs the console and answers your requests.
-- **Solo · lone operative:** one sniper with both kits (rifle, camo, the CYBER OPS tablet and the quad), and no partner.
-- **Co-op:** the host picks a role and the friend who joins gets the other one.
+- **Solo · AI partner:** the AI plays the other role.
+- **Solo · lone operative:** one sniper carrying both kits.
+- **Co-op:** the host picks a role and the friend who joins gets the other.
 
-**Roles**
+### The building
 
-- **Shooter** (default callsign **Ra**):
-  - Suppressed bolt-action **KR-50 Nightjar** with Halo-style hitscan and a 2× / 8× night-vision scope.
-  - P-9 sidearm, chest rig and urban-digital poncho.
-  - Stealth kit:
-    - **G** active camo. It drains while on and flickers when you fire.
-    - **H** Deadeye. Heads, shells and bulwark ports glow for 8 s.
-    - **X** Lure. A thrown noise-maker that pulls patrols off their route.
-    - **T** Mark & Execute. Snap headshots on up to 3 marked targets within 35 m. You earn charges with silent takedowns.
-  - An **exposure meter** shows how visible you are.
-- **Spotter** (default callsign **Rōnin**):
-  - P-9 with two spare magazines, and a plate carrier.
-  - **CYBER OPS tablet** (TAB): hack cameras and doors, tag, crack the vault, fight the trace, and run payloads (scan, jam, EMP, supply drop, cut lights, spoof cams, decoy, quad, medevac).
-  - **Q** recon quadcopter.
+The data center has **two storeys** with two stairwells. Guards, cameras and patrols are on both floors.
 
-**Pings and requests** (laptop and iPad):
+- **Rack rooms:** six of them, behind **keycard doors**. In co-op only the spotter can swipe the badge.
+- **The archive server:** in a random rack room. Find the cabinet with the slow amber beacon.
+- **Lights:** every lamp and ceiling panel can be **shot out**.
+- **IoT devices:** vending machines, printers, coffee machines, speakers, a TV and server fans. Hack them from the tablet to make a distracting noise.
 
-- **Quick ping:** tap **V** (or **PING** on touch). It pings what you're looking at.
-- **The wheel:** hold V, the middle mouse button or PING (dragging your thumb on touch), or right-click / long-press the tablet map. It offers:
-  - calls: LOOK, ENEMY / TAKE SHOT, MOVE, HOLD, ON ME, COVER;
-  - requests: SUPPLY, SCAN, EMP, DECOY, LIGHTS, DRONE.
-- **What happens to a request:**
-  - In co-op, the shooter's requests land on the spotter's HUD and tablet. The spotter sends them with **Y** / SEND or denies them with **U** / DENY.
-  - With an AI spotter, Rōnin answers them himself.
-  - A spotter or lone operative runs payloads directly.
-- **Acknowledging:** Y acknowledges a call with "Roger".
+**Cyber inside the building:**
 
-**Chat**
+- Cut-lights blacks out the whole room.
+- An EMP fills the room: it drops shields, bulwark walls, cameras and lights.
+- **Supply drops can't land through a roof.**
 
-- **Text:** Enter (or **CHAT** on touch).
-- **Voice** (online co-op): **M** or **MIC** cycles off → push-to-talk (hold **K** / **TALK**) → open mic. Voice is peer-to-peer over the game's WebRTC link and needs the https page and microphone permission. It doesn't work in the two-tab `?local=1` test.
-
-**The mission** (Kestrel Ridge data center):
+### Mission
 
 1. Breach the fence.
-2. Plant a relay in the Electrical Room.
-3. Take the Overseer's (or Site Chief's) badge.
-4. Badge in at the Cold Vault while the spotter cracks it. A lone operative holds E.
-5. Hold the console through the malware upload while the spotter fights SENTINEL's trace.
-6. Pull the drive. The facility locks down.
-7. Get to the **extraction van**, a blacked-out electric crossover on the east track. Hold E at the doors: the **spotter drives and the shooter rides shotgun**. An AI partner makes its own way there, and a lone operative drives.
+2. Plant the relay in the Electrical Room.
+3. Take the badge.
+4. Find the server.
+5. **Upload:** the spotter jacks in with the signal-lock minigame, then holds the rack while SENTINEL traces it.
+6. **Extract:** the drive-release minigame. The facility locks down.
+7. Carry the drive (it shows on the carrier; drop it with **J** for your partner to pick up) to the **extraction van**. The spotter drives and the shooter rides shotgun.
 
-When everyone is aboard with the drive, the van pulls out.
+### Stealth
 
-**Cut-scenes** (skip with Space / Enter / SKIP):
+- **Radio for backup:** a guard who spots you radios after 1.5 s (watch for the ((•)) icon). The call brings a fireteam from outside the building to your position. Drop the guard first, or jam the radio.
+- **Breaking contact:** the HUD shows DETECTED, then HUNTED. Break line of sight for long enough and the hunt is called off. While they hunt, a **white silhouette** marks your last known position.
+- **Light and night vision:**
+  - Night vision is white phosphor with a blue tint.
+  - Bright lights, including a weapon light in your face, wash it out.
+  - **IR strobes** on both operators' helmets and shoulders, and **IR lasers** from both weapons, show only in night vision and the ISR IR view.
+- **Weapon lights (L):** a weapon light makes you easy to see. Guards also walk over to wherever the beam lands, so it works as a distraction.
+- **Sync shots:**
+  - Mark an enemy (F), then press F on it again, or use the wheel's SYNC option, to make it a sync target.
+  - The SYNC light turns green when both rifles are on marked heads.
+  - With an AI shooter partner, your shot fires both.
 
-- **Opening:** the van rolls in, both operators climb out, gear up and walk to the cliff together.
-- **Ending:** the van runs down an open road into the sunrise, and the debrief lands over it.
+### Roles
 
-The debrief rates the run GHOST, SILENT, LETHAL, LOUD or BURNED.
+**Shooter** (default callsign **Ra**):
 
-**SENTINEL** sends reinforcements from outside the building (the barracks door and the south gate) and relaunches patrol drones from the barracks pad. The alarm runs QUIET → ALERT → ALARM → LOCKDOWN.
+- KR-50 Nightjar: bolt-action, integrally suppressed, with Halo-style hitscan and a night-vision scope.
+- Secondary: the **K9 HUSH SMG** (full / burst / semi) or the **M50 Magnum**. Its suppressor is fitted by default and removable.
+- **Stealth kit:**
+  - **G** active camo. **Firing breaks it.**
+  - **H** Deadeye.
+  - **X** lures.
+  - **T** Mark & Execute.
+  - **E** knife takedown.
+  - A **lock-pick set**: fast on the mechanical door, and it can pick the electronic exterior doors.
+
+**Spotter** (default callsign **Rōnin**):
+
+- P-9 pistol with a removable suppressor.
+- **CYBER OPS tablet** (TAB), with ground and upper floors.
+- Recon quad (Q).
+- **ISR Predator** (I): a high-altitude drone orbiting the map. Slew its sensor with the mouse; it has IR (white-hot) and EO modes. Tag, ping and request from it.
+- The HUD shows both interfaces as small live squares; tap one to open it.
+
+**Staging-area perks:** extra lures, extra magazines or fast camo for the shooter; bandwidth, logistics (+2 drops) or light armour for the spotter.
+
+### Comms
+
+- **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER and SYNC, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
+- **Radio voices:** operators and ISR speak over a scratchy radio for cut-scenes, pings, AI replies and the ISR mission briefing as you walk in.
+- **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
+- **Cut-scenes:**
+  - Opening: drive in, gear up, walk out.
+  - Ending: a retro-future sunrise on an open road.
+  - The title reads SNIPER in white, CELL in red and NIGHTWATCH in cyan.
+
+### Atmosphere
+
+Dust motes, low mist, fireflies and moths around the lamps, here and in the valley duel (`src/atmofx.js`).
+
+### Code
 
 The code is in `src/cell/`:
 
 | File | Contents |
 | --- | --- |
-| `facility.js` | Map and navigation |
-| `sentinel.js` | Enemy roster, AI, alarm and reinforcements |
-| `kit.js` | Stealth kit, pings and requests, enemy fire, the van |
-| `wheel.js` | The ping wheel |
+| `facility.js` | Two-storey map, navigation and lights |
+| `sentinel.js` | Enemy roster, AI, backup and hunt |
+| `kit.js`, `kit2.js` | Stealth kit, pings, van, IR, sync shots, weapon lights |
+| `isr.js` | The ISR drone |
+| `minigame.js` | Server minigames |
+| `arms.js` | Sidearms and loadouts |
+| `voice.js` | Radio voices |
+| `irfx.js` | IR strobes, lasers and last-known-position ghosts |
 | `ops.js` | Payloads and the AI spotter |
 | `tablet.js` | The CYBER OPS console |
 | `cinema.js` | Cut-scenes |
 | `chat.js` | Text and voice chat |
-| `van.js` | The van model |
-| `sfx.js` | Synthesized sounds |
+| `van.js`, `wheel.js`, `sfx.js` | The van, the ping wheel and synthesized sounds |
 | `cell.js` | Game loop, roles, netcode, objectives and HUD |
 
 ## "Do you want to develop an app?"
