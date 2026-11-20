@@ -1,0 +1,2894 @@
+// =============================================================================
+// SNIPER CELL: INFILTRATION
+// =============================================================================
+// A night stealth mission for two: the SHOOTER (default callsign Ra) works a suppressed
+// bolt-action rifle and active camo from the high ground; the SPOTTER (default callsign
+// Rōnin) carries only a pistol, a recon quadcopter and the CYBER OPS tablet — the
+// top-down console that hacks cameras and doors, scans, tags, cuts lights and drops
+// supplies. Together they break into the Kestrel Ridge data center, upload malware to the
+// cold-archive server, pull its drive and carry it out to the landing zone.
+//
+// Solo: pick a role and the AI plays the other one (Ra holds a perch and takes the shots
+// you tag; Rōnin runs the console for you). Co-op: the host picks a role, the guest gets
+// the other. The host runs SENTINEL (guards, drones, cameras, alarm, objectives); each
+// client simulates its own operator and judges its own shots, exactly like the duel.
+// Mission rules are adapted from Cold Archive (see sentinel.js / ops.js).
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { hazeUniforms } from '../atmosphere.js';
+import { LocalPlayer } from '../player.js';
+import { Avatar } from '../avatar.js';
+import { ViewModel } from '../viewmodel.js';
+import { Effects } from '../effects.js';
+import { Input } from '../input.js';
+import { WEAPON, PLAYER } from '../config.js';
+import { RULES, applyRules } from '../rules.js';
+import { clamp, segSegClosest } from '../util.js';
+import { Facility, SPOTS, FENCE, BUILDING, ROOMS, CARDS, terrainHeight, lam, glowMat } from './facility.js';
+import { Sentinel, DIFFS, guardCapsules, buildDrone, angDiff } from './sentinel.js';
+import { Ops, AiSpotter, PAYLOAD, HACK } from './ops.js';
+import { Tablet } from './tablet.js';
+import { Sfx } from './sfx.js';
+import { Wheel } from './wheel.js';
+import { installKit, KIT } from './kit.js';
+import { installKit2 } from './kit2.js';
+import { installIce } from './ice.js';
+import { installNeuro } from './neuro.js';
+import { installNVG } from './nvg.js';
+import { installSpatial } from './spatial.js';
+import { installPhone } from './phone.js';
+import { wallBlock } from './sentinel.js';
+import { Cinema } from './cinema.js';
+import { Radio } from './voice.js';
+import { Minigame } from './minigame.js';
+import { SMG, MAGNUM, P9, buildSMG, buildMagnum, buildKnife, normLoadout } from './arms.js';
+import { ISR } from './isr.js';
+import { addStrobes, blinkStrobes, IRLaser, ghostAvatar, tickGhosts, IR_LAYER } from './irfx.js';
+import { AtmosFX } from '../atmofx.js';
+import { Chat } from './chat.js';
+
+export const MISSIONS = {
+  nightwatch: { name: 'NIGHTWATCH', title: 'SNIPER CELL: NIGHTWATCH', line: 'Kestrel Ridge \u00B7 0217 hrs \u00B7 SENTINEL\u2019s augmented garrison is on the night shift.' },
+  infiltration: { name: 'INFILTRATION', title: 'SNIPER CELL: INFILTRATION', line: 'Kestrel Ridge \u00B7 0140 hrs \u00B7 a skeleton crew of security guards.' },
+};
+
+export const ROLES = {
+  shooter: { name: 'SHOOTER', call: 'Ra', color: '#f2b35b', desc: 'Suppressed KR-50 bolt-action, active camo, P-9 sidearm. The cell’s firepower.' },
+  spotter: { name: 'SPOTTER', call: 'Rōnin', color: '#40d8e8', desc: 'P-9 and two magazines. CYBER OPS tablet, recon quadcopter, hacks, scans and supply drops.' },
+};
+
+// Weapons for this mode. Halo-style ballistics: hitscan, dead straight, no wind or sway.
+const KR50 = {
+  key: 'kr50', name: 'KR-50 NIGHTJAR', short: 'KR-50', caliber: '.50 subsonic', slot: 'rifle', kind: 'bolt',
+  mag: 4, spareMags: 4, muzzle: 900, damage: { head: 400, torso: 260, legs: 130 }, cycle: 1.0, reload: 2.8, reloadEmpty: 3.4,
+  zooms: [2, 8], scope: true, glint: 0, recoil: 0.034, sway: 0, fixedZero: 100,
+};
+
+export const OBJECTIVES = [
+  { k: 'perimeter', title: 'BREACH THE PERIMETER', hint: 'Get inside the fence — the cut on the west side or the south gate.' },
+  { k: 'relay', title: 'TAP THE NETWORK', hint: 'Plant a relay in the Electrical Room (SE corner). Opens the data floor to Overwatch.' },
+  { k: 'card', title: 'FIND A KEYCARD', hint: 'Search the office desk drawers (E). Each rack-room door takes its own colour-tagged keycard. The Site Chief carries a master badge.' },
+  { k: 'find', title: 'FIND THE ARCHIVE SERVER', hint: 'Swipe into the rack rooms on both floors. Look for the cabinet with the slow amber beacon.' },
+  { k: 'upload', title: 'UPLOAD THE MALWARE', hint: 'Spotter: jack in at the lit rack (E), lock the signal, then hold the rack while it uploads. Shooter: cover them.' },
+  { k: 'drive', title: 'EXTRACT THE DRIVE', hint: 'Release the drive at the rack (E). A clean upload means SENTINEL never knows.' },
+  { k: 'exfil', title: 'EXFILTRATE', hint: 'Get the drive out the loading dock to the van east of the fence. Spotter drives, shooter rides shotgun.' },
+];
+
+const BLEED = 30;
+const TOUCH = typeof navigator !== 'undefined' && (navigator.maxTouchPoints > 1 || /iPad|iPhone|Android/.test(navigator.userAgent)) && matchMedia('(pointer: coarse)').matches;
+const QUAD_BAT = 300; // seconds of flight (half rate while flying, quarter while parked)
+
+// ---------------------------------------------------------------------------
+// Post: night vision (goggles / scope / quad feed), active-camo shimmer, damage, grain.
+// ---------------------------------------------------------------------------
+const CellShader = {
+  uniforms: {
+    tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) },
+    uNV: { value: 0 }, uMode: { value: 0 }, uWash: { value: 0 }, uCloak: { value: 0 }, uDamage: { value: 0 }, uDown: { value: 0 }, uStatic: { value: 0 },
+  },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime, uNV, uMode, uCloak, uDamage, uDown, uStatic, uWash; uniform vec2 uRes; varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
+    void main(){
+      vec2 uv = vUv;
+      vec2 d = uv - 0.5; d.x *= uRes.x / uRes.y; float r = length(d);
+      // Active camo: the edges of your view ripple like heat over glass.
+      if (uCloak > 0.0) uv += vec2(sin(uv.y * 40.0 + uTime * 6.0), cos(uv.x * 36.0 + uTime * 5.0)) * 0.0022 * uCloak * smoothstep(0.25, 0.75, r);
+      vec3 c = texture2D(tDiffuse, uv).rgb;
+      float g = hash(uv * uRes + fract(uTime) * 91.7) - 0.5;
+      if (uNV > 0.0) {
+        float l = dot(c, vec3(0.3, 0.59, 0.11));
+        // White phosphor with a cold blue cast (goggles, scope, quad, ISR EO); ISR IR is white-hot greyscale.
+        // The tube's auto-gain backs off when something bright is in view.
+        float amp = (uMode > 2.5 ? 6.0 : uMode > 1.5 ? 7.0 : 9.0) / (1.0 + uWash * 1.6);
+        float v = 1.0 - exp(-l * amp);
+        vec3 tint = uMode > 2.5 ? vec3(0.95) : uMode > 1.5 ? vec3(0.84, 0.93, 1.0) : uMode > 0.5 ? vec3(0.8, 0.9, 1.0) : vec3(0.78, 0.89, 1.0);
+        vec3 nv;
+        if (uMode < 1.5) {
+          // Goggles and scope: near-white phosphor with a slight cold blue cast: dark shadows, grey-blue mids, near-white
+          // highlights. Smooth, with only a whisper of grain and no scanlines.
+          vec3 lo = vec3(0.02, 0.035, 0.06), mid = vec3(0.46, 0.53, 0.62), hi = vec3(0.94, 0.97, 1.0);
+          nv = mix(lo, mid, smoothstep(0.0, 0.55, v));
+          nv = mix(nv, hi, smoothstep(0.55, 1.0, v));
+          nv += g * 0.018 * (1.0 + uWash * 1.5);
+          tint = vec3(0.86, 0.92, 1.0);
+        } else {
+          nv = tint * (v * 0.95 + 0.03) + g * 0.07 * (1.0 + uWash * 2.0);
+          nv *= 0.92 + 0.08 * sin(uv.y * uRes.y * 1.4);
+        }
+        // Bright sources bloom into halos, and a light in your face washes the tube out.
+        float glow = 0.0;
+        for (int i = 0; i < 8; i++) {
+          float a = float(i) * 0.785398;
+          vec2 o = vec2(cos(a), sin(a)) * (0.012 + 0.02 * uWash) * vec2(uRes.y / uRes.x, 1.0);
+          glow += smoothstep(0.25, 1.4, dot(texture2D(tDiffuse, uv + o).rgb, vec3(0.3, 0.59, 0.11)));
+        }
+        nv += tint * glow * 0.05 * (1.0 + uWash * 1.5);
+        nv += tint * smoothstep(0.6, 3.0, l) * 0.25;
+        nv = mix(nv, tint * (0.55 + 0.35 * v), clamp(uWash, 0.0, 1.0) * 0.35);
+        nv *= mix(1.0, smoothstep(0.95, 0.35, r), 0.55);
+        nv += uStatic * (hash(vec2(floor(uv.y * uRes.y / 3.0), floor(uTime * 24.0))) - 0.5) * 0.25;
+        c = mix(c, nv, uNV);
+      } else {
+        float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+        c *= mix(vec3(0.86, 0.95, 1.18), vec3(1.05, 1.0, 0.92), smoothstep(0.02, 0.5, l));
+        c += g * 0.012 * (0.3 + l);
+      }
+      if (uCloak > 0.0) c = mix(c, c * vec3(0.8, 0.95, 1.15), 0.4 * uCloak);
+      float vig = smoothstep(1.0, 0.25, r);
+      c *= mix(0.72, 1.0, vig);
+      c = mix(c, vec3(0.45, 0.02, 0.04), uDamage * (1.0 - vig) * 0.9);
+      c = mix(c, vec3(dot(c, vec3(0.33))) * vec3(0.9, 0.35, 0.35), uDown * 0.7);
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+};
+
+// Shimmering active-camo material for an operator seen from outside.
+function cloakMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uFlick: { value: 0 } },
+    vertexShader: 'varying vec3 vN; varying vec3 vV; varying vec3 vW; void main(){ vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position,1.0); vV = normalize(-mv.xyz); vW = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform float uTime, uFlick; varying vec3 vN; varying vec3 vV; varying vec3 vW; void main(){ float f = pow(1.0 - abs(dot(vN, vV)), 2.5); float band = 0.5 + 0.5 * sin(vW.y * 18.0 - uTime * 7.0 + vW.x * 3.0); vec3 c = vec3(0.55, 0.75, 1.0) * (f * (0.22 + 0.25 * band) + uFlick * 0.25); gl_FragColor = vec4(c, 0.08 + f * 0.35 + uFlick * 0.3); }',
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+}
+
+// The beefy suppressed bolt gun for the first-person view. Same anchor contract as the
+// valley's rifles (gripR / gripL / muzzle / bolt / boltKnob / mag / sight).
+function buildKR50() {
+  const g = new THREE.Group();
+  const mat = (hex) => new THREE.MeshLambertMaterial({ color: hex, emissive: hex, emissiveIntensity: 0.14 });
+  const M = { body: mat('#2a2d31'), dark: mat('#17181b'), hi: mat('#3a3e44'), olive: mat('#3b3f36'), glow: new THREE.MeshBasicMaterial({ color: '#40ffb0' }) };
+  const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); g.add(o); return o; };
+  const cyl = (r1, r2, len, m, x, y, z, seg = 14) => { const o = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, seg).rotateX(Math.PI / 2), m); o.position.set(x, y, z); g.add(o); return o; };
+  // Thick slab receiver and a long boxy shroud, Halo-scale bulk.
+  box(0.075, 0.085, 0.42, M.body, 0, 0.01, -0.12);
+  box(0.08, 0.03, 0.42, M.hi, 0, 0.06, -0.12);
+  box(0.07, 0.075, 0.62, M.body, 0, 0.0, -0.62);
+  box(0.074, 0.02, 0.6, M.dark, 0, 0.045, -0.62);
+  for (let i = 0; i < 7; i++) for (const s of [-1, 1]) box(0.004, 0.03, 0.05, M.dark, s * 0.038, 0.0, -0.4 - i * 0.075);
+  // Fat integral suppressor.
+  cyl(0.042, 0.042, 0.38, M.dark, 0, 0.0, -1.12, 16);
+  cyl(0.044, 0.044, 0.02, M.hi, 0, 0.0, -0.94, 16);
+  cyl(0.044, 0.044, 0.02, M.hi, 0, 0.0, -1.3, 16);
+  // Grip, trigger guard, mag well, thumbhole stock.
+  const grip = box(0.04, 0.12, 0.055, M.olive, 0, -0.08, 0.02);
+  grip.rotation.x = 0.3;
+  box(0.01, 0.01, 0.08, M.dark, 0, -0.045, -0.04);
+  const magG = new THREE.Group();
+  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.11, 0.1), M.dark);
+  mag.position.y = -0.05;
+  magG.add(mag);
+  magG.position.set(0, -0.03, -0.12);
+  g.add(magG);
+  box(0.06, 0.09, 0.3, M.olive, 0, -0.01, 0.2);
+  box(0.06, 0.15, 0.04, M.dark, 0, -0.03, 0.36);
+  box(0.05, 0.04, 0.12, M.olive, 0, 0.055, 0.16);
+  // Bolt with a big ball knob.
+  const bolt = new THREE.Group();
+  bolt.add(new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.12, 10).rotateX(Math.PI / 2), M.hi));
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.012, 0.014), M.hi);
+  arm.position.set(0.03, 0, 0.03);
+  bolt.add(arm);
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8), M.dark);
+  knob.position.set(0.06, 0, 0.03);
+  bolt.add(knob);
+  bolt.position.set(0, 0.035, -0.02);
+  g.add(bolt);
+  // Night-vision scope: big objective, glowing battery tell.
+  const sy = 0.115;
+  cyl(0.024, 0.024, 0.34, M.dark, 0, sy, -0.18, 14);
+  cyl(0.04, 0.026, 0.1, M.dark, 0, sy, -0.39, 16);
+  cyl(0.028, 0.03, 0.08, M.dark, 0, sy, 0.02, 14);
+  box(0.05, 0.03, 0.06, M.hi, 0.03, sy, -0.16);
+  box(0.012, 0.012, 0.012, M.glow, 0.056, sy + 0.005, -0.16);
+  for (const z of [-0.08, -0.28]) box(0.03, 0.06, 0.03, M.dark, 0, 0.075, z);
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.024, 16), new THREE.MeshBasicMaterial({ color: '#07160e' }));
+  lens.position.set(0, sy, 0.062);
+  g.add(lens);
+  const anchor = (x, y, z) => { const a = new THREE.Object3D(); a.position.set(x, y, z); g.add(a); return a; };
+  g.userData = {
+    gripR: anchor(0, -0.09, 0.03), gripL: anchor(-0.005, -0.04, -0.5), muzzle: anchor(0, 0, -1.33),
+    bolt, boltKnob: anchor(0.06, 0.035, 0.01), mag: magG, magHome: magG.position.clone(), sight: sy,
+  };
+  return g;
+}
+
+function buildHeli() {
+  const g = new THREE.Group();
+  const m = (geo, col, x, y, z) => { const o = new THREE.Mesh(geo, lam(col)); o.position.set(x, y, z); g.add(o); return o; };
+  m(new THREE.BoxGeometry(2.6, 2.2, 7), '#2b2e33', 0, 0, 0);
+  m(new THREE.BoxGeometry(2.2, 1.6, 2), '#1d2024', 0, 0.1, -4.2);
+  m(new THREE.BoxGeometry(0.6, 0.6, 6), '#2b2e33', 0, 0.5, 6);
+  m(new THREE.BoxGeometry(0.2, 2, 1.2), '#2b2e33', 0, 1.4, 8.8);
+  const rotor = m(new THREE.BoxGeometry(14, 0.06, 0.4), '#111', 0, 1.6, 0);
+  const rotor2 = m(new THREE.BoxGeometry(0.4, 0.06, 14), '#111', 0, 1.6, 0);
+  for (const s of [-1, 1]) m(new THREE.BoxGeometry(0.15, 0.15, 5), '#18191c', s * 1.1, -1.6, 0);
+  const light = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 6), new THREE.MeshBasicMaterial({ color: '#ff3030' }));
+  light.position.set(0, 1.2, 8.9);
+  g.add(light);
+  const beam = new THREE.Mesh(new THREE.ConeGeometry(4, 14, 18, 1, true).translate(0, -7, 0), glowMat('#e8f4ff', 0.06));
+  beam.position.set(0, -1, -3);
+  g.add(beam);
+  g.userData = { rotor, rotor2, light };
+  return g;
+}
+
+function buildCrate() {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.6, 0.6), lam('#3b4a35'));
+  b.position.y = 0.3;
+  g.add(b);
+  const strip = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.08, 0.62), new THREE.MeshBasicMaterial({ color: '#40ffb0' }));
+  strip.position.y = 0.45;
+  g.add(strip);
+  const chute = new THREE.Mesh(new THREE.SphereGeometry(1.4, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2.4), lam('#5a5a4a', { side: THREE.DoubleSide }));
+  chute.position.y = 3.2;
+  g.add(chute);
+  g.userData = { chute };
+  return g;
+}
+
+function buildSky(scene) {
+  const geo = new THREE.SphereGeometry(1800, 32, 16);
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    uniforms: { uMoon: { value: new THREE.Vector3(-0.35, 0.42, -0.84).normalize() } },
+    vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `uniform vec3 uMoon; varying vec3 vD;
+      float h(vec3 p){ return fract(sin(dot(p, vec3(12.9898,78.233,45.164))) * 43758.5453); }
+      void main(){
+        float y = max(vD.y, 0.0);
+        vec3 c = mix(vec3(0.035,0.05,0.09), vec3(0.008,0.012,0.03), pow(y, 0.5));
+        float m = max(dot(vD, uMoon), 0.0);
+        c += vec3(0.18,0.24,0.36) * pow(m, 18.0) * 0.6 + vec3(0.5,0.6,0.8) * pow(m, 900.0) * 3.0;
+        vec3 q = floor(vD * 420.0);
+        float s = step(0.9975, h(q)) * smoothstep(0.02, 0.25, y);
+        c += vec3(0.8, 0.85, 1.0) * s * (0.4 + 0.6 * h(q + 1.0));
+        gl_FragColor = vec4(c, 1.0);
+      }`,
+  });
+  const sky = new THREE.Mesh(geo, mat);
+  sky.renderOrder = -10;
+  scene.add(sky);
+  // The moon itself.
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(38, 32), new THREE.MeshBasicMaterial({ color: '#dfe8ff', fog: false }));
+  const md = new THREE.Vector3(-0.35, 0.42, -0.84).normalize().multiplyScalar(1600);
+  moon.position.copy(md);
+  moon.lookAt(0, 0, 0);
+  scene.add(moon);
+  return { sky, moon };
+}
+
+// ---------------------------------------------------------------------------
+export class CellGame {
+  constructor({ mode, net, role, diff = 'operative', seed = 7, quality = 'medium', settings, audio, name, partnerName, mission = 'nightwatch' }) {
+    // 'solo' (AI partner) | 'operative' (one operator, both roles) | 'host' | 'guest'
+    this.mode = mode;
+    this.isHost = mode !== 'guest';
+    this.solo = mode === 'solo' || mode === 'operative';
+    this.operative = mode === 'operative';
+    this.aiPartner = mode === 'solo';
+    this.mission = MISSIONS[mission] ? mission : 'nightwatch';
+    if (this.operative) role = 'shooter';
+    this.net = net || null;
+    this.role = role;
+    this.partnerRole = role === 'shooter' ? 'spotter' : 'shooter';
+    this.name = name || ROLES[role].call;
+    this.partnerName = partnerName || ROLES[this.partnerRole].call;
+    this.diff = diff;
+    this.D = DIFFS[diff] || DIFFS.operative;
+    this.quality = quality;
+    this.settings = settings || {};
+    this.audio = audio;
+    this.t = 0;
+    this.paused = false;
+    this.ended = null;
+
+    if (this.mission === 'nightwatch') Object.assign(OBJECTIVES[2], { hint: 'Search the office desk drawers (E). Each rack-room door takes its own colour-tagged keycard. The Overseer (violet juggernaut) carries a master badge.' });
+    // Halo-style ballistics for this mode: instant, straight, no sway.
+    applyRules({ preset: 'halo' });
+    RULES.zooms = null;
+    RULES.hitbox = 1.15;
+
+    this._initRenderer();
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(WEAPON.baseFov, innerWidth / innerHeight, 0.05, 4000);
+    this.camera.rotation.order = 'YXZ';
+    this.scene.add(this.camera);
+    this._lights();
+    buildSky(this.scene);
+    this.fac = new Facility(this.scene, quality, seed);
+    this.sentinel = new Sentinel(this, { diff, seed, sim: this.isHost, mission: this.mission });
+    this.sfx = new Sfx(audio);
+    this.effects = new Effects(this.scene);
+    this.input = new Input(this.renderer.domElement, document.getElementById('touch'));
+    this.input.sensitivity = this.settings.sensitivity || 1;
+    this.input.invertY = !!this.settings.invertY;
+    this.input.scopeToggle = !!this.settings.scopeToggle;
+    for (const k of ['touchSensR', 'touchSensL', 'gyroMode', 'gyroSens', 'gyroInvertY']) if (this.settings[k] !== undefined) this.input[k] = this.settings[k];
+
+    // Mission state (host-authoritative; mirrored on the guest).
+    this.obj = { perimeter: false, relay: false, badge: false, found: false, aligned: false, upload: 0, uploading: false, trace: 0, traced: false, drive: null, driveAt: null, exfil: false, access: 1, drops: this.D.drops, canCrack: false, crack: 0, step: 0, cards: [], searched: [], used: {}, commsDown: false, cctv: false, quiet: null, ice: false, ifak: { shooter: 1, spotter: 1 }, barracks: 'ok', barracksT: 0, bay: 'ok', c4: [] };
+    this.crates = [];
+    this.crateId = 1;
+    this.prompts = {}; // role -> { label, p }
+    this.holdT = {}; // role -> { key, t }
+    this.revive = {};
+    this.medevac = null;
+    this.trails = [];
+    this.pins = []; // waypoints / requests { x, z, label, by, t }
+    this.commsLog = [];
+    this.stats = { shots: 0, hits: 0, heads: 0, longest: 0, t0: 0 };
+
+    this.loadout = normLoadout(this.settings.cellLoadout);
+    this._setupPlayer();
+    this._setupPartner();
+    this.ops = this.role === 'spotter' ? new Ops(this) : this.solo ? new Ops(this) : null;
+    if (this.ops && this.loadout.spotter.perk === 'bandwidth' && (this.role === 'spotter' || this.operative)) this.ops.bwMul = 1.4;
+    if ((this.role === 'spotter' || this.operative) && this.loadout.spotter.perk === 'drops') this.obj.drops += 2;
+    this.aiSpot = this.aiPartner && this.role === 'shooter' ? new AiSpotter(this, this.ops) : null;
+    this.aiShoot = this.aiPartner && this.role === 'spotter' ? { perch: 0, cool: 3, aim: null, aimT: 0, moveT: 0, sayT: 0, holdT: 0, coverT: 0 } : null;
+    this.quad = null;
+    this.quadCd = 0;
+    this._kitInit();
+    this.wheel = new Wheel();
+    this.radio = new Radio(audio);
+    this.mini = new Minigame();
+    this.isr = new ISR(this);
+    this.atmos = new AtmosFX(this.scene, { quality, night: true, color: '#b8c8ff', mistColor: '#5d6c90', bright: 0.45, lamps: this.fac.lightSources.filter((L) => L.kind === 'lamp') });
+    this._irInit();
+    this._wlInit();
+    this._iceInit();
+    this._neuroInit();
+    this._nvgInit();
+    this._spatialInit();
+    this._phoneInit();
+    this._mapPoints();
+    this._buildHud();
+    this.tablet = new Tablet(this);
+    if (this.net) this._setupNet();
+
+    this._resize();
+    addEventListener('resize', () => this._resize());
+    this.clock = new THREE.Clock();
+    this.comms(this.operative ? 'Lone operative: rifle, camo and the CYBER OPS tablet are all yours (TAB).' : this.role === 'shooter' ? 'Ra in position. Kestrel Ridge below \u2014 lights in the yard, towers manned.' : 'R\u014dnin on the wire. CYBER OPS console synced (TAB).', ROLES[this.role].color, this.name);
+    this.comms(this.operative ? 'Hold V for the ping wheel; payloads run straight from your tablet.' : this.aiPartner ? (this.role === 'shooter' ? 'R\u014dnin (AI) runs the console. Hold V for pings and requests.' : 'Ra (AI) holds the cliff. Tag targets (F) or ping TAKE SHOT and Ra fires.') : `${this.partnerName} is the ${ROLES[this.partnerRole].name.toLowerCase()}. Hold V for pings and requests.`, 'dim');
+    if (this.mission === 'nightwatch') this.comms('Officers spook when they\u2019re alone. Juggernauts\u2019 shells break \u2014 then they charge. Bulwarks: shoot the port in the wall.', 'dim');
+    this.sfx.ambience();
+    this.chat = new Chat(this);
+    this.cine = new Cinema(this);
+    // Opening cut-scene (skippable); ?nocine skips it for testing.
+    if (!new URLSearchParams(location.search).has('nocine')) this.cine.startIntro();
+    else this.hud.intro(MISSIONS[this.mission], this.operative ? 'LONE OPERATIVE' : `${ROLES[this.role].name} \u00B7 ${this.name}${this.aiPartner ? ' \u00B7 AI ' + this.partnerName : this.solo ? '' : ' \u00B7 with ' + this.partnerName}`);
+    this.renderer.setAnimationLoop(() => this._frame());
+  }
+
+  // ---- setup ---------------------------------------------------------------------
+  _initRenderer() {
+    const canvas = document.getElementById('game');
+    const q = this.quality;
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: q === 'low', powerPreference: 'high-performance', stencil: false });
+    this.pr = q === 'high' ? Math.min(devicePixelRatio, 2) : q === 'medium' ? Math.min(devicePixelRatio, 1.5) : Math.min(devicePixelRatio, 1);
+    // Tablets and phones: cap the render resolution (Retina iPads otherwise push ~5 Mpx through the post pass).
+    if (TOUCH) this.pr = Math.min(this.pr, q === 'high' ? 1.25 : 1);
+    this.renderer.setPixelRatio(this.pr);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.35;
+  }
+
+  _lights() {
+    this.hemi = new THREE.HemisphereLight('#5a70a0', '#141821', 2.1);
+    this.moonLight = new THREE.DirectionalLight('#9fb6ff', 1.1);
+    this.moonLight.position.set(-350, 420, -840);
+    this.scene.add(this.hemi, this.moonLight);
+    // Night haze: low ground mist that the cliff sits above.
+    hazeUniforms.uHazeColor.value.set('#0b1220');
+    hazeUniforms.uHazeSunColor.value.set('#22324e');
+    hazeUniforms.uSunDir.value.set(-0.35, 0.42, -0.84).normalize();
+    hazeUniforms.uHazeDensity.value = 0.0042;
+    hazeUniforms.uHazeFloor.value = 0.22;
+    hazeUniforms.uHazeFalloff.value = 22;
+    hazeUniforms.uHazeBase.value = 0;
+    this.renderer.setClearColor('#050810');
+    // A fixed set of point lights (counts never change, so shaders compile once).
+    this.points = [];
+    const add = (x, y, z, col, I, d, zone) => { const L = new THREE.PointLight(col, I, d, 1.6); L.position.set(x, y, z); this.scene.add(L); this.points.push({ L, I, zone }); };
+    for (const t of [[-73, -53], [73, -53], [-73, 53], [73, 53]]) add(t[0] * 0.95, 8, t[1] * 0.95, '#ffe2b0', 60, 40, 'yard');
+    add(11, 4, 54, '#ffcf8a', 25, 20, 'yard');
+    add(0, 4, 3, '#ffd9a0', 22, 18, 'yard');
+    add(0, 6, -12, '#d8e4ff', 26, 22, 'floor');
+    add(-18, 6, -30, '#d8e4ff', 22, 24, 'floor');
+    add(24, 6, -31, '#b8d0ff', 22, 20, 'core');
+  }
+
+  _initComposer() {
+    if (this.composer) return;
+    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: this.quality === 'high' ? 4 : 0 });
+    this.composer = new EffectComposer(this.renderer, rt);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    if (this.quality !== 'low') this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.7, 0.5, 0.85));
+    this.post = new ShaderPass(CellShader);
+    this.composer.addPass(this.post);
+    this.composer.addPass(new OutputPass());
+  }
+
+  _resize() {
+    this.camera.aspect = innerWidth / innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(innerWidth, innerHeight, false);
+    this._initComposer();
+    this.composer.setPixelRatio(this.pr);
+    this.composer.setSize(innerWidth, innerHeight);
+    this.post.uniforms.uRes.value.set(innerWidth, innerHeight);
+    const c = this.overlay;
+    if (c) { c.width = innerWidth * Math.min(devicePixelRatio, 2); c.height = innerHeight * Math.min(devicePixelRatio, 2); }
+  }
+
+  _setupPlayer() {
+    const P = (this.player = new LocalPlayer());
+    const i = this.role === 'shooter' ? 0 : 1;
+    const sp = this.role === 'shooter' ? SPOTS.perches[0] : SPOTS.insert[1];
+    const sx = this.role === 'shooter' ? sp.x : SPOTS.insert[1].x, sz = this.role === 'shooter' ? sp.z + 3 : SPOTS.insert[1].z;
+    P.vest = this.role === 'shooter' ? 'rig' : 'plate';
+    P.reset(new THREE.Vector3(sx, terrainHeight(sx, sz), sz), 0);
+    this._arm();
+    P.autoBipod = false;
+    P.autoCycle = false;
+    P.straightPull = true; // Halo-feel: the bolt runs while you stay on the glass
+    P.hp = this.D.hp;
+    this.hp = this.D.hp;
+    this.maxHp = this.D.hp;
+    this.downed = false;
+    this.kia = false;
+    this.bleed = BLEED;
+    this.cloak = { on: false, bat: 100, flick: 0, regenT: 0 };
+    this.nv = false;
+    this.viewmodel = new ViewModel(this.camera);
+    for (const [key, model] of [['kr50', buildKR50()], ['smg', buildSMG()], ['mag50', buildMagnum()]]) {
+      model.visible = false;
+      this.viewmodel.models[key] = model;
+      this.viewmodel.holder.add(model);
+    }
+    // Knife for takedowns (camera space).
+    this.knife = buildKnife();
+    this.knife.visible = false;
+    this.camera.add(this.knife);
+    this.knife.traverse((o) => { o.renderOrder = 11; o.frustumCulled = false; });
+    // The carried drive, strapped low on the left of your view.
+    this.carry = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.03, 0.12), new THREE.MeshBasicMaterial({ color: '#ff9a20' }));
+    this.carry.position.set(-0.2, -0.2, -0.32);
+    this.carry.rotation.set(0.4, 0.3, 0);
+    this.carry.renderOrder = 11;
+    this.carry.visible = false;
+    this.camera.add(this.carry);
+    // Suppressor on the P-9 (toggle with B).
+    const can = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.13, 12).rotateX(Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#1a1b1e', emissive: '#1a1b1e', emissiveIntensity: 0.14 }));
+    const pm = this.viewmodel.models.m18;
+    can.position.set(0, 0.022, -0.225);
+    pm.add(can);
+    this.pistolCan = can;
+    this.viewmodel.root.traverse((o) => { o.renderOrder = 10; o.frustumCulled = false; });
+    this.viewmodel.setLook({ outfit: 'wraith', poncho: this.role === 'shooter', theme: 'mcblack' });
+    this.i = i;
+  }
+
+  _arm() {
+    const P = this.player;
+    const L = this.loadout;
+    if (!P._baseSpare) P._baseSpare = P._spare.bind(P);
+    const extra = this.role === 'shooter' && L.shooter.perk === 'mags' ? 2 : 0;
+    P._spare = (d) => P._baseSpare(d) + extra;
+    const mk = (d, sup) => ({ def: d, mag: d.mag, chamber: 1, reserve: d.mag * P._spare(d), zoomIdx: 0, zero: d.fixedZero || 100, sup, mode: d.modes ? d.modes[0] : null });
+    P.arms = this.role === 'shooter' ? [mk(KR50, true), mk(L.shooter.secondary === 'mag50' ? MAGNUM : SMG, L.shooter.secSup)] : [mk(P9, L.spotter.pistolSup)];
+    P.slot = 0;
+  }
+
+  _look(role) {
+    // Both operators wear the multicam-black kit. The shooter adds a chest rig and the
+    // urban-digital poncho; the spotter wears the plate carrier with a quad on the pack.
+    return role === 'shooter'
+      ? { outfit: 'wraith', theme: 'mcblack', vest: 'rig', poncho: true, ponchoTheme: 'urbandark', hat: 'none', eyes: 'goggles', kit: { stealth: 'suppressor' } }
+      : { outfit: 'wraith', theme: 'mcblack', vest: 'plate', poncho: false, hat: 'cap', eyes: 'goggles', kit: { scout: 'drone' } };
+  }
+
+  _setupPartner() {
+    const r = this.partnerRole;
+    const av = new Avatar(ROLES[r].color, r === 'shooter' ? 7 : 11);
+    av.setLook(this._look(r));
+    this.scene.add(av.root);
+    this.cloakMat = cloakMaterial();
+    const ai = this.aiPartner;
+    const p = r === 'shooter' ? SPOTS.perches[0] : { x: SPOTS.insert[1].x + 3, z: SPOTS.insert[1].z - 3 };
+    this.partner = {
+      role: r, name: this.partnerName, ai, avatar: av, pos: new THREE.Vector3(p.x, terrainHeight(p.x, p.z), p.z), tpos: null,
+      yaw: 0, pitch: -0.05, st: ai ? (r === 'shooter' ? 2 : 1) : 0, w: r === 'spotter', moving: false, sprinting: false, cloak: false, cloakFlicker: false,
+      hp: 100, downed: false, kia: false, alive: true, tablet: false, e: false, quad: null, seen: ai, ammo: 1, lastT: 0,
+    };
+    // Your own (local) operator model, used when you are down and the camera pulls out.
+    this.selfAvatar = new Avatar(ROLES[this.role].color, 3);
+    this.selfAvatar.setLook(this._look(this.role));
+    this.selfAvatar.setVisible(false);
+    this.scene.add(this.selfAvatar.root);
+    this.quadObj = buildDrone();
+    this.quadObj.userData.beam.visible = false;
+    this.quadObj.scale.setScalar(0.6);
+    this.quadObj.visible = false;
+    this.scene.add(this.quadObj);
+    this.medObj = buildDrone();
+    this.medObj.userData.beam.visible = false;
+    this.medObj.visible = false;
+    this.scene.add(this.medObj);
+    this.heli = buildHeli();
+    this.heli.visible = false;
+    this.scene.add(this.heli);
+    this.crateObjs = new Map();
+  }
+
+  // ---- networking --------------------------------------------------------------
+  _setupNet() {
+    const n = this.net;
+    n.on('cp', (m) => this._onPartnerState(m));
+    n.on('cw', (m) => { if (!this.isHost) this._applyWorld(m); });
+    n.on('shot', (m) => this._onRemoteShot(m));
+    n.on('eshot', (m) => { if (!this.isHost) this._onEshot(m); });
+    n.on('hit', (m) => { if (this.isHost) this._applyHit(m.id, m.dmg, m.how, m.from, this.partnerRole, !!m.head, m.dist); });
+    n.on('ab', (m) => { if (this.isHost) this._execPayload(m.k, m.target, this.partnerRole); });
+    n.on('toast', (m) => { if (!this.isHost) this.comms(m.m, m.c, m.who); });
+    n.on('ev', (m) => this._onEvent(m));
+    n.on('end', (m) => { if (!this.isHost) this._end(m.win, m.info); });
+    n.on('pin', (m) => this._addPin(m, false));
+    n.on('cm', (m) => this._onCall(m));
+    n.on('rq', (m) => this._onRequest(m));
+    n.on('rr', (m) => this._onAnswer(m));
+    n.on('ack', () => this.comms('Roger.', ROLES[this.partnerRole].color, this.partnerName));
+    n.on('cname', (m) => { const nm = String(m.name || '').replace(/[<>&"]/g, '').slice(0, 16); if (nm) { this.partner.name = this.partnerName = nm; } });
+    n.send({ t: 'cname', name: this.name });
+    n.on('close', () => { this.comms(`${this.partnerName} lost the link.`, 'red'); this.partner.alive = false; this.partner.seen = false; });
+    n.on('hello', () => {
+      // A guest that raced the hello asks again: re-send it.
+      if (this.isHost && this.hello) n.send(this.hello);
+    });
+  }
+
+  send(m) {
+    if (this.net && this.net.open) this.net.send(m);
+  }
+
+  _onPartnerState(m) {
+    const P = this.partner;
+    P.tpos = new THREE.Vector3(m.p[0], m.p[1], m.p[2]);
+    if (!P.seen) P.pos.copy(P.tpos);
+    P.seen = true;
+    P.tyaw = m.y; P.pitch = m.pi; P.st = m.st; P.w = !!m.w; P.moving = !!m.mv; P.sprinting = !!m.sp;
+    P.cloak = !!m.ck; P.cloakFlicker = !!m.cf; P.hp = m.hp; P.downed = !!m.dn; P.kia = !!m.kia; P.alive = !m.kia;
+    P.tablet = !!m.tb; P.e = !!m.e; P.quad = m.q || null; P.scoped = !!m.sc; P.ammo = m.am; P.lastT = this.t;
+    P.nv = !!m.nv;
+    P.sy = m.sy || 0;
+    P.wl = !!m.wl;
+  }
+
+  _sendState() {
+    const P = this.player, r = (v) => Math.round(v * 100) / 100;
+    const q = this._quadOut() ? [r(this.quad.x), r(this.quad.y), r(this.quad.z), r(this.quad.yaw), r(this.quad.pitch)] : 0;
+    const total = P.arms.reduce((s, w) => s + w.mag + w.reserve + w.chamber, 0), full = P.arms.reduce((s, w) => s + w.def.mag * (1 + P._spare(w.def)), 0);
+    this.send({
+      t: 'cp', p: [r(P.pos.x), r(P.pos.y), r(P.pos.z)], y: r(P.yaw), pi: r(P.pitch), st: P.stance, w: P.def.slot === 'pistol' ? 1 : 0,
+      mv: P.moving ? 1 : 0, sp: P.sprinting ? 1 : 0, ck: this.cloak.on ? 1 : 0, cf: this.cloak.flick > 0 ? 1 : 0, hp: Math.round(this.hp),
+      dn: this.downed ? 1 : 0, kia: this.kia ? 1 : 0, tb: this.tablet.visible ? 1 : 0, e: this._eHeld ? 1 : 0, q, sc: P.scoped ? 1 : 0, am: r(total / full), nv: this.nv ? 1 : 0, sy: this.syncAim || 0, wl: this.wl.on ? 1 : 0,
+    });
+  }
+
+  _worldMsg() {
+    const doors = Object.values(this.fac.doors).map((d) => [d.id, (d.open ? 1 : 0) | (d.sealed ? 2 : 0) | (d.unlocked ? 4 : 0) | (d.hackT > 0 ? 8 : 0) | (d.perm ? 16 : 0)]);
+    return {
+      t: 'cw', s: this.sentinel.snap(), o: this.obj, dr: doors, cr: this.crates.map((c) => [c.id, Math.round(c.x * 10) / 10, Math.round(c.y * 10) / 10, Math.round(c.z * 10) / 10, c.landed ? 1 : 0]),
+      ia: this.prompts, lt: this.fac.lightState(), dv: this.fac.devices.filter((d) => d.t > 0).map((d) => d.id), md: this.medevac ? [this.medevac.x, this.medevac.y, this.medevac.z] : null,
+      ai: this.aiShoot ? this.aiShoot.perch : -1, pins: this.pins.filter((p) => p.by === 'host-ai').length,
+    };
+  }
+
+  _applyWorld(m) {
+    this.sentinel.applySnap(m.s);
+    const prevStep = this.obj.step;
+    Object.assign(this.obj, m.o);
+    if (this.obj.step !== prevStep) this._stepChanged(prevStep);
+    for (const [id, fl] of m.dr) {
+      const d = this.fac.doors[id];
+      if (!d) continue;
+      this.fac.setDoor(id, !!(fl & 1));
+      d.sealed = !!(fl & 2); d.unlocked = !!(fl & 4); d.hackT = fl & 8 ? 1 : 0; d.perm = !!(fl & 16);
+    }
+    this.crates = m.cr.map(([id, x, y, z, l]) => ({ id, x, y, z, landed: !!l }));
+    this.prompts = m.ia || {};
+    this.fac.applyLightState(m.lt || []);
+    for (const d of this.fac.devices) d.t = (m.dv || []).includes(d.id) ? Math.max(d.t, 0.3) : Math.min(d.t, 0);
+    this.medevac = m.md ? { x: m.md[0], y: m.md[1], z: m.md[2] } : null;
+    this.fac.relayPlanted = this.obj.relay;
+  }
+
+  _broadcast(ev) {
+    this.send({ t: 'ev', ...ev });
+  }
+
+  _onEvent(m) {
+    switch (m.k) {
+      case 'resupply': if (m.role === this.role) this._resupply(); break;
+      case 'revive': if (m.role === this.role) this._revived(m.hp || 55); break;
+      case 'kill': this._onKillEvent(m); break;
+      case 'takedown': if (m.role === this.role) this._knife(); break;
+      case 'lockdown': this._lockdownFx(); break;
+      case 'ice': this.hud.flash('ICE ALERT', 'red'); break;
+      case 'confirm': if (this.isHost) this.sentinel.confirm(m.id); break;
+      case 'boom': this._boom(m); break;
+      case 'blasthurt': if (m.role === this.role) this._damage(m.dmg, { x: m.x, z: m.z }); break;
+      case 'sweepfx': this.isr.sweepFx = { x: m.x, z: m.z, r: m.r, t: 0 }; break;
+      case 'vote': if (this.isHost) this._castVote(m.role, m.v); break;
+      case 'heal': if (m.role === this.role) this._heal(m.hp); break;
+      case 'ammo': if (m.role === this.role) this._ammo(); break;
+      case 'trace': this.hud.flash('TRACED', 'red'); break;
+      case 'decoy': this.audio.beep(new THREE.Vector3(m.x, 1, m.z), true); break;
+      case 'quadhit': if (this.quad && this.quad.active) this._quadDamage(m.dmg); break;
+      case 'noise': if (this.isHost) this.sentinel.noise({ x: m.x, y: m.y, z: m.z }, m.r, !!m.loud); break;
+      case 'fx': this._fx(m); break;
+      case 'sfx': this._sentinelFx(m.ev); break;
+      case 'aligned': case 'extracted': if (this.isHost) this._serverResult(m); break;
+      case 'fumble': if (this.isHost) this.obj.trace = Math.min(0.99, this.obj.trace + 0.08); break;
+      case 'drop': if (this.isHost) this._dropDrive(m.role, m.at); break;
+      case 'light': if (this.isHost) this._shootLight(m.id, m.at); break;
+      case 'radio': this._voice(m.who, m.text); break;
+      case 'emelee': this._onMelee(m.ev); break;
+      case 'nearmiss': if (this.isHost) this.sentinel.nearMiss(m.at, m.from); break;
+      case 'block': if (this.isHost) { const g = this.sentinel.byId(m.id); if (g) { this.sentinel._alert(g, null, m.from); this.sentinel.emit({ t: 'fx', k: 'shield', id: m.id }); } } break;
+    }
+  }
+
+  // ---- helpers used by ops / tablet ------------------------------------------------
+  localAgent() {
+    const P = this.player;
+    return { role: this.role, light: this.wlMine || null, pos: P.pos, yaw: P.yaw, stance: this.downed ? 2 : P.stance, moving: P.moving, sprinting: P.sprinting, cloak: this.cloak.on, cloakFlicker: this.cloak.flick > 0, alive: !this.kia, downed: this.downed };
+  }
+  partnerAgent() {
+    const Q = this.partner;
+    if (Q.ai || !Q.seen) return null;
+    return { role: Q.role, light: this.wlTheirs || null, pos: Q.pos, yaw: Q.yaw, stance: Q.downed ? 2 : Q.st, moving: Q.moving, sprinting: Q.sprinting, cloak: Q.cloak, cloakFlicker: Q.cloakFlicker, alive: Q.alive && !Q.kia, downed: Q.downed };
+  }
+  agents() {
+    return [this.localAgent(), this.partnerAgent()].filter(Boolean);
+  }
+  agentPos(role) {
+    if (role === this.role) return this.player.pos;
+    return this.partner.pos;
+  }
+  downedAgent() {
+    if (this.downed && !this.kia) return this.role;
+    if (!this.partner.ai && this.partner.downed && !this.partner.kia) return this.partnerRole;
+    return null;
+  }
+  canQuad() {
+    return (this.role === 'spotter' || this.operative) && !this.downed && !this.kia && this.quadCd <= 0 && !(this.quad && this.quad.active);
+  }
+  // Extra intel sources for the console: the recon quad, and enemies close to an agent.
+  get extraReveal() {
+    return (e) => {
+      const ex = e.x, ez = e.z, ey = (e.y || 0) + 1.2;
+      const qs = [];
+      if (this.quad && this.quad.active) qs.push(this.quad);
+      if (this.partner.quad) qs.push({ x: this.partner.quad[0], y: this.partner.quad[1], z: this.partner.quad[2], yaw: this.partner.quad[3] });
+      for (const q of qs) {
+        const d = Math.hypot(ex - q.x, ez - q.z);
+        if (d < 45 && Math.abs(angDiff(Math.atan2(-(ex - q.x), -(ez - q.z)), q.yaw)) < 0.8 && this.fac.los(q, { x: ex, y: ey, z: ez })) return true;
+      }
+      for (const a of this.agents()) {
+        if (!a.alive) continue;
+        if (Math.hypot(a.pos.x - ex, a.pos.z - ez) < 25 && this.fac.los({ x: a.pos.x, y: a.pos.y + 1.5, z: a.pos.z }, { x: ex, y: ey, z: ez })) return true;
+      }
+      return false;
+    };
+  }
+
+  comms(m, c = 'dim', who = null) {
+    this.commsLog.push({ m, c, who, t: this.t });
+    if (this.commsLog.length > 40) this.commsLog.shift();
+    if (this.hud) this.hud.comms(m, c, who);
+    if (this.tablet) this.tablet.dirty = true;
+  }
+
+  _toast(m, c = 'dim', who = null) {
+    this.comms(m, c, who);
+    if (this.isHost) this.send({ t: 'toast', m, c, who });
+  }
+
+  // A payload fired from the console (or the AI spotter). Host executes; guest forwards.
+  payload(k, target) {
+    if (this.isHost) this._execPayload(k, target, this.role === 'spotter' ? this.role : 'spotter');
+    else if (k === 'crack' || k === 'fight') {
+      // Held actions: batch them into ~10 messages a second.
+      this._held = this._held || {};
+      this._held[k] = (this._held[k] || 0) + target.dt;
+      if (this._held[k] >= 0.1) { this.send({ t: 'ab', k, target: { dt: this._held[k] } }); this._held[k] = 0; }
+    } else this.send({ t: 'ab', k, target });
+    if (k === 'quad') this._startQuad();
+  }
+
+  _execPayload(k, target, by) {
+    const S = this.sentinel, ob = this.obj;
+    switch (k) {
+      // The console's pulse only hears the network: drones, cameras, devices. People don't show.
+      case 'scan': S.scanT = 4; for (const d of S.drones) if (d.state !== 'dead') { d.scanT = 4; d.tagT = Math.max(d.tagT, 8); } for (const c of S.cams) c.scanT = 4; this._toast('Network pulse \u2014 every drone, camera and device for 4 s. (People don\u2019t show: use the ISR sweep.)', 'cyan'); break;
+      // ISR ping sweep: a circle on the ground; everything inside, flesh or machine, gets marked.
+      case 'qmark': this._neuroMark(target.ids || []); break;
+      case 'pdrone': { const d = S.byId(target.id); if (d && d.state !== 'dead') { d.empT = 8; this._toast('Drone shorted out for 8 s.', 'cyan'); } break; }
+      case 'blind': { const e = S.byId(target.id); if (e && e.state !== 'dead') { e.blindT = 6; e.aw = 0; if (e.state === 'alert' || e.state === 'berserk') { e.state = 'search'; e.searchT = 6; e.target = null; } this._toast('Optics rebooted: he\u2019s blind for 6 s.', 'cyan'); } break; }
+      case 'plight': this.fac.lightsOff((L) => L.id === target.id, 20); this._toast('Light cut for 20 s.', 'dim'); break;
+      case 'isrsweep': {
+        let n = 0;
+        for (const g of S.guards) if (g.state !== 'dead' && Math.hypot(g.x - target.x, g.z - target.z) < target.r) { g.tagT = Math.max(g.tagT, 15); n++; }
+        for (const d of S.drones) if (d.state !== 'dead' && Math.hypot(d.x - target.x, d.z - target.z) < target.r) { d.tagT = Math.max(d.tagT, 15); n++; }
+        for (const c of S.cams) if (Math.hypot(c.x - target.x, c.z - target.z) < target.r) { c.scanT = 6; n++; }
+        this._toast(`ISR sweep: ${n} contact${n === 1 ? '' : 's'} marked for 15 s \u2014 red through walls.`, 'cyan');
+        this._broadcast({ k: 'sweepfx', x: target.x, z: target.z, r: target.r });
+        break;
+      }
+      case 'jam': S.jams.push({ x: target.x, z: target.z, r: PAYLOAD.jam.r, t: 5 }); this._toast('Earpieces jammed for 5 s.', 'cyan'); break;
+      case 'emp':
+        {
+          const room = this._roomFor(target);
+          // Inside a building the pulse fills the room: shells, walls, cameras, lights.
+          S.emp(target.x, target.z, room ? PAYLOAD.emp.r * 1.6 : PAYLOAD.emp.r);
+          if (room) this.fac.lightsOff((L) => L.room === room.id, 15);
+          else this.fac.lightsOff((L) => !L.interior && Math.hypot(L.x - target.x, L.z - target.z) < PAYLOAD.emp.r, 10);
+        }
+        this._toast('EMP \u2014 drones, cameras and shields in the area dark for 7 s.', 'cyan');
+        this._broadcastFx({ k: 'emp', x: target.x, z: target.z });
+        break;
+      case 'supply':
+        if (ob.drops <= 0) break;
+        ob.drops--;
+        this.crates.push({ id: this.crateId++, x: target.x, z: target.z, y: terrainHeight(target.x, target.z) + 28, landed: false, vy: 5.5 });
+        this._toast(`Supply drop inbound (${ob.drops} left).`, 'cyan');
+        break;
+      case 'lights': {
+        // Inside, cyber reaches the whole room (20 s); outside, the lamps near the point (12 s).
+        const room = this._roomFor(target);
+        if (room) { this.fac.lightsOff((L) => L.room === room.id, 20); this._toast(`Lights cut: ${room.name} for 20 s.`, 'cyan'); }
+        else { this.fac.lightsOff((L) => !L.interior && Math.hypot(L.x - target.x, L.z - target.z) < 35, 12); this._toast('Yard lights near the mark cut for 12 s.', 'cyan'); }
+        break;
+      }
+      case 'spoof': S.spoofT = 10; this._toast('Cameras looped for 10 s.', 'cyan'); break;
+      case 'decoy': this.decoys = (this.decoys || []).concat([{ x: target.x, z: target.z, t: 2.4, tick: 0 }]); this._broadcast({ k: 'decoy', x: target.x, z: target.z }); this.audio.beep(new THREE.Vector3(target.x, 1, target.z), true); break;
+      case 'medevac': {
+        const role = target && target.role;
+        if (!role) break;
+        const from = SPOTS.insert[0];
+        this.medevac = { x: from.x, y: terrainHeight(from.x, from.z) + 18, z: from.z, role };
+        this._toast('Medevac drone launched.', 'cyan');
+        break;
+      }
+      case 'quad': break;
+      case 'door': {
+        const d = this.fac.doors[target.id];
+        if (!d) break;
+        if (d.kind === 'dock' && ob.drive) { d.perm = true; d.sealed = false; this._toast('Loading dock forced open. Get to the LZ!', 'cyan'); }
+        else if (d.kind === 'mech') this._toast('That one\u2019s a mechanical lock \u2014 it has to be picked.', 'red');
+        else if (!d.sealed) { d.unlocked = true; d.hackOpen = 2; this._toast('Door lock hacked \u2014 it\u2019s open to both of you.', 'cyan'); }
+        break;
+      }
+      case 'cam': {
+        const c = S.cams.find((q) => q.id === target.id);
+        if (!c) break;
+        c.hacked = true;
+        c.loopT = HACK.camLoop;
+        this._toast('Camera hacked: looped 9 s, feeding the console.', 'cyan');
+        break;
+      }
+      case 'fight':
+        if (ob.uploading) ob.trace = Math.max(0, ob.trace - HACK.fightRate * (target.dt || 0.1) * 2);
+        break;
+      case 'iot': {
+        const d = this.fac.devices.find((q) => q.id === target.id);
+        if (!d) break;
+        d.t = 5;
+        this.decoys = (this.decoys || []).concat([{ x: d.x, z: d.z, y: d.y, t: 4.5, tick: 0, r: 18, soft: true }]);
+        this._broadcastFx({ k: 'iot', id: d.id });
+        this._toast(`${d.kind.toUpperCase()} hacked \u2014 it\u2019s making a racket.`, 'cyan');
+        break;
+      }
+      case 'sync': {
+        const e = S.byId(target.id);
+        if (e && e.hp > 0) { e.sync = target.on ?? !e.sync; e.tagT = Math.max(e.tagT, 60); e.tagBy = target.by || by; }
+        break;
+      }
+      case 'tag': {
+        const e = S.byId(target.id);
+        if (e && e.hp > 0) { e.tagT = HACK.tag; e.tagBy = target.by || by; }
+        break;
+      }
+      case 'perch':
+        if (this.aiShoot && target.i !== this.aiShoot.perch) { this.aiShoot.moveTo = target.i; this.aiShoot.moveT = 9; this._toast(`Ra: relocating to ${SPOTS.perches[target.i].name}.`, 'amber', this.partnerName); }
+        break;
+    }
+    void by;
+  }
+
+  _broadcastFx(ev) {
+    this._fx(ev);
+    this._broadcast({ k: 'fx', ...ev });
+  }
+  _fx(ev) {
+    if (ev.k === 'iot') {
+      const d = this.fac.devices.find((q) => q.id === ev.id);
+      if (d) { d.t = 5; for (let i = 0; i < 6; i++) setTimeout(() => this.audio.beep(new THREE.Vector3(d.x, d.y, d.z), i % 2 === 0), i * 260); }
+    }
+    if (ev.k === 'emp') {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.5, 1, 40).rotateX(-Math.PI / 2), glowMat('#60c0ff', 0.6));
+      ring.position.set(ev.x, terrainHeight(ev.x, ev.z) + 0.5, ev.z);
+      this.scene.add(ring);
+      this.trails.push({ mesh: ring, t: 0, life: 0.8, ring: PAYLOAD.emp.r });
+    }
+  }
+
+  _addPin(m, local = true) {
+    this.pins.push({ x: m.x, z: m.z, label: m.label || 'PING', by: m.by, t: 12 });
+    if (this.pins.length > 6) this.pins.shift();
+    if (!local) this.comms(`${this.partnerName}: ${m.label === 'PING' ? 'look here.' : 'requests ' + m.label + '.'}`, ROLES[this.partnerRole].color, this.partnerName);
+    this.audio.ping && this.audio.ping();
+  }
+
+  // Shooter's requests (solo: the AI spotter answers; co-op: a pin on the spotter's console).
+  request(kind) {
+    const P = this.player.pos;
+    const label = kind.toUpperCase();
+    if (this.solo && this.ops) {
+      const k = { scan: 'scan', supply: 'supply', lights: 'lights', decoy: 'decoy', jam: 'jam', emp: 'emp', spoof: 'spoof' }[kind];
+      if (kind === 'door') {
+        const d = Object.values(this.fac.doors).filter((q) => q.kind === 'elec' || q.kind === 'dock').sort((a, b) => Math.hypot(a.x - P.x, a.z - P.z) - Math.hypot(b.x - P.x, b.z - P.z))[0];
+        const why = d ? this.ops.hack('door', d.id) : 'NO DOOR';
+        this.comms(why ? `Rōnin: can’t — ${why.toLowerCase()}.` : 'Rōnin: on the door.', 'cyan', this.partnerName);
+        return;
+      }
+      const aim = this._aimPoint();
+      const why = this.ops.use(k, PAYLOAD[k].aim ? (kind === 'supply' ? { x: P.x + 1.5, z: P.z + 1 } : aim) : null);
+      this.comms(why ? `Rōnin: can’t — ${why.toLowerCase()}.` : `Rōnin: ${PAYLOAD[k].name.toLowerCase()}, on it.`, 'cyan', this.partnerName);
+      return;
+    }
+    const at = kind === 'supply' || kind === 'door' ? { x: P.x, z: P.z } : this._aimPoint();
+    const pin = { x: at.x, z: at.z, label, by: this.role };
+    this._addPin(pin);
+    this.send({ t: 'pin', ...pin });
+    this.comms(`Requested ${label.toLowerCase()}.`, ROLES[this.role].color, this.name);
+  }
+
+  _aimPoint() {
+    const o = this.player.eyePos(new THREE.Vector3());
+    const dir = this.player.aimDir(new THREE.Vector3());
+    const h = this.fac.ray(o, o.clone().addScaledVector(dir, 400), 'shot');
+    const p = h ? h.point : o.clone().addScaledVector(dir, 120);
+    return { x: p.x, z: p.z };
+  }
+
+  get missionTitle() {
+    return MISSIONS[this.mission].title;
+  }
+  // Title with the colour split: SNIPER (white) CELL (red) : MISSION (cyan).
+  get titleHTML() {
+    return `<span class="t-w">SNIPER</span> <span class="t-r">CELL</span><span class="t-w">:</span> <span class="t-c">${MISSIONS[this.mission].name}</span>`;
+  }
+  get missionLine() {
+    return MISSIONS[this.mission].line;
+  }
+  _nameFor(role) {
+    return role === this.role ? this.name : this.partnerName;
+  }
+  _afterIntro() {
+    this.comms('Weapons free on your call. Stay in the dark.', 'dim');
+    const chief = this.mission === 'nightwatch' ? 'the Overseer' : 'the Site Chief';
+    const brief = `Overwatch to Sniper Cell, ISR is on station. Your objective is the archive server inside the Kestrel Ridge data center. Two floors, six rack rooms behind keycard doors, and we don't know which one. Plant the relay in the electrical room. Each rack room takes its own colour-tagged keycard: search the office drawers, or take ${chief}'s master badge. Find the rack with the amber beacon and upload. A clean upload and nobody ever knows. Botch it and SENTINEL's ICE puts the garrison on the walls. Then pull the drive and get to the van. The comms room and the CCTV desk can be hacked in person, and there's food and ammo upstairs. ${this.mission === 'nightwatch' ? 'SENTINEL\'s night shift is augmented. Watch the towers.' : ''} Good hunting.`;
+    this._voice('isr', brief);
+    this.comms('ISR: objective \u2014 archive server, one of six rack rooms (both floors). Relay \u2192 keycards (office drawers) \u2192 find the amber beacon \u2192 upload \u2192 drive \u2192 van.', 'cyan', 'ISR');
+    this.input.requestLock();
+  }
+
+  // ---- frame -----------------------------------------------------------------------
+  _frame() {
+    let dt = Math.min(this.clock.getDelta(), 1 / 20);
+    this.t += dt;
+    hazeUniforms.uTime.value = this.t;
+    if (this.cine.active) return this._cineFrame(dt);
+    const a = this.input.actions;
+    if (this.net) this.net.tick(dt);
+    this.chat.update();
+    if (!this.ended) {
+      this._updateLocal(dt, a);
+      // Quickhack scan slows the world when you play solo.
+      if (this.isHost) this._hostTick(this.solo && this.qh && this.qh.on ? dt * 0.3 : dt);
+      this._netTick(dt);
+    } else this.input.endFrame();
+    this._updatePartner(dt);
+    this.sentinel.draw(dt, this.camera.position);
+    this.fac.update(dt);
+    this._visuals(dt);
+    this.effects.update(dt, this.camera);
+    this.audio.setListener(this.camera);
+    this._render(dt);
+    this.hud.update(dt);
+    this.tablet.update(dt);
+  }
+
+  // While a cut-scene runs: the world keeps ticking (host), the camera is the director's.
+  _cineFrame(dt) {
+    const C = this.cine;
+    C.update(dt);
+    this.input.endFrame();
+    if (this.net) this.net.tick(dt);
+    if (C.active === 'intro') {
+      if (this.isHost) this._hostTick(dt);
+      this._netTick(dt);
+      this._updatePartner(dt);
+      this.sentinel.draw(dt, C.cam.position);
+      this.fac.update(dt);
+      this._visuals(dt);
+      this.effects.update(dt, C.cam);
+      this.camera.position.copy(C.cam.position);
+      this.camera.quaternion.copy(C.cam.quaternion);
+      this.camera.fov = C.cam.fov;
+      this.camera.updateProjectionMatrix();
+      this.viewmodel.visible = false;
+    }
+    this.audio.setListener(C.active === 'outro' ? C.cam : this.camera);
+    if (!C.render(this.renderer)) this._render(dt);
+    if (this.ended) this.hud.update(dt);
+  }
+
+  _netTick(dt) {
+    if (!this.net) return;
+    this._stT = (this._stT || 0) - dt;
+    if (this._stT <= 0) { this._stT = 0.05; this._sendState(); }
+    if (this.isHost) {
+      this._wT = (this._wT || 0) - dt;
+      if (this._wT <= 0) { this._wT = 0.1; this.send(this._worldMsg()); }
+    }
+  }
+
+  _updateLocal(dt, a) {
+    const P = this.player, I = this.input;
+    const tab = this.tablet.visible;
+    const quad = this.quad && this.quad.active;
+    // Keys for this mode.
+    // TAB: the spotter taps it for the tablet (tap again: ISR, again: back to first person)
+    // and holds it for quickhacks (phone out). The shooter's TAB is just the map.
+    if (this.role === 'spotter' || this.operative) {
+      const cycle = () => {
+        if (this.tablet.visible) { this.tablet.close(); this.isr.enter(); }
+        else if (this.isr.active) this.isr.exit();
+        else this.tablet.open();
+      };
+      if (!I.held('Tab')) this._tabBlock = false;
+      if (this.tablet.visible || this.isr.active) { if (I.pressed('Tab') || I.pressed('cell-tab')) { cycle(); this._tabBlock = true; } this._tabT = 0; }
+      else if (this._tabBlock) this._tabT = 0;
+      else if (I.held('Tab') && !this.downed) {
+        this._tabT = (this._tabT || 0) + dt;
+        if (this._tabT > 0.22 && !this.qh.on) this._qhEnter();
+      } else {
+        if (this._tabT > 0 && this._tabT <= 0.22) cycle();
+        else if (this._tabT > 0.22) this._qhExit();
+        this._tabT = 0;
+        if (I.pressed('cell-tab')) cycle();
+      }
+      if (I.pressed('cell-hack')) { if (this.qh.on) this._qhExit(); else this._qhEnter(); }
+    } else if (I.pressed('Tab') || I.pressed('cell-tab')) this.tablet.toggle();
+    if ((I.pressed('KeyL') || I.pressed('cell-light')) && !tab) this._wlToggle();
+    if (I.pressed('KeyN') || I.pressed('cell-nv')) this._nvgToggle();
+    // Objective board: O shows / hides it, P expands / compacts it (P is the sweep in the ISR view).
+    if (I.pressed('KeyO')) this.hud.objToggle();
+    if (I.pressed('KeyP') && !this.isr.active) this.hud.objExpand();
+    // B: tap = fire mode (SMG) / suppressor (pistols); hold = suppressor on the SMG.
+    const bHeld = (I.held('KeyB') || I.held('T:cell-sup')) && !tab;
+    if (bHeld) { this._bT = (this._bT || 0) + dt; if (this._bT > 0.45 && !this._bDone) { this._bDone = true; this._toggleSup(); } }
+    else { if (this._bT > 0 && !this._bDone) { if (P.w.def.modes) this._cycleMode(); else this._toggleSup(); } this._bT = 0; this._bDone = false; }
+    if ((this.role === 'spotter' || this.operative) && (I.pressed('KeyI') || I.pressed('cell-isr')) && !tab && !quad && !this.downed) { if (this.isr.active) this.isr.exit(); else this.isr.enter(); }
+    if ((I.pressed('KeyJ') || I.pressed('cell-drop')) && this.obj.drive === this.role) { if (this.isHost) this._dropDrive(this.role, this.player.pos); else this._broadcast({ k: 'drop', role: this.role, at: { x: this.player.pos.x, y: this.player.pos.y, z: this.player.pos.z } }); }
+    const pr = this.prompts[this.role];
+    if ((I.pressed('KeyE') || I.pressed('cell-use')) && pr && (pr.key === 'jack' || pr.key === 'extract') && !tab) this._serverMinigame(pr.key);
+    if (this.role === 'shooter' && (I.pressed('KeyG') || I.pressed('cell-ability')) && !this.downed) this._toggleCloak();
+    // Recon quad: tap Q = launch / park it (it keeps marking) / take it back; hold Q (or RECALL)
+    // = quick calldown, straight back to you.
+    // With your sights on an enemy, holding Q (or SYNC) marks it as a sync target instead.
+    {
+      const canQ = this.role === 'spotter' || this.operative;
+      const qa = this.operative ? 'cell-quad' : 'cell-ability';
+      const syncHeld = I.held('T:cell-sync');
+      const qHeld = (I.held('KeyQ') || (canQ && I.held('T:' + qa)) || syncHeld) && !tab;
+      const aimE = !quad && P.scopeT > 0.3 && !this.downed ? this._crosshairEnemy() : null;
+      if (qHeld) {
+        this._qT = (this._qT || 0) + dt;
+        if (!this._qDone && this._qT > 0.3 && aimE && aimE.kind === 'g') { this._qDone = true; this._syncMark(aimE); }
+        else if (!this._qDone && syncHeld && this._qT > 0.3) { this._qDone = true; this.hud.flash('SYNC: aim at an enemy', 'red'); }
+        else if (canQ && !syncHeld && this._qT > 0.45 && !this._qDone && this._quadOut()) { this._qDone = true; this._recallQuad(); }
+      } else {
+        if (canQ && this._qT > 0 && !this._qDone) {
+          if (quad) this._parkQuad();
+          else if (this.quad && this.quad.parked) this._resumeQuad();
+          else { const why = this.ops.use('quad'); if (why) this.hud.flash(why, 'red'); }
+        }
+        this._qT = 0; this._qDone = false;
+      }
+      if (I.pressed('cell-recall') && this._quadOut()) this._recallQuad();
+    }
+    if (I.pressed('KeyF') || I.pressed('cell-tag')) this._tagAtCrosshair();
+    this._eHeld = (I.held('KeyE') || I.held('T:cell-use')) && !tab && !this.mini.open;
+    const isr = this.isr.active;
+    if (this.ops) this.ops.update(dt);
+    if (this.aiSpot) this.aiSpot.update(dt);
+    this._kitUpdate(dt);
+    this.quadCd = Math.max(0, this.quadCd - dt);
+    if (!this._quadOut() && this.quadBat !== undefined) this.quadBat = Math.min(QUAD_BAT, this.quadBat + dt * 3);
+    if (this.quad && this.quad.parked) { this.quad.bat -= dt * 0.25; if (this.quad.bat <= 0) { this.comms('Quad battery dead \u2014 it\u2019s coming home.', 'cyan', this.name); this._endQuad(); } }
+
+    // Cloak battery (Cold Archive: drain 14/s, regen 7 × camo/s).
+    const C = this.cloak;
+    C.flick = Math.max(0, C.flick - dt);
+    C.lockT = Math.max(0, (C.lockT || 0) - dt);
+    if (C.on) {
+      C.bat -= (P.moving ? 14 : 9) * dt;
+      if (C.bat <= 0) { C.bat = 0; C.on = false; this.hud.flash('CAMO DEPLETED', 'red'); this.audio.click(); }
+      C.regenT = 2;
+    } else {
+      C.regenT -= dt;
+      if (C.regenT <= 0) C.bat = Math.min(100, C.bat + 7 * this.D.camo * (this.loadout.shooter.perk === 'camo' && this.role === 'shooter' ? 1.5 : 1) * dt);
+    }
+
+    // Downed: bleed out unless your partner (or a medevac) gets you up.
+    if (this.downed && !this.kia) {
+      this.bleed -= dt;
+      if (this.bleed <= 0) { this.kia = true; this.comms(`${this.name} is KIA.`, 'red'); this._dropDriveIfCarrying(); }
+    }
+
+    const live = !this.downed && !this.kia;
+    const act = { ...a };
+    this._qhTick(dt, I, act);
+    if (this.qh.on) this._eHeld = false;
+    this._kitKeys(dt, I, tab, quad, live, act);
+    const seat = this._seat();
+    if (!live || tab || quad) {
+      act.fire = false; act.fireHeld = false; act.scope = false; act.reload = act.reload && live && !quad;
+      act.lookX = tab || !live ? 0 : act.lookX; act.lookY = tab || !live ? 0 : act.lookY;
+      act.crouch = act.prone = act.jump = false;
+      act.zoomIn = act.zoomOut = false;
+      act.slot1 = act.slot2 = act.swap = false;
+    }
+    if (quad) { act.mx = 0; act.my = 0; act.sprint = false; act.lookX = 0; act.lookY = 0; }
+    if (isr || this.mini.open) {
+      if (isr) this.isr.control(dt, act, I);
+      if (isr && (I.pressed('KeyP') || I.pressed('cell-sweep'))) this._isrSweep();
+      act.mx = act.my = 0; act.sprint = act.jump = act.crouch = act.prone = false; act.fire = act.fireHeld = act.scope = false; act.lookX = act.lookY = 0; act.zoomIn = act.zoomOut = false; act.slot1 = act.slot2 = act.swap = false; act.reload = false;
+    }
+    if (seat) { act.mx = act.my = 0; act.sprint = act.jump = act.crouch = act.prone = false; act.fire = act.fireHeld = false; act.scope = false; }
+    if (this.role === 'spotter') { act.slot1 = act.slot2 = act.swap = false; if (!P.scoped) act.zoomIn = act.zoomOut = false; }
+    act.zeroUp = act.zeroDown = false;
+    act.breath = false;
+    P.noSprint = !!this.obj.drive && this.obj.drive === this.role;
+    P.speedMul = tab ? 0.55 : 1;
+    if (this.downed) { P.stance = 2; }
+    P.update(dt, act, this.fac, { canMove: live && !quad && !seat });
+    if (seat) { const w = this._seatWorld(seat); P.pos.set(w.x, w.y - P.eye + 0.62, w.z); P.vel.set(0, 0, 0); P.stance = 0; this._wasSeated = seat; }
+    else if (this._wasSeated) { const d = this._doorWorld(this._wasSeated); P.pos.set(d.x, this.fac.groundAt(d.x, d.z, 5, 0.5), d.z); this._wasSeated = null; }
+    if (this.downed) { P.vel.x *= 0.2; P.vel.z *= 0.2; }
+    if (P.def.kind === 'bolt' && P.boltEvent) { P.boltEvent = false; this.audio.bolt(0.05); }
+    if (quad) this._updateQuad(dt, a);
+
+    // Fire. (A green sync pulls the trigger for you.)
+    if (this._autoFire) { this._autoFire = false; if (live && !quad && !seat) { act.fire = true; this._syncShotId = this.syncAim; } }
+    const mode = P.w.mode;
+    if (act.fire && live && P.w.chamber === 0 && P.w.mag === 0) { this.audio.click(); if (P.w.reserve > 0) P.startReload(); }
+    else if (live && mode === 'full') { if (act.fireHeld || act.fire) { if (P.canFire()) this._fire(); } }
+    else if (live && mode === 'burst') {
+      if (act.fire && !(this._burst > 0)) this._burst = 3;
+      if (this._burst > 0 && P.canFire()) { this._fire(); this._burst--; }
+      if (P.w.chamber === 0 && P.w.mag === 0) this._burst = 0;
+    } else if (act.fire && live && P.canFire()) this._fire();
+    // Footsteps make noise (running only, cloak halves it).
+    if (P.moving && P.onGround && live) {
+      this._stepT = (this._stepT || 0) - dt * (P.sprinting ? 1.6 : 1);
+      if (this._stepT <= 0) {
+        this._stepT = 0.46;
+        if (P.sprinting) this._noise(P.pos, C.on ? 4 : 8, false);
+      }
+    }
+    // Camera.
+    if (isr) {
+      this.isr.apply(this.camera);
+    } else if (quad) {
+      const q = this.quad;
+      this.camera.position.set(q.x, q.y, q.z);
+      this.camera.rotation.set(q.pitch, q.yaw, 0);
+      this.camera.fov = 70;
+    } else if (this.kia || this.downed) {
+      // Third person over your own body (or your partner's, once you are KIA).
+      const tgt = this.kia && this.partner.seen ? this.partner.pos : P.pos;
+      const yaw = this.kia ? (this.partner.yaw || 0) + Math.sin(this.t * 0.15) * 0.6 : P.yaw;
+      const back = new THREE.Vector3(Math.sin(yaw) * 4.5, 2.6, Math.cos(yaw) * 4.5);
+      this.camera.position.copy(tgt).add(back);
+      this.camera.lookAt(tgt.x, tgt.y + 0.6, tgt.z);
+      this.camera.fov = WEAPON.baseFov;
+    } else {
+      P.eyePos(this.camera.position);
+      this.camera.rotation.set(P.pitch, P.yaw, 0);
+      this.camera.fov = P.fov();
+    }
+    this.camera.updateProjectionMatrix();
+    // First-person weapon.
+    const scopedRifle = P.def.scope && P.scopeT > 0.6;
+    this.viewmodel.visible = live && !scopedRifle && !quad && !tab && !seat && !isr && !(this.knifeT > 0);
+    this.pistolCan.visible = !!(P.arms.find((w) => w.def.key === 'm18') || {}).sup;
+    for (const w of P.arms) { const M = this.viewmodel.models[w.def.key]; if (M && M.userData.can) M.userData.can.visible = !!w.sup; }
+    this.carry.visible = this.obj.drive === this.role && live && !quad && !isr;
+    this._knifeTick(dt);
+    this.viewmodel.update(dt, {
+      def: P.def, scopeT: P.scopeT, speed: P.speed, sprint: P.sprinting, bobPhase: P.bobPhase, cycleT: P.cycleT,
+      reloadT: P.reloadT, reloadDur: P.reloadDur, reloadEmpty: P.reloadEmpty, switchT: P.switchT, bipodT: 0, bipodState: 'stowed', bipodU: 0,
+      empty: P.w.chamber === 0 && P.def.kind === 'semi', boltPending: false,
+    });
+    this._cloakViewmodel(C.on);
+    this.input.isScoped = P.scoped;
+    this.input.endFrame();
+  }
+
+  _toggleCloak() {
+    const C = this.cloak;
+    if (!C.on && (C.bat < 10 || C.lockT > 0)) { this.hud.flash('CAMO RECHARGING', 'red'); return; }
+    C.on = !C.on;
+    this.audio.click();
+    this.hud.flash(C.on ? 'ACTIVE CAMO' : 'CAMO OFF', C.on ? 'cyan' : 'dim');
+  }
+
+  _cloakViewmodel(on) {
+    if (this._vmCloak === on) return;
+    this._vmCloak = on;
+    this.viewmodel.root.traverse((o) => {
+      if (!o.isMesh) return;
+      if (on) { o.userData._m = o.userData._m || o.material; o.material = this.cloakMat; }
+      else if (o.userData._m) o.material = o.userData._m;
+    });
+  }
+
+  // ---- shooting ----------------------------------------------------------------------
+  _fire() {
+    const P = this.player, def = P.def;
+    const rifle = def.slot === 'rifle';
+    const sup = rifle || !!P.w.sup;
+    const o = P.eyePos(new THREE.Vector3());
+    const dir = P.aimDir(new THREE.Vector3());
+    // Hipfire spread on the pistol; the rifle is dead-on (Halo).
+    if (!rifle) { const sp = (def.spread || 0.03) * (P.scopeT > 0.5 ? 0.35 : 1) * (P.moving ? 1.5 : 1); dir.x += (Math.random() - 0.5) * sp; dir.y += (Math.random() - 0.5) * sp; dir.z += (Math.random() - 0.5) * sp; dir.normalize(); }
+    if (rifle && P.scopeT < 0.5) { dir.x += (Math.random() - 0.5) * 0.02; dir.y += (Math.random() - 0.5) * 0.02; dir.normalize(); }
+    // A sync shot is a locked shot: straight to the head you were holding.
+    if (this._syncShotId) { const sg = this.sentinel.byId(this._syncShotId); this._syncShotId = 0; if (sg && sg.state !== 'dead') dir.copy(guardCapsules(sg)[0].a).sub(o).normalize(); }
+    if (this.syncReady) this._syncFire();
+    P.fireKick();
+    this.viewmodel.fired();
+    this.audio.shotLocal(sup, !rifle);
+    this.stats.shots++;
+    if (!sup) this.effects.muzzle(this.viewmodel.muzzleWorld(), dir);
+    // Firing breaks the camo for a moment (it shimmers into view).
+    // Firing drops the active camo entirely (and it can't come straight back).
+    if (this.cloak.on) { this.cloak.on = false; this.cloak.lockT = 1.5; this.cloak.flick = 1.0; this.hud.flash('CAMO BROKEN', 'red', 0.8); }
+    const end = o.clone().addScaledVector(dir, 900);
+    const res = this._hitscan(o, end);
+    const hitP = res ? res.point : end;
+    const from = P.scopeT > 0.5 ? o.clone().add(new THREE.Vector3(0, -0.12, 0).applyEuler(this.camera.rotation)) : this.viewmodel.muzzleWorld(new THREE.Vector3());
+    if (rifle) this._trail(from, hitP, true);
+    else this._tracer(from, hitP, '#ffe0a0', 0.05);
+    this.send({ t: 'shot', a: from.toArray().map((v) => Math.round(v * 100) / 100), b: hitP.toArray().map((v) => Math.round(v * 100) / 100), r: rifle ? 1 : 0, s: sup ? 1 : 0 });
+    // Noise: a suppressed shot carries ~10 m, an unsuppressed pistol 70 m and it's loud.
+    this._noise(P.pos, rifle ? 10 : sup ? 8 : 70, !sup);
+    if (!sup) this.sentinel.stats.loudShots = (this.sentinel.stats.loudShots || 0) + 1, this._loud = true;
+    // Rounds snapping past make officers bolt.
+    for (const g of this.sentinel.guards) {
+      if (g.state === 'dead' || (res && res.enemy === g)) continue;
+      const c = { x: g.x, y: g.y + 1.2, z: g.z };
+      const r = segSegClosest(o, hitP, c, c);
+      if (r.d2 < 2.5 * 2.5) {
+        if (this.isHost) this.sentinel.nearMiss({ x: g.x, z: g.z }, { x: P.pos.x, z: P.pos.z });
+        else this._broadcast({ k: 'nearmiss', at: { x: g.x, z: g.z }, from: { x: P.pos.x, z: P.pos.z } });
+      }
+    }
+    if (res && res.light !== undefined) {
+      this.effects.puff(hitP, 'metal', 0.6, 0.3);
+      if (this.isHost) this._shootLight(res.light, hitP); else this._broadcast({ k: 'light', id: res.light, at: { x: hitP.x, y: hitP.y, z: hitP.z } });
+    } else if (res && res.blocked) {
+      // A bulwark's wall ate it: sparks, and now it knows.
+      const g = res.blocked;
+      this.effects.puff(hitP, 'metal', 0.8, 0.3);
+      this.sfx.shieldHit(hitP);
+      this.hud.flash('BLOCKED \u2014 HIT THE PORT', 'red', 0.9);
+      if (this.isHost) { this.sentinel._alert(g, null, { x: P.pos.x, z: P.pos.z }); }
+      else this._broadcast({ k: 'block', id: g.id, from: { x: P.pos.x, z: P.pos.z } });
+    } else if (res && res.enemy && res.enemy.state === 'dead') {
+      // A downed enemy: a headshot finishes it; a body shot just thumps the body.
+      const e = res.enemy;
+      this.effects.puff(hitP, 'dust', 0.9, 0.7);
+      if (res.part === 'head') {
+        this.audio.hitConfirm(true);
+        this.hud.hitMarker(true);
+        if (this.isHost) this.sentinel.confirm(e.id); else this._broadcast({ k: 'confirm', id: e.id });
+        e.incap = false;
+        setTimeout(() => this._radio('me', ['X-ray down.', 'X-ray down. Confirmed.', 'Tango down.'][Math.floor(Math.random() * 3)]), 500);
+      }
+    } else if (res && res.enemy) {
+      const e = res.enemy;
+      const dmg = def.damage[res.part] || def.damage.torso;
+      const dist = o.distanceTo(hitP);
+      this.audio.hitConfirm(res.part === 'head');
+      this.hud.hitMarker(res.part === 'head');
+      this.stats.hits++;
+      if (res.part === 'head') this.stats.heads++;
+      this.effects.puff(hitP, e.kind === 'd' ? 'metal' : 'dust', 0.9, 0.7);
+      if (e.maxShield && e.shield > 0 && res.part !== 'head') { this.sfx.shieldHit(hitP); this.hud.flash('SHELL', 'cyan', 0.5); }
+      if (e.helmet && res.part === 'head') { this.hud.flash('HELMET OFF \u2014 FOLLOW UP', 'amber', 0.9); }
+      if (this.isHost) this._applyHit(e.id, dmg, rifle ? 'rifle' : 'pistol', { x: P.pos.x, z: P.pos.z }, this.role, res.part === 'head', dist);
+      else this.send({ t: 'hit', id: e.id, dmg, how: rifle ? 'rifle' : 'pistol', from: { x: P.pos.x, z: P.pos.z }, head: res.part === 'head', dist });
+    } else if (res) {
+      const mat = res.terrain ? 'dirt' : res.box && res.box.kind === 'door' ? 'metal' : 'concrete';
+      this.effects.impact(hitP, res.normal, mat);
+      this.audio.impact(hitP, mat === 'metal' ? 'metal' : 'dirt', o.distanceTo(hitP) / 343);
+      this._noise(hitP, 7, false);
+    }
+    if (res && res.quadHit) this._quadDamage(100);
+  }
+
+  // Instant hit: world boxes + terrain, every guard's capsules, drones.
+  _hitscan(o, end) {
+    const wh = this.fac.ray(o, end, 'shot');
+    const L = o.distanceTo(end);
+    let bestT = wh ? wh.t : 1, best = wh ? { ...wh } : null;
+    const S = this.sentinel;
+    for (const g of S.guards) {
+      if (g.state === 'dead' && g.incap) {
+        // Downed but alive: hit the body where it lies (head end and torso).
+        if (Math.hypot(g.x - o.x, g.z - o.z) > L * bestT + 3) continue;
+        const B = g.obj.userData.body;
+        B.updateWorldMatrix(true, false);
+        const h = B.localToWorld(new THREE.Vector3(0, 1.55, 0)), m = B.localToWorld(new THREE.Vector3(0, 1.0, 0)), f = B.localToWorld(new THREE.Vector3(0, 0.15, 0));
+        let hit = null;
+        for (const [a, b, r, part] of [[h, h, 0.24, 'head'], [m, f, 0.3, 'torso']]) {
+          const q = segSegClosest(o, end, a, b);
+          if (q.d2 < r * r && (!hit || part === 'head')) hit = { s: hit ? Math.min(hit.s, q.s) : q.s, part };
+        }
+        if (hit && hit.s < bestT) { bestT = hit.s; best = { t: hit.s, point: o.clone().lerp(end, hit.s), enemy: g, part: hit.part }; }
+        continue;
+      }
+      if (g.hp <= 0 && g.state === 'dead') continue;
+      if (Math.hypot(g.x - o.x, g.z - o.z) > L * bestT + 3) continue;
+      // The capsules overlap at the neck, so if the ray passes through the head at all, it's a
+      // headshot (closest-approach order alone can hand it to the torso just below).
+      let hit = null;
+      for (const c of guardCapsules(g)) {
+        const r = segSegClosest(o, end, c.a, c.b);
+        const rad = c.r * (RULES.hitbox || 1);
+        if (r.d2 >= rad * rad) continue;
+        if (!hit || c.part === 'head' || (hit.part !== 'head' && r.s < hit.s)) hit = { s: hit ? Math.min(hit.s, r.s) : r.s, part: c.part === 'head' || !hit ? c.part : r.s < hit.s ? c.part : hit.part };
+      }
+      if (hit && hit.s < bestT) { bestT = hit.s; best = { t: hit.s, point: o.clone().lerp(end, hit.s), enemy: g, part: hit.part }; }
+    }
+    // Lamps and ceiling panels can be shot out.
+    const lh = this.fac.lightHit(o, end);
+    if (lh && lh.t < bestT) { bestT = lh.t; best = { t: lh.t, point: o.clone().lerp(end, lh.t), light: lh.id }; }
+    // Bulwark walls stand in front of the bodies behind them.
+    for (const g of S.guards) {
+      if (g.type !== 'bulwark' || g.state === 'dead') continue;
+      const t = wallBlock(g, o, end);
+      if (t !== null && t < bestT) { bestT = t; best = { t, point: o.clone().lerp(end, t), blocked: g }; }
+    }
+    for (const d of S.drones) {
+      if (d.state === 'dead') continue;
+      const r = segSegClosest(o, end, { x: d.x - 0.5, y: d.y, z: d.z }, { x: d.x + 0.5, y: d.y, z: d.z });
+      if (r.d2 < 0.75 * 0.75 && r.s < bestT) { bestT = r.s; best = { t: r.s, point: o.clone().lerp(end, r.s), enemy: d, part: 'torso' }; }
+    }
+    return best;
+  }
+
+  _applyHit(id, dmg, how, from, by, head, dist) {
+    const S = this.sentinel;
+    const e = S.byId(id);
+    if (!e) return;
+    const killed = S.damage(id, dmg, how, from, head ? 'head' : 'torso').killed;
+    if (killed && e.kind === 'g') {
+      this._killFeed(e, how, by, head, dist);
+      if (e.chief) this._toast(this.mission === 'nightwatch' ? 'The Overseer is down. Take its badge.' : 'Site Chief is down. Take his badge.', 'amber');
+    } else if (killed && e.kind === 'd') this._toast(`${by === this.role ? this.name : this.partnerName} shot down a patrol drone.`, 'dim');
+  }
+
+  _killFeed(e, how, by, head, dist) {
+    // Dropping something your partner pinged: call it, now and then.
+    const killer = by === 'ai' ? 'shooter' : by;
+    if (e.tagBy && e.tagBy !== killer && (!this.solo || by === 'ai') && this.t - (this._xrayT || -99) > 6 && Math.random() < 0.7) {
+      this._xrayT = this.t;
+      const line = ['X-ray down.', 'Tango down.', 'Your mark is down.', 'Got him. X-ray down.'][Math.floor(Math.random() * 4)];
+      setTimeout(() => this._radio(killer, line), 700);
+    }
+    const name = by === this.role ? this.name : by === 'ai' ? this.partnerName : this.partnerName;
+    const what = how === 'takedown' ? 'TAKEDOWN' : head ? 'HEADSHOT' : e.incap ? 'DOWN' : 'KILL';
+    const ev = { k: 'kill', by, what, dist: Math.round(dist || 0), chief: e.chief, name };
+    this._onKillEvent(ev);
+    this._broadcast(ev);
+  }
+
+  _onKillEvent(m) {
+    if (m.by === this.role && m.dist) this.stats.longest = Math.max(this.stats.longest, m.dist);
+    if (m.by === this.role && m.what === 'TAKEDOWN' && this.role === 'shooter' && this.kit.execs < KIT.exec.max) { this.kit.execs++; this.hud.flash('EXECUTE CHARGED (T)', 'cyan'); }
+    this.hud.feed(`${m.name} ▸ ${m.what}${m.dist > 30 ? ' · ' + m.dist + ' m' : ''}${m.chief ? (this.mission === 'nightwatch' ? ' · OVERSEER' : ' · SITE CHIEF') : ''}`, m.by === this.role ? ROLES[this.role].color : ROLES[this.partnerRole].color);
+  }
+
+  _onRemoteShot(m) {
+    const a = new THREE.Vector3(...m.a), b = new THREE.Vector3(...m.b);
+    if (m.r) this._trail(a, b, false); else this._tracer(a, b, '#ffe0a0', 0.05);
+    const d = this.camera.position.distanceTo(a);
+    this.audio.shotDistant(a, d / 343, !!m.s);
+    if (this.isHost) this._noise(a, m.r ? 10 : m.s ? 8 : 70, !m.s);
+  }
+
+  _noise(pos, r, loud) {
+    if (this.isHost) this.sentinel.noise(pos, r, loud);
+    else if (r >= 6) this.send({ t: 'ev', k: 'noise', x: pos.x, y: pos.y, z: pos.z, r, loud });
+  }
+
+  // The shooter's signature: a long white vapor trail that hangs in the night air.
+  _trail(a, b, mine) {
+    const len = a.distanceTo(b);
+    const geo = new THREE.CylinderGeometry(0.018, 0.018, len, 6, 1, true).translate(0, len / 2, 0).rotateX(Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({ color: '#cfe6ff', transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.copy(a);
+    m.lookAt(b);
+    this.scene.add(m);
+    const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, len, 6, 1, true).translate(0, len / 2, 0).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#7aa6ff', transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false }));
+    m.add(glow);
+    this.trails.push({ mesh: m, t: 0, life: mine ? 2.2 : 2.6, grow: true });
+  }
+
+  _tracer(a, b, color, life) {
+    const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    this.scene.add(line);
+    this.trails.push({ mesh: line, t: 0, life });
+  }
+
+  // Enemy fire reaching a client.
+  _onEshot(m) {
+    return this._spawnBolt(m);
+  }
+
+  _onEshotOld(m) {
+    const a = new THREE.Vector3(...m.a), b = new THREE.Vector3(...m.b);
+    const miss = m.hit ? b : b.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2.5, (Math.random() - 0.3) * 1.5, (Math.random() - 0.5) * 2.5));
+    this._tracer(a, miss, m.zap ? '#ff4060' : '#ffb060', m.zap ? 0.12 : 0.07);
+    const d = this.camera.position.distanceTo(a);
+    if (!m.zap) this.audio.shotDistant(a, d / 343, false); else this.audio.beep(a, true);
+    if (m.role === 'quad') {
+      if (m.hit) { if (this.role === 'spotter' && this.quad && this.quad.active) this._quadDamage(m.dmg); else if (this.isHost) this._broadcast({ k: 'quadhit', dmg: m.dmg }); }
+      return;
+    }
+    if (m.role !== this.role || this.downed || this.kia) return;
+    if (!m.hit) { this.audio.crack(miss, 0, 0.6); return; }
+    const plate = this.role === 'spotter' ? 0.8 : 1; // the plate carrier soaks a little
+    this._damage(m.dmg * plate, a);
+  }
+
+  _damage(dmg, from) {
+    if ((this.role === 'spotter' || this.operative) && this.loadout.spotter.perk === 'armor') dmg *= 0.8;
+    this.hp -= dmg;
+    this.hud.damage(Math.atan2(from.x - this.player.pos.x, from.z - this.player.pos.z) - this.player.yaw);
+    this.dmgFx = 1;
+    if (this.hp <= 0) {
+      this.hp = 0;
+      this.downed = true;
+      this.bleed = BLEED;
+      this.cloak.on = false;
+      if (this.tablet.visible) this.tablet.close();
+      if (this.quad && this.quad.active) this._endQuad();
+      this.player.scoped = false;
+      this.comms(`${this.name} is DOWN — ${BLEED} s to bleed out.`, 'red');
+      this._dropDriveIfCarrying();
+    }
+  }
+
+  _revived(hp) {
+    if (!this.downed || this.kia) return;
+    this.downed = false;
+    this.hp = Math.round(this.maxHp * 0.55) || hp;
+    this.player.stance = 1;
+    this.comms(`${this.name} is back up.`, 'cyan');
+  }
+
+  // Is there an enemy under the crosshair, standing or downed-but-alive? (Reticle goes red.)
+  _reticleHot() {
+    if (this._retT === this.t) return this._retV;
+    this._retT = this.t;
+    const cam = this.camera, o = cam.position, dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    let hot = !!this._crosshairEnemy();
+    if (!hot) {
+      const bs = 0.035 * (62 / cam.fov);
+      for (const g of this.sentinel.guards) {
+        if (!(g.state === 'dead' && g.incap)) continue;
+        const p = new THREE.Vector3(g.x, (g.y || 0) + 0.3, g.z), v = p.clone().sub(o);
+        if (v.length() > 320 || v.normalize().angleTo(dir) > bs) continue;
+        if (this.fac.los(o, p)) { hot = true; break; }
+      }
+    }
+    return (this._retV = hot);
+  }
+
+  // ISR ping sweep at the sensor point (spotter / lone operative, in the ISR view).
+  _isrSweep() {
+    const I = this.isr;
+    if (I.sweepCd > 0) { this.hud.flash(`SWEEP ${Math.ceil(I.sweepCd)} s`, 'red'); return; }
+    I.sweepCd = 25;
+    const r = Math.max(18, Math.min(45, I.slant() * Math.tan((I.fov * Math.PI) / 360) * 0.8));
+    I.sweepFx = { x: I.spi.x, z: I.spi.z, r, t: 0 };
+    this.sfx.ui(true);
+    this._voice('isr', 'Sweep running on your cross.');
+    this.payload('isrsweep', { x: I.spi.x, z: I.spi.z, r });
+  }
+
+  _heal(n) {
+    this.hp = Math.min(this.maxHp, this.hp + n);
+    this.audio.click();
+    this.hud.flash(`+${n} HP`, 'cyan');
+  }
+  _ammo() {
+    this.player.refill();
+    this.audio.click();
+    this.hud.flash('AMMO RESTOCKED', 'cyan');
+  }
+
+  _resupply() {
+    this.player.refill();
+    this.hp = Math.min(this.maxHp, this.hp + 35);
+    this.audio.click();
+    this.hud.flash('RESUPPLIED +35 HP', 'cyan');
+  }
+
+  _dropDriveIfCarrying() {
+    if (this.isHost && this.obj.drive === this.role) {
+      this.obj.drive = 'ground';
+      this.obj.driveAt = { x: this.player.pos.x, z: this.player.pos.z };
+      this._toast('The drive is on the ground!', 'red');
+    }
+  }
+
+  // F: tag the contact under the crosshair (spotting). Works through the quad too.
+  _tagAtCrosshair() {
+    const cam = this.camera;
+    const o = cam.position.clone();
+    const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    let best = null, bs = 0.035 * (WEAPON.baseFov / cam.fov);
+    const S = this.sentinel;
+    for (const e of [...S.guards, ...S.drones]) {
+      if (e.hp <= 0 || e.state === 'dead') continue;
+      const p = new THREE.Vector3(e.x, (e.y || 0) + (e.kind === 'g' ? 1.3 : 0), e.z);
+      const v = p.clone().sub(o);
+      const d = v.length();
+      if (d > 320) continue;
+      const ang = v.normalize().angleTo(dir);
+      if (ang < bs && this.fac.los(o, p)) { bs = ang; best = e; }
+    }
+    if (best && best.tagT > 0 && best.kind === 'g') {
+      // Second F on a marked enemy: make it a SYNC target.
+      const on = !best.sync;
+      this.payload('sync', { id: best.id, on, by: this.role });
+      if (this.isHost) best.sync = on;
+      this.hud.flash(on ? 'SYNC TARGET' : 'SYNC CLEARED', on ? 'cyan' : 'dim');
+      if (on) this._voice(this.role, 'Sync target marked.');
+      return;
+    }
+    if (best) {
+      this.payload('tag', { id: best.id, by: this.role });
+      if (this.isHost) best.tagT = HACK.tag;
+      this.audio.ping && this.audio.ping();
+      this.hud.flash(best.kind === 'd' ? 'DRONE TAGGED' : best.chief ? 'SITE CHIEF TAGGED' : 'TAGGED');
+      if (this.aiShoot) this.comms('Ra: I see him.', 'amber', this.partnerName);
+    } else {
+      // Nothing there: drop a ping on the spot instead.
+      const at = this._aimPoint();
+      const pin = { x: at.x, z: at.z, label: 'PING', by: this.role };
+      this._addPin(pin);
+      this.send({ t: 'pin', ...pin });
+    }
+  }
+
+  // ---- recon quad (spotter) ----------------------------------------------------------
+  _startQuad() {
+    if (this.role !== 'spotter' && !this.operative) return;
+    const P = this.player;
+    if (this.tablet.visible) this.tablet.close();
+    if (this.isr.active) this.isr.exit();
+    this.quad = { active: true, parked: false, x: P.pos.x, y: P.pos.y + 2.2, z: P.pos.z, yaw: P.yaw, pitch: -0.2, bat: this.quadBat ?? QUAD_BAT, hp: 30, vy: 0 };
+    this.audio.startLoop('quad', this.camera.position, 'drone', 0.25);
+    this.comms('Quad up. Look at enemies to neurolink them. Q park \u00B7 hold Q recall \u00B7 SPACE/C climb.', 'cyan', this.name);
+  }
+  _quadOut() {
+    return !!(this.quad && (this.quad.active || this.quad.parked));
+  }
+  // Leave the quad hovering where it is: it keeps marking what it can see. Rotor noise still carries.
+  _parkQuad() {
+    const q = this.quad;
+    if (!q) return;
+    q.active = false;
+    q.parked = true;
+    this.sfx.ui(false);
+    this.comms('Quad parked. It keeps marking. Q to fly it, hold Q to recall.', 'cyan', this.name);
+  }
+  _resumeQuad() {
+    const q = this.quad;
+    if (!q || this.downed) return;
+    if (this.tablet.visible) this.tablet.close();
+    if (this.isr.active) this.isr.exit();
+    q.active = true;
+    q.parked = false;
+    this.sfx.ui(true);
+  }
+  // Quick calldown: the quad comes straight home and is ready again in a few seconds.
+  _recallQuad() {
+    if (!this.quad) return;
+    this.comms('Quad recalled.', 'cyan', this.name);
+    this.sfx.ui(false);
+    this._endQuad(false, true);
+  }
+  _updateQuad(dt, a) {
+    const q = this.quad;
+    q.bat -= dt * 0.5;
+    const sens = 0.0022;
+    q.yaw -= a.lookX * sens;
+    q.pitch = clamp(q.pitch - a.lookY * sens, -1.4, 0.6);
+    const sn = Math.sin(q.yaw), cs = Math.cos(q.yaw);
+    const mx = a.mx, my = a.my;
+    const sp = a.sprint ? 14 : 8;
+    const up = (this.input.held('Space') || this.input.held('T:jump') ? 1 : 0) - (this.input.held('KeyC') || this.input.held('ControlLeft') || this.input.held('T:crouch') ? 1 : 0);
+    const p = { x: q.x + (mx * cs + my * sn) * sp * dt, y: q.y + up * 5 * dt, z: q.z + (-mx * sn + my * cs) * sp * dt };
+    this.fac.resolveHorizontal(p, 0.4, 0.5, 0);
+    const g = this.fac.groundAt(p.x, p.z, p.y, 0.5);
+    p.y = clamp(p.y, g + 0.6, Math.min(terrainHeight(p.x, p.z) + 60, this.fac.insideBuilding(p.x, p.z) ? BUILDING.h - 0.4 : 999));
+    // Keep it on a leash (~260 m of signal).
+    const d = Math.hypot(p.x - this.player.pos.x, p.z - this.player.pos.z);
+    if (d > 260) { p.x = q.x; p.z = q.z; }
+    q.x = p.x; q.y = p.y; q.z = p.z;
+    this.audio.updateLoop('quad', new THREE.Vector3(q.x, q.y, q.z));
+    if (q.bat <= 0) { this.comms('Quad battery dead — it’s coming home.', 'cyan', this.name); this._endQuad(); }
+    if (this.isHost) this.sentinel.quad = { alive: true, x: q.x, y: q.y, z: q.z };
+  }
+  _quadDamage(dmg) {
+    if (!this.quad || !this.quad.active) return;
+    this.quad.hp -= dmg;
+    this.post.uniforms.uStatic.value = 1;
+    if (this.quad.hp <= 0) { this.comms('Quad shot down.', 'red', this.name); this._endQuad(true); }
+  }
+  _endQuad(lost = false, recall = false) {
+    if (!this.quad) return;
+    this.quadBat = lost ? QUAD_BAT : Math.max(0, this.quad.bat);
+    this.quad.active = false;
+    this.quad.parked = false;
+    this.quadCd = lost ? 40 : recall ? 3 : this.quadBat <= 0 ? 20 : 6;
+    if (this.ops) this.ops.cd.quad = this.quadCd;
+    this.audio.stopLoop('quad');
+    if (this.isHost) this.sentinel.quad = null;
+    this.quad = null;
+  }
+
+  // ---- host: objectives, interactions, doors, crates, AI shooter --------------------
+  _hostTick(dt) {
+    const S = this.sentinel, ob = this.obj;
+    // Remote quad position feeds SENTINEL (guards shoot support drones).
+    if (!this.solo && this.partner.quad) { const q = this.partner.quad; S.quad = { alive: true, x: q[0], y: q[1], z: q[2] }; }
+    else if (!this._quadOut()) S.quad = null;
+    else S.quad = { alive: true, x: this.quad.x, y: this.quad.y, z: this.quad.z };
+    S.update(dt, this.agents());
+    for (const ev of S.events) this._sentinelEvent(ev);
+    S.events.length = 0;
+    // Revealed flags (console intel) for the snapshot.
+    for (const e of [...S.guards, ...S.drones]) e.rev = S.revealed(e, ob.access, this.extraReveal);
+    // Decoys keep pinging.
+    if (this.decoys) for (const d of this.decoys) { d.t -= dt; d.tick -= dt; if (d.tick <= 0) { d.tick = 0.6; S.noise({ x: d.x, y: (d.y ?? 0) + 1, z: d.z }, d.r || 25, !d.soft); } }
+    if (this.decoys) this.decoys = this.decoys.filter((d) => d.t > 0);
+    // Lights come back on.
+    this._doors(dt);
+    this._crates(dt);
+    this._iceHost(dt);
+    this._c4Tick(dt);
+    this._medevacTick(dt);
+    if (this.aiShoot) this._aiShooter(dt);
+    this._objectives(dt);
+  }
+
+  _sentinelEvent(ev) {
+    if (ev.t === 'eshot') { this._onEshot(ev); this.send({ t: 'eshot', ...ev }); }
+    else if (ev.t === 'bark' || ev.t === 'fx' || ev.t === 'laser') { this._sentinelFx(ev); this._broadcast({ k: 'sfx', ev }); }
+    else if (ev.t === 'emelee') { this._onMelee(ev); this._broadcast({ k: 'emelee', ev }); }
+    else if (ev.t === 'toast') this._toast(ev.m, ev.c);
+    else if (ev.t === 'spotted') { /* surfaced through the guard's state */ }
+  }
+
+  _doors(dt) {
+    const agents = this.agents();
+    for (const d of Object.values(this.fac.doors)) {
+      d.hackOpen = Math.max(0, (d.hackOpen || 0) - dt);
+      d.guardT = Math.max(0, (d.guardT || 0) - dt);
+      d.hackT = 0;
+      const near = agents.some((a) => a.alive && Math.hypot(a.pos.x - d.x, a.pos.z - d.z) < 2.8);
+      let open = false;
+      if (d.perm) open = true;
+      else if (d.sealed) open = false;
+      else open = d.hackOpen > 0 || d.guardT > 0 || (d.unlocked && near);
+      // Never slam a door shut on top of somebody.
+      if (!open && d.open && agents.some((a) => Math.hypot(a.pos.x - d.x, a.pos.z - d.z) < 1.2)) open = true;
+      this.fac.setDoor(d.id, open);
+    }
+    if (this.ops) for (const c of this.ops.casts) if (c.k === 'door' && this.fac.doors[c.id]) this.fac.doors[c.id].hackT = 1;
+  }
+
+  _crates(dt) {
+    for (const c of this.crates) {
+      if (!c.landed) {
+        c.y -= c.vy * dt * 3;
+        const g = this.fac.groundAt(c.x, c.z, c.y, 0.5);
+        if (c.y <= g) { c.y = g; c.landed = true; c.life = 90; }
+        continue;
+      }
+      c.life -= dt;
+      for (const a of this.agents()) {
+        if (!a.alive || a.downed) continue;
+        if (Math.hypot(a.pos.x - c.x, a.pos.z - c.z) < 1.6) {
+          c.taken = true;
+          if (a.role === this.role) this._resupply(); else this._broadcast({ k: 'resupply', role: a.role });
+          break;
+        }
+      }
+    }
+    this.crates = this.crates.filter((c) => !c.taken && (!c.landed || c.life > 0));
+  }
+
+  _medevacTick(dt) {
+    const m = this.medevac;
+    if (!m) return;
+    const tgt = this.agentPos(m.role);
+    const goal = { x: tgt.x, y: Math.max(tgt.y + 1.2, this.fac.insideBuilding(tgt.x, tgt.z) ? 1.6 : tgt.y + 1.2), z: tgt.z };
+    const cruise = this.fac.insideBuilding(tgt.x, tgt.z) ? 0 : 14;
+    const dx = goal.x - m.x, dz = goal.z - m.z, d = Math.hypot(dx, dz);
+    const sp = 18 * dt;
+    if (d > 1) { m.x += (dx / d) * Math.min(d, sp); m.z += (dz / d) * Math.min(d, sp); }
+    const wantY = d > 12 ? goal.y + cruise : goal.y;
+    m.y += (wantY - m.y) * Math.min(1, dt * 2);
+    if (d < 1.5 && Math.abs(m.y - goal.y) < 1.5) {
+      if (m.role === this.role) this._revived(55); else this._broadcast({ k: 'revive', role: m.role, hp: 55 });
+      this.medevac = null;
+    }
+  }
+
+  // Solo spotter: Ra holds a perch and takes the shots you tag.
+  _aiShooter(dt) {
+    const A = this.aiShoot, S = this.sentinel, Q = this.partner;
+    const perch = SPOTS.perches[A.perch];
+    A.cool -= dt;
+    A.sayT -= dt;
+    A.holdT = Math.max(0, (A.holdT || 0) - dt);
+    A.coverT = Math.max(0, (A.coverT || 0) - dt);
+    if (Q.seated) return; // aboard the van
+    if (A.moveT > 0) {
+      A.moveT -= dt;
+      Q.avatarHidden = true;
+      if (A.moveT <= 0) { A.perch = A.moveTo; const p = SPOTS.perches[A.perch]; Q.pos.set(p.x, terrainHeight(p.x, p.z), p.z); Q.yaw = p.yaw; Q.avatarHidden = false; this._toast(`Ra: set at ${p.name}.`, 'amber', this.partnerName); }
+      return;
+    }
+    Q.pos.set(perch.x, terrainHeight(perch.x, perch.z), perch.z);
+    const eye = { x: perch.x, y: Q.pos.y + 1.3, z: perch.z };
+    // Candidates: anything tagged, anything with eyes on the spotter, drones locked on.
+    const me = this.player.pos;
+    const cands = [];
+    for (const g of S.guards) {
+      if (g.state === 'dead') continue;
+      const near = Math.hypot(g.x - me.x, g.z - me.z);
+      const threat = (g.state === 'alert' || g.state === 'berserk') && g.target === this.role && near < 45 || (A.coverT > 0 && near < 40);
+      if (g.tagT > 0 || threat) cands.push({ e: g, p: { x: g.x, y: g.y + 1.25, z: g.z }, pri: threat ? 2 : 1 });
+    }
+    for (const d of S.drones) if (d.state !== 'dead' && (d.tagT > 0 || d.aw > 0.6)) cands.push({ e: d, p: { x: d.x, y: d.y, z: d.z }, pri: d.aw > 0.6 ? 3 : 1 });
+    cands.sort((a, b) => b.pri - a.pri);
+    let pick = null;
+    for (const c of cands) {
+      if (Math.hypot(c.p.x - eye.x, c.p.z - eye.z) > 340) continue;
+      if (this.fac.los(eye, c.p)) { pick = c; break; }
+    }
+    if (A.holdT > 0 && !(pick && pick.pri >= 2)) { A.aim = null; return; }
+    if (!pick) {
+      A.aim = null;
+      if (cands.length && A.sayT <= 0) { A.sayT = 9; this._toast('Ra: no line of sight on that one from here. Move me or bring him into the open.', 'amber', this.partnerName); }
+      return;
+    }
+    Q.yaw = Math.atan2(-(pick.p.x - eye.x), -(pick.p.z - eye.z));
+    if (A.aim !== pick.e.id) { A.aim = pick.e.id; A.aimT = 1.6 + Math.random() * 1.4; if (A.sayT <= 0) { A.sayT = 4; this._toast('Ra: on him. Sending it.', 'amber', this.partnerName); } }
+    A.aimT -= dt;
+    if (A.aimT > 0 || A.cool > 0) return;
+    A.cool = 2.4;
+    A.aim = null;
+    const a = new THREE.Vector3(eye.x, eye.y, eye.z), b = new THREE.Vector3(pick.p.x, pick.p.y, pick.p.z);
+    this._trail(a, b, false);
+    this.send({ t: 'shot', a: a.toArray(), b: b.toArray(), r: 1, s: 1 });
+    this.audio.shotDistant(a, this.camera.position.distanceTo(a) / 343, true);
+    if (Math.random() < 0.93) {
+      const dist = a.distanceTo(b);
+      const killed = S.damage(pick.e.id, 999, 'ai', null, 'head').killed;
+      if (killed && pick.e.kind === 'g') this._killFeed(pick.e, 'rifle', 'ai', Math.random() < 0.6, dist);
+      if (killed && pick.e.kind === 'g' && pick.e.chief) this._toast('Site Chief is down. Take his badge.', 'amber');
+      this._toast(pick.e.kind === 'd' ? 'Ra: drone down.' : 'Ra: target down.', 'amber', this.partnerName);
+    } else this._toast('Ra: missed — cycling.', 'amber', this.partnerName);
+    S.noise({ x: b.x, y: b.y, z: b.z }, 7, false);
+  }
+
+  // Who may work the server and swipe the badge: the spotter in co-op; anyone solo.
+  _techRole(role) {
+    return this.solo || role === 'spotter';
+  }
+
+  _objectives(dt) {
+    const ob = this.obj, S = this.sentinel, T = this.fac.target;
+    const agents = this.agents();
+    const inFence = (p) => Math.abs(p.x) < FENCE.x && Math.abs(p.z) < FENCE.z;
+    if (!ob.perimeter && agents.some((a) => a.alive && inFence(a.pos))) { ob.perimeter = true; this._toast('Perimeter breached. Inside the wire.', 'cyan'); }
+    // Finding the archive server: eyes on the cabinet with the amber beacon.
+    const near = (a, r) => Math.hypot(a.pos.x - T.x, a.pos.z - T.z) < r && this.fac.floorOf(a.pos.y + 0.5) === T.floor;
+    if (!ob.found && (ob.badge || ob.cards.length)) for (const a of agents) {
+      if (!a.alive || !near(a, 7)) continue;
+      if (!this.fac.los({ x: a.pos.x, y: a.pos.y + 1.5, z: a.pos.z }, { x: T.x, y: T.y + 0.4, z: T.z + 0.2 })) continue;
+      ob.found = true;
+      ob.access = 3;
+      const room = ROOMS.find((r) => r.id === T.room);
+      this._toast(`Archive server found — ${room ? room.name : 'rack room'}${T.floor ? ' (upper floor)' : ''}.`, 'cyan');
+      this._voice(a.role, a.role === 'spotter' ? 'Found it. Amber beacon, this rack. Jacking in.' : 'Got the beacon. Spotter, on me.');
+      break;
+    }
+    // Upload runs while someone allowed stays at the rack after the signal lock.
+    const atRack = ob.aligned && ob.upload < 1 && agents.some((a) => a.alive && !a.downed && this._techRole(a.role) && near(a, 3));
+    ob.uploading = atRack;
+    if (atRack) {
+      ob.upload = Math.min(1, ob.upload + 0.1 * dt);
+      if (!ob.traced && !ob.quiet) ob.trace = Math.min(1, ob.trace + 0.05 * dt);
+      if (ob.upload >= 1) { this._toast(ob.quiet ? 'Malware uploaded clean. Pull the drive — SENTINEL is none the wiser.' : 'Malware uploaded. Evidence copied. Extract the drive.', 'cyan'); this._voice('isr', 'Upload complete. Pull the drive.'); }
+      if (ob.trace >= 1 && !ob.traced) {
+        ob.traced = true;
+        S.raise(1, null);
+        this._toast('SENTINEL traced the uplink!', 'red');
+        this._broadcast({ k: 'trace' });
+        this.hud.flash('TRACED', 'red');
+        for (const g of S.guards) if (g.state !== 'dead') S._alert(g, null, { x: T.x, z: T.z + 4, y: T.y });
+      }
+    } else if (ob.aligned && ob.upload < 1) ob.trace = Math.max(0, ob.trace - 0.03 * dt);
+    for (const a of agents) this._interact(a, a.role === this.role ? this._eHeld : this.partner.e, dt);
+    for (const a of agents) if (ob.drive === a.role && (a.downed || !a.alive)) this._dropDrive(a.role, a.pos, 'The drive is on the ground!');
+    if (S.alarm >= 1 && !S.lockdown) this._loudAlarm = true;
+    this._vanTick(dt);
+    const allOut = agents.length && agents.every((a) => !a.alive);
+    if (allOut) this._lose();
+    const prev = ob.step;
+    ob.step = this._step();
+    if (ob.step !== prev) this._stepChanged(prev);
+  }
+
+  _step() {
+    const ob = this.obj;
+    if (!ob.perimeter) return 0;
+    if (!ob.relay) return 1;
+    if (!ob.badge && !ob.cards.length) return 2;
+    if (!ob.found) return 3;
+    if (ob.upload < 1) return 4;
+    if (!ob.drive) return 5;
+    return 6;
+  }
+
+  _stepChanged() {
+    const o = OBJECTIVES[this.obj.step];
+    if (o) this.hud.objective(this.obj.step, o, true);
+    this.audio.ping && this.audio.ping();
+  }
+
+  // Host: the drive lands on the floor where the carrier is.
+  _dropDrive(role, pos, msg = null) {
+    const ob = this.obj;
+    if (ob.drive !== role) return;
+    ob.drive = 'ground';
+    ob.driveAt = { x: pos.x, y: pos.y, z: pos.z };
+    this._toast(msg || `${role === this.role ? this.name : this.partnerName} dropped the drive.`, msg ? 'red' : 'cyan');
+  }
+
+  _interact(a, held, dt) {
+    const ob = this.obj, S = this.sentinel, role = a.role, p = a.pos, T = this.fac.target;
+    let best = null;
+    const opt = (key, label, dur, fn, auto = false) => { if (!best) best = { key, label, dur, fn, auto }; };
+    if (!a.alive || a.downed) { this.prompts[role] = a.downed ? { label: 'DOWNED — waiting for a revive', p: 0 } : null; return; }
+    this._vanInteract(a, held, dt, opt);
+    const sameFloor = (y) => Math.abs(y - p.y) < 1.6;
+    const other = this.agents().find((b) => b.role !== role);
+    // Revive: each operator carries one IFAK. Use it on your partner; after that it's the medevac drone.
+    if (other && other.downed && other.alive && Math.hypot(other.pos.x - p.x, other.pos.z - p.z) < 2.2 && sameFloor(other.pos.y)) {
+      const on = other.role === this.role ? this.name : this.partnerName;
+      if ((ob.ifak[role] || 0) > 0) opt('revive', `Hold E — patch up ${on} with your IFAK`, 3, () => { ob.ifak[role]--; this._toast(`IFAK used on ${on}.`, 'cyan'); if (other.role === this.role) this._revived(55); else this._broadcast({ k: 'revive', role: other.role, hp: 55 }); });
+      else opt('revivex', `No IFAK left — ${on} needs the medevac drone`, 0, null);
+    }
+    // Knife takedown from behind (or on an unaware patrol at arm's length).
+    for (const g of S.guards) {
+      if (g.state === 'dead' || g.state === 'alert' || g.state === 'berserk' || g.tower) continue;
+      const d = Math.hypot(g.x - p.x, g.z - p.z);
+      if (d > 1.9 || Math.abs(p.y - g.y) > 1) continue;
+      const behind = Math.abs(angDiff(Math.atan2(-(p.x - g.x), -(p.z - g.z)), g.yaw + g.look)) > 1.9;
+      if (behind || (g.state === 'patrol' && d < 1.2) || g.stagger > 0) {
+        opt('takedown', 'E — knife takedown', 0, () => {
+          S.damage(g.id, 999, 'takedown', null, 'head');
+          this._killFeed(g, 'takedown', role, false, 0);
+          if (role === this.role) this._knife(); else this._broadcast({ k: 'takedown', role });
+          if (g.chief) this._toast(this.mission === 'nightwatch' ? 'The Overseer is down. Take its badge.' : 'Site Chief is down. Take his badge.', 'amber');
+        });
+        break;
+      }
+    }
+    // Loot the badge (the team shares it; in co-op only the spotter can swipe it).
+    if (!ob.badge) {
+      const chief = S.guards.find((g) => g.chief && g.state === 'dead' && g.badge);
+      if (chief && Math.hypot(chief.x - p.x, chief.z - p.z) < 2.4 && sameFloor(chief.y)) opt('badge', 'Hold E — take the master badge', 1, () => { ob.badge = true; chief.badge = false; this._toast('Master badge cloned to the team — it opens every rack room. Find the server with the amber beacon.', 'cyan'); });
+    }
+    const rl = SPOTS.relay;
+    if (!ob.relay && Math.hypot(rl.x - p.x, rl.z - p.z) < 2.4 && p.y < 2) opt('relay', 'Hold E — plant network relay', 2.2, () => { ob.relay = true; ob.access = Math.max(ob.access, 2); this.fac.relayPlanted = true; this._toast('Relay planted. The building is on the console: cameras, doors, devices, contacts.', 'cyan'); });
+    // Exterior doors. Mechanical locks (maintenance, side) can't be hacked: the spotter has
+    // to pick them in person. Electronic locks (front, dock) open over the network: the
+    // console, a quickhack, or the AI spotter. The shooter can't unlock anything; he only
+    // uses doors that are already open to him.
+    const picker = role === 'spotter' || this.operative;
+    for (const d of Object.values(this.fac.doors)) {
+      if (d.kind !== 'mech' && d.kind !== 'elec') continue;
+      if (d.unlocked || d.sealed || d.open || !sameFloor(d.y || 0) || Math.hypot(d.x - p.x, d.z - p.z) > 2.6) continue;
+      const who = role === this.role ? this.partnerName : this.name;
+      if (d.kind === 'mech') {
+        if (picker) opt('pick', 'Hold E \u2014 pick the lock (lock-pick set)', 3, () => { d.unlocked = true; this._toast('Lock picked. The door\u2019s open to both of you.', 'dim'); });
+        else opt('pickx', `Mechanical lock \u2014 ${this.solo ? 'can\u2019t be hacked; use the front door' : who + ' has to pick it'}`, 0, null);
+      } else if (!picker) opt('elecx', `Electronic lock \u2014 ${this.solo ? 'Rōnin will hack it' : who + ' can open it over the network'}`, 0, null);
+      else opt('elecx', 'Electronic lock \u2014 hack it: hold TAB and look at it, or use the console', 0, null);
+      break;
+    }
+    // Keycard doors on the rack rooms.
+    for (const d of Object.values(this.fac.doors)) {
+      if (d.kind !== 'badge' || d.unlocked || !sameFloor(d.y) || Math.hypot(d.x - p.x, d.z - p.z) > 2.4) continue;
+      const cd = CARDS[d.room], rn = (ROOMS.find((r) => r.id === d.room) || {}).name || 'RACK ROOM';
+      if (ob.cards.includes(d.room)) opt('swipe', `Hold E — swipe the ${cd.name} keycard (${rn})`, 0.8, () => { d.unlocked = true; this._toast(`${cd.name} keycard accepted — ${rn}.`, 'dim'); });
+      else if (ob.badge) opt('swipe', `Hold E — swipe the master badge (${rn})`, 0.8, () => { d.unlocked = true; this._toast(`Master badge accepted — ${rn}.`, 'dim'); });
+      else opt('badgex', `${rn} — needs the ${cd.name} keycard (search the office drawers)`, 0, null);
+      break;
+    }
+    this._stationOpt(a, opt);
+    // The archive server: jack in (signal lock), then extract (drive release). Minigames run
+    // on the operator's own screen; the host just offers the prompt.
+    if (ob.found && Math.hypot(T.x - p.x, T.z - p.z) < 2.2 && this.fac.floorOf(p.y + 0.5) === T.floor) {
+      if (!this._techRole(role)) opt('techx', 'The spotter works the server — cover them', 0, null);
+      else if (!ob.aligned) opt('jack', 'E — jack in: upload the malware', 0, () => {});
+      else if (ob.upload >= 1 && !ob.drive) opt('extract', 'E — extract the drive', 0, () => {});
+      else if (ob.upload < 1) this.prompts[role] = { label: `UPLOADING ${Math.round(ob.upload * 100)} % · TRACE ${Math.round(ob.trace * 100)} % — stay at the rack`, p: ob.upload, key: 'upl' };
+    }
+    if (ob.drive === 'ground' && ob.driveAt && Math.hypot(ob.driveAt.x - p.x, ob.driveAt.z - p.z) < 2 && sameFloor(ob.driveAt.y || 0)) opt('pickup', 'Hold E — pick up the drive', 0.6, () => { ob.drive = role; this._toast(`${role === this.role ? this.name : this.partnerName} has the drive.`, 'cyan'); });
+    const dk = this.fac.doors.dock;
+    if (ob.drive && !dk.perm && Math.hypot(dk.x - p.x, dk.z - p.z) < 3.5) opt('force', 'Hold E — force the dock door', 8, () => { dk.perm = true; dk.sealed = false; this._toast('Dock forced open.', 'cyan'); this.sentinel.noise({ x: dk.x, y: 1, z: dk.z }, 30, true); });
+    if (!best) { if (!(this.prompts[role] && this.prompts[role].key === 'upl' && ob.uploading)) this.prompts[role] = null; this.holdT[role] = null; return; }
+    if (!best.fn) { this.prompts[role] = { label: best.label, p: 0, key: best.key }; return; }
+    let h = this.holdT[role];
+    if (!h || h.key !== best.key) h = this.holdT[role] = { key: best.key, t: 0 };
+    if (held) h.t += dt; else h.t = 0;
+    this.prompts[role] = { label: best.label, p: best.dur ? clamp(h.t / best.dur, 0, 1) : 0, key: best.key };
+    if (best.key === 'jack' || best.key === 'extract') return; // the operator's client opens the minigame
+    if (held && h.t >= best.dur && !h.done) { h.done = true; best.fn(); }
+    if (!held) h.done = false;
+    if (held && best.key === 'pick' && Math.random() < dt * 2) this.sentinel.noise(p, 6, false);
+  }
+
+  // Room stations: drawers (keycards), storage shelves (ammo), the break-room fridge (HP),
+  // the comms rack (no more radio calls) and the CCTV desk (cameras stop reporting you).
+  _stationOpt(a, opt) {
+    const ob = this.obj, role = a.role, p = a.pos;
+    const q = this.fac.stationNear(p.x, p.z, p.y);
+    if (!q) return;
+    const who = role === this.role ? this.name : this.partnerName;
+    const fast = this._techRole(role) || this.operative;
+    const used = ob.used[q.id] || 0;
+    const give = (k, extra) => { if (role === this.role) this[k](extra); else this._broadcast({ k: k === '_heal' ? 'heal' : 'ammo', role, hp: extra }); };
+    switch (q.kind) {
+      case 'drawer':
+        if (ob.searched.includes(q.id)) return;
+        opt('search', 'Hold E — search the desk drawer', 1.2, () => {
+          ob.searched.push(q.id);
+          this.sentinel.noise({ x: q.x, y: q.y + 1, z: q.z }, 5, false);
+          if (q.card && !ob.cards.includes(q.card)) {
+            ob.cards.push(q.card);
+            const cd = CARDS[q.card], rn = (ROOMS.find((r) => r.id === q.card) || {}).name;
+            this._toast(`${who} found the ${cd.name} keycard — ${rn}${/^(dhb|srv|arch)$/.test(q.card) ? ' (upper floor)' : ''}.`, 'amber');
+            this._voice(role, `Got a keycard. ${cd.name.toLowerCase()} tag, ${rn.toLowerCase()}.`);
+          } else this._toast(['Drawer: pens, a stale protein bar.', 'Drawer: cable ties and a dead vape.', 'Drawer: shift rota. No card.', 'Drawer: empty.'][ob.searched.length % 4], 'dim');
+        });
+        return;
+      case 'shelf':
+        if (used >= q.uses) return opt('shelfx', 'Storage shelf — already cleared', 0, null);
+        opt('shelf', 'Hold E — grab ammo and kit off the shelf', 1.4, () => { ob.used[q.id] = used + 1; give('_ammo'); this._toast(`${who} restocked from storage.`, 'dim'); });
+        return;
+      case 'fridge':
+        if (used >= q.uses) return opt('fridgex', 'Fridge — nothing left but a lemon', 0, null);
+        opt('fridge', `Hold E — eat something from the fridge (+40 HP, ${q.uses - used} left)`, 1.6, () => { ob.used[q.id] = used + 1; give('_heal', 40); this._toast(`${who} raided the break-room fridge.`, 'dim'); });
+        return;
+      case 'comms':
+        if (ob.commsDown) return opt('commsx', 'Comms rack — radio net is down', 0, null);
+        opt('comms', `Hold E — hack the comms rack in person${fast ? '' : ' (slow without the tablet)'}`, fast ? 3 : 5, () => {
+          ob.commsDown = true;
+          this.sentinel.cutComms();
+          this._toast('Comms rack hacked: SENTINEL\u2019s radio net is down. Guards can\u2019t call for backup.', 'cyan');
+          this._voice(role, 'Their radios are dead. Nobody\'s calling for help now.');
+        });
+        return;
+      // Barracks: the spotter hacks the door shut for a while; the shooter can C4 it for good.
+      // Drone bay: a hack grounds it for good; so does C4. Planting C4 puts every guard on alert.
+      case 'barracks':
+      case 'bay': {
+        const site = q.kind, name = site === 'bay' ? 'drone bay' : 'barracks';
+        const st = site === 'bay' ? ob.bay : ob.barracks;
+        if (st === 'destroyed') return opt(site + 'x', `The ${name} is wrecked`, 0, null);
+        if (ob.c4.some((c) => c.site === site)) return opt(site + 'x', `C4 is set on the ${name} \u2014 get clear!`, 0, null);
+        const c4 = role === 'shooter' && (!this.operative || (role === this.role && this.input.held('ShiftLeft')));
+        if (c4) {
+          opt('c4', `Hold E \u2014 plant C4 on the ${name} (alerts every guard)`, 2.5, () => this._plantC4(site, q, role));
+        } else {
+          if (site === 'bay' && st === 'hacked') return opt('bayx', 'Drone bay grounded \u2014 no more launches', 0, null);
+          if (site === 'barracks' && ob.barracksT > 0) return opt('barx', `Barracks locked down \u2014 ${Math.ceil(ob.barracksT)} s`, 0, null);
+          opt(site, site === 'bay' ? 'Hold E \u2014 hack the drone bay controls (ground it for good)' : 'Hold E \u2014 hack the barracks door (lock them in for 90 s)', site === 'bay' ? 3.5 : 3, () => {
+            if (site === 'bay') { ob.bay = 'hacked'; this._toast('Drone bay hacked: no more drone launches.', 'cyan'); this._radio(role, 'Drone bay is grounded. No more birds.'); }
+            else { ob.barracksT = 90; this._toast('Barracks door hacked shut: no reinforcements for 90 s.', 'cyan'); this._radio(role, 'Barracks door is locked. That buys us a minute and a half.'); }
+          });
+        }
+        return;
+      }
+      case 'cctv':
+        if (ob.cctv) return opt('cctvx', 'CCTV desk — the feeds are yours', 0, null);
+        opt('cctv', `Hold E — hack the CCTV desk in person${fast ? '' : ' (slow without the tablet)'}`, fast ? 3 : 5, () => {
+          ob.cctv = true;
+          this.sentinel.cutCctv();
+          this._toast('CCTV hacked: every camera is looped for SENTINEL and feeding the console.', 'cyan');
+          this._voice(role, 'Cameras are ours. They can see us all day and nobody will hear about it.');
+        });
+        return;
+    }
+  }
+
+  // C4: a six-second fuse. Planting it is loud work: every guard on the map is alerted to it.
+  _plantC4(site, q, role) {
+    const ob = this.obj, S = this.sentinel;
+    const at = site === 'bay' ? { x: -52, y: 1.0, z: 26.85 } : { x: 45.8, y: 1.0, z: 21.2 };
+    ob.c4.push({ id: (this._c4id = (this._c4id || 0) + 1), site, x: at.x, y: at.y, z: at.z, t: 6 });
+    S.raise(1, null);
+    for (const g of S.guards) if (g.state !== 'dead' && g.state !== 'flee' && !g.tower) S._alert(g, null, { x: q.x, z: q.z, y: 0 });
+    this._toast(`C4 planted on the ${site === 'bay' ? 'drone bay' : 'barracks'} \u2014 6 s. Every guard is coming.`, 'red');
+    this._radio(role, 'Charge set! Six seconds, get clear!');
+  }
+  _c4Tick(dt) {
+    const ob = this.obj, S = this.sentinel;
+    if (ob.barracksT > 0) ob.barracksT = Math.max(0, ob.barracksT - dt);
+    S.barracksDown = ob.barracks === 'destroyed' || ob.barracksT > 0;
+    S.bayDown = ob.bay !== 'ok';
+    for (const c of ob.c4) {
+      c.t -= dt;
+      if (c.t > 0) continue;
+      c.done = true;
+      if (c.site === 'bay') ob.bay = 'destroyed'; else ob.barracks = 'destroyed';
+      // Blast: anything within 9 m.
+      for (const g of S.guards) if (g.state !== 'dead' && Math.hypot(g.x - c.x, g.z - c.z) < 9) S.damage(g.id, 999, 'explosive', { x: c.x, z: c.z }, 'torso');
+      for (const d of S.drones) if (d.state !== 'dead' && Math.hypot(d.x - c.x, d.z - c.z) < 9) S.damage(d.id, 999, 'explosive', { x: c.x, z: c.z }, 'torso');
+      for (const a of this.agents()) {
+        const dd = Math.hypot(a.pos.x - c.x, a.pos.z - c.z);
+        if (a.alive && dd < 9) { const dmg = Math.round(120 * (1 - dd / 9)); if (a.role === this.role) this._damage(dmg, { x: c.x, z: c.z }); else this._broadcast({ k: 'blasthurt', role: a.role, dmg, x: c.x, z: c.z }); }
+      }
+      S.noise({ x: c.x, y: 1, z: c.z }, 140, true);
+      this._toast(c.site === 'bay' ? 'Drone bay destroyed. No more drones.' : 'Barracks destroyed. No more reinforcements.', 'amber');
+      this._broadcast({ k: 'boom', x: c.x, y: c.y, z: c.z });
+      this._boom(c);
+    }
+    ob.c4 = ob.c4.filter((c) => !c.done);
+  }
+  _boom(c) {
+    const p = new THREE.Vector3(c.x, c.y + 1, c.z);
+    for (let i = 0; i < 6; i++) this.effects.puff(p.clone().add(new THREE.Vector3((Math.random() - 0.5) * 4, Math.random() * 3, (Math.random() - 0.5) * 4)), 'dust', 4 + Math.random() * 3, 2.5);
+    this.audio.shotDistant(p, this.camera.position.distanceTo(p) / 343, false);
+    this.audio.rumble && this.audio.rumble(2.5);
+    this.post.uniforms.uStatic.value = Math.max(this.post.uniforms.uStatic.value, this.camera.position.distanceTo(p) < 40 ? 0.8 : 0.2);
+  }
+  // Every client: the charges' blinking LEDs, and smoke over wrecked sites.
+  _c4Visuals(dt) {
+    const ob = this.obj;
+    this.c4Objs = this.c4Objs || new Map();
+    const seen = new Set();
+    for (const c of ob.c4 || []) {
+      seen.add(c.id);
+      let o = this.c4Objs.get(c.id);
+      if (!o) {
+        o = new THREE.Group();
+        o.add(new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.08), new THREE.MeshLambertMaterial({ color: '#c8b48a' })));
+        const led = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), new THREE.MeshBasicMaterial({ color: '#ff2020' }));
+        led.position.set(0.06, 0.08, 0.04);
+        o.add(led);
+        o.userData.led = led;
+        o.position.set(c.x, c.y, c.z);
+        this.scene.add(o);
+        this.c4Objs.set(c.id, o);
+      }
+      const fast = c.t < 2 ? 6 : 2;
+      const on = (this.t * fast) % 1 < 0.5;
+      if (on && !o.userData.on) this.audio.beep(o.position, c.t < 2);
+      o.userData.on = on;
+      o.userData.led.visible = on;
+    }
+    for (const [id, o] of this.c4Objs) if (!seen.has(id)) { this.scene.remove(o); this.c4Objs.delete(id); }
+    this._smokeT = (this._smokeT || 0) - dt;
+    if (this._smokeT <= 0) {
+      this._smokeT = 0.6;
+      if (ob.barracks === 'destroyed') this.effects.puff(new THREE.Vector3(58 + (Math.random() - 0.5) * 10, 4.5, 22 + (Math.random() - 0.5) * 6), 'dust', 3.5, 3);
+      if (ob.bay === 'destroyed') this.effects.puff(new THREE.Vector3(-52 + (Math.random() - 0.5) * 6, 4.2, 30 + (Math.random() - 0.5) * 4), 'dust', 3, 3);
+    }
+  }
+
+  // Client: E on a jack/extract prompt opens the minigame; the result goes to the host.
+  _serverMinigame(key) {
+    if (this.mini.open) return;
+    const kind = key === 'jack' ? 'upload' : 'extract';
+    this.input.keys.clear();
+    document.exitPointerLock && document.exitPointerLock();
+    this._voice(this.role, kind === 'upload' ? 'Jacking in. Cover me.' : this.obj.quiet ? 'Pulling the drive. Nice and quiet.' : 'Pulling the drive. Watch the doors.');
+    this.mini.start(kind, (ok) => {
+      this.input.requestLock();
+      if (!ok) return;
+      const ev = { k: kind === 'upload' ? 'aligned' : 'extracted', role: this.role, fail: ok === 'fail' };
+      if (this.isHost) this._serverResult(ev); else this._broadcast(ev);
+    }, () => {
+      // A fumble spikes the trace (host-side).
+      if (this.isHost) this.obj.trace = Math.min(0.99, this.obj.trace + 0.08); else this._broadcast({ k: 'fumble' });
+    });
+  }
+  _serverResult(m) {
+    const ob = this.obj;
+    if (m.k === 'aligned' && !ob.aligned) {
+      ob.aligned = true;
+      if (!m.fail) {
+        // Clean lock: SENTINEL never sees the upload. No trace, no lockdown.
+        ob.quiet = true;
+        ob.trace = 0;
+        this._toast('Signal locked clean. Upload running silent — hold the rack.', 'cyan');
+        this._voice('isr', 'Clean lock. You\'re invisible to SENTINEL. Hold the rack.');
+      } else {
+        // Botched: ICE. The upload still forces through, but the garrison rings the building.
+        ob.quiet = false;
+        ob.ice = true;
+        this.sentinel.iceAlert(BUILDING);
+        this._iceStart();
+        this.hud.flash('ICE ALERT', 'red');
+        this._broadcast({ k: 'ice' });
+        this._toast('Upload forced through, but SENTINEL\u2019s ICE tripped. Guards are ringing the building — sneak out or go loud.', 'red');
+        this._voice('isr', 'ICE alert. They\'re putting guards on the walls. Finish the upload, then pick your way out, or fight it.');
+      }
+    }
+    if (m.k === 'extracted' && ob.upload >= 1 && !ob.drive) {
+      ob.drive = m.role;
+      this.fac.driveMesh.visible = false;
+      if (ob.quiet) { this._toast('Drive out. Nobody knows you were here — walk it to the van.', 'cyan'); this._voice('isr', 'Intel is out, quiet as you like. Get to the van.'); }
+      else this._toast('Drive out. The ring is still on the walls — slip through it or punch a hole. Van on the east track.', 'amber');
+    }
+  }
+
+  _lockdown() {
+    const S = this.sentinel;
+    S.lockdown = true;
+    S.raise(1, null);
+    for (const id of ['front', 'side', 'dock']) { const d = this.fac.doors[id]; d.sealed = true; d.hackOpen = 0; }
+    const T = this.fac.target;
+    for (const g of S.guards) if (g.state !== 'dead') S._alert(g, null, { x: T.x, z: T.z + 6, y: T.y }), g.searchT = 20;
+    this._toast('SENTINEL: lockdown. The building is sealed.', 'red');
+    this._toast('The van is hot on the east track. Get the dock open \u2014 spotter drives, shooter rides shotgun.', 'cyan');
+    this._lockdownFx();
+    this._broadcast({ k: 'lockdown' });
+  }
+
+  _lockdownFx() {
+    this.hud.flash('LOCKDOWN', 'red');
+  }
+
+  // ---- end ------------------------------------------------------------------------------
+  _rating(win) {
+    const st = this.sentinel.stats;
+    if (!win) return 'BURNED';
+    if (this.sentinel.alarmPeakPre >= 1 || this._loudAlarm) return 'LOUD';
+    if (st.kills > 0) return 'LETHAL';
+    if (st.takedowns > 0) return 'SILENT';
+    return 'GHOST';
+  }
+
+  _win() {
+    if (this.ended) return;
+    const info = this._endInfo(true);
+    this._end(true, info);
+    this.send({ t: 'end', win: true, info });
+  }
+  _lose() {
+    if (this.ended) return;
+    const info = this._endInfo(false);
+    this._end(false, info);
+    this.send({ t: 'end', win: false, info });
+  }
+  _endInfo(win) {
+    const st = this.sentinel.stats;
+    return { rating: this._rating(win), time: Math.round(this.t), kills: st.kills, takedowns: st.takedowns, drones: st.drones, spotted: st.spotted, alarm: Math.round(this.sentinel.alarmPeak * 100) };
+  }
+
+  _end(win, info) {
+    if (this.ended) return;
+    this.ended = { win, info };
+    if (this.tablet.visible) this.tablet.close();
+    if (this.quad && this.quad.active) this._endQuad();
+    document.exitPointerLock && document.exitPointerLock();
+    if (this.cine.active === 'intro') this.cine.skip();
+    // A win rolls the drive out into the sunrise first; the debrief lands over it.
+    if (win) this.cine.startOutro(() => this.hud.debrief(win, info, this.stats));
+    else this.hud.debrief(win, info, this.stats);
+  }
+
+  // ---- visuals ------------------------------------------------------------------------
+  _updatePartner(dt) {
+    const Q = this.partner;
+    if (!Q.ai && Q.tpos) {
+      if (Q.pos.distanceTo(Q.tpos) > 8) Q.pos.copy(Q.tpos);
+      Q.pos.lerp(Q.tpos, Math.min(1, dt * 12));
+      Q.yaw += angDiff(Q.tyaw || 0, Q.yaw) * Math.min(1, dt * 12);
+    }
+    if (Q.ai && Q.role === 'spotter') { Q.yaw = Math.PI * 0.02; }
+    const av = Q.avatar;
+    av.setVisible(Q.seen && !Q.avatarHidden && !Q.kia);
+    if (!Q.seen) return;
+    av.update(dt, { p: Q.pos, yaw: Q.yaw, pitch: Q.pitch || 0, st: Q.downed ? 2 : Q.st, moving: Q.moving, w: Q.w });
+    // Cloaked shooter: shimmer instead of the kit.
+    const ck = Q.cloak;
+    if (ck !== Q._ck) {
+      Q._ck = ck;
+      av.root.traverse((o) => {
+        if (!o.isMesh) return;
+        if (ck) { o.userData._m = o.userData._m || o.material; o.material = this.cloakMat; }
+        else if (o.userData._m) o.material = o.userData._m;
+      });
+    }
+    // Partner's quad.
+    if (Q.quad) { this.quadObj.visible = true; this.quadObj.position.set(Q.quad[0], Q.quad[1], Q.quad[2]); this.quadObj.rotation.y = Q.quad[3]; }
+    else if (this.quad && this.quad.parked) { this.quadObj.visible = true; this.quadObj.position.set(this.quad.x, this.quad.y, this.quad.z); this.quadObj.rotation.y = this.quad.yaw; }
+    else if (!(this.quad && this.quad.active)) this.quadObj.visible = false;
+    // Your own body when down (third person).
+    const showSelf = (this.downed && !this.kia) || this.isr.active || !!(this.quad && this.quad.active);
+    this.selfAvatar.setVisible(showSelf);
+    if (showSelf) this.selfAvatar.update(dt, { p: this.player.pos, yaw: this.player.yaw, pitch: 0, st: this.downed ? 2 : 1, moving: false, w: true });
+  }
+
+  _visuals(dt) {
+    this._iceClient(dt);
+    this._neuroTick(dt);
+    this._nvgTick(dt);
+    this._spatialTick(dt);
+    this._c4Visuals(dt);
+    this.fac.syncStations(this.obj, this.t);
+    this._vanVisual(dt);
+    this._lasersTick();
+    this.cloakMat.uniforms.uTime.value = this.t;
+    this.cloakMat.uniforms.uFlick.value = Math.max(this.cloak.flick, this.partner.cloakFlicker ? 1 : 0) * 0.6;
+    // Trails fade (and the vapor trail swells a little as it hangs).
+    for (const tr of this.trails) {
+      tr.t += dt;
+      const k = tr.t / tr.life;
+      if (tr.ring) { const s = 1 + k * tr.ring; tr.mesh.scale.set(s, 1, s); tr.mesh.material.opacity = 0.6 * (1 - k); }
+      else if (tr.grow) { tr.mesh.material.opacity = 0.55 * (1 - k) * (1 - k); tr.mesh.scale.set(1 + k * 3, 1 + k * 3, 1); tr.mesh.children[0].material.opacity = 0.12 * (1 - k); }
+      else tr.mesh.material.opacity = 0.9 * (1 - k);
+      if (k >= 1) { this.scene.remove(tr.mesh); tr.mesh.geometry.dispose(); }
+    }
+    this.trails = this.trails.filter((tr) => tr.t < tr.life);
+    // Supply crates.
+    const seen = new Set();
+    for (const c of this.crates) {
+      seen.add(c.id);
+      let o = this.crateObjs.get(c.id);
+      if (!o) { o = buildCrate(); this.scene.add(o); this.crateObjs.set(c.id, o); }
+      o.position.set(c.x, c.y, c.z);
+      o.userData.chute.visible = !c.landed;
+    }
+    for (const [id, o] of this.crateObjs) if (!seen.has(id)) { this.scene.remove(o); this.crateObjs.delete(id); }
+    // Medevac drone.
+    this.medObj.visible = !!this.medevac;
+    if (this.medevac) { this.medObj.position.set(this.medevac.x, this.medevac.y, this.medevac.z); for (const r of this.medObj.userData.rotors) r.rotation.y += dt * 40; }
+    // Own quad seen from outside isn't needed (you're in it).
+    if (this.quad && this.quad.active) this.quadObj.visible = false;
+    // Exfil bird.
+    if (this.heli.visible) {
+      this.heliT = (this.heliT || 0) + dt;
+      const lz = SPOTS.lz;
+      const k = clamp(this.heliT / 25, 0, 1);
+      const e = 1 - (1 - k) * (1 - k);
+      const x = lz.x + 220 * (1 - e), y = terrainHeight(lz.x, lz.z) + 6 + 40 * (1 - e) + Math.sin(this.t * 1.3) * 0.3, z = lz.z - 140 * (1 - e);
+      this.heli.position.set(x, y, z);
+      this.heli.rotation.y = Math.PI / 2 + 0.6 * (1 - e);
+      this.heli.userData.rotor.rotation.y += dt * 25;
+      this.heli.userData.rotor2.rotation.y += dt * 25;
+      this.heli.userData.light.visible = Math.sin(this.t * 6) > 0;
+      this.fac.lzRing.material.opacity = 0.35 + Math.sin(this.t * 4) * 0.2;
+      if (!this._heliLoop) { this._heliLoop = true; this.audio.startLoop('heli', this.heli.position, 'drone', 0.5); }
+      this.audio.updateLoop('heli', this.heli.position);
+    }
+    // Light toggles drive the point lights too.
+    for (const pt of this.points) pt.L.intensity = !pt.src || pt.src.on ? pt.I : 0;
+    this._irTick(dt);
+    this.atmos.update(dt, this.camera, hazeUniforms.uWind.value, (x, z) => this.fac.groundAt(x, z, this.camera.position.y + 1, 2));
+    this.isr.update(dt);
+    // The drive model leaves the rack once pulled.
+    this.fac.driveMesh.visible = !this.obj.drive;
+    this._groundDrive();
+  }
+
+  // Render a camera into a small 2D canvas (via a hidden corner of the main canvas).
+  _renderToCanvas(cam, cv) {
+    const rect = cv.getBoundingClientRect();
+    const w = Math.max(16, Math.round(rect.width)), h = Math.max(10, Math.round(rect.height));
+    if (cv.width !== w) { cv.width = w; cv.height = h; }
+    cam.aspect = w / h;
+    cam.updateProjectionMatrix();
+    this._cornerRender(cam, w, h, cv, cv.getContext('2d'));
+  }
+
+  // How hard bright light in front of you blooms the night-vision tube (0..1.5).
+  _washout() {
+    const cam = this.camera, o = cam.position;
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    const zoom = WEAPON.baseFov / cam.fov;
+    let w = 0;
+    for (const L of this.fac.lightSources) {
+      if (!L.on) continue;
+      const dx = L.x - o.x, dy = L.y - o.y, dz = L.z - o.z, d = Math.hypot(dx, dy, dz);
+      if (d > 90 || d < 0.5) continue;
+      const dot = (dx * f.x + dy * f.y + dz * f.z) / d;
+      const cone = 1 - Math.min(1, (1 - dot) * 12 * zoom);
+      if (cone <= 0) continue;
+      if (L.interior && !this.fac.insideBuilding(o.x, o.z, o.y)) continue;
+      w += cone * (1 - d / 90) * (L.kind === 'panel' ? 0.25 : 0.7) * Math.min(2, zoom * 0.6 + 0.4);
+    }
+    if (this.wlTheirs) {
+      const L = this.wlTheirs, dx = o.x - L.x, dy = o.y - L.y, dz = o.z - L.z, d = Math.hypot(dx, dy, dz);
+      if (d < 40 && (dx * L.dx + dy * L.dy + dz * L.dz) / d > 0.96) w += (1 - d / 40) * 1.4;
+    }
+    // Weapon lights pointed straight at you.
+    for (const g of this.sentinel.guards) {
+      if (g.state === 'dead' || !g.obj.userData.beam.visible) continue;
+      const d = Math.hypot(g.x - o.x, g.z - o.z);
+      if (d > 18) continue;
+      const toMe = Math.atan2(-(o.x - g.x), -(o.z - g.z));
+      let a = toMe - (g.yaw + (g.look || 0));
+      a = Math.atan2(Math.sin(a), Math.cos(a));
+      if (Math.abs(a) < 0.35) w += (1 - d / 18) * 1.2;
+    }
+    return Math.min(1.2, w);
+  }
+
+  _render(dt) {
+    const u = this.post.uniforms;
+    u.uTime.value = this.t;
+    const P = this.player;
+    const quad = this.quad && this.quad.active;
+    const isr = this.isr.active;
+    const scopeNV = !isr && P.def.scope && P.scopeT > 0.6;
+    const nv = isr || quad || scopeNV || this.nv;
+    u.uNV.value += ((nv ? 1 : 0) - u.uNV.value) * Math.min(1, dt * 10);
+    u.uMode.value = isr ? (this.isr.mode === 'IR' ? 3 : 2) : quad ? 2 : scopeNV ? 1 : 0;
+    u.uWash.value += ((nv && !isr ? this._washout() : 0) - u.uWash.value) * Math.min(1, dt * 6);
+    u.uCloak.value += ((this.cloak.on && !quad ? 1 : 0) - u.uCloak.value) * Math.min(1, dt * 6);
+    this.dmgFx = Math.max(0, (this.dmgFx || 0) - dt * 1.5);
+    u.uDamage.value = Math.max(this.dmgFx, this.hp < this.maxHp * 0.3 && !this.downed ? 0.35 + Math.sin(this.t * 4) * 0.1 : 0);
+    u.uDown.value = this.downed || this.kia ? 1 : 0;
+    u.uStatic.value = Math.max(0, u.uStatic.value - dt * 2) + (quad && this.quad.bat < 8 ? 0.4 : 0);
+    // (drawn first: the main frame then paints over the corner it borrowed)
+    // ISR picture-in-picture (spotter HUD), a few times a second.
+    if (this._pipIsr && this.hud.sqIsr && !this.isr.active && !this.tablet.visible) {
+      this._pipIsr = false;
+      const cam = this.isr.cam;
+      if (this.isr.mode === 'IR') cam.layers.enable(1); else cam.layers.disable(1);
+      this._renderToCanvas(cam, this.hud.sqIsr);
+    }
+    // Tablet camera feed (~15 Hz): rendered into a corner of the main canvas and copied into
+    // the console *before* the post pass, so the full frame always paints over that corner.
+    this._feedT = (this._feedT || 0) - dt;
+    const f = this.tablet.visible && this._feedT <= 0 && this.tablet.feed();
+    if (f) {
+      this._feedT = 1 / 15;
+      f.cam.layers.disable(1);
+      this._cornerRender(f.cam, Math.round(f.w), Math.round(f.h), f.canvas, f.ctx);
+      f.ctx.fillStyle = 'rgba(0,255,224,0.06)';
+      for (let y = 0; y < f.canvas.height; y += 3) f.ctx.fillRect(0, y, f.canvas.width, 1);
+    }
+    this.composer.render();
+  }
+
+  // Render a camera into the bottom-left corner of the main canvas and copy it out to a 2D
+  // canvas. Restores the renderer's exact viewport / scissor afterwards (the canvas isn't
+  // always innerWidth x innerHeight, e.g. on iPad), so nothing is left behind on screen.
+  _cornerRender(cam, w, h, canvas, ctx) {
+    const r = this.renderer;
+    const vp = r.getViewport(new THREE.Vector4()), sc = r.getScissor(new THREE.Vector4()), st = r.getScissorTest();
+    r.autoClear = false;
+    r.setScissorTest(true);
+    r.setScissor(0, 0, w, h);
+    r.setViewport(0, 0, w, h);
+    r.clear();
+    r.render(this.scene, cam);
+    r.setScissorTest(st);
+    r.setScissor(sc);
+    r.setViewport(vp);
+    r.autoClear = true;
+    const pr = r.getPixelRatio(), src = r.domElement;
+    ctx.drawImage(src, 0, src.height - h * pr, w * pr, h * pr, 0, 0, canvas.width, canvas.height);
+  }
+
+  // ---- HUD ------------------------------------------------------------------------------
+  _buildHud() {
+    this.hud = new CellHud(this);
+  }
+
+  exit() {
+    if (this.net && this.net.close) this.net.close();
+    if (location.search) location.replace(location.href.split('?')[0].split('#')[0]);
+    else location.reload();
+  }
+}
+
+// =============================================================================
+// HUD
+// =============================================================================
+class CellHud {
+  constructor(game) {
+    this.g = game;
+    const root = (this.root = document.createElement('div'));
+    root.id = 'cell-hud';
+    root.className = 'role-' + game.role;
+    root.innerHTML = `
+      <canvas id="cell-overlay"></canvas>
+      <div class="c-obj"><div class="c-obj-n"></div><div class="c-obj-t"></div><div class="c-obj-h"></div></div>
+      <div class="c-alarm"><span class="c-al-l">SENTINEL</span><b class="c-al-s">QUIET</b><i><em></em></i></div>
+      <div class="c-partner"></div>
+      <div class="c-feed"></div>
+      <div class="c-comms"></div>
+      <div class="c-vitals"><div class="c-hp"><span>HP</span><i><em></em></i></div><div class="c-camo"><span>CAMO</span><i><em></em></i></div><div class="c-chips"></div></div>
+      <div class="c-ammo"><b class="c-am-n"></b><span class="c-am-r"></span><div class="c-am-w"></div><div class="c-am-s"></div></div>
+      <div class="c-prompt"><span></span><i><em></em></i></div>
+      <div class="c-flash"></div>
+      <div class="c-keys"></div>
+      <div class="c-dmg"></div>
+      <div class="c-vis"><span>EXPOSURE</span><i><em></em></i><b></b></div>
+      <div class="c-hunt"></div>
+      <div class="c-sync"><i class="a"></i><b>SYNC</b><i class="b"></i></div>
+      <div class="c-pip"><div class="c-sq" data-sq="ops"><span>CYBER OPS <em>TAB</em></span><canvas></canvas></div><div class="c-sq" data-sq="isr"><span>ISR \u00B7 PREDATOR <em>I</em></span><canvas></canvas></div></div>
+      <div class="c-kit"></div>
+      <div class="c-req"><span class="c-req-t"></span><button class="c-req-y">\u2713 <small>Y</small></button><button class="c-req-n">\u2715 <small>U</small></button></div>
+      <div class="c-intro"><div class="c-intro-k">KESTREL RIDGE // DC-3</div><h1></h1><p class="c-intro-l"></p><p class="c-intro-r"></p></div>
+      <div class="c-pause"><div class="c-card"><h2>PAUSED</h2><p class="c-pnote"></p><button class="primary c-resume">Resume</button><button class="ghost c-exit">Abort mission</button></div></div>
+      <div class="c-debrief"></div>`;
+    document.body.appendChild(root);
+    document.body.classList.add('cell-mode', 'cell-' + game.role);
+    const $ = (s) => root.querySelector(s);
+    this.el = {
+      overlay: $('#cell-overlay'), objN: $('.c-obj-n'), objT: $('.c-obj-t'), objH: $('.c-obj-h'), alS: $('.c-al-s'), alBar: $('.c-alarm em'), alarm: $('.c-alarm'),
+      partner: $('.c-partner'), feed: $('.c-feed'), comms: $('.c-comms'), hp: $('.c-hp em'), camo: $('.c-camo em'), camoBox: $('.c-camo'), chips: $('.c-chips'),
+      amN: $('.c-am-n'), amR: $('.c-am-r'), amW: $('.c-am-w'), amS: $('.c-am-s'), prompt: $('.c-prompt'), promptT: $('.c-prompt span'), promptB: $('.c-prompt em'),
+      flash: $('.c-flash'), keys: $('.c-keys'), dmg: $('.c-dmg'), pause: $('.c-pause'), debrief: $('.c-debrief'),
+      hunt: $('.c-hunt'), sync: $('.c-sync'), pip: $('.c-pip'),
+      vis: $('.c-vis em'), visL: $('.c-vis b'), visBox: $('.c-vis'), kit: $('.c-kit'), req: $('.c-req'), reqT: $('.c-req-t'), intro: $('.c-intro'),
+    };
+    $('.c-req-y').addEventListener('pointerdown', (e) => { e.preventDefault(); game._answerTop(true); });
+    $('.c-req-n').addEventListener('pointerdown', (e) => { e.preventDefault(); game._answerTop(false); });
+    game.overlay = this.el.overlay;
+    this.ctx = this.el.overlay.getContext('2d');
+    this.el.camoBox.style.display = game.role === 'shooter' ? '' : 'none';
+    const K = (k, l) => `<b>${k}</b> ${l}`;
+    const shooterKeys = [K('G', 'camo'), K('H', 'deadeye'), K('X', 'lure'), K('T', 'execute'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('1/2', 'rifle/pistol'), K('B', 'suppressor'), K('N', 'NV'), K('TAB', game.operative ? 'tablet (hold: quickhack)' : 'map')];
+    const spotterKeys = [K('TAB', 'tablet · ISR (hold: quickhack)'), K('Q', 'quad'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('Y/U', 'approve/deny'), K('B', 'suppressor'), K('N', 'NV')];
+    shooterKeys.push(K('L', 'light'), K('\u21B5', 'chat'));
+    spotterKeys.push(K('L', 'light'), K('I', 'ISR'));
+    spotterKeys.push(K('\u21B5', 'chat'));
+    if (game.net) { shooterKeys.push(K('M', 'mic'), K('K', 'talk')); spotterKeys.push(K('M', 'mic'), K('K', 'talk')); }
+    this.el.keys.innerHTML = (game.operative ? [...shooterKeys, K('Q', 'quad')] : game.role === 'shooter' ? shooterKeys : spotterKeys).join('');
+    this.objective(0, OBJECTIVES[0], false);
+    // Spotter (and lone operative): picture-in-picture squares for the console and the drone.
+    const pipOn = game.role === 'spotter' || game.operative;
+    this.el.pip.style.display = pipOn ? '' : 'none';
+    root.querySelectorAll('.c-sq').forEach((sq) => sq.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      if (sq.dataset.sq === 'ops') game.tablet.open();
+      else { if (game.isr.active) game.isr.exit(); else game.isr.enter(); }
+    }));
+    this.sqOps = root.querySelector('[data-sq="ops"] canvas');
+    this.sqIsr = root.querySelector('[data-sq="isr"] canvas');
+    // The shooter's HUD stays minimal: hints fade once you've read them.
+    if (game.role === 'shooter' && !game.operative) root.classList.add('minimal');
+    setTimeout(() => this.el.keys.classList.add('gone'), 25000);
+    this.hits = [];
+    // Pause: losing pointer lock (Esc) opens it, except while the tablet has the mouse.
+    document.addEventListener('pointerlockchange', () => {
+      if (game.input.touch && !game.input.mouseMode) return;
+      const locked = document.pointerLockElement === game.renderer.domElement;
+      this.setPause(!locked && !game.tablet.visible && !game.ended && !game.tablet.justClosed && !(game.chat && game.chat.isOpen) && !(game.cine && game.cine.active) && !(this._chatClosed && performance.now() - this._chatClosed < 500));
+    });
+    $('.c-resume').onclick = () => { this.setPause(false); game.input.requestLock(); };
+    $('.c-exit').onclick = () => game.exit();
+    $('.c-pnote').textContent = game.solo ? 'Solo: the world keeps moving — find cover first.' : 'Co-op: the mission keeps running while you are in this menu.';
+    this._touch();
+  }
+
+  // Extra touch buttons for this mode, added to the existing touch layer.
+  _touch() {
+    const g = this.g;
+    const t = document.getElementById('touch');
+    if (!t) return;
+    const bar = document.createElement('div');
+    bar.className = 'cell-tbar';
+    const extra = (g.role === 'spotter' || g.operative) ? [['cell-isr', 'ISR'], ['cell-sweep', 'SWEEP'], ['cell-hack', 'HACK']] : [];
+    const common = [...extra, ['cell-light', 'LIGHT'], ['cell-drop', 'DROP'], ['cell-ping', 'PING \u25CE'], ['cell-help', 'HELP \u271A'], ['cell-sync', 'SYNC'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
+    const pills = g.operative
+      ? [['cell-tab', 'TABLET'], ['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-quad', 'QUAD'], ['cell-recall', 'RECALL'], ...common]
+      : g.role === 'shooter'
+        ? [['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-tab', 'MAP'], ...common]
+        : [['cell-tab', 'TABLET'], ['cell-ability', 'QUAD'], ['cell-recall', 'RECALL'], ['cell-yes', 'SEND \u2713'], ['cell-no', 'DENY \u2715'], ...common];
+    bar.innerHTML = pills.map(([a, l]) => `<div class="pill" data-act="${a}">${l}</div>`).join('') + '<div class="pill" id="cell-tpause">❚❚</div>';
+    t.appendChild(bar);
+    bar.querySelector('#cell-tpause').addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this.setPause(true); }, { passive: false });
+    // PING: hold and drag your thumb to pick from the wheel.
+    const ping = bar.querySelector('[data-act="cell-ping"]');
+    let pid = null, x0 = 0, y0 = 0;
+    ping.addEventListener('touchstart', (e) => { const t = e.changedTouches[0]; pid = t.identifier; x0 = t.clientX; y0 = t.clientY; });
+    addEventListener('touchmove', (e) => {
+      if (pid === null || !g.wheel.open) return;
+      for (const t of e.changedTouches) if (t.identifier === pid) { g.wheel.dx = (t.clientX - x0) * 1.6; g.wheel.dy = (t.clientY - y0) * 1.6; g.wheel._pick(); }
+    }, { passive: true });
+    addEventListener('touchend', (e) => { for (const t of e.changedTouches) if (t.identifier === pid) pid = null; });
+    this.tbar = bar;
+  }
+
+  intro(M, who) {
+    const el = this.el.intro;
+    el.querySelector('h1').innerHTML = this.g.titleHTML;
+    el.querySelector('.c-intro-l').textContent = M.line;
+    el.querySelector('.c-intro-r').textContent = who;
+    el.classList.add('on');
+    setTimeout(() => el.classList.add('out'), 4200);
+    setTimeout(() => el.classList.remove('on', 'out'), 6000);
+  }
+
+  setPause(on) {
+    this.el.pause.classList.toggle('on', on);
+    this.g.paused = on;
+  }
+
+  objToggle() {
+    this.root.classList.toggle('obj-off');
+  }
+  objExpand() {
+    this.objFull = !this.objFull;
+    this.root.classList.toggle('obj-full', this.objFull);
+    if (this.objFull) this.el.objH.classList.remove('gone');
+    else this.el.objH.classList.add('gone');
+  }
+
+  objective(i, o, announce) {
+    this.el.objN.textContent = `OBJECTIVE ${i + 1} / ${OBJECTIVES.length}`;
+    this.el.objT.textContent = o.title;
+    this.el.objH.textContent = o.hint;
+    this.el.objH.classList.remove('gone');
+    clearTimeout(this._hintT);
+    this._hintT = setTimeout(() => { if (!this.objFull) this.el.objH.classList.add('gone'); }, 12000);
+    if (announce) this.flash(o.title, 'cyan', 3);
+  }
+
+  comms(m, c, who) {
+    const d = document.createElement('div');
+    d.className = 'c-line c-' + (c && c[0] === '#' ? 'x' : c);
+    if (c && c[0] === '#') d.style.color = c;
+    d.innerHTML = (who ? `<b>${esc(who)}</b> ` : '') + esc(m);
+    this.el.comms.appendChild(d);
+    while (this.el.comms.children.length > 5) this.el.comms.firstChild.remove();
+    // Lines fade out after a few seconds to keep the screen clean (the tablet keeps the full log).
+    setTimeout(() => d.classList.add('old'), 5000);
+    setTimeout(() => d.remove(), 6600);
+  }
+
+  feed(text, color) {
+    const d = document.createElement('div');
+    d.textContent = text;
+    d.style.color = color;
+    this.el.feed.appendChild(d);
+    while (this.el.feed.children.length > 4) this.el.feed.firstChild.remove();
+    setTimeout(() => d.remove(), 6000);
+  }
+
+  flash(text, c = 'dim', dur = 1.6) {
+    const f = this.el.flash;
+    f.textContent = text;
+    f.className = 'c-flash on c-' + c;
+    clearTimeout(this._fl);
+    this._fl = setTimeout(() => (f.className = 'c-flash'), dur * 1000);
+  }
+
+  hitMarker(head) {
+    this.hits.push({ t: 0, head });
+  }
+
+  damage(ang) {
+    const d = document.createElement('i');
+    d.style.transform = `rotate(${-ang * 180 / Math.PI + 180}deg)`;
+    this.el.dmg.appendChild(d);
+    setTimeout(() => d.remove(), 900);
+  }
+
+  debrief(win, info, st) {
+    const g = this.g;
+    const el = this.el.debrief;
+    const mm = Math.floor(info.time / 60), ss = String(info.time % 60).padStart(2, '0');
+    const RATING = { GHOST: 'Never seen. Nobody hurt.', SILENT: 'Takedowns only. No alarm.', LETHAL: 'Clean but bloody. No full alarm.', LOUD: 'They knew you were there.', BURNED: 'The cell was lost.' };
+    el.innerHTML = `<div class="c-card"><div class="kick">${g.missionTitle} // DEBRIEF</div>
+      <h2>${win ? 'INTEL SECURED' : 'MISSION FAILED'}</h2><div class="c-rate c-rate-${info.rating.toLowerCase()}">${info.rating}</div><p>${RATING[info.rating]}</p>
+      <table><tr><td>Time</td><td>${mm}:${ss}</td></tr><tr><td>Kills / takedowns</td><td>${info.kills} / ${info.takedowns}</td></tr><tr><td>Drones down</td><td>${info.drones}</td></tr><tr><td>Times spotted</td><td>${info.spotted}</td></tr><tr><td>Peak alarm</td><td>${info.alarm} %</td></tr>
+      <tr><td>Your shots / hits / heads</td><td>${st.shots} / ${st.hits} / ${st.heads}</td></tr><tr><td>Longest kill</td><td>${st.longest} m</td></tr></table>
+      <button class="primary c-again">Back to menu</button></div>`;
+    el.classList.add('on');
+    el.querySelector('.c-again').onclick = () => g.exit();
+  }
+
+  update(dt) {
+    const g = this.g, P = g.player, ob = g.obj, S = g.sentinel;
+    // Objective & alarm.
+    const lab = S.alarmLabel;
+    if (lab !== this._al) { this._al = lab; this.el.alS.textContent = lab; this.el.alarm.dataset.s = lab.toLowerCase(); }
+    this.el.alBar.style.width = `${Math.round(S.alarm * 100)}%`;
+    if (ob.step !== this._step) { this._step = ob.step; this.objective(ob.step, OBJECTIVES[ob.step], false); }
+    // Partner card.
+    const Q = g.partner;
+    const qd = Q.seen ? Math.round(Q.pos.distanceTo(P.pos)) : 0;
+    const qs = Q.kia ? 'KIA' : Q.downed ? 'DOWN' : !Q.seen ? 'NO LINK' : Q.ai ? (g.aiShoot && g.aiShoot.moveT > 0 ? 'RELOCATING' : 'AI') : Q.tablet ? 'ON CONSOLE' : Q.quad ? 'FLYING QUAD' : Q.cloak ? 'CLOAKED' : 'OK';
+    const ph = `<b style="color:${ROLES[Q.role].color}">${esc(Q.name)}</b> <span>${ROLES[Q.role].name}</span> <em>${qs}</em> <span>${qd} m</span>`;
+    if (ph !== this._ph) { this._ph = ph; this.el.partner.innerHTML = ph; }
+    // Vitals & chips.
+    this.el.hp.style.width = `${Math.round((g.hp / g.maxHp) * 100)}%`;
+    this.el.hp.parentNode.parentNode.classList.toggle('low', g.hp < g.maxHp * 0.3);
+    this.el.camo.style.width = `${Math.round(g.cloak.bat)}%`;
+    this.el.camoBox.classList.toggle('on', g.cloak.on);
+    const chips = [];
+    if (g.nv) chips.push('NV');
+    if (g.cloak.on) chips.push('CAMO');
+    if (ob.badge === g.role) chips.push('BADGE');
+    if (ob.drive === g.role) chips.push('DRIVE');
+    if (ob.ifak && ob.ifak[g.role] > 0) chips.push('IFAK');
+    if (g.role === 'spotter' && g.ops) chips.push(`BW ${Math.round(g.ops.bw)}`);
+    if (g.role === 'spotter') chips.push(g._quadOut() ? `QUAD ${g.quad.parked ? 'PARKED ' : ''}${Math.round((g.quad.bat / QUAD_BAT) * 100)}%` : g.quadCd > 0 ? `QUAD ${Math.ceil(g.quadCd)}s` : 'QUAD READY');
+    const ch = chips.map((c) => `<i>${c}</i>`).join('');
+    if (ch !== this._ch) { this._ch = ch; this.el.chips.innerHTML = ch; }
+    // Ammo.
+    const w = P.w;
+    this.el.amN.textContent = w.mag + w.chamber;
+    this.el.amR.textContent = '/ ' + w.reserve;
+    this.el.amW.textContent = P.def.name + (P.def.slot === 'rifle' ? ' · SUPPRESSED' : '');
+    const sec = P.def.slot === 'pistol';
+    this.el.amS.textContent = sec ? `${w.mode ? w.mode.toUpperCase() + ' (B) \u00B7 ' : ''}${w.sup ? 'SUPPRESSED' : 'UNSUPPRESSED \u2014 LOUD'}${w.mode ? ' (hold B)' : ' (B)'}` : P.scoped ? `${P.zoom}\u00D7 \u00B7 NIGHT VISION` : '';
+    this.el.amS.classList.toggle('loud', sec && !w.sup);
+    // Prompt.
+    let pr = g.prompts[g.role];
+    if (g.downed && !g.kia) pr = { label: `BLEEDING OUT ${Math.ceil(g.bleed)} s — ${g.solo ? 'medevac drone is your only way up' : (g.obj.ifak && g.obj.ifak[g.partnerRole] > 0 ? g.partnerName + ' can patch you up with an IFAK' : g.partnerName + ' is out of IFAKs \u2014 medevac only')} \u00B7 V / HELP: call for pickup`, p: g.bleed / BLEED };
+    if (g.kia) pr = { label: `KIA — watching ${g.partnerName}`, p: 0 };
+    this.el.prompt.classList.toggle('on', !!pr && !g.tablet.visible);
+    if (pr) { this.el.promptT.textContent = pr.label; this.el.promptB.style.width = `${Math.round((pr.p || 0) * 100)}%`; this.el.prompt.classList.toggle('bar', pr.p > 0); }
+    this.root.classList.toggle('tablet', g.tablet.visible);
+    this.root.classList.toggle('isr', g.isr.active);
+    // Detection: DETECTED / HUNTED (break line of sight) / contact broken.
+    const H = g._huntInfo(g.role);
+    const hs = H ? H.state : 'hidden';
+    if (hs !== this._hs) {
+      if (this._hs === 'hunted' && hs === 'hidden') { this.flash('CONTACT BROKEN', 'cyan', 2); g._voice('isr', 'You\u2019re clear. They\u2019ve lost you.'); }
+      if (hs === 'detected' && this._hs !== 'detected') g._voice('isr', 'You\u2019ve been spotted. Break line of sight.');
+      this._hs = hs;
+    }
+    this.el.hunt.className = 'c-hunt ' + hs;
+    this.el.hunt.textContent = hs === 'detected' ? 'DETECTED' : hs === 'hunted' ? `HUNTED \u2014 break line of sight \u00B7 ${Math.max(0, 25 - Math.round(H.since || 0))} s` : '';
+    // SYNC light: one dot per rifle; green when both are on marked heads.
+    const sm = g.syncMarks || 0;
+    this.el.sync.style.display = sm && !g.ended ? '' : 'none';
+    if (sm) {
+      this.el.sync.classList.toggle('go', g.syncReady);
+      this.el.sync.querySelector('.a').className = 'a' + (g.syncAim ? ' on' : '');
+      this.el.sync.querySelector('.b').className = 'b' + (g.syncPartner ? ' on' : '');
+      this.el.sync.querySelector('b').textContent = g.syncReady ? 'SYNC \u2014 FIRE' : g.aiSpot || g.operative ? 'SYNC \u2014 needs a second rifle' : `SYNC \u00B7 ${sm} MARKED`;
+    }
+    // PiP squares (~4 Hz).
+    if (this.el.pip.style.display !== 'none') {
+      this._pipT = (this._pipT || 0) - dt;
+      if (this._pipT <= 0) { this._pipT = 0.25; g.tablet.drawMini(this.sqOps); g._pipIsr = true; }
+    }
+    // Exposure meter (how visible you are right now) + the most-aware enemy.
+    const v = g.vVis;
+    this.el.vis.style.width = `${Math.round(v * 100)}%`;
+    const vlab = v < 0.2 ? 'HIDDEN' : v < 0.45 ? 'LOW' : v < 0.75 ? 'VISIBLE' : 'EXPOSED';
+    if (vlab !== this._vl) { this._vl = vlab; this.el.visL.textContent = vlab; this.el.visBox.dataset.l = vlab.toLowerCase(); }
+    // Ability chips.
+    if (g.role === 'shooter') {
+      const K = g.kit;
+      const kh = `<i class="${K.deadeye > 0 ? 'on' : K.deadeyeCd > 0 ? 'cd' : ''}">H DEADEYE ${K.deadeye > 0 ? Math.ceil(K.deadeye) + 's' : K.deadeyeCd > 0 ? Math.ceil(K.deadeyeCd) + 's' : 'READY'}</i><i class="${K.lures ? '' : 'cd'}">X LURE \u00D7${K.lures}</i><i class="${K.execs ? 'on' : 'cd'}">T EXECUTE \u00D7${K.execs}</i>`;
+      if (kh !== this._kh) { this._kh = kh; this.el.kit.innerHTML = kh; }
+    }
+    // Incoming request / call card.
+    const rq = g.requests.find((r) => r.st === 'pending');
+    const card = rq ? `${g.partnerName} requests ${({ supply: 'SUPPLY DROP', scan: 'PULSE SCAN', emp: 'EMP', decoy: 'DECOY', lights: 'CUT LIGHTS', drone: 'DRONE OVERWATCH' })[rq.k]} \u00B7 ${Math.round(Math.hypot(rq.x - P.pos.x, rq.z - P.pos.z))} m` : g.lastCm ? `${g.partnerName}: ${g.lastCm.label}` : '';
+    this.el.req.classList.toggle('on', !!card && !g.ended);
+    this.el.req.classList.toggle('ack', !rq);
+    if (card !== this._rq) { this._rq = card; this.el.reqT.textContent = card; }
+    this._draw(dt);
+  }
+
+  // Markers (tags, objectives, partner, pins), the scope and the detection arcs.
+  _draw(dt) {
+    const g = this.g, c = this.ctx, cv = this.el.overlay, P = g.player, S = g.sentinel, cam = g.camera;
+    const k = cv.width / innerWidth;
+    c.setTransform(k, 0, 0, k, 0, 0);
+    c.clearRect(0, 0, innerWidth, innerHeight);
+    if (g.tablet.visible || g.ended) return;
+    const W = innerWidth, H = innerHeight;
+    const v = new THREE.Vector3();
+    const proj = (x, y, z) => {
+      v.set(x, y, z).project(cam);
+      const behind = v.z > 1;
+      return { x: (v.x * 0.5 + 0.5) * W, y: (-v.y * 0.5 + 0.5) * H, behind };
+    };
+    this._proj = proj;
+    const camP = cam.position;
+    const edge = (p, m = 30) => { if (p.behind) { p.x = clamp(W - p.x, W * 0.3, W * 0.7); p.y = H - 70; } p.x = clamp(p.x, m, W - m); p.y = clamp(p.y, m, H - m); return p; };
+    const scoped = P.def.scope && P.scopeT > 0.6 && !(g.quad && g.quad.active);
+    // Tagged and scanned contacts: red diamonds through walls.
+    c.font = '600 11px JetBrains Mono, monospace';
+    c.textAlign = 'center';
+    for (const e of [...S.guards, ...S.drones]) {
+      if (e.state === 'dead') continue;
+      const tag = e.tagT > 0, scan = e.scanT > 0;
+      if (!tag && !scan) continue;
+      const y = (e.y || 0) + (e.kind === 'g' ? 2.05 : 0.8);
+      const p = proj(e.x, y, e.z);
+      if (p.behind) continue;
+      const d = Math.hypot(e.x - camP.x, e.z - camP.z);
+      const s = tag ? 7 : 4;
+      c.strokeStyle = e.chief ? '#c070ff' : e.kind === 'd' ? '#ff8040' : '#ff3048';
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(p.x, p.y - s); c.lineTo(p.x + s, p.y); c.lineTo(p.x, p.y + s); c.lineTo(p.x - s, p.y); c.closePath();
+      c.stroke();
+      if (tag) { c.fillStyle = c.strokeStyle; c.fillText(`${e.chief ? 'CHIEF ' : ''}${Math.round(d)}m`, p.x, p.y - 11); }
+    }
+    // Objective marker.
+    const om = this._objPoint();
+    if (om && !om.hide) {
+      const p = edge(proj(om.x, om.y, om.z));
+      const d = Math.hypot(om.x - camP.x, om.z - camP.z);
+      c.strokeStyle = '#30ffd0';
+      c.fillStyle = '#30ffd0';
+      c.lineWidth = 2;
+      c.beginPath(); c.arc(p.x, p.y, 7, 0, Math.PI * 2); c.stroke();
+      c.fillText(`${om.label} ${Math.round(d)}m`, p.x, p.y - 13);
+    }
+    // Partner.
+    const Q = g.partner;
+    if (Q.seen && !Q.kia && !(Q.ai && Q.avatarHidden)) {
+      const p = edge(proj(Q.pos.x, Q.pos.y + 2.2, Q.pos.z));
+      c.fillStyle = ROLES[Q.role].color;
+      c.beginPath(); c.moveTo(p.x, p.y + 6); c.lineTo(p.x - 6, p.y - 4); c.lineTo(p.x + 6, p.y - 4); c.closePath(); c.fill();
+      c.fillText(`${Q.name}${Q.downed ? ' — DOWN' : ''}`, p.x, p.y - 9);
+    }
+    // Pins and the LKP.
+    for (const pin of g.pins) {
+      pin.t -= dt;
+      const p = edge(proj(pin.x, terrainHeight(pin.x, pin.z) + 1.5, pin.z));
+      c.strokeStyle = c.fillStyle = pin.by === g.role ? ROLES[g.role].color : ROLES[g.partnerRole].color;
+      c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - 5, p.y - 10); c.lineTo(p.x + 5, p.y - 10); c.closePath(); c.stroke();
+      c.fillText(pin.label, p.x, p.y - 14);
+    }
+    g.pins = g.pins.filter((p) => p.t > 0);
+    for (const role of ['shooter', 'spotter']) {
+      const H = g._huntInfo(role);
+      if (!H || H.state !== 'hunted' || !H.lkp) continue;
+      const p = proj(H.lkp.x, H.lkp.y + 2.1, H.lkp.z);
+      if (!p.behind) { c.fillStyle = 'rgba(255,255,255,0.8)'; c.fillText(`LAST KNOWN \u00B7 ${role === g.role ? 'YOU' : g.partnerName}`, p.x, p.y); }
+    }
+    // Supply crates.
+    for (const cr of g.crates) { if (!cr.landed) continue; const p = proj(cr.x, cr.y + 1.2, cr.z); if (!p.behind) { c.fillStyle = '#40ffb0'; c.fillText('SUPPLY', p.x, p.y); } }
+    // Detection arcs: guards that are noticing you.
+    const me = P.pos;
+    for (const e of S.guards) {
+      if (e.state === 'dead' || e.aw < 0.08) continue;
+      const d = Math.hypot(e.x - me.x, e.z - me.z);
+      if (d > 70) continue;
+      if (!(e.state === 'alert' && e.target === g.role) && e.state !== 'sus' && e.aw < 0.15) continue;
+      const ang = Math.atan2(e.x - me.x, e.z - me.z) - P.yaw;
+      const rr = Math.min(W, H) * 0.18;
+      const a0 = -ang - Math.PI / 2 + Math.PI;
+      c.strokeStyle = e.state === 'alert' ? 'rgba(255,48,72,0.9)' : 'rgba(255,208,64,0.85)';
+      c.lineWidth = 4;
+      c.beginPath();
+      c.arc(W / 2, H / 2, rr, a0 - 0.22 * clamp(e.aw, 0.2, 1), a0 + 0.22 * clamp(e.aw, 0.2, 1));
+      c.stroke();
+    }
+    g._kitDraw(c, W, H, proj);
+    // Hit markers.
+    for (const h of this.hits) h.t += dt;
+    this.hits = this.hits.filter((h) => h.t < 0.3);
+    for (const h of this.hits) {
+      c.strokeStyle = h.head ? '#ff4060' : '#ffffff';
+      c.lineWidth = 2;
+      const s = 6 + h.t * 20, o = 4;
+      for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { c.beginPath(); c.moveTo(W / 2 + sx * o, H / 2 + sy * o); c.lineTo(W / 2 + sx * s, H / 2 + sy * s); c.stroke(); }
+    }
+    // Scope (Halo-style ring with a range readout) or a small crosshair.
+    g._neuroHud(c, proj, W, H);
+    g._syncHud(c, proj);
+    g._qhHud(c, proj, W, H);
+    g._nvgHud(c, W, H);
+    if (g.isr.active) this._isrHud(c, W, H);
+    else if (scoped) this._scope(c, W, H);
+    else if (g.quad && g.quad.active) this._quadHud(c, W, H);
+    else if (!g.downed && !g.kia) {
+      c.strokeStyle = g._reticleHot() ? 'rgba(255,50,60,0.95)' : 'rgba(220,240,255,0.75)';
+      c.lineWidth = 1.5;
+      const s = P.def.slot === 'pistol' && P.scopeT > 0.5 ? 3 : 6;
+      c.beginPath(); c.moveTo(W / 2 - s - 4, H / 2); c.lineTo(W / 2 - 4, H / 2); c.moveTo(W / 2 + 4, H / 2); c.lineTo(W / 2 + s + 4, H / 2); c.moveTo(W / 2, H / 2 + 4); c.lineTo(W / 2, H / 2 + s + 4); c.stroke();
+    }
+  }
+
+  _objPoint() {
+    const g = this.g, ob = g.obj;
+    switch (ob.step) {
+      case 0: return { x: -80, y: 2, z: 11, label: 'FENCE GAP' };
+      case 1: return { x: SPOTS.relay.x, y: 1.5, z: SPOTS.relay.z, label: 'RELAY' };
+      case 2: { const c = g.sentinel.guards.find((q) => q.chief && q.state === 'dead' && q.badge); return c ? { x: c.x, y: c.y + 2.6, z: c.z, label: 'MASTER BADGE' } : null; }
+      case 3: return null; // search: no marker until someone finds the beacon
+      case 4: case 5: { const T = g.fac.target; return { x: T.x, y: T.y + 1.2, z: T.z + 0.4, label: ob.step === 4 ? 'UPLOAD' : 'DRIVE' }; }
+      case 6: {
+        if (ob.drive === 'ground' && ob.driveAt) return { x: ob.driveAt.x, y: 1, z: ob.driveAt.z, label: 'DRIVE' };
+        if (g._seat()) return null;
+        const d = g._doorWorld(g._seatFor(g.role));
+        return { x: d.x, y: g.vanState.y + 1.6, z: d.z, label: g._seatFor(g.role) === 'driver' ? 'VAN \u00B7 DRIVER' : 'VAN \u00B7 PASSENGER' };
+      }
+    }
+    return null;
+  }
+
+  _scope(c, W, H) {
+    const g = this.g, P = g.player;
+    const R = Math.min(W, H) * 0.44;
+    c.fillStyle = '#000';
+    c.beginPath();
+    c.rect(0, 0, W, H);
+    c.arc(W / 2, H / 2, R, 0, Math.PI * 2, true);
+    c.fill('evenodd');
+    c.strokeStyle = g._reticleHot() ? 'rgba(255,60,70,0.95)' : 'rgba(200,225,255,0.85)';
+    c.lineWidth = 1.5;
+    c.beginPath(); c.arc(W / 2, H / 2, R, 0, Math.PI * 2); c.stroke();
+    c.beginPath(); c.arc(W / 2, H / 2, R * 0.12, 0, Math.PI * 2); c.stroke();
+    c.beginPath();
+    c.moveTo(W / 2 - R, H / 2); c.lineTo(W / 2 - R * 0.14, H / 2);
+    c.moveTo(W / 2 + R * 0.14, H / 2); c.lineTo(W / 2 + R, H / 2);
+    c.moveTo(W / 2, H / 2 + R * 0.14); c.lineTo(W / 2, H / 2 + R);
+    c.moveTo(W / 2, H / 2 - R); c.lineTo(W / 2, H / 2 - R * 0.14);
+    c.stroke();
+    c.fillStyle = 'rgba(210,232,255,0.9)';
+    c.fillRect(W / 2 - 1, H / 2 - 1, 2, 2);
+    // Range to whatever is under the reticle (refreshed a few times a second).
+    this._rT = (this._rT || 0) - 1 / 60;
+    if (this._rT <= 0) {
+      this._rT = 0.15;
+      const o = P.eyePos(new THREE.Vector3());
+      const h = g._hitscan(o, o.clone().addScaledVector(P.aimDir(new THREE.Vector3()), 900));
+      this._range = h ? o.distanceTo(h.point) : null;
+      this._onTarget = !!(h && h.enemy);
+    }
+    c.font = '600 14px JetBrains Mono, monospace';
+    c.textAlign = 'left';
+    c.fillText(`${P.zoom}×`, W / 2 + R * 0.72, H / 2 + R * 0.62);
+    c.fillText(this._range ? `${this._range.toFixed(1)} m` : '--- m', W / 2 + R * 0.18, H / 2 - R * 0.06);
+    c.textAlign = 'center';
+    if (this._onTarget) { c.strokeStyle = 'rgba(255,60,80,0.95)'; c.beginPath(); c.arc(W / 2, H / 2, R * 0.12, 0, Math.PI * 2); c.stroke(); }
+    c.fillText('NIGHT VISION', W / 2, H / 2 + R * 0.86);
+  }
+
+  _isrHud(c, W, H) {
+    const I = this.g.isr;
+    // Ping sweep: an expanding ring on the ground, then a held circle while it fades.
+    const F = I.sweepFx;
+    if (F && F.t < 6) {
+      const k = Math.min(1, F.t / 1.2), a = F.t < 1.2 ? 0.9 : 0.9 * (1 - (F.t - 1.2) / 4.8);
+      c.strokeStyle = `rgba(255,70,90,${a.toFixed(3)})`;
+      c.lineWidth = 2;
+      for (const rr of [F.r * k, F.r * k * 0.66, F.r * k * 0.33]) {
+        c.beginPath();
+        for (let i = 0; i <= 48; i++) {
+          const t = (i / 48) * Math.PI * 2, x = F.x + Math.cos(t) * rr, z = F.z + Math.sin(t) * rr;
+          const p = this._proj(x, this.g.fac.groundAt(x, z, 60, 0.5) + 0.3, z);
+          if (i === 0) c.moveTo(p.x, p.y); else c.lineTo(p.x, p.y);
+        }
+        c.stroke();
+      }
+    }
+    c.strokeStyle = 'rgba(235,245,255,0.85)';
+    c.fillStyle = 'rgba(235,245,255,0.9)';
+    c.lineWidth = 1.5;
+    const cx = W / 2, cy = H / 2;
+    c.beginPath();
+    c.moveTo(cx - 60, cy); c.lineTo(cx - 12, cy); c.moveTo(cx + 12, cy); c.lineTo(cx + 60, cy);
+    c.moveTo(cx, cy - 60); c.lineTo(cx, cy - 12); c.moveTo(cx, cy + 12); c.lineTo(cx, cy + 60);
+    c.stroke();
+    c.strokeRect(cx - 4, cy - 4, 8, 8);
+    const m = 36;
+    for (const [x, y, sx, sy] of [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]]) { c.beginPath(); c.moveTo(x, y + sy * 40); c.lineTo(x, y); c.lineTo(x + sx * 40, y); c.stroke(); }
+    c.font = '600 13px JetBrains Mono, monospace';
+    c.textAlign = 'left';
+    c.fillText(`ISR // PREDATOR \u00B7 ${I.mode === 'IR' ? 'IR WHT-HOT' : 'EO'} \u00B7 FOV ${I.fov}\u00B0`, m + 10, m + 20);
+    c.fillText(`ALT ${Math.round(I.pos.y)} m \u00B7 SLANT ${Math.round(I.slant())} m \u00B7 SPI ${Math.round(I.spi.x)} ${Math.round(-I.spi.z)}`, m + 10, m + 38);
+    c.textAlign = 'right';
+    c.fillText(`MOUSE/DRAG SLEW \u00B7 WHEEL ZOOM \u00B7 N IR/EO \u00B7 F TAG \u00B7 P SWEEP${I.sweepCd > 0 ? ' ' + Math.ceil(I.sweepCd) + 's' : ''} \u00B7 V PING \u00B7 I EXIT`, W - m - 10, H - m - 12);
+    c.textAlign = 'center';
+  }
+
+  _quadHud(c, W, H) {
+    const q = this.g.quad;
+    c.strokeStyle = 'rgba(230,240,255,0.8)';
+    c.lineWidth = 1.5;
+    const m = 40;
+    for (const [x, y, sx, sy] of [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]]) { c.beginPath(); c.moveTo(x, y + sy * 30); c.lineTo(x, y); c.lineTo(x + sx * 30, y); c.stroke(); }
+    c.beginPath(); c.arc(W / 2, H / 2, 16, 0, Math.PI * 2); c.stroke();
+    c.fillStyle = 'rgba(230,240,255,0.9)';
+    c.font = '600 13px JetBrains Mono, monospace';
+    c.fillText(`RECON QUAD · BAT ${Math.ceil(q.bat)} s · HULL ${Math.max(0, q.hp)}`, W / 2, 78);
+    c.fillText(`ALT ${(q.y - terrainHeight(q.x, q.z)).toFixed(1)} m · BAT ${Math.round((q.bat / 300) * 100)}% · Q PARK · HOLD Q RECALL`, W / 2, 96);
+  }
+}
+
+function esc(s) {
+  return String(s).replace(/[<>&"]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
+}
+void PLAYER;
+
+installKit(CellGame);
+installKit2(CellGame);
+installIce(CellGame);
+installNeuro(CellGame);
+installNVG(CellGame);
+installSpatial(CellGame);
+installPhone(CellGame);
