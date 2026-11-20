@@ -8,6 +8,7 @@ import { stepProjectile } from './ballistics.js';
 import { worldCapsules } from './avatar.js';
 import { segSegClosest, clamp } from './util.js';
 import { crestAt, DAM_X } from './terrain.js';
+import { spawnPoint, frontZ, rangeBand, forwardStep } from './range.js';
 import { randomLoadout, TOOLS, HunterFlight, hunterRange } from './tools.js';
 import { WEAPONS, SUPPRESSOR_FACTOR } from './weapons.js';
 import { RULES } from './rules.js';
@@ -152,7 +153,7 @@ export class BotPeer {
     this.phase = m.phase;
     if (m.fresh) {
       this.side = m.sides[1];
-      const sp = this.g.world.spawns[String(this.side)][m.spawns[1]];
+      const sp = spawnPoint(this.g.world, this.side, m.spawns[1]);
       this._spawnAt(sp);
     }
     if (m.phase === 'end' || m.phase === 'match') {
@@ -276,15 +277,16 @@ export class BotPeer {
 
   _pickNest() {
     const forward = Math.random() < 0.3;
+    const [x0, x1] = rangeBand(this.side), step = forwardStep();
     for (let tries = 0; tries < 12; tries++) {
-      const x = clamp(this.pos.x + (Math.random() - 0.5) * 300, -620, 620);
-      const z = this.side * (crestAt(x) - (forward ? 40 + Math.random() * 40 : 6 + Math.random() * 8));
+      const x = clamp(this.pos.x + (Math.random() - 0.5) * 300, x0, x1);
+      const z = this.side * (frontZ(x) - (forward ? step * (0.7 + Math.random() * 0.7) : Math.random() * 8));
       const n = this.g.world.terrain.normalAt(x, z);
       if (n.y < 0.8) continue;
       this.nest = new THREE.Vector3(x, this.g.world.heightAt(x, z), z);
       return;
     }
-    const x = this.pos.x, z = this.side * (crestAt(x) - 8);
+    const x = clamp(this.pos.x, x0, x1), z = this.side * frontZ(x);
     this.nest = new THREE.Vector3(x, this.g.world.heightAt(x, z), z);
   }
 

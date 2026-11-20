@@ -15,7 +15,7 @@ export const BALLISTICS = {
   drag: 0.00042, // quadratic drag coefficient (1/m)
   gravity: 9.81,
   windScale: 1.15, // slightly exaggerated for readability
-  maxLife: 4.5, // seconds
+  maxLife: 6, // seconds (long enough for the extreme range)
   substep: 1 / 240,
 };
 
@@ -53,7 +53,7 @@ export const WEAPON = {
   zooms: [4, 8, 12],
   baseFov: 62, // vertical degrees when unscoped
   zeroMin: 100,
-  zeroMax: 1000,
+  zeroMax: 1500,
   zeroStep: 100,
   rangeCooldown: 2.5,
 };

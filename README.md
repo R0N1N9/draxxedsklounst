@@ -39,11 +39,12 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 - You get one life per round. First to 4 rounds wins.
 - **Predator UAV**: a drone circles high over the valley. Every 60 s of live play it pings both players in red on each other's HUD. For 8 s afterwards you can press **U** to tune into its live thermal feed of the enemy. A UAV jammer blocks the ping and the feed.
 - **Sniping style** (main menu, host's choice applies to both players):
-  - **Simulation** (like Sniper Elite / ARMA): heavier drag and strong wind.
-  - **Battlefield** (the default): real drop and travel time, moderate wind.
-  - **Call of Duty**: fast bullets, light drop, no wind, slightly bigger hitboxes.
-  - **Halo**: instant hit, no drop, wind or sway, 5×/10× zoom.
+  - **Simulation** (like Sniper Elite / ARMA): heavier drag and strong wind. Plays at Extreme range.
+  - **Battlefield** (the default): real drop and travel time, moderate wind. Plays at Long range.
+  - **Call of Duty**: fast bullets, light drop, no wind, slightly bigger hitboxes. Plays at Medium range.
+  - **Halo**: instant hit, no drop, wind or sway, 5×/10×/20× zoom. Plays at Close range.
   - **Custom**: sliders for drop, bullet speed (slow to instant), wind, drag, sway and hitbox size.
+  - **Distance** (mix and match with any physics): Auto (the style's own), Close ~250 m (valley floor between the town and the meadow), Medium ~500 m (forward slopes, in the trees), Long ~800 m (ridge to ridge) or Extreme ~1150 m (opposite ridges at opposite ends of the valley). It sets where both sides spawn and where the AI sets up; the valley itself doesn't change.
   - Option: the rangefinder (F) auto-sets your zero to the measured distance.
 - **Bolt cycling** (standard Mk22 bolt): after a scoped shot, lifting your finger off fire drops you out of the scope so the bolt is worked, then you go straight back in if you're still holding (or have toggled) scope. Keep fire held to stay on target and watch the shot; turn this off in Settings to unscope by hand.
 - **Bipod** (Battlefield-style): go prone and hold still for half a second and it sets itself (turn that off in Settings to set it only by hand), or press **X** (BIPOD on touch). Your support hand reaches forward and flicks the legs down, then the rifle settles. You can't fire while your hand is off the rifle. Once set, the scope is dead still and recoil is reduced. Moving, standing, switching or pressing X again folds the legs; folding with X keeps it up until you move or get up.

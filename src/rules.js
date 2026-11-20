@@ -12,25 +12,25 @@ export const PRESETS = {
     name: 'Simulation',
     feel: 'Sniper Elite / ARMA',
     desc: 'Heavier drag and strong wind. Every long shot needs a range and a wind call.',
-    gravity: 1, drag: 1.35, wind: 1.6, speed: 1, sway: 1.2, hitbox: 1, zooms: null,
+    gravity: 1, drag: 1.35, wind: 1.6, speed: 1, sway: 1.2, hitbox: 1, zooms: null, range: 'extreme',
   },
   bf: {
     name: 'Battlefield',
     feel: 'Battlefield',
     desc: 'The default: real bullet drop and travel time, moderate wind.',
-    gravity: 1, drag: 1, wind: 1, speed: 1, sway: 1, hitbox: 1, zooms: null,
+    gravity: 1, drag: 1, wind: 1, speed: 1, sway: 1, hitbox: 1, zooms: null, range: 'long',
   },
   cod: {
     name: 'Call of Duty',
     feel: 'Call of Duty',
     desc: 'Fast bullets with light drop and no wind. Lead a little, hold over a little.',
-    gravity: 0.35, drag: 0.5, wind: 0, speed: 1.6, sway: 1, hitbox: 1.15, zooms: null,
+    gravity: 0.35, drag: 0.5, wind: 0, speed: 1.6, sway: 1, hitbox: 1.15, zooms: null, range: 'medium',
   },
   halo: {
     name: 'Halo',
     feel: 'Halo',
     desc: 'Instant hit, dead straight, no wind and no scope sway. 5× / 10× / 20× zoom. Pure reflex.',
-    gravity: 0, drag: 0, wind: 0, speed: 40, sway: 0, hitbox: 1.25, zooms: [5, 10, 20],
+    gravity: 0, drag: 0, wind: 0, speed: 40, sway: 0, hitbox: 1.25, zooms: [5, 10, 20], range: 'close',
   },
 };
 
@@ -43,6 +43,9 @@ export function normalizeRules(r) {
   const p = PRESETS[r && r.preset];
   const base = p ? { preset: r.preset, ...p } : { ...DEFAULT_RULES, preset: 'custom' };
   const out = { ...base, autoZero: r && r.autoZero !== undefined ? !!r.autoZero : true };
+  // Distance is independent of the physics: 'auto' follows the style, or pick one to mix and match.
+  out.range = r && ['close', 'medium', 'long', 'extreme'].includes(r.range) ? r.range : 'auto';
+  out.styleRange = (p && p.range) || 'long';
   if (r && r.preset === 'custom') {
     const num = (v, d, lo, hi) => (typeof v === 'number' && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
     out.preset = 'custom';
@@ -69,5 +72,7 @@ export function applyRules(r) {
 }
 
 export function rulesLabel(r = RULES) {
-  return r.preset === 'custom' ? 'CUSTOM' : (PRESETS[r.preset] ? PRESETS[r.preset].name.toUpperCase() : 'CUSTOM');
+  const style = r.preset === 'custom' ? 'CUSTOM' : (PRESETS[r.preset] ? PRESETS[r.preset].name.toUpperCase() : 'CUSTOM');
+  const rg = ['close', 'medium', 'long', 'extreme'].includes(r.range) ? r.range : r.styleRange || (PRESETS[r.preset] && PRESETS[r.preset].range) || 'long';
+  return `${style} · ${rg.toUpperCase()}`;
 }

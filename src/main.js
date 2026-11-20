@@ -5,6 +5,7 @@ import { PALETTES } from './atmosphere.js';
 import { drawMap } from './briefmap.js';
 import { renderLoadout } from './loadout.js';
 import { PRESETS, applyRules, normalizeRules, rulesLabel } from './rules.js';
+import { RANGES } from './range.js';
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -121,12 +122,22 @@ function renderStyle() {
   document.querySelectorAll('[data-sr]').forEach((el) => { el.value = String(r[el.dataset.sr]); });
   document.querySelectorAll('[data-sv]').forEach((el) => { el.textContent = `${Math.round(r[el.dataset.sv] * 100)}%`; });
   $('style-autozero').checked = !!r.autoZero;
+  const def = (PRESETS[r.preset] && PRESETS[r.preset].range) || 'long';
+  const cur = RANGES[r.range] ? r.range : def;
+  if ($('brief-range')) $('brief-range').textContent = RANGES[cur].dist.toUpperCase();
+  if ($('brief-range-l')) $('brief-range-l').textContent = `${RANGES[cur].name.toLowerCase()} range`;
+  $('style-range').innerHTML = [['auto', `Auto · ${RANGES[def].name}`, `What ${PRESETS[r.preset] ? PRESETS[r.preset].name : 'this style'} usually plays at (${RANGES[def].dist}).`], ...Object.entries(RANGES).map(([k, g]) => [k, `${g.name} ${g.dist}`, g.desc])]
+    .map(([k, n, d]) => `<button class="lo-opt${(r.range || 'auto') === k ? ' on' : ''}" data-range="${k}"><b>${n}</b><span>${d}</span></button>`).join('');
 }
 $('style-presets').onclick = (e) => {
   const b = e.target.closest('[data-preset]');
   if (!b) return;
   const k = b.dataset.preset;
-  saveRules(k === 'custom' ? { ...settings.rules, preset: 'custom', zooms: null } : { preset: k, autoZero: settings.rules.autoZero });
+  saveRules(k === 'custom' ? { ...settings.rules, preset: 'custom', zooms: null } : { preset: k, autoZero: settings.rules.autoZero, range: settings.rules.range });
+};
+$('style-range').onclick = (e) => {
+  const b = e.target.closest('[data-range]');
+  if (b) saveRules({ ...settings.rules, range: b.dataset.range });
 };
 document.querySelectorAll('[data-sr]').forEach((el) => el.addEventListener('input', () => {
   saveRules({ ...settings.rules, preset: 'custom', [el.dataset.sr]: +el.value });

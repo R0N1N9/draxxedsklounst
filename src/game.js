@@ -18,6 +18,7 @@ import { Audio } from './audio.js';
 import { Replay, sampleHist, pushHist } from './killcam.js';
 import { segSegClosest, clamp, mulberry32 } from './util.js';
 import { crestAt } from './terrain.js';
+import { spawnPoint } from './range.js';
 import { BotPeer } from './bot.js';
 import { Sandbox } from './sandbox.js';
 import { ToolSystem, setThermal } from './tools.js';
@@ -482,7 +483,7 @@ export class Game {
 
   _resetForRound() {
     const side = this.sides[this.me];
-    const sp = this.world.spawns[String(side)][this.spawnIdx[this.me]];
+    const sp = spawnPoint(this.world, side, this.spawnIdx[this.me]);
     this.player.reset(sp, side < 0 ? Math.PI : 0);
     this.player.zero = 400;
     this.input.resetScope();
