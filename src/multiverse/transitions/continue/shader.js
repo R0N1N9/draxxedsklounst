@@ -12,10 +12,10 @@ import { GLSL_NOISE } from '../../kit.js';
 export const FRAG = `
   precision highp float;
   varying vec2 vUv;
-  uniform sampler2D tFrom, tScr;
+  uniform sampler2D tFrom, tScr, tBake;
   uniform vec2 uRes, uShake;
   uniform float uDpr, uTime;
-  uniform float uCell, uDesat, uDim, uTintAmt, uLevels, uWorldOn;
+  uniform float uCell, uBaked, uDesat, uDim, uTintAmt, uLevels, uWorldOn;
   uniform vec3 uLo, uHi;
   uniform float uCrt, uCurve, uScan, uBloom, uMask, uKick, uGlitch, uFlash;
   uniform vec3 uFlashCol, uRim;
@@ -24,7 +24,9 @@ export const FRAG = `
 
   vec3 world(vec2 uv) {
     vec3 c;
-    if (uCell > 1.01) {
+    if (uBaked > 0.5) {
+      c = texture2D(tBake, uv).rgb; // one texel per fat pixel, read nearest
+    } else if (uCell > 1.01) {
       vec2 cell = floor(uv * uRes / uCell);
       vec2 c0 = (cell + 0.5) * uCell / uRes;
       vec2 o = vec2(0.25 * uCell) / uRes;
@@ -42,11 +44,18 @@ export const FRAG = `
     return g * uDim;
   }
 
-  // premultiplied screen layer over the world; returns rgb and coverage in .a
-  vec4 compose(vec2 uv) {
+  // premultiplied screen layer over the world; rgb only (the output is opaque here).
+  // dk splits the screen layer's red and blue apart for the chromatic kick; the world is read once.
+  vec3 compose(vec2 uv, float dk) {
     vec4 s = texture2D(tScr, uv);
     vec3 w = uWorldOn > 0.5 ? world(uv) : vec3(0.0);
-    return vec4(s.rgb + w * (1.0 - s.a), 1.0);
+    vec3 col = s.rgb + w * (1.0 - s.a);
+    if (dk > 0.0) {
+      vec4 sr = texture2D(tScr, uv + vec2(dk, 0.0)), sb = texture2D(tScr, uv - vec2(dk, 0.0));
+      col.r = sr.r + w.r * (1.0 - sr.a);
+      col.b = sb.b + w.b * (1.0 - sb.a);
+    }
+    return col;
   }
 
   // Wipe: returns x = hole (1 = see through), y = rim glow, z = shade (slats turning edge-on)
@@ -94,15 +103,9 @@ export const FRAG = `
       float r = hash21(vec2(row, fr));
       uv.x += (r - 0.5) * 0.16 * uGlitch * step(0.82, r);
     }
-    vec3 col;
-    if (uKick > 0.02) {
-      vec2 dk = vec2(uKick / uRes.x, 0.0);
-      col = vec3(compose(uv + dk).r, compose(uv).g, compose(uv - dk).b);
-    } else {
-      col = compose(uv).rgb;
-    }
+    vec3 col = compose(uv, uKick > 0.02 ? uKick / uRes.x : 0.0);
     if (uBloom > 0.001) {
-      vec3 b = textureLod(tScr, uv, 3.0).rgb * 0.4 + textureLod(tScr, uv, 4.5).rgb * 0.4 + textureLod(tScr, uv, 6.0).rgb * 0.5;
+      vec3 b = textureLod(tScr, uv, 3.0).rgb * 0.6 + textureLod(tScr, uv, 5.0).rgb * 0.7;
       col += b * uBloom;
     }
     // The glass.

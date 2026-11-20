@@ -43,7 +43,7 @@ export const TRANSITIONS = [
   { id: 'bullet-hole', wip: true, load: () => import('./transitions/bullet-hole.js') },
   { id: 'evolution', wip: true, load: () => import('./transitions/evolution.js') },
   { id: 'elevator', wip: true, load: () => import('./transitions/elevator.js') },
-  { id: 'continue', wip: true, load: () => import('./transitions/continue.js') },
+  { id: 'continue', load: () => import('./transitions/continue.js') },
   { id: 'example', dev: true, load: () => import('./transitions/example.js') },
 ];
 

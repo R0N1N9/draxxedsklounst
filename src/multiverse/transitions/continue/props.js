@@ -56,8 +56,9 @@ export function drawCoin(g, x, y, r, phi, tilt, m, shine = 0, a = 1) {
   g.translate(cs >= 0 ? off : -off, 0);
   const gr = g.createRadialGradient(-rx * 0.35, -r * 0.4, r * 0.1, 0, 0, r * 1.05);
   gr.addColorStop(0, m.rim);
-  gr.addColorStop(0.18, m.face);
-  gr.addColorStop(1, m.face2);
+  gr.addColorStop(0.14, m.face);
+  gr.addColorStop(0.6, mixHex(m.face, m.face2, 0.55));
+  gr.addColorStop(1, shade(m.face2, -0.25));
   g.fillStyle = gr;
   g.beginPath();
   g.ellipse(0, 0, rx, r, 0, 0, TAU);
@@ -73,6 +74,21 @@ export function drawCoin(g, x, y, r, phi, tilt, m, shine = 0, a = 1) {
   if (rx > r * 0.12) {
     g.save();
     g.scale(Math.abs(cs), 1);
+    if (r > 16) {
+      // Close-up detail: a ring of beads on the rim and a crescent of light on the bevel.
+      g.fillStyle = rgba(m.edge, 0.8);
+      g.beginPath();
+      for (let i = 0; i < 28; i++) {
+        const a = (i / 28) * TAU;
+        g.rect(Math.cos(a) * r * 0.87 - r * 0.028, Math.sin(a) * r * 0.87 - r * 0.028, r * 0.056, r * 0.056);
+      }
+      g.fill();
+      g.strokeStyle = rgba(m.glint, 0.55);
+      g.lineWidth = Math.max(1, r * 0.06);
+      g.beginPath();
+      g.arc(0, 0, r * 0.93, Math.PI * 1.08, Math.PI * 1.62);
+      g.stroke();
+    }
     if (cs >= 0) {
       starPath(g, r * 0.5);
       g.fillStyle = m.edge;
@@ -94,7 +110,7 @@ export function drawCoin(g, x, y, r, phi, tilt, m, shine = 0, a = 1) {
     g.ellipse(0, 0, rx, r, 0, 0, TAU);
     g.clip();
     const p = -r * 1.6 + shine * r * 3.2;
-    g.fillStyle = rgba(m.glint, 0.85);
+    g.fillStyle = rgba(m.glint, 0.6);
     g.beginPath();
     g.moveTo(p - r * 0.28, -r);
     g.lineTo(p + r * 0.1, -r);
@@ -294,5 +310,40 @@ export function drawShock(g, x, y, r, a, col, width) {
   g.beginPath();
   g.arc(x, y, r, 0, TAU);
   g.stroke();
+  g.restore();
+}
+
+/** A cone of light rising from the slit: x at the slit, `h` tall, `w` wide at the top. Three nested cones fake a soft edge. */
+export function drawBeam(g, x, y, h, w, col, a) {
+  if (a <= 0.004) return;
+  for (let i = 0; i < 3; i++) {
+    const k = [1, 0.62, 0.3][i], al = a * [0.4, 0.4, 0.45][i];
+    const gr = g.createLinearGradient(0, y, 0, y - h);
+    gr.addColorStop(0, rgba(col, al));
+    gr.addColorStop(0.55, rgba(col, al * 0.3));
+    gr.addColorStop(1, rgba(col, 0));
+    g.fillStyle = gr;
+    g.beginPath();
+    g.moveTo(x - w * 0.05 * k, y);
+    g.lineTo(x - w * 0.5 * k, y - h);
+    g.lineTo(x + w * 0.5 * k, y - h);
+    g.lineTo(x + w * 0.05 * k, y);
+    g.closePath();
+    g.fill();
+  }
+}
+
+/** An anamorphic streak through (x, y): a thin horizontal bar of light, additive. */
+export function drawStreak(g, x, y, len, a, col) {
+  if (a <= 0.004) return;
+  g.save();
+  g.globalCompositeOperation = 'lighter';
+  const gr = g.createLinearGradient(x - len, 0, x + len, 0);
+  gr.addColorStop(0, rgba(col, 0));
+  gr.addColorStop(0.5, rgba(col, a));
+  gr.addColorStop(1, rgba(col, 0));
+  g.fillStyle = gr;
+  const h = Math.max(1.5, len * 0.022);
+  g.fillRect(x - len, y - h / 2, len * 2, h);
   g.restore();
 }

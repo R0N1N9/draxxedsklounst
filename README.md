@@ -87,6 +87,22 @@ A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tab
 | Pause menu | Esc | II |
 | Sandbox tools | B | TOOLS |
 
+## "Do you want to develop an app?"
+
+A second mode, chosen by the host under **Mode** on the main menu (a guest just joins as usual). It starts as the classic duel.
+
+<details>
+<summary>Spoilers: what the mode actually does</summary>
+
+The first time one sniper shoots the other, the game is "hijacked": a cheerful dialog asks *Do you want to develop an app?*, answers itself, and builds a different world around both players. From then on every point lands the match somewhere new — a different perspective, setting, set of controls and loadout each time — through a cinematic transition, until someone reaches the points target (first to 7 by default; **Points to win** appears next to the mode).
+
+- Worlds so far: the valley, a neon top-down arena, a WW2 town square, a pixel-art canyon, an ASCII terminal and a manga street duel. Each one shows its controls on arrival.
+- Nothing differs from the classic game before the first kill, so it works as a surprise.
+- Open the page with `?lab` to get a **Lab** button: jump into any world against the AI, or preview any transition.
+- The code lives in `src/multiverse/` (`contract.js` documents how worlds and transitions plug in; `tools/mv-test.mjs` plays them headlessly; `tools/multiverse-briefs/` holds the design briefs).
+
+</details>
+
 ## Single-file version
 
 `dist/draxxed-sklounst.html` is the whole game in one file. Double-click it to play, or send it to a friend; it needs an internet connection only to find the other player. Since a file has no web address, the host shares the 5-letter code rather than a link. Rebuild it after code changes with `npm install && npm run build:single`.

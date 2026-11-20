@@ -13,23 +13,31 @@
 //   flashes (that flash is the swap), and the new world arrives through an arcade wipe.
 //   If the round was a draw: DRAW GAME, BOTH PLAYERS CONTINUE, two coins, two slots.
 //
-// BEAT SHEET (11.0 s, swap at 8.25 s)
+// BEAT SHEET (12.0 s, swap at 9.0 s)
 //   0.00         the old world, untouched (the cut in is invisible)
 //   0.00 → 0.74  ACT 1 · the kill: impact flash, the picture drains and crunches in seven rungs
 //                (pixels ×0 … ×8), the tube curves in, tearing and a chromatic kick
 //   0.10 → 1.60  the target ring locks on the impact point: "<loser> DOWN" and how
-//   0.52 → 1.60  GAME OVER drops in letter by letter and lands (each landing shakes the cabinet)
+//   0.52 → 1.60  GAME OVER drops in letter by letter over the crunched world and lands
+//   0.90 → 2.00  the cabinet's backdrop closes over the old world
 //   1.62 → 2.20  the headline climbs to the top; the panels slide in; CONTINUE? flickers on
-//   2.10 → 4.88  the count, 9 … 2, quickening like a pulse; tally rows rattle up, the table fills
-//   4.88 → 6.8   "1" — slow motion. A coin is tossed (4.42) and the gag plays out; the destination's
-//                starfield / floor bleeds in behind the dressing
-//   6.4 → 7.3    the coin drops in: bing-ding, CREDIT 1, PLAYER <loser> CONTINUES, confetti
-//   7.30 → 8.00  ACT 2 · the stage card wipes in (bands or columns, edge-lit in the new accent)
-//   7.60 → 8.25  READY? flashes and the screen whites out;  8.25  THE SWAP, held on white
-//   8.4 → 8.58   the flash decays on the card, which now says GO!
-//   8.58 → 10.2  ACT 3 · the arcade wipe (pixel dissolve | venetian blinds | diamonds) opens the
+//   1.95 → 4.37  the count, 9 … 2, quickening like a pulse; tally rows rattle up, the table fills
+//   3.87 → 6.3   "1" and the coin. It is tossed at 3.87; from 4.25 the camera DIVES at the slot (the
+//                close-up, up to 2.35x) and the gag plays out in it: rim hop | glove fumble | freeze;
+//                a beam of light out of the slit, motes, a contact shadow, a lens streak, a vignette
+//   5.9 → 6.7    the coin drops in (the camera pulls back): bing-ding, CREDIT 1, PLAYER <loser> CONTINUES
+//   7.00 → 7.40  the cabinet powers down: picture to a line, line to a dot
+//   7.40 → 7.95  ACT 2 · the stage card's bands open on black (the card's dressing only)
+//   7.86 → 8.7   STAGE n slams in, the name slides, perspective and tagline fade up
+//   8.20 → 9.00  READY? flashes and the screen whites out;  9.00  THE SWAP, held on white
+//   9.10 → 9.30  the flash decays on the card, which now says GO!
+//   9.33 → 10.95 ACT 3 · the arcade wipe (pixel dissolve | venetian blinds | diamonds) opens the
 //                live new world, rim-lit in its accent
-//   10.2 → 10.9  the phosphor glass fades off the picture; the overlay ends fully clear
+//   11.0 → 11.9  the phosphor glass fades off the picture; the overlay ends fully clear
+//
+// COST: the screen layer is one canvas of ~1.5 M texels re-uploaded per frame; hero lettering is
+// struck once per (style, glyph, size) and blitted; the crunched world is baked once into a tiny
+// texture so the shader reads it with one tap; the chromatic kick only splits the screen layer.
 //
 // AXES OF VARIATION (all drawn once from ctx.rng, see continue/script.js)
 //   1. the cabinet's era: 80s vector (neon strokes, phosphor colour) | 90s chrome (extruded
@@ -56,8 +64,8 @@
 //   a draw              DRAW GAME, no loser: both snipers' names, two slots, two coins
 import { seg, ease, clamp, lerp, hexToRgb, mixHex, shade, rgba, makeCanvas, fullscreenPass, TAU } from '../kit.js';
 import { heroLayout, drawBits } from './continue/font.js';
-import { makeLook, drawHero } from './continue/looks.js';
-import { drawCoin, drawHand, drawSlot, drawRing, drawBurst, drawShock } from './continue/props.js';
+import { makeLook, drawHero, setHeroRes, clearHeroSprites } from './continue/looks.js';
+import { drawCoin, drawHand, drawSlot, drawRing, drawBurst, drawShock, drawBeam, drawStreak } from './continue/props.js';
 import { buildGag } from './continue/gags.js';
 import { drawSpace, drawCard, cardReveal } from './continue/stagecard.js';
 import { makePlan, T, DURATION, SWAP_AT, SWAP } from './continue/script.js';
@@ -95,31 +103,41 @@ export default {
     texScr.minFilter = THREE.LinearMipmapLinearFilter;
     texScr.magFilter = THREE.LinearFilter;
     texScr.wrapS = texScr.wrapT = THREE.ClampToEdgeWrapping;
+    // Once the old world has finished crunching it is one fixed picture of fat pixels: it is struck
+    // once into a tiny canvas (one texel per fat pixel) and the shader then reads it with a single tap.
+    const bake = makeCanvas(2, 2);
+    const texBake = new THREE.CanvasTexture(bake.canvas);
+    texBake.colorSpace = THREE.NoColorSpace;
+    texBake.generateMipmaps = false;
+    texBake.minFilter = texBake.magFilter = THREE.NearestFilter;
+    texBake.wrapS = texBake.wrapT = THREE.ClampToEdgeWrapping;
     const look = makeLook(g, plan.era, plan);
     const fx = look.fx;
     const V2 = () => new THREE.Vector2(), V3 = (c) => new THREE.Vector3(c[0], c[1], c[2]);
-    const accent3 = rgb01(pal.accent), white3 = [1, 1, 1];
+    const accent3 = rgb01(pal.accent);
     const flashCol = V3(rgb01(mixHex(pal.accent, '#ffffff', 0.85)));
     const pass = fullscreenPass(THREE, {
       fragmentShader: FRAG,
       uniforms: {
-        tFrom: { value: texFrom }, tScr: { value: texScr },
+        tFrom: { value: texFrom }, tScr: { value: texScr }, tBake: { value: texBake },
         uRes: { value: V2() }, uShake: { value: V2() }, uDpr: { value: 1 }, uTime: { value: 0 },
-        uCell: { value: 0 }, uDesat: { value: 0 }, uDim: { value: 1 }, uTintAmt: { value: 0 }, uLevels: { value: fx.levels }, uWorldOn: { value: 1 },
+        uCell: { value: 0 }, uBaked: { value: 0 }, uDesat: { value: 0 }, uDim: { value: 1 }, uTintAmt: { value: 0 }, uLevels: { value: fx.levels }, uWorldOn: { value: 1 },
         uLo: { value: V3(rgb01(fx.lo)) }, uHi: { value: V3(rgb01(fx.hi)) },
         uCrt: { value: 0 }, uCurve: { value: fx.curve }, uScan: { value: fx.scan }, uBloom: { value: 0 }, uMask: { value: fx.mask }, uKick: { value: 0 }, uGlitch: { value: 0 }, uFlash: { value: 0 },
         uFlashCol: { value: flashCol }, uRim: { value: V3(accent3) },
         uWipe: { value: 0 }, uWipeType: { value: 0 }, uWipeSeed: { value: plan.wipeSeed }, uWipeDir: { value: 0 }, uWipeGrid: { value: plan.wipeGrid }, uTail: { value: 1 },
       },
     });
-    void white3;
 
     // --- the screen layer -----------------------------------------------------------------------------
-    const F = { W: 1, H: 1, U: 1, ox: 0, oy: 0, sc: 1 };
+    // Design units: 100 wide, 56.25 tall. U is CSS pixels per unit (sizes, widths); on a taller screen
+    // (4:3 iPads, 16:10 laptops) the vertical positions stretch by K instead of leaving bars (UY = U * K).
+    const F = { W: 1, H: 1, U: 1, K: 1, UY: 1, ox: 0, oy: 0, sc: 1, scY: 1 };
     function layout() {
       const w = Math.max(2, ctx.width), h = Math.max(2, ctx.height);
-      // Soft is in character, and the texture is re-uploaded every frame (the costly part on an iPad).
-      const s = Math.min(ctx.dpr, 1600 / w, 1100 / h);
+      // Soft is in character, and the texture is re-uploaded every frame (the costly part on an iPad):
+      // a budget of about a million and a half texels, however large the screen.
+      const s = Math.min(ctx.dpr, Math.sqrt(1.5e6 / (w * h)));
       const SW = Math.max(2, Math.round(w * s)), SH = Math.max(2, Math.round(h * s));
       if (SW !== scr.canvas.width || SH !== scr.canvas.height) {
         scr.canvas.width = SW;
@@ -128,10 +146,29 @@ export default {
       }
       F.W = w; F.H = h; F.sc = SW / w; F.scY = SH / h;
       F.U = Math.min(w / 100, h / 56.25);
+      F.K = clamp(h / F.U / 56.25, 1, 1.4);
+      F.UY = F.U * F.K;
       F.ox = (w - 100 * F.U) / 2;
-      F.oy = (h - 56.25 * F.U) / 2;
+      F.oy = (h - 56.25 * F.UY) / 2;
+      setHeroRes(F.sc);
     }
-    const X = (u) => F.ox + u * F.U, Y = (v) => F.oy + v * F.U;
+    const X = (u) => F.ox + u * F.U, Y = (v) => F.oy + v * F.UY;
+
+    // The crunched world, struck once (see texBake). Same size rule as the shader's last rung.
+    let bakedW = 0, bakedH = 0;
+    function ensureBake() {
+      const cell = Math.max(1.5, F.H / 110);
+      const gw = Math.max(2, Math.round(F.W / cell)), gh = Math.max(2, Math.round(F.H / cell));
+      if (gw === bakedW && gh === bakedH) return;
+      bakedW = gw; bakedH = gh;
+      bake.canvas.width = gw;
+      bake.canvas.height = gh;
+      texBake.dispose();
+      bake.g.imageSmoothingEnabled = true;
+      bake.g.imageSmoothingQuality = 'high';
+      bake.g.drawImage(ctx.fromImage, 0, 0, gw, gh);
+      texBake.needsUpdate = true;
+    }
 
     // Dot-matrix text at unit coordinates; cu is the dot size in units. Dots are whole device pixels.
     function bitsPx(str, x, y, cu, color, align = 'l', shadow = true, maxWpx = 0) {
@@ -142,6 +179,7 @@ export default {
     }
     const bits = (str, xu, yu, cu, color, align = 'l', shadow = true, maxWu = 0) => bitsPx(str, X(xu), Y(yu), cu, color, align, shadow, maxWu * F.U);
     const cellFor = (cu) => Math.max(2, Math.floor(cu * F.U * F.sc + 0.25));
+    const dotsU = (cell) => cell / (F.U * F.sc); // a device-pixel dot size back in units
 
     // --- the coin gags -----------------------------------------------------------------------------------
     const gags = [];
@@ -171,6 +209,7 @@ export default {
 
     // --- time helpers ------------------------------------------------------------------------------------------
     const phaseOf = (t) => 0.45 * t + 0.55 * Math.pow(Math.max(0, t - T.cardIn0), 2);
+    const clamp01s = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
     function digitAt(t) {
       if (t < T.dig0 || t >= tIn) return null;
       for (let k = 0; k < T.digitT.length; k++) {
@@ -183,13 +222,23 @@ export default {
       else ring = 1 - 0.94 * clamp01s(tau / (tIn - T.one));
       return { n: 1, tau, ring, one: true };
     }
-    const clamp01s = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
     const hash = (n) => { const s = Math.sin(n * 12.9898 + plan.shakeSeed) * 43758.5453; return s - Math.floor(s); };
 
-    const camX = plan.draw ? 50 : 50 + plan.side * 2;
-    const zMax = plan.draw ? 1.12 : plan.gag === 'freeze' ? 1.5 : plan.gag === 'fumble' ? 1.42 : 1.36;
-    const camK = (t) => clamp((camZ(t) - 1) / (zMax - 1), 0, 1);
-    const camZ = (t) => 1 + (zMax - 1) * ease.inOutCubic(seg(t, T.gag0 + 0.75, T.gag0 + 1.45)) * (1 - ease.inOutCubic(seg(t, tIn + 0.02, tIn + 0.42)));
+    // --- the close-up -----------------------------------------------------------------------------------------------
+    // While the coin is in the air the camera dives at the slot: the whole picture is drawn through one
+    // transform, so the coin, the glove and the plate arrive at three times their size, crisp (all vector).
+    // The gag's own geometry is in units relative to the slot, so it keeps its proportions on tall screens.
+    const GY = (v) => Y(SLOT_Y) + (v - SLOT_Y) * F.U;
+    const CAM = plan.draw ? { z: 1.34, x: 50, y: 41 } : gags[0].cam;
+    const camT = (t) => ease.inOutCubic(seg(t, T.gag0 + 0.38, T.gag0 + 1.2)) * (1 - ease.inOutCubic(seg(t, tIn + 0.04, tIn + 0.5)));
+    const camK = camT;
+    function camZ(t) {
+      let punch = 0;
+      for (const q of gags) for (const h of q.hits) { const tau = t - h.t; if (tau > 0 && tau < 0.6) punch += Math.exp(-tau * 9) * Math.cos(tau * 22); }
+      return 1 + (CAM.z - 1) * camT(t) + 0.08 * punch * camT(t);
+    }
+    // The point of the picture that the close-up centres on: lerps from where it already is to the screen centre.
+    const camFocus = () => [X(CAM.x), GY(CAM.y)];
 
     // =============================================================================================================
     // PAINT: the dressing (before the card), the card, the reveal
@@ -200,11 +249,11 @@ export default {
       const S0 = Math.min(1.5 * U, (80 * U) / (L0.width + 2.4));
       const kS = ease.inOutCubic(seg(t, T.shift0, T.shift1));
       const S = S0 * lerp(1, 0.55, kS);
-      const cy = lerp(Y(27.2), Y(6.8), kS);
+      const cy = lerp(Y(27.2), Y(6.4), kS);
       const st = look.style('main', null);
       const shine = t > 1.2 ? ((t - 1.25) % 2.4) / 1.1 : 0;
       drawHero(g, st, hdText, F.W / 2, cy, S, {
-        alpha: ck,
+        alpha: ck, ref: S0,
         shine: shine > 0 && shine < 1 ? shine : undefined,
         glyph: (i) => {
           const pl = plan.letter[i % 12];
@@ -215,13 +264,13 @@ export default {
         },
       });
       // Land sparks at each letter.
-      const L = heroLayout(hdText), x0 = F.W / 2 - (L.width * S0 * lerp(1, 0.55, kS)) / 2;
+      const L = heroLayout(hdText), x0 = F.W / 2 - (L.width * S) / 2;
       for (let i = 0; i < L.glyphs.length; i++) {
         const tau = t - landT[i];
         if (tau > 0 && tau < 0.5) drawBurst(g, plan.sparkLand, x0 + (L.glyphs[i].x + L.glyphs[i].w / 2) * S, cy + 3.6 * S, tau, U * 0.5, 0.5);
       }
       // Under it: who.
-      const subY = lerp(Y(37.2), Y(10.5), kS), cu = lerp(0.8, 0.48, kS);
+      const subY = lerp(Y(37.2), Y(10.0), kS), cu = lerp(0.8, 0.5, kS);
       const k = seg(t, 1.2, 1.7);
       const blink = t < T.dig0 || t >= tIn || ((Math.floor(t * 3.4) & 1) === 0);
       if (k > 0 && blink) {
@@ -264,77 +313,79 @@ export default {
     }
 
     function panels(t) {
-      const { U } = F;
+      const { U, UY } = F;
       const dim = 1 - 0.9 * camK(t);
       const kL = ease.outCubic(seg(t, 1.72, 2.3)) - ease.inQuad(seg(t, tIn + 0.05, tIn + 0.4)), kR = ease.outCubic(seg(t, 1.84, 2.42)) - ease.inQuad(seg(t, tIn + 0.1, tIn + 0.45));
-      const pw = 33, ph = 24, py = 20.8;
+      const pw = 35, ph = 23.6, py = 21.2;
       // High scores.
       {
-        const x = X(2.6) - (1 - kL) * U * 40, y = Y(py), w = pw * U, h = ph * U;
+        const x = X(2.0) - (1 - kL) * U * 40, y = Y(py), w = pw * U, h = ph * UY;
         look.panel(g, x, y, w, h, plan.winCol, U, dim * (kL > 0 ? 1 : 0));
         if (kL > 0.6) {
           const innerW = (pw - 3.6) * U, rows = plan.table;
-          // One dot size for the whole table; long names are clipped to what fits.
-          const nameMax = Math.min(12, Math.max(...rows.map((r) => r.name.length)));
-          let cs = cellFor(0.4);
-          while (cs > 2 && Math.floor((innerW * F.sc) / (cs * 6)) - 8 < nameMax) cs--;
-          const maxChars = Math.max(5, Math.floor((innerW * F.sc) / (cs * 6)) - 8);
-          const names = rows.map((r) => (r.name.length > maxChars ? r.name.slice(0, maxChars - 1) + '.' : r.name));
-          const cu = cs / (F.U * F.sc);
+          // One dot size for the whole table, as large as the longest name allows (long names are clipped).
+          const nameN = clamp(Math.max(...rows.map((r) => r.name.length)), 6, 10);
+          const cs = Math.max(2, Math.min(cellFor(0.4), Math.floor((innerW * F.sc) / ((nameN + 7) * 6))));
+          const cu = dotsU(cs), cw = cs / F.sc;
+          const names = rows.map((r) => (r.name.length > nameN ? r.name.slice(0, nameN - 1) + '.' : r.name));
           const lx = x + U * 1.8, rx = x + w - U * 1.8;
-          bitsPx('HIGH SCORES', x + w / 2, y + U * 1.5, Math.min(0.5, cu * 1.3), look.hi, 'c', true, innerW);
+          bitsPx('HIGH SCORES', x + w / 2, y + UY * 1.3, cu * 1.1, look.hi, 'c', true, innerW);
           const RANK = ['1ST', '2ND', '3RD', '4TH', '5TH'];
           for (let i = 0; i < rows.length; i++) {
             const ka = seg(t, 2.0 + i * 0.1, 2.2 + i * 0.1);
             if (ka <= 0) continue;
-            const r = rows[i], yy = y + U * (4.4 + i * 3.2);
+            const r = rows[i], yy = y + UY * (4.9 + i * 3.0);
             g.globalAlpha = dim * ka;
             if (r.win) {
               g.fillStyle = rgba(r.col, 0.16 + 0.1 * Math.sin(t * 9));
-              g.fillRect(x + U * 0.8, yy - U * 0.5, w - U * 1.6, cellFor(cu) / F.sc * 7 + U * 1);
+              g.fillRect(x + U * 0.8, yy - U * 0.5, w - U * 1.6, cw * 7 + U * 1);
             }
             const col = r.real ? r.col : look.dim;
             bitsPx(RANK[i], lx, yy, cu, r.real ? look.hi : look.dim, 'l', true);
-            bitsPx(names[i], lx + 4 * 6 * cs / F.sc, yy, cu, col, 'l', true);
+            bitsPx(names[i], lx + 4 * 6 * cw, yy, cu, col, 'l', true);
             bitsPx(String(r.pts).padStart(2, '0'), rx, yy, cu, r.real ? look.ink : look.dim, 'r', true);
           }
           g.globalAlpha = dim;
           const foot = ctx.matchPoint && (Math.floor(t * 3) & 1) === 0 ? 'MATCH POINT!' : `FIRST TO ${ctx.target}`;
-          bitsPx(foot, x + w / 2, y + U * (4.4 + 5 * 3.2 + 0.2), cu, ctx.matchPoint ? plan.winCol : look.dim, 'c', true, innerW);
+          bitsPx(foot, x + w / 2, y + UY * (4.9 + 5 * 3.0 + 0.3), cu, ctx.matchPoint ? plan.winCol : look.dim, 'c', true, innerW);
           g.globalAlpha = 1;
         }
       }
       // The round's bonus tally.
       {
-        const x = X(100 - 2.6 - pw) + (1 - kR) * U * 40, y = Y(py), w = pw * U, h = ph * U;
+        const x = X(100 - 2.0 - pw) + (1 - kR) * U * 40, y = Y(py), w = pw * U, h = ph * UY;
         look.panel(g, x, y, w, h, plan.winCol, U, dim * (kR > 0 ? 1 : 0));
         if (kR > 0.6) {
           const innerW = (pw - 3.6) * U, lines = plan.tally;
-          let cu = Math.min(0.4, (innerW / F.U) / (22 * 6));
-          cu = Math.max(cu, 2 / (F.U * F.sc));
+          const valueOf = (ln) => ln.value || (ln.pts ? `+${ln.pts}` : '0');
+          // The dot size is set by the widest line, so a long label never forces the rest tiny.
+          let chars = 14;
+          for (const ln of lines) chars = Math.max(chars, ln.label.length + 1 + Math.min(10, valueOf(ln).length));
+          const cs = Math.max(2, Math.min(cellFor(0.4), Math.floor((innerW * F.sc) / (Math.min(chars, 24) * 6))));
+          const cu = dotsU(cs);
           const lx = x + U * 1.8, rx = x + w - U * 1.8;
-          bitsPx(plan.draw ? `ROUND ${ctx.round} DRAWN` : `ROUND ${ctx.round} BONUS`, x + w / 2, y + U * 1.5, Math.min(0.5, cu * 1.25), look.hi, 'c', true, innerW);
+          bitsPx(plan.draw ? `ROUND ${ctx.round} DRAWN` : `ROUND ${ctx.round} BONUS`, x + w / 2, y + UY * 1.3, cu * 1.1, look.hi, 'c', true, innerW);
           const t0 = 2.42;
           g.globalAlpha = dim;
           for (let i = 0; i < lines.length; i++) {
             const ts = t0 + i * 0.27, ka = seg(t, ts, ts + 0.12);
             if (ka <= 0) continue;
-            const ln = lines[i], yy = y + U * (4.4 + i * 3.2);
+            const ln = lines[i], yy = y + UY * (4.9 + i * 3.0);
             bitsPx(ln.label, lx, yy, cu, look.ink, 'l', true);
             // The value rattles: random digits until it locks.
             const lock = ts + 0.5;
-            let v = ln.value || (ln.pts ? `+${ln.pts}` : '0');
+            let v = valueOf(ln);
             if (ln.label === 'MERCY' && !plan.draw) v = '0';
             if (t < lock && /\d/.test(v)) {
               const fr = Math.floor(t * 34);
               v = v.replace(/\d/g, (d, k) => String(Math.floor(hash(fr * 7 + k + i * 13) * 10)));
             } else if (t < lock) v = v.slice(0, Math.max(1, Math.floor(((t - ts) / 0.5) * v.length)));
-            bitsPx(v, rx, yy, cu, plan.winCol, 'r', true, innerW * 0.55);
+            bitsPx(v, rx, yy, cu, plan.winCol, 'r', true, innerW * 0.62);
           }
           // Total, counting up.
           const ts = t0 + lines.length * 0.27 + 0.1, kt = seg(t, ts, ts + 0.9);
           if (kt > 0) {
-            const yy = y + U * (4.4 + 5 * 3.2 + 0.2);
+            const yy = y + UY * (4.9 + 5 * 3.0 + 0.3);
             g.fillStyle = rgba(plan.winCol, 0.7);
             g.fillRect(lx, yy - U * 0.9, rx - lx, Math.max(1, U * 0.14));
             bitsPx(plan.draw ? 'NO BONUS' : 'BONUS', lx, yy, cu * 1.1, look.hi, 'l', true);
@@ -348,6 +399,7 @@ export default {
 
     function countdown(t, ck = 1) {
       const { U } = F;
+      const kd = Math.min(1.25, F.K); // the dial grows a little on a tall screen
       const cx = X(50);
       const ek = seg(t, tIn, tIn + 0.25);
       // CONTINUE?
@@ -355,11 +407,11 @@ export default {
       if (lk > 0 && ek < 1) {
         const flick = lk < 1 ? ((Math.floor(t * 30) & 1) ? 1 : 0.25) : 1;
         const S = Math.min(0.5 * U, (30 * U) / (heroLayout('CONTINUE?').width + 2.4));
-        drawHero(g, look.style('main', null), 'CONTINUE?', cx, Y(17.2), S, { alpha: flick * (1 - ek) * ck });
+        drawHero(g, look.style('main', null), 'CONTINUE?', cx, Y(18.2), S, { alpha: flick * (1 - ek) * ck });
       }
       const d = digitAt(t);
       if (!d) return;
-      const cy = Y(32.8), R = U * 7.4;
+      const cy = Y(33.4), R = U * 7.4 * kd;
       const open = ease.outCubic(seg(t, T.dig0 - 0.15, T.dig0 + 0.2));
       let pop, flick = 1, jx = 0, jy = 0;
       if (!d.one) {
@@ -378,13 +430,14 @@ export default {
         }
       }
       const glow = 0.7 + 0.3 * Math.sin(t * 14);
+      const S1 = 1.18 * U * kd, ref = S1 * 1.5;
       g.save();
       g.globalAlpha = open * (1 - ek);
-      // The digit that just left blows outward like an echo.
+      // The digit that just left blows outward like a ghost.
       if (!d.one && d.tau < 0.26 && d.n < 9) {
         const kk = d.tau / 0.26;
-        g.globalAlpha = open * (1 - ek) * 0.32 * (1 - kk) * (1 - kk);
-        drawHero(g, look.style('main', plan.loseCol), String(d.n + 1), cx, cy, 1.18 * U * (1.25 + 0.9 * ease.outCubic(kk)), {});
+        g.globalAlpha = open * (1 - ek) * 0.3 * (1 - kk) * (1 - kk);
+        drawHero(g, look.style('main', plan.loseCol), String(d.n + 1), cx, cy, S1 * (1.1 + 0.8 * ease.outCubic(kk)), { ref });
         g.globalAlpha = open * (1 - ek);
       }
       // Each beat lights the dial from behind.
@@ -400,8 +453,8 @@ export default {
         g.restore();
       }
       drawRing(g, cx + jx, cy + jy, R, d.ring, plan.loseCol, U * 0.5, glow);
-      const S = 1.18 * U * pop * (1 + 0.3 * ek) * (0.6 + 0.4 * open);
-      drawHero(g, look.style('main', plan.loseCol), String(d.n), cx + jx, cy + jy, S, { alpha: flick });
+      const S = S1 * pop * (1 + 0.3 * ek) * (0.6 + 0.4 * open);
+      drawHero(g, look.style('main', plan.loseCol), String(d.n), cx + jx, cy + jy, S, { alpha: flick, ref });
       g.restore();
     }
 
@@ -427,48 +480,91 @@ export default {
       }
     }
 
+    // What the close-up adds: a beam of light out of the slit, motes drifting through it, the coin's
+    // contact shadow on the plate, and (at the peak of its glint) a lens streak.
+    function closeFx(t) {
+      const k = camT(t);
+      if (k < 0.01) return;
+      const { U } = F;
+      const plateTop = SLOT_Y - 3.2;
+      for (let gi = 0; gi < gags.length; gi++) {
+        const q = gags[gi];
+        const since = t - q.tIn;
+        const beat = 0.5 + 0.5 * Math.sin(t * 5.5 + gi);
+        let a = k * (0.2 + 0.1 * beat);
+        if (since > 0) a += 0.7 * Math.exp(-since * 4);
+        drawBeam(g, X(q.sx), GY(plateTop), U * 34, U * 28, q.col, a);
+        g.fillStyle = '#ffffff';
+        for (let i = 0; i < 20; i++) {
+          const h1 = hash(i * 3.17 + gi), h2 = hash(i * 7.31 + 2 + gi), h3 = hash(i * 1.93 + 5);
+          const rise = ((h2 * 30 + t * (1.6 + h3 * 2.2)) % 30) / 30;
+          const x = q.sx + (h1 - 0.5) * (6 + rise * 30), y = plateTop - rise * 30;
+          g.globalAlpha = k * (1 - rise) * (0.25 + 0.5 * Math.abs(Math.sin(t * 6 + i)));
+          const s = U * (0.12 + h3 * 0.2);
+          g.fillRect(X(x) - s / 2, GY(y) - s / 2, s, s);
+        }
+        g.globalAlpha = 1;
+        const p = q.pos(t);
+        if (p && t < q.tSlide) {
+          const gap = plateTop - (p.y + p.r);
+          if (gap > -1 && gap < 9) {
+            const fk = clamp01s(1 - Math.max(0, gap) / 9);
+            g.fillStyle = `rgba(0,0,0,${0.4 * fk})`;
+            g.beginPath();
+            g.ellipse(X(p.x), GY(plateTop) + U * 0.2, p.r * U * (0.5 + 0.6 * fk), p.r * U * 0.16 * (0.5 + 0.5 * fk), 0, 0, TAU);
+            g.fill();
+          }
+        }
+      }
+    }
+
     function props(t) {
       const { U } = F;
+      const k = camT(t);
       for (let gi = 0; gi < gags.length; gi++) {
         const q = gags[gi];
         if (q.hand) {
           const h = q.hand(t);
-          if (h && h.a > 0) drawHand(g, X(h.x), Y(h.y), U * 5.2, h.rot, gi ? plan.slots[1].col : plan.loseCol === '#ffffff' ? '#f2b35b' : plan.loseCol, h.curl, 1);
+          if (h && h.a > 0) drawHand(g, X(h.x), GY(h.y), U * 5.6, h.rot, gi ? plan.slots[1].col : plan.loseCol === '#ffffff' ? '#f2b35b' : plan.loseCol, h.curl, 1);
         }
-        for (let k = 3; k >= 0; k--) {
-          const tt = t - k * 0.055, p = q.pos(tt);
+        for (let kk = 3; kk >= 0; kk--) {
+          const tt = t - kk * 0.045, p = q.pos(tt);
           if (!p) continue;
           g.save();
           if (tt >= q.tSlide) {
             g.beginPath();
-            g.rect(0, 0, F.W, Y(q.slitTop));
+            g.rect(0, 0, F.W, GY(q.slitTop));
             g.clip();
           }
           const sh = ((tt - T.gag0) * 0.85) % 1.7;
-          drawCoin(g, X(p.x), Y(p.y), p.r * U, p.phi, p.tilt, q.metal, sh < 1 ? sh : 0, k ? 0.16 / k : 1);
+          drawCoin(g, X(p.x), GY(p.y), p.r * U, p.phi, p.tilt, q.metal, sh < 1 ? sh : 0, kk ? 0.14 / kk : 1);
           g.restore();
+          if (!kk && sh > 0 && sh < 1 && tt < q.tSlide) {
+            // The glint's peak throws a streak and a four-point flare through the coin.
+            const pk = Math.sin(Math.PI * sh);
+            drawStreak(g, X(p.x), GY(p.y), U * (4 + 14 * k) * p.r / 3.4, 0.5 * pk * (0.4 + 0.6 * k), q.metal.glint);
+          }
         }
         for (const h of q.hits) {
           const tau = t - h.t;
           if (tau > 0 && tau < 0.55) {
-            drawBurst(g, plan.sparkLand, X(h.x), Y(h.y), tau, U * 0.8, 0.55);
-            drawShock(g, X(h.x), Y(h.y), U * (1 + tau * 9), 0.7 * (1 - tau / 0.55), '#ffffff', U * 0.18);
+            drawBurst(g, plan.sparkLand, X(h.x), GY(h.y), tau, U * 0.8, 0.55);
+            drawShock(g, X(h.x), GY(h.y), U * (1 + tau * 9), 0.7 * (1 - tau / 0.55), '#ffffff', U * 0.18);
           }
         }
         const since = t - q.tIn;
         if (since > 0) {
-          drawBurst(g, plan.burstSlot, X(q.sx), Y(SLOT_Y - 3), since, U, 1.1);
+          drawBurst(g, plan.burstSlot, X(q.sx), GY(SLOT_Y - 3), since, U, 1.1);
           drawShock(g, X(q.sx), Y(SLOT_Y), U * (2 + since * 30), 0.75 * Math.exp(-since * 4.5), q.col, U * 0.35);
         }
       }
     }
 
     function footer(t) {
-      const { U } = F;
       const k = seg(t, 2.0, 2.4);
       if (k <= 0) return;
       const since = t - tIn;
-      const cu = 0.42, yy = 52.2;
+      const cu = 0.42, yy = 52.6;
       g.save();
       g.globalAlpha = k;
       bits('CREDIT', 3.2, yy, cu, look.ink, 'l', true);
@@ -493,33 +589,34 @@ export default {
       g.globalAlpha = k;
       if (plan.draw) {
         const S = Math.min(1.2 * U, (84 * U) / (heroLayout('BOTH PLAYERS').width + 2.4));
-        drawHero(g, look.style('main', null), 'BOTH PLAYERS', cx, Y(31), S * Math.max(0.01, pop), {});
+        drawHero(g, look.style('main', null), 'BOTH PLAYERS', cx, Y(31.4), S * Math.max(0.01, pop), { ref: S });
       } else {
         bitsPx('PLAYER', cx, Y(21.6), 0.62, look.ink, 'c', true);
         const S = Math.min(1.2 * U, (84 * U) / (heroLayout(plan.loserName).width + 2.4));
-        drawHero(g, look.style('main', plan.loseCol), plan.loserName, cx, Y(31), S * Math.max(0.01, pop), { shine: seg(t, tIn + 0.6, tIn + 1.2) || undefined });
+        drawHero(g, look.style('main', plan.loseCol), plan.loserName, cx, Y(31.4), S * Math.max(0.01, pop), { ref: S, shine: seg(t, tIn + 0.6, tIn + 1.2) || undefined });
       }
-      if ((Math.floor((t - tIn) * 7) & 1) === 0 || t - tIn > 1) bitsPx(plan.draw ? 'CONTINUE!' : 'CONTINUES!', cx, Y(39.6), 0.75, look.hi, 'c', true);
+      if ((Math.floor((t - tIn) * 7) & 1) === 0 || t - tIn > 1) bitsPx(plan.draw ? 'CONTINUE!' : 'CONTINUES!', cx, Y(40), 0.75, look.hi, 'c', true);
       g.restore();
     }
 
     function dress(t) {
-      const { W, H, U, oy } = F;
-      look.bg(g, W, H, U, oy, t, ease.outQuad(seg(t, 0.5, 1.45)) * 0.86);
-      const bleed = seg(t, 4.3, 6.9) * 0.42;
-      if (bleed > 0.01) drawSpace(g, W, H, U, oy, phaseOf(t), plan, pal, bleed, false);
+      const { W, H, U, UY, oy } = F;
+      // The old world stays visible, crunched, behind GAME OVER; the cabinet's backdrop closes over it later.
+      look.bg(g, W, H, U, oy, t, ease.outQuad(seg(t, 0.9, 2.0)) * 0.86, UY);
+      const bleed = seg(t, T.gag0 + 0.4, T.msgOut - 0.1) * 0.42;
+      if (bleed > 0.01) drawSpace(g, W, H, U, oy, phaseOf(t), plan, pal, bleed, false, UY);
       targetTag(t);
       const ck = 1 - 0.85 * camK(t);
       if (t > 0.45) headline(t, ck);
       if (t > 1.7) panels(t);
       if (t > 1.7) countdown(t, ck);
       if (t > 1.7) { slots(t); footer(t); }
-      if (t > T.gag0 - 0.05) props(t);
+      if (t > T.gag0 - 0.05) { closeFx(t); props(t); }
       if (t > tIn + 0.25) centreMessage(t);
     }
 
     function paintCard(t) {
-      drawCard(g, { W: F.W, H: F.H, U: F.U, ox: F.ox, oy: F.oy, t, plan, to: ctx.to, look, sc: F.sc, go: t >= SWAP + 0.05, phase: phaseOf(t), score: ctx.score, target: ctx.target });
+      drawCard(g, { W: F.W, H: F.H, U: F.U, UY: F.UY, ox: F.ox, oy: F.oy, t, plan, to: ctx.to, look, sc: F.sc, go: t >= SWAP + 0.05, phase: phaseOf(t), score: ctx.score, target: ctx.target });
     }
 
     function paint(t) {
@@ -528,28 +625,62 @@ export default {
       g.globalCompositeOperation = 'source-over';
       g.clearRect(0, 0, F.W, F.H);
       if (t >= T.cardIn1) { paintCard(t); return; }
-      // The slow-motion push-in on the slot while the coin is in the air.
-      const cz = camZ(t);
-      g.save();
-      if (cz > 1.0005) {
-        const cx = X(camX), cy = Y(40);
-        g.translate(cx, cy);
-        g.scale(cz, cz);
-        g.translate(-cx, -cy);
-      }
-      dress(t);
-      g.restore();
-      if (t >= T.cardIn0) {
-        const rv = cardReveal(g, F.W, F.H, t, plan, pal, F.U);
+      if (t < T.cardIn0) {
+        // The camera (the coin's close-up), and the cabinet powering down once the message is read:
+        // the picture collapses to a line, the line to a dot, and the dot is what the stage card grows from.
+        const cz = camZ(t), k = camT(t);
+        const off = ease.inCubic(seg(t, T.msgOut, T.msgOut + 0.22));
         g.save();
-        g.beginPath();
-        for (const r of rv.rects) g.rect(r[0], r[1], r[2], r[3]);
-        g.clip();
-        paintCard(t);
+        if (off > 0) {
+          g.translate(F.W / 2, F.H / 2);
+          g.scale(1, Math.max(0.004, 1 - off));
+          g.translate(-F.W / 2, -F.H / 2);
+        }
+        if (cz > 1.0005) {
+          const [fx0, fy0] = camFocus();
+          const sx0 = lerp(fx0, F.W / 2, k), sy0 = lerp(fy0, F.H / 2, k);
+          g.translate(sx0, sy0);
+          g.scale(cz, cz);
+          g.translate(-fx0, -fy0);
+        }
+        dress(t);
         g.restore();
-        g.fillStyle = pal.accent;
-        for (const e of rv.edges) g.fillRect(e[0], e[1], e[2], e[3]);
+        if (k > 0.01) {
+          // The glass closes in on the close-up: a dark vignette, deepest while the coin hangs.
+          const vg = g.createRadialGradient(F.W / 2, F.H / 2, Math.min(F.W, F.H) * 0.28, F.W / 2, F.H / 2, Math.hypot(F.W, F.H) * 0.58);
+          vg.addColorStop(0, 'rgba(0,0,0,0)');
+          vg.addColorStop(1, `rgba(0,0,0,${0.66 * k})`);
+          g.fillStyle = vg;
+          g.fillRect(0, 0, F.W, F.H);
+        }
+        if (off > 0) {
+          const half = (F.W / 2) * (1 - ease.inQuad(seg(t, T.msgOut + 0.22, T.cardIn0 - 0.03)));
+          const lh = Math.max(2, F.U * 0.22);
+          g.globalAlpha = Math.min(1, off * 1.3);
+          g.fillStyle = '#ffffff';
+          if (half > 1) g.fillRect(F.W / 2 - half, F.H / 2 - lh / 2, half * 2, lh);
+          g.globalAlpha = 1;
+          if (half < F.U * 3) {
+            const dr = F.U * 2.6, dg = g.createRadialGradient(F.W / 2, F.H / 2, 0, F.W / 2, F.H / 2, dr);
+            dg.addColorStop(0, 'rgba(255,255,255,1)');
+            dg.addColorStop(1, 'rgba(255,255,255,0)');
+            g.globalAlpha = 1 - seg(t, T.cardIn0 - 0.1, T.cardIn0);
+            g.fillStyle = dg;
+            g.fillRect(F.W / 2 - dr, F.H / 2 - dr, dr * 2, dr * 2);
+            g.globalAlpha = 1;
+          }
+        }
+        return;
       }
+      const rv = cardReveal(g, F.W, F.H, t, plan, pal, F.U);
+      g.save();
+      g.beginPath();
+      for (const r of rv.rects) g.rect(r[0], r[1], r[2], r[3]);
+      g.clip();
+      paintCard(t);
+      g.restore();
+      g.fillStyle = pal.accent;
+      for (const e of rv.edges) g.fillRect(e[0], e[1], e[2], e[3]);
     }
 
     // --- the monitor ------------------------------------------------------------------------------------------------
@@ -559,16 +690,17 @@ export default {
       u.uRes.value.set(F.W, F.H);
       u.uDpr.value = ctx.dpr;
       u.uTime.value = t % 97;
-      // The old world crunches in rungs.
+      // The old world crunches in rungs; from the last rung on it is read from the baked texture.
       const rung = Math.min(6, Math.floor(seg(t, 0.05, 0.72) * 7));
       u.uCell.value = rung === 0 ? 0 : Math.max(1.5, (F.H / 110) * RUNGS[rung]);
+      u.uBaked.value = t >= 0.66 ? 1 : 0;
       u.uDesat.value = ease.outQuad(seg(t, 0, 0.55));
       u.uTintAmt.value = fx.amt * seg(t, 0.2, 0.7);
-      u.uDim.value = lerp(1, fx.dim, seg(t, 0.15, 1.4));
-      u.uWorldOn.value = t < T.cardIn1 ? 1 : 0;
+      u.uDim.value = lerp(1, fx.dim, seg(t, 0.15, 1.4)) * (1 - seg(t, T.msgOut - 0.7, T.msgOut));
+      u.uWorldOn.value = t < T.msgOut ? 1 : 0;
       const crt = ease.inOutQuad(seg(t, 0.04, 0.5));
       u.uCrt.value = crt;
-      u.uCurve.value = fx.curve * (1 - ease.inOutCubic(seg(t, 7.9, 8.35)));
+      u.uCurve.value = fx.curve * (1 - ease.inOutCubic(seg(t, SWAP - 0.35, SWAP + 0.1)));
       u.uBloom.value = fx.bloom * 0.55 * crt;
       let sx = 0, sy = 0, kick = 0;
       for (const [t0, a, k] of shakeEv) {
@@ -615,7 +747,7 @@ export default {
     [392, 330, 262, 220, 165].forEach((f, i) => at(1.3 + i * 0.13, () => { A.tone({ type: 'square', freq: f, dur: i === 4 ? 0.55 : 0.12, gain: 0.08, attack: 0.002 }); A.tone({ type: 'triangle', freq: f / 2, dur: i === 4 ? 0.6 : 0.14, gain: 0.12 }); }));
     at(1.72, () => A.sfx('swoosh', { gain: 0.6 }));
     at(1.84, () => A.sfx('swoosh', { gain: 0.5, pitch: 1.2 }));
-    at(2.05, () => { A.tone({ type: 'sawtooth', freq: 55, freqEnd: 330, dur: 2.9, gain: 0.07, attack: 2.6 }); A.tone({ type: 'sawtooth', freq: 55.6, freqEnd: 332, dur: 2.9, gain: 0.05, attack: 2.6, detune: 9 }); });
+    at(T.dig0, () => { A.tone({ type: 'sawtooth', freq: 55, freqEnd: 330, dur: 2.5, gain: 0.07, attack: 2.3 }); A.tone({ type: 'sawtooth', freq: 55.6, freqEnd: 332, dur: 2.5, gain: 0.05, attack: 2.3, detune: 9 }); });
     plan.tally.forEach((_, i) => {
       const ts = 2.42 + i * 0.27;
       at(ts, () => A.sfx('blip', { gain: 0.5, pitch: 1 + i * 0.08 }));
@@ -633,6 +765,8 @@ export default {
     at(T.one, () => { A.sfx('heartbeat', { gain: 1.1, pitch: 0.75 }); A.tone({ type: 'sine', freq: 880, freqEnd: 600, dur: 1.4, gain: 0.05, attack: 0.1 }); });
     at(T.one + 0.95, () => A.sfx('heartbeat', { gain: 0.9, pitch: 0.7 }));
     at(T.gag0, () => { A.sfx('whoosh', { gain: 0.5, pitch: 0.6 }); A.tone({ type: 'triangle', freq: 2200, freqEnd: 800, dur: 0.9, gain: 0.04, attack: 0.3 }); });
+    // The dive: a low whoosh and a pitch that sags, as if time itself were thickening.
+    at(T.gag0 + 0.4, () => { A.sfx('whoosh', { gain: 0.7, pitch: 0.45 }); A.tone({ type: 'sine', freq: 420, freqEnd: 62, dur: 1.4, gain: 0.12, attack: 0.05 }); A.tone({ type: 'triangle', freq: 3300, freqEnd: 1500, dur: 1.2, gain: 0.03, attack: 0.4 }); });
     for (const q of gags) {
       for (const h of q.hits) at(h.t, () => {
         A.tone({ type: 'triangle', freq: 3100, dur: 0.28, gain: 0.12, attack: 0.001 });
@@ -649,9 +783,14 @@ export default {
     at(tIn + 0.02, () => { A.sfx('powerup', { gain: 0.7 }); thump(1.1, 0.9); });
     at(tIn + 0.14, () => A.sfx('chime', { gain: 0.7 }));
     [523, 659, 784, 1047].forEach((f, i) => at(tIn + 0.34 + i * 0.075, () => A.tone({ type: 'square', freq: f, dur: i === 3 ? 0.4 : 0.1, gain: 0.08 })));
-    at(SWAP - 1.55, () => A.sfx('riser', { gain: 0.8 }));
+    // The cabinet powers down (a falling whine, a click) and the stage card slams in.
+    at(T.msgOut, () => { A.tone({ type: 'sine', freq: 2600, freqEnd: 70, dur: 0.3, gain: 0.12, attack: 0.002 }); A.noise({ filter: 'highpass', freq: 4000, freqEnd: 900, dur: 0.3, gain: 0.18 }); });
+    at(T.cardIn0 - 0.04, () => { A.tone({ type: 'sine', freq: 110, freqEnd: 50, dur: 0.18, gain: 0.3, attack: 0.002 }); });
+    at(SWAP - 1.3, () => A.sfx('riser', { gain: 0.8 }));
     at(T.cardIn0, () => A.sfx('swoosh', { gain: 0.8 }));
-    for (let i = 0; i < 5; i++) at(T.ready0 + i * 0.307, () => A.tone({ type: 'square', freq: i % 2 ? 1319 : 880, dur: 0.1, gain: 0.1, attack: 0.002 }));
+    at(T.letter0, () => { thump(1, 0.9); A.sfx('blip', { gain: 0.6, pitch: 0.8 }); });
+    at(T.letter0 + 0.1, () => A.sfx('swoosh', { gain: 0.5, pitch: 1.3 }));
+    for (let i = 0; i < 3; i++) at(T.ready0 + i * 0.307, () => A.tone({ type: 'square', freq: i % 2 ? 1319 : 880, dur: 0.1, gain: 0.1, attack: 0.002 }));
     at(SWAP - 0.04, () => { A.tone({ type: 'sawtooth', freq: 220, dur: 0.9, gain: 0.12 }); A.tone({ type: 'sawtooth', freq: 330, dur: 0.9, gain: 0.1, detune: 8 }); A.tone({ type: 'square', freq: 660, dur: 0.7, gain: 0.07 }); A.sfx('boom', { gain: 1 }); A.noise({ filter: 'highpass', freq: 2000, dur: 0.5, gain: 0.3 }); });
     at(T.wipe0, () => { A.sfx('swoosh', { gain: 0.9, pitch: 0.8 }); A.tone({ type: 'square', freq: 220, freqEnd: 1760, dur: 0.6, gain: 0.06, attack: 0.2 }); });
     at(T.wipe0 + 0.7, () => A.sfx('whoosh', { gain: 0.5 }));
@@ -660,10 +799,11 @@ export default {
 
     // Everything slow happens now, at the cut: shaders compiled, textures resident, glyph paths and styles built.
     layout();
-    for (const tt of [0.9, 3, 5.6, 6.9, 7.8, 9]) paint(tt);
+    ensureBake();
+    for (const tt of [0.9, 2.8, 5.2, 6.6, 8.2, 9.5]) paint(tt);
     paint(0);
     monitor(0);
-    try { renderer.initTexture(texFrom); renderer.initTexture(texScr); renderer.compile(pass.scene, pass.camera); } catch { /* an older three: the first render compiles instead */ }
+    try { renderer.initTexture(texFrom); renderer.initTexture(texScr); renderer.initTexture(texBake); renderer.compile(pass.scene, pass.camera); } catch { /* an older three: the first render compiles instead */ }
 
     return {
       update(dt, t) {
@@ -672,6 +812,7 @@ export default {
 
       render(t) {
         layout();
+        if (t >= 0.6) ensureBake();
         paint(t);
         texScr.needsUpdate = true;
         monitor(t);
@@ -681,8 +822,11 @@ export default {
       dispose() {
         texFrom.dispose();
         texScr.dispose();
+        texBake.dispose();
         pass.dispose();
+        clearHeroSprites();
         scr.canvas.width = scr.canvas.height = 1;
+        bake.canvas.width = bake.canvas.height = 1;
       },
     };
   },

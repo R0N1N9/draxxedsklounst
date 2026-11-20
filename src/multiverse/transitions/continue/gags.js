@@ -7,41 +7,46 @@ const S = (t0, t1, x0, y0, r0, x1, y1, r1, arc, e) => ({ t0, t1, x0, y0, r0, x1,
 
 /**
  * kind 'rim' | 'fumble' | 'freeze'; (sx, sy) the slit's centre; t0 the toss. Returns
- * {tIn, pos(t) → {x, y, r, phi, tilt} | null, hits: [{t, x, y, k}], hand(t) → {x, y, rot, curl, a} | null}.
+ * {tIn, pos(t) → {x, y, r, phi, tilt} | null, hits: [{t, x, y, k}], hand(t) → {x, y, rot, curl, a} | null,
+ * cam: {z, x, y} the close-up's zoom and the design-unit point it centres on}.
  */
 export function buildGag(kind, side, sx, sy, t0, tilt0, flips) {
-  const start = [sx + side * 26, 64, 9], apex = [sx - side * 6, 17.5, 5];
+  // The coin is big (R design units): the camera dives in on it, so it has to hold up as a close-up.
+  const R = 3.4;
+  const start = [sx + side * 26, 64, 9], apex = [sx - side * 6, 15, 5.2];
   const above = (r) => [sx, sy - 2.1 - r - 0.2, r];
   const inside = (r) => [sx, sy - 2.1 + r + 0.5, r];
   const segs = [S(t0, t0 + 0.63, ...start, ...apex, 0, ease.outQuad)];
   const hits = [];
-  let hand = null, tIn;
+  let hand = null, tIn, cam;
   if (kind === 'rim') {
-    const rim = [sx - side * 3.3, sy - 3.2 - 2.8, 2.8];
+    const rim = [sx - side * 4.2, sy - 3.2 - R, R];
     segs.push(S(t0 + 0.63, t0 + 1.36, ...apex, ...rim, 0, ease.inQuad));
-    hits.push({ t: t0 + 1.36, x: rim[0], y: rim[1] + 2, k: 'rim' });
-    segs.push(S(t0 + 1.36, t0 + 1.76, ...rim, ...above(2.2), 5.5, (u) => u));
-    segs.push(S(t0 + 1.76, t0 + 2.0, ...above(2.2), ...inside(2.2), 0, ease.inQuad));
+    hits.push({ t: t0 + 1.36, x: rim[0] + side * 1.2, y: rim[1] + R, k: 'rim' });
+    segs.push(S(t0 + 1.36, t0 + 1.8, ...rim, ...above(R), 6.5, (u) => u));
+    segs.push(S(t0 + 1.8, t0 + 2.0, ...above(R), ...inside(R), 0, ease.inQuad));
     tIn = t0 + 2.0;
+    cam = { z: 2.35, x: sx - side * 1.5, y: sy - 7.6 };
   } else if (kind === 'fumble') {
-    const hx = sx + side * 9.5;
-    const tip = [hx, sy - 5.9, 3.3];
+    const hx = sx + side * 10.5;
+    const tip = [hx, sy - 7.6, R + 0.5];
     segs.push(S(t0 + 0.63, t0 + 1.3, ...apex, ...tip, 0, ease.inQuad));
-    hits.push({ t: t0 + 1.3, x: tip[0], y: tip[1] + 2, k: 'tip' });
-    const out = [hx + side * 4.5, sy - 10, 3.5];
+    hits.push({ t: t0 + 1.3, x: tip[0], y: tip[1] + R, k: 'tip' });
+    const out = [hx + side * 5, sy - 13, R + 0.7];
     segs.push(S(t0 + 1.3, t0 + 1.63, ...tip, ...out, 0, ease.outQuad));
-    const palm = [hx + side * 1.5, sy - 4.8, 3.2];
+    const palm = [hx + side * 1.6, sy - 6.2, R];
     segs.push(S(t0 + 1.63, t0 + 1.98, ...out, ...palm, 0, ease.inQuad));
-    hits.push({ t: t0 + 1.98, x: palm[0], y: palm[1] + 2, k: 'palm' });
-    segs.push(S(t0 + 1.98, t0 + 2.22, ...palm, ...above(2.2), 6, (u) => u));
-    segs.push(S(t0 + 2.22, t0 + 2.42, ...above(2.2), ...inside(2.2), 0, ease.inQuad));
+    hits.push({ t: t0 + 1.98, x: palm[0], y: palm[1] + R, k: 'palm' });
+    segs.push(S(t0 + 1.98, t0 + 2.22, ...palm, ...above(R), 6.5, (u) => u));
+    segs.push(S(t0 + 2.22, t0 + 2.42, ...above(R), ...inside(R), 0, ease.inQuad));
     tIn = t0 + 2.42;
+    cam = { z: 2.05, x: sx + side * 4.5, y: sy - 8.4 };
     hand = (t) => {
       const enter = ease.outCubic(seg(t, t0 + 0.35, t0 + 1.0));
       const leave = ease.inCubic(seg(t, t0 + 2.2, t0 + 2.75));
       const follow = ease.inOutQuad(seg(t, t0 + 1.3, t0 + 1.9));
       const x = hx + side * (14 * (1 - enter) + 4.5 * follow * (1 - seg(t, t0 + 1.9, t0 + 2.1)) + 14 * leave) + Math.sin((t - t0) * 9) * 0.35 * enter * (1 - leave);
-      const y = lerp(66, sy + 2.2, enter) - 3.6 * follow * (1 - seg(t, t0 + 2.0, t0 + 2.2)) + 20 * leave;
+      const y = lerp(70, sy + 3.2, enter) - 3.6 * follow * (1 - seg(t, t0 + 2.0, t0 + 2.2)) + 24 * leave;
       const recoil = Math.exp(-Math.max(0, t - (t0 + 1.3)) * 7) * (t > t0 + 1.3 ? 1 : 0);
       return {
         x, y, rot: side * (-0.1 + 0.18 * follow) + Math.sin((t - t0) * 14) * 0.06 * recoil,
@@ -50,9 +55,11 @@ export function buildGag(kind, side, sx, sy, t0, tilt0, flips) {
       };
     };
   } else {
-    segs.push(S(t0 + 0.63, t0 + 1.78, ...apex, ...above(2.2), 0, ease.inQuad));
-    segs.push(S(t0 + 1.78, t0 + 2.08, ...above(2.2), ...inside(2.2), 0, ease.inQuad));
+    // The count freezes: the coin hangs over the slot, trembling, in front of the stalled digit.
+    segs.push(S(t0 + 0.63, t0 + 1.78, ...apex, ...above(R), 0, ease.inQuad));
+    segs.push(S(t0 + 1.78, t0 + 2.08, ...above(R), ...inside(R), 0, ease.inQuad));
     tIn = t0 + 2.08;
+    cam = { z: 1.8, x: sx, y: sy - 9.2 };
   }
   const tSlide = segs[segs.length - 1].t0;
   const pos = (t) => {
@@ -71,5 +78,5 @@ export function buildGag(kind, side, sx, sy, t0, tilt0, flips) {
       u: ug,
     };
   };
-  return { tIn, tSlide, pos, hits, hand, slitTop: sy - 2.1 };
+  return { tIn, tSlide, pos, hits, hand, cam, slitTop: sy - 2.1 };
 }

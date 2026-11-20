@@ -7,7 +7,7 @@ import { drawHero } from './looks.js';
 import { T } from './script.js';
 
 /** The backdrop alone. phase advances the scroll; a is its opacity. */
-export function drawSpace(g, W, H, U, oy, phase, plan, pal, a, full) {
+export function drawSpace(g, W, H, U, oy, phase, plan, pal, a, full, UY = U) {
   if (a <= 0.003) return;
   g.save();
   g.globalAlpha = a;
@@ -41,7 +41,7 @@ export function drawSpace(g, W, H, U, oy, phase, plan, pal, a, full) {
       g.stroke();
     }
   } else {
-    const hz = oy + U * 27;
+    const hz = oy + UY * 27;
     if (full) {
       const sky = g.createLinearGradient(0, 0, 0, hz);
       sky.addColorStop(0, shade(pal.bg, -0.45));
@@ -53,7 +53,7 @@ export function drawSpace(g, W, H, U, oy, phase, plan, pal, a, full) {
       g.arc(cx, hz, U * 11, Math.PI, TAU);
       g.fill();
       g.fillStyle = mixHex(pal.bg, pal.accent, 0.55);
-      for (let i = 0; i < 4; i++) g.fillRect(cx - U * 11, hz - U * (2 + i * 1.9), U * 22, U * (0.3 + i * 0.28));
+      for (let i = 0; i < 4; i++) g.fillRect(cx - U * 11, hz - UY * (2 + i * 1.9), U * 22, U * (0.3 + i * 0.28));
     }
     const k = W * 0.36, depth = 15, sc = phase * 1.3, fl = Math.floor(sc), fr = sc - fl;
     const A = mixHex(pal.bg, pal.accent, 0.5), B = shade(pal.bg, -0.45);
@@ -113,11 +113,11 @@ function bitsFit(g, str, x, y, cell, maxW, sc, color, shadow) {
 
 /** The whole card. t absolute; go: after the swap the READY? flash has become GO!. */
 export function drawCard(g, o) {
-  const { W, H, U, oy, t, plan, to, look, sc, go } = o;
+  const { W, H, U, UY, oy, t, plan, to, look, sc, go } = o;
   const pal = to.palette;
-  const tc = t - T.cardIn0;
-  drawSpace(g, W, H, U, oy, o.phase, plan, pal, 1, true);
-  const Y = (v) => oy + v * U;
+  const tc = t - T.letter0; // the lettering waits for the bands to finish
+  drawSpace(g, W, H, U, oy, o.phase, plan, pal, 1, true, UY);
+  const Y = (v) => oy + v * UY;
   const cx = W / 2;
   // The bold block of colour behind the lettering.
   const band = g.createLinearGradient(0, Y(5), 0, Y(48));
@@ -127,13 +127,14 @@ export function drawCard(g, o) {
   band.addColorStop(1, rgba(pal.bg, 0));
   g.fillStyle = band;
   g.fillRect(0, Y(5), W, Y(48) - Y(5));
-  // STAGE n: letters pop in one by one.
+  // STAGE n: letters slam in one by one.
   const word = `${plan.stageWord} ${plan.nextRound}`;
   const st = look.style('card', null, pal), st2 = look.style('cardS', null, pal);
   const sw = Math.min(1.0 * U, (W * 0.5) / (heroLayout(word).width + 2.4));
   drawHero(g, st2, word, cx, Y(10.4), sw, {
-    glyph: (i, n) => {
-      const k = ease.outBack(seg(tc, 0.04 + i * 0.04, 0.36 + i * 0.04));
+    ref: sw * 1.12,
+    glyph: (i) => {
+      const k = ease.outBack(seg(tc, i * 0.045, 0.3 + i * 0.045));
       return { sy: k, sx: k, a: k > 0.01 ? 1 : 0, dy: (1 - k) * U * 3 };
     },
   });
@@ -142,26 +143,28 @@ export function drawCard(g, o) {
   const two = lines.length === 2;
   for (let li = 0; li < lines.length; li++) {
     const L = lines[li];
-    const k = ease.outCubic(seg(tc, 0.12 + li * 0.08, 0.5 + li * 0.08));
+    const k = ease.outCubic(seg(tc, 0.1 + li * 0.08, 0.52 + li * 0.08));
     const dir = li % 2 ? -1 : 1;
     drawHero(g, st, L.text, cx + dir * (1 - k) * W, Y(two ? 20.6 + li * 9.6 : 24.8), L.S, { alpha: 1 });
   }
   // Perspective and tagline.
-  const k2 = ease.outQuad(seg(tc, 0.4, 0.7));
   const persp = `\u2605 ${String(to.perspective).toUpperCase()} \u2605`;
+  const k2 = ease.outQuad(seg(tc, 0.5, 0.78));
   g.globalAlpha = k2;
-  bitsFit(g, persp, cx, Y(36.9), cardCell(U, sc, 0.6), W * 0.9, sc, pal.accent, shade(pal.bg, -0.6));
+  bitsFit(g, persp, cx, Y(36.9) + (1 - k2) * U * 1.2, cardCell(U, sc, 0.6), W * 0.9, sc, pal.accent, shade(pal.bg, -0.6));
   const tag = String(to.tagline || '').toUpperCase();
-  if (tag) bitsFit(g, tag, cx, Y(42.8), cardCell(U, sc, 0.4), W * 0.9, sc, pal.fg, shade(pal.bg, -0.6));
+  const k3 = ease.outQuad(seg(tc, 0.64, 0.92));
+  g.globalAlpha = k3;
+  if (tag) bitsFit(g, tag, cx, Y(42.8) + (1 - k3) * U * 1.2, cardCell(U, sc, 0.4), W * 0.9, sc, pal.fg, shade(pal.bg, -0.6));
   g.globalAlpha = 1;
   // READY? flashes (and the flash that follows is the swap); GO! after it.
   const ry = Y(49.8);
   if (!go) {
-    const on = tc > T.ready0 - T.cardIn0 && (Math.floor((t - T.ready0) * 6.5) & 1) === 0;
+    const on = t > T.ready0 && (Math.floor((t - T.ready0) * 6.5) & 1) === 0;
     if (on && t < T.swap) drawHero(g, look.style('cardS', null, pal), plan.ready, cx, ry, Math.min(0.62 * U, (W * 0.6) / (heroLayout(plan.ready).width + 2.4)), {});
   } else {
     const k = ease.outBack(seg(t, T.swap + 0.1, T.swap + 0.45));
-    drawHero(g, look.style('card', null, pal), 'GO!', cx, ry, 0.74 * U, { glyph: () => ({ sx: k, sy: k }) });
+    drawHero(g, look.style('card', null, pal), 'GO!', cx, ry, 0.74 * U, { ref: 0.74 * U * 1.1, glyph: () => ({ sx: k, sy: k }) });
   }
   // Header and footer in the corners, attract-mode style.
   const c3 = cardCell(U, sc, 0.42);

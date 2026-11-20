@@ -188,7 +188,8 @@ export class Director {
 
   _resetBags() {
     this.pick = mulberry32(mixSeed(this.matchSeed, 0xb0b));
-    this.dimBag = [];
+    // The opening world does not come round again until every other one has been seen.
+    this.dimBag = shuffled(playableDimensions().filter((id) => id !== this.first), this.pick);
     this.fxBag = [];
   }
 

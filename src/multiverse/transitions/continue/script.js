@@ -4,13 +4,13 @@ import { rand, randInt, pick, shuffle, chance, randSign, TAU, mixHex } from '../
 import { ERA_IDS, PHOSPHORS } from './looks.js';
 import { METALS, tokenMetal } from './props.js';
 
-export const DURATION = 11.0;
+export const DURATION = 12.0;
 export const SWAP_AT = 0.75;
 export const SWAP = SWAP_AT * DURATION; // computed the way the director computes it, so both agree to the bit
 
-// The count: 9 .. 2 quicken like a pulse under stress; "1" is the long, slow-motion one.
-const GAPS = [0.42, 0.39, 0.36, 0.33, 0.31, 0.29, 0.27, 0.25];
-const DIG0 = 2.1;
+// The count: 9 .. 2 quicken like a pulse under stress; "1" is the long one (the coin's close-up).
+const GAPS = [0.4, 0.36, 0.33, 0.3, 0.28, 0.26, 0.25, 0.24];
+const DIG0 = 1.95;
 const digitT = [];
 { let a = DIG0; for (const d of GAPS) { digitT.push(a); a += d; } }
 
@@ -19,12 +19,14 @@ export const T = {
   over0: 0.52,          // first letter of GAME OVER leaves the top of the screen
   shift0: 1.62, shift1: 2.2, // …and the headline climbs out of the way
   dig0: DIG0, digitT, digitGap: GAPS,
-  one: DIG0 + GAPS.reduce((a, b) => a + b, 0), // 4.72
-  gag0: 4.2,            // the coin is tossed
-  cardIn0: 7.2, cardIn1: 7.85,
-  ready0: 7.52,
-  flash0: 7.98, swap: SWAP,
-  wipe0: 8.58, wipe1: 10.2,
+  one: DIG0 + GAPS.reduce((a, b) => a + b, 0), // 4.37
+  gag0: 3.87,           // the coin is tossed (half a second before the "1")
+  msgOut: 7.0,          // the cabinet powers down: CRT collapse to a line, then a dot
+  cardIn0: 7.4, cardIn1: 7.95, // the stage card's bands open on black
+  letter0: 7.86,        // the card's lettering slams in once the bands are done
+  ready0: 8.2,
+  flash0: 8.72, swap: SWAP,
+  wipe0: SWAP + 0.33, wipe1: SWAP + 1.95,
   tail1: DURATION - 0.12,
 };
 
@@ -32,7 +34,7 @@ const GHOSTS = ['ROOK', 'NIMBUS', 'COYOTE', 'MOTH', 'ZIPPER', 'LOTUS', 'KESTREL'
 const TAUNTS = ['NEVER GIVE UP!', 'ONE MORE TRY?', 'THE WORLD IS WAITING', 'DO NOT LET THEM WIN', 'YOUR LEGEND IS NOT OVER', 'CAN YOU TAKE IT BACK?', 'DESTINY HAS A COIN SLOT'];
 const WELCOME = ['WELCOME BACK!', "LET'S GO!", 'ROUND TWO MINUTES LATER', 'NEW WORLD LOADING', 'NO REGRETS!', 'ONE MORE SHOT!'];
 const READY = ['READY?', 'GET READY!', 'READY...?', 'ARE YOU READY?'];
-const QUIPS = ['STEADY HANDS', 'COLD NERVES', 'ZERO REGRETS', 'SMOOTH TRIGGER', 'NO BLINKING', 'WIND READ'];
+const QUIPS = ['STEADY AIM', 'COLD NERVE', 'NO REGRETS', 'CLEAN HANDS', 'NO BLINKING', 'WIND READ'];
 
 export const up = (s) => String(s || '').toUpperCase().replace(/\s+/g, ' ').trim();
 
