@@ -108,7 +108,9 @@ export function drawAct1(g, w, h, t, S) {
   const ka = seg(t, T.impact + 0.16, T.impact + 0.5);
   if (ka > 0) {
     const sx = fx < w * 0.56 ? 1 : -1, sy = fy < h * 0.42 ? 1 : -1;
-    const e1 = u * 0.085, e2 = u * 0.05, x1 = fx + sx * e1, y1 = fy + sy * e1, x2 = x1 + sx * e2;
+    const e1 = u * 0.085, e2 = u * 0.05, x1 = fx + sx * e1, x2 = x1 + sx * e2;
+    // An impact near the bottom edge must not push the tag into the integrity readout there.
+    const y1 = Math.min(fy + sy * e1, h - u * 0.175 - Math.max(15, u * 0.04) * 1.5);
     const kd = ease.outCubic(ka);
     g.lineWidth = Math.max(1, u * 0.0022);
     g.lineCap = 'round';

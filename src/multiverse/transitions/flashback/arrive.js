@@ -272,10 +272,10 @@ export function makeArrival(ctx, plan) {
         for (let i = 0; i < TAIL.length; i++) {
           const k = (t - T.white - TAIL[i]) / 0.085;
           if (k <= 0 || k >= 1) continue;
-          const y = lerp(-h * 0.3, h, k), sg = g.createLinearGradient(0, y, 0, y + h * 0.3);
-          sg.addColorStop(0, 'rgba(60,40,20,0)'); sg.addColorStop(0.5, `rgba(60,40,20,${0.22 * fa * (1 - 0.15 * i)})`); sg.addColorStop(1, 'rgba(60,40,20,0)');
+          const y = lerp(-h * 0.18, h, k), sg = g.createLinearGradient(0, y, 0, y + h * 0.18);
+          sg.addColorStop(0, 'rgba(90,52,20,0)'); sg.addColorStop(0.5, `rgba(90,52,20,${0.17 * fa * (1 - 0.15 * i)})`); sg.addColorStop(1, 'rgba(90,52,20,0)');
           g.fillStyle = sg;
-          g.fillRect(0, y, w, h * 0.3);
+          g.fillRect(0, y, w, h * 0.18);
         }
       }
     },
