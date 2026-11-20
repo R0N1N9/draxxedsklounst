@@ -208,6 +208,7 @@ export function buildFx(THREE, mats, W) {
       box(p.x, p.y, p.z, p.s, p.s, p.s * 1.6, p.ry + p.age * p.w, p.rx + p.age * p.w * 0.7, 0, p.r, p.g, p.b, 0);
       if (k < 0) p.on = false;
     }
+    const cp = cam.position;
     for (let i = 0; i < P.length; i++) {
       const p = P[i];
       if (!p.on) continue;
@@ -217,7 +218,11 @@ export function buildFx(THREE, mats, W) {
       const out = u > 0.82 ? 1 - (u - 0.82) / 0.18 : 1, drag = Math.exp(-1.6 * dt);
       p.vx *= drag; p.vz *= drag; p.vy *= Math.exp(-0.5 * dt);
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
-      const s = lerp(p.r0, p.r1, 1 - (1 - u) * (1 - u)) * back * out;
+      let s = lerp(p.r0, p.r1, 1 - (1 - u) * (1 - u)) * back * out;
+      // a cloud parts around the lens: inside your own smoke you still see yourself and the wall it makes
+      const dc = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z), near = (dc - s * 0.8) / 4;
+      if (near < 1) s *= near > 0 ? near * near * (3 - 2 * near) : 0;
+      if (s < 0.02) continue;
       o.position.set(p.x, p.y, p.z); o.scale.set(s, s * 0.92, s); o.rotation.set(0, 0, 0); o.updateMatrix();
       puffs.put(o.matrix, p.r, p.g, p.b, 0);
     }

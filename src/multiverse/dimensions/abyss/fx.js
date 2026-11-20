@@ -48,7 +48,7 @@ void main() {
   vec3 light = sunAt(vW.y) * 0.5 + ambientAt(vec3(0.0, 1.0, 0.0), vW.y) * 3.0 + lamps(vW, vec3(0.0, 1.0, 0.0)) * 1.5;
   col = light * (rim * 0.9 + hl * 1.6) + vCol.rgb * 0.0;
   a = (rim * 0.75 + hl + 0.06) * vCol.a;
-  col = mix(col, waterBg(normalize(vW - uCam), vW.y), 1.0 - exp(-d * 0.045));
+  col = mix(col, waterBg(normalize(vW - uCam), vW.y), 1.0 - exp(-d * 0.026));
 #endif
 #ifdef GLOW
   float g = exp(-r * r * 4.0) + 0.25 * exp(-r * r * 40.0);
@@ -313,9 +313,11 @@ varying vec3 vW;
 ${WATER_GLSL}
 void main() {
   vec3 v = normalize(uCam - vW);
-  float f = pow(1.0 - abs(dot(normalize(vN), v)), 2.5);
-  float bands = 0.6 + 0.4 * sin(vW.y * 1.4 + uTime * 6.0);
-  gl_FragColor = vec4(uColor * (f * 1.4 + 0.06) * bands, uAlpha);
+  // a wavefront: only its grazing edge glows, with faint ripples trailing inside it
+  float f = pow(1.0 - abs(dot(normalize(vN), v)), 5.0);
+  float bands = 0.7 + 0.3 * sin(vW.y * 2.2 - uTime * 8.0);
+  float d = length(vW - uCam);
+  gl_FragColor = vec4(uColor * (f * 1.6 + 0.012) * bands * exp(-d * 0.012), uAlpha);
 }`;
 export function makeShell(THREE, mats, geo, color) {
   const m = keepAlpha(THREE, mats.shader({ vertexShader: SHELL_VERT, fragmentShader: SHELL_FRAG, uniforms: { uColor: { value: new THREE.Color(color).multiplyScalar(1.6) }, uAlpha: { value: 0 } }, side: THREE.DoubleSide }), true);

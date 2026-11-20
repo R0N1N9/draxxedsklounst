@@ -109,21 +109,17 @@ export function drawOverlay(g, S, L) {
     path(g, a.pts, a.n); g.strokeStyle = a.color; g.lineWidth = 4.5 * ui; g.stroke();
   }
   g.globalAlpha = 1;
-  // ---- where LEAP would take you ----
+  // ---- where LEAP would take you (the ring itself is drawn into the world) ----
   const lp = S.leap;
   if (lp.a > 0.01 && lp.n >= 2) {
     g.globalAlpha = lp.a * (lp.ready ? 1 : 0.4);
-    g.setLineDash([9 * ui, 9 * ui]);
+    g.setLineDash([12 * ui, 8 * ui]);
     g.lineDashOffset = -S.t * 40 * ui;
     g.lineCap = 'butt';
-    path(g, lp.pts, lp.n); g.strokeStyle = INK; g.lineWidth = 5.5 * ui; g.stroke();
-    path(g, lp.pts, lp.n); g.strokeStyle = PAPER; g.lineWidth = 2.5 * ui; g.stroke();
+    path(g, lp.pts, lp.n); g.strokeStyle = INK; g.lineWidth = 7.5 * ui; g.stroke();
+    path(g, lp.pts, lp.n); g.strokeStyle = lp.ready ? YEL : PAPER; g.lineWidth = 3.5 * ui; g.stroke();
     g.setLineDash([]);
-    const pulse = 1 + Math.sin(S.t * 6) * 0.08;
-    g.beginPath(); g.ellipse(lp.x, lp.y, lp.rx * pulse, lp.ry * pulse, 0, 0, TAU);
-    g.strokeStyle = INK; g.lineWidth = 6 * ui; g.stroke();
-    g.strokeStyle = lp.ready ? YEL : PAPER; g.lineWidth = 3 * ui; g.stroke();
-    if (lp.tag) inked(g, lp.tag, lp.x, lp.y - lp.ry - 13 * ui, Math.max(11, 15 * ui), YEL);
+    if (lp.tag && lp.seen) inked(g, lp.tag, lp.x, lp.y - lp.ry - 16 * ui, Math.max(12, 16 * ui), YEL);
     g.globalAlpha = 1;
   }
 

@@ -46,10 +46,12 @@ void main() {
 
 const FRAG = `
 #include <common>
+#ifdef SUN_SHADOW
 #include <packing>
 #include <bsdfs>
 #include <lights_pars_begin>
 #include <shadowmap_pars_fragment>
+#endif
 uniform vec3 uSun;
 uniform float uTime;
 uniform float uErase;
@@ -147,11 +149,12 @@ void main() {
   // (Only what needs it may discard: a shader that can throws away a rasteriser's early depth test.)
   #ifdef ERASE
   if (uErase > 0.0) {
-    // Rubbed out: what is left of this prop is the artist's blue pencil.
-    float s = fract((gl_FragCoord.x + gl_FragCoord.y) * 0.085 + h21(floor(vWp.xz)) * 3.0);
-    if (s > mix(1.0, 0.16, uErase)) discard;
-    col = mix(col, vec3(0.52, 0.74, 0.98), uErase);
-    unlit = 1.0;
+    // Rubbed out: what is left of this prop is a ghost of the artist's blue pencil, hatched over
+    // the page. It is drawn blended and without depth, so the inker never outlines it, nothing
+    // hides behind it, and the page keeps the light of whatever it shows through to (alpha).
+    float s = step(0.6, fract((gl_FragCoord.x - gl_FragCoord.y) * 0.1 + h21(floor(vWp.xz * 0.5)) * 3.0));
+    gl_FragColor = vec4(mix(col, vec3(0.42, 0.64, 0.97), uErase), mix(1.0, 0.14 + 0.24 * s, uErase));
+    return;
   }
   #endif
   float ndl = dot(n, uSun);
@@ -164,7 +167,9 @@ void main() {
 /** [r, g, b] in 0..1 from '#rrggbb' — print colours are used as written, never converted. */
 export const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]; };
 
-export function makeMats(THREE, sun, soft) {
+// shadows: false builds the family without three's light uniforms at all (smaller shaders,
+// for a software rasteriser that compiles every one of them into machine code).
+export function makeMats(THREE, sun, soft, shadows = true) {
   const shared = { uSun: { value: sun }, uTime: { value: 0 } };
   const all = [];
   /** o: { inst, map, cut (map alpha cuts holes), erase (sudden death can rub it out), color '#hex', kind, lit (unlit ink), minL (never darker than this: the snipers), side } */
@@ -175,9 +180,10 @@ export function makeMats(THREE, sun, soft) {
     if (o.cut) defines.CUT = '';
     if (o.erase) defines.ERASE = '';
     if (soft) defines.SOFT = '';
+    if (shadows) defines.SUN_SHADOW = '';
     const m = new THREE.ShaderMaterial({
-      lights: true, defines, vertexShader: VERT, fragmentShader: FRAG, side: o.side || THREE.FrontSide,
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.lights, {
+      lights: shadows, defines, vertexShader: VERT, fragmentShader: FRAG, side: o.side || THREE.FrontSide,
+      uniforms: THREE.UniformsUtils.merge([shadows ? THREE.UniformsLib.lights : {}, {
         uColor: { value: new THREE.Vector3(...rgb(o.color || '#ffffff')) }, uKind: { value: o.kind || 0 }, uErase: { value: 0 }, uLit: { value: o.lit ? 1 : 0 }, uMinL: { value: o.minL || 0 }, map: { value: null },
       }]),
     });

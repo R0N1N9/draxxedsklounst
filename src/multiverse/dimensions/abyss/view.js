@@ -287,6 +287,7 @@ export function makeView(ctx, THREE, renderer, S) {
       U.uCam.value.copy(camera.position);
       bg.position.copy(camera.position);
       surface.position.set(camera.position.x, 0, camera.position.z);
+      for (const sp of S.spears) if (sp.ribbon.mesh.visible) sp.ribbon.build(camera.position.x, camera.position.y, camera.position.z, 0.035);
       viewModel.root.position.copy(camera.position);
       viewModel.root.quaternion.copy(camera.quaternion);
       // A software rasteriser can take a second over one frame: then draw the scene only
@@ -308,7 +309,7 @@ export function makeView(ctx, THREE, renderer, S) {
       drawAt = now; drawn++; measure = true; drawnPhase = phase; worst = 0;
       // software build: bring the world in a piece per draw, so no one frame has to compile
       // every shader at once (a CPU compiles each one in about a second)
-      if (staged.length && drawn > 1) for (let n = 0; n < 2 && staged.length; n++) staged.shift().visible = true;
+      if (staged.length && drawn > 1) staged.shift().visible = true;
       // ---- the frame
       const pf = post.u;
       pf.uBreath.value = zoom * 0.75;
@@ -319,7 +320,7 @@ export function makeView(ctx, THREE, renderer, S) {
       pf.uFlashCol.value.setRGB(0.85, 1, 1);
       pf.uSat.value = kill ? lerp(1.12, 1.25, Math.min(1, kill.t)) : 1.12;
       pf.uMaskK.value = kill || api.shot ? 0.25 : 1;
-      pf.uExposure.value = lerp(1.55, 1.8, U.uDim.value);
+      pf.uExposure.value = lerp(1.55, 1.35, U.uDim.value);
       if (frames % shadowEvery === 0 || frames < 3) post.shadowPass(scene, clamp(camera.position.x, -20, 25), clamp(camera.position.z, -35, 35));
       post.render(scene, camera, !kill && !api.shot && ME.alive ? hands : null);
       renderer.setRenderTarget(null);
@@ -353,7 +354,7 @@ export function makeView(ctx, THREE, renderer, S) {
 
   const staged = [];
   if (Q.soft) {
-    for (const o of [...S.reef.group.children, ...S.life.group.children.filter((c) => c.visible), kraken.group, S.snow.mesh, glow.mesh, S.smoke.mesh, ...P.map((p) => p.model.root)]) {
+    for (const o of [S.reef.group, kraken.group, S.life.group, ...P.map((p) => p.model.root)]) {
       if (o.visible) { o.visible = false; staged.push(o); }
     }
   }
@@ -383,7 +384,7 @@ export function makeView(ctx, THREE, renderer, S) {
     if (avg > 20 && Q.tier < 2) {
       Q.tier++;
       post.setTier(Q.tier);
-      if (Q.tier === 1) post.setShadow(768);
+      if (Q.tier === 1) post.setShadow(1024);
       if (Q.tier === 2) { post.setShadow(512); shadowEvery = 2; S.snow.setCount(1200); }
       govGood = 0;
     } else if (avg < 13 && Q.tier > 0) {
@@ -392,7 +393,7 @@ export function makeView(ctx, THREE, renderer, S) {
       Q.tier--;
       post.setTier(Q.tier);
       shadowEvery = 1;
-      post.setShadow(Q.tier === 0 ? 1024 : 768);
+      post.setShadow(Q.tier === 0 ? 2048 : 1024);
       S.snow.setCount(Q.tier === 0 ? Q.snow : 1800);
     }
   }

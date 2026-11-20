@@ -99,7 +99,7 @@ export function makeBot(ctx, W, G) {
 
   function pickPost(b, tx, ty, tz) {
     const p = b.p, T = G.time();
-    const want = lerp(40, 14, clamp(T / 40, 0, 1)) - skill * 4;
+    const want = lerp(34, 11, clamp(T / 28, 0, 1)) - skill * 4;
     let best = null, bestS = -1e9;
     for (const q of W.posts) {
       const dMe = Math.hypot(q.x - p.x, q.z - p.z);
@@ -197,7 +197,7 @@ export function makeBot(ctx, W, G) {
     cmd.alt = wantHold;
     // fire when the aim has settled on the solution
     const settled = Math.abs(angDiff(cmd.yaw, wantYaw)) < 0.01 + 0.004 * (1 - skill) && Math.abs(cmd.pitch - wantPitch) < 0.012;
-    const patience = lerp(0.9, 0.45, skill) + (dist > 30 ? lerp(0.6, 0.2, skill) : 0) + (T < 8 ? 0.3 : 0);
+    const patience = lerp(0.9, 0.45, skill) + (dist > 30 ? lerp(0.6, 0.2, skill) : 0) + (T < 4 ? 0.3 : 0);
     if (fresh && p.loaded && settled && b.settle > patience && (p.holding || dist < 16 || p.air < 0.2)) {
       cmd.fire = true;
       b.settle = 0;

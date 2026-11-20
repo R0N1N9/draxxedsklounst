@@ -314,7 +314,7 @@ export function makeView(ctx, THREE, renderer, W) {
           // more than a sixth of the time go on drawing: the duel itself runs true.
           if (iv > 40) debt += iv - 17;
           if (iv > 60 || now - drawAt < Math.min(12000, 250 + debt * 5)) return;
-          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && api.draws > 2) post.setScale(Math.min(0.72, post.scale * 1.08));
+          if (debt > 1300) post.setScale(post.scale * 0.86); else if (debt < 320 && api.draws > 2) post.setScale(Math.min(0.5, post.scale * 1.08));
         }
       }
       if (W.stage) W.stage(api.draws);

@@ -44,18 +44,23 @@ vec3 waterFog(vec3 col, vec3 p, float k) {
   return col * T + waterBg(dir, uCam.y + dir.y * min(d, 70.0) * 0.5) * (1.0 - T);
 }
 
+// Bilinear-filtered comparisons over two offset footprints: soft, stable edges with no
+// stair-steps (there is no hardware comparison sampler to lean on here).
+float shadowTap(vec2 uv, float z, float t) {
+  vec2 tc = uv / t - 0.5, f = fract(tc), b = (floor(tc) + 0.5) * t;
+  float a = step(z, texture2D(tShadow, b).r), c = step(z, texture2D(tShadow, b + vec2(t, 0.0)).r);
+  float d = step(z, texture2D(tShadow, b + vec2(0.0, t)).r), e = step(z, texture2D(tShadow, b + vec2(t, t)).r);
+  return mix(mix(a, c, f.x), mix(d, e, f.x), f.y);
+}
 float sunShadow(vec3 p, float bias) {
   vec4 s = uShadowMat * vec4(p, 1.0);
   if (s.x <= 0.0 || s.x >= 1.0 || s.y <= 0.0 || s.y >= 1.0) return 1.0;
   float z = s.z - bias, t = uShadowTexel;
 #ifdef LEAN
   return step(z, texture2D(tShadow, s.xy).r);
+#else
+  return (shadowTap(s.xy + vec2(-0.9, 0.4) * t, z, t) + shadowTap(s.xy + vec2(0.9, -0.4) * t, z, t)) * 0.5;
 #endif
-  float a = step(z, texture2D(tShadow, s.xy + vec2(-0.6, -1.4) * t).r);
-  float b = step(z, texture2D(tShadow, s.xy + vec2(1.4, -0.6) * t).r);
-  float c = step(z, texture2D(tShadow, s.xy + vec2(0.6, 1.4) * t).r);
-  float e = step(z, texture2D(tShadow, s.xy + vec2(-1.4, 0.6) * t).r);
-  return (a + b + c + e) * 0.25;
 }
 
 // Where this point's sunlight came through the surface, and the net the swell focused it
@@ -93,7 +98,7 @@ vec3 ambientAt(vec3 n, float y) {
 
 // albedo lit by the sun (shadowed, with caustics), the water's ambient and the torches.
 vec3 litWater(vec3 albedo, vec3 p, vec3 n, float ao, float wrap, float cauK) {
-  float sh = sunShadow(p, 0.0016);
+  float sh = sunShadow(p + n * 0.09, 0.0012); // normal offset: no acne on the wall
   float ndl = max((dot(n, uL) + wrap) / (1.0 + wrap), 0.0);
   float cau = caustics(p) * smoothstep(-0.3, 0.7, n.y) * cauK;
   vec3 direct = sunAt(p.y) * sh * ndl * (0.5 + cau * 1.7);
@@ -214,7 +219,9 @@ void main() {
   alb *= 0.6 + 0.5 * fine.r;
   alb = mix(alb, vec3(0.36, 0.17, 0.07), smoothstep(0.45, 0.8, streak) * 0.75);
   alb = mix(alb, vec3(0.16, 0.26, 0.1), smoothstep(0.2, 0.8, n.y) * smoothstep(0.4, 0.62, big.r) * 0.85);
-  alb *= 0.85 + 0.15 * sin(vO.y * 9.0);
+  // planking: strakes down the hull, boards across the deck
+  float plank = mix(sin(vO.y * 9.0), sin(vO.x * 14.0), smoothstep(0.6, 0.9, abs(n.y)));
+  alb *= 0.82 + 0.18 * plank + 0.1 * smoothstep(0.92, 1.0, abs(plank)) * -1.0;
 #endif
   vec3 col = litWater(alb, vW, n, ao, 0.25, 1.0);
   gl_FragColor = vec4(waterFog(col, vW, 1.0), length(vW - uCam));

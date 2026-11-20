@@ -72,7 +72,7 @@ export default {
   aim: 'look',
   palette: { bg: '#0b2c3a', fg: '#fff1d6', accent: '#ff7a4d' },
   controls: { move: 'CARVE', aim: 'AIM', fire: 'FIRE', alt: 'BRACE', a1: 'DIVE', a2: 'SPRAY' },
-  hint: 'Wave crests block your shot — fire when you can see them.',
+  hint: 'The swell hides you both — shoot when they ride up into view.',
   altToggle: true,
   roundTime: ROUND,
   overTime: KILL.end,
@@ -85,7 +85,7 @@ export default {
     const Q = { soft: false, scale: 1 };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.52; }
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) { Q.soft = true; Q.scale = 0.36; }
     } catch { /* masked: assume a real GPU */ }
     if (globalThis.__surfRich) { Q.soft = false; Q.scale = 1; } // test scripts: the full build, whatever draws it
 
@@ -226,6 +226,8 @@ export default {
       const live = ctx.phase !== 'intro';
       for (const p of P) {
         const rd = riders[p.i], onWater = p.alive && p.dive <= 0 && !p.air;
+      // under the surface you are still on screen: a boil of bubbles and a pale shape track you
+      if (p.alive && p.dive > 0 && Math.random() < dt * 22) { const h = sea.height(p.x, p.z); fx.ring(p.x + rnd(0.4), h, p.z + rnd(0.4), 0.3, 1.6, 0.6, 0.8); fx.mist(p.x, h + 0.1, p.z, rnd(0.5), 0.6 + Math.random(), rnd(0.5), 0.45, 0.5, 1.4, 0.45, 2, 1); }
         rd.x = p.x; rd.z = p.z; rd.v = p.v; rd.on = onWater && p.v > 1.2;
         if (!onWater || p.v < 2) continue;
         const fxh = -Math.sin(p.hd), fzh = -Math.cos(p.hd), carve = Math.abs(p.turn);
@@ -359,10 +361,11 @@ export default {
         shore.dispose();
         ocean.dispose();
         sky.dispose();
+        scene.traverse((o) => { if (o.isInstancedMesh) o.dispose(); }); // (their instance buffers: disposeTree frees only geometry and material)
         disposeTree(scene);
       },
     };
-    inst.dbg = { game, view, sea, world, fx, Q, SET }; // test scripts only
+    inst.dbg = { game, view, sea, world, fx, Q, SET, post, sky, ocean }; // test scripts only
     post.resize();
     return inst;
   },

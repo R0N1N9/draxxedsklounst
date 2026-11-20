@@ -57,7 +57,7 @@ void main() {
     vec2 q = p.xz - uL.xz / uL.y * p.y;
     float a = texture2D(tCaustic, q * 0.021 + vec2(uTime * 0.006, uTime * 0.004), 2.5).r;
     float b = texture2D(tNoise, q * 0.011 + vec2(-uTime * 0.004, uTime * 0.003)).r;
-    float shaft = smoothstep(0.12, 0.55, a * 1.6 * (0.55 + b));
+    float shaft = smoothstep(0.3, 0.8, a * 1.5 * (0.45 + b));
     float depth = exp(min(p.y, 0.0) * 0.045);
     sun += vec3(shaft * shadowAt(p) * depth * ext) * exp(min(p.y, 0.0) * vec3(0.06, 0.02, 0.012));
     for (int k = 0; k < 2; k++) {
@@ -67,7 +67,7 @@ void main() {
       lamp += uLampCol[k] * cone * ext / (1.0 + ld * ld * 0.07);
     }
   }
-  vec3 col = (sun * uSunCol * (0.006 + ph * 0.022) + lamp * 0.012) * stepL * uK * (1.0 - 0.7 * uDim);
+  vec3 col = (sun * uSunCol * vec3(0.78, 1.0, 1.06) * (0.0035 + ph * 0.013) + lamp * 0.012) * stepL * uK * (1.0 - 0.7 * uDim);
   gl_FragColor = vec4(col, 1.0);
 }`;
 const PREFILTER = HEAD + `
@@ -256,6 +256,15 @@ export function makePost(THREE, renderer, U, q) {
       if (hands) { renderer.clearDepth(); renderer.render(hands, camera); }
       renderer.autoClear = true;
       const w = scene.width, h = scene.height;
+      if (q.soft) {
+        // the software build: no shafts, no bloom — every extra pass is another pipeline a CPU
+        // has to build before the first frame, and several more milliseconds after it
+        fu.tBloom.value = fu.tWide.value = fu.tVol.value = null;
+        pass(mFinal, scene, ldr, w, h);
+        pass(mPresent, ldr, null, w, h);
+        renderer.autoClear = auto;
+        return;
+      }
       shaftU.uCamWorld.value.copy(camera.matrixWorld);
       shaftU.uProjInv.value.copy(camera.projectionMatrixInverse);
       pass(mShaft(tier), scene, vol, vol.width, vol.height);

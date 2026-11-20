@@ -75,11 +75,12 @@ export default {
     const sim = makeKrakenSim(ctx.seed);
     // Quality: a software rasteriser gets the lean build; a GPU starts rich and the view's
     // governor steps down if frames run long.
-    const Q = { soft: false, tier: 0, scale: 1, shadow: 1024, fish: 260, snow: 2600, msaa: true };
+    const Q = { soft: false, tier: 0, scale: 1, shadow: 2048, fish: 260, snow: 2600, msaa: true };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
       if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.25, shadow: 512, fish: 60, snow: 700, msaa: false });
     } catch { /* masked: assume a GPU */ }
+    if (globalThis.__abyssRich) Object.assign(Q, { soft: false, tier: 0, scale: 1, shadow: 2048, fish: 260, snow: 2600, msaa: false }); // (test stills only)
     const tex = makeTextures(THREE, renderer, Q.soft);
     const U = makeShared(THREE, tex);
     const mats = makeMaterials(THREE, U, Q.soft);
@@ -98,6 +99,7 @@ export default {
     const smoke = new Cloud(THREE, mats, Q.soft ? 160 : 320, 'SMOKE');
     const snow = makeSnow(THREE, mats, Q.snow);
     scene.add(bubbles.mesh, glow.mesh, smoke.mesh, snow.mesh);
+    snow.mesh.visible = !Q.soft;
 
     // ---- the two divers. Player 0 always takes spawn A (z < 0).
     const kit = makeDiverKit(THREE, mats);
@@ -223,7 +225,15 @@ export default {
     }
     function exhale(p, big) {
       eyeOf(p, e3);
+      // the regulator vents either side of the mouth and a little back: past your mask, not into it
+      const side = (p.breaths & 1 ? 1 : -1) * 0.32;
+      e3.x += Math.cos(p.yaw) * side + Math.sin(p.yaw) * 0.12; e3.z += -Math.sin(p.yaw) * side + Math.cos(p.yaw) * 0.12;
       puff(e3.x, e3.y - 0.1, e3.z, big ? 34 : 14, big ? 0.09 : 0.06, big ? 0.35 : 0.15);
+      // and the big wobbling domes that catch the light: what gives you away from 60 m off
+      for (let i = 0; i < (big ? 9 : 5); i++) {
+        bubbles.emit(e3.x + (Math.random() - 0.5) * 0.4, e3.y - 0.1 - i * 0.12, e3.z + (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.3, 0.9 + Math.random() * 0.5, (Math.random() - 0.5) * 0.3,
+          0.22 + Math.random() * 0.2, 0.03, 12, 1, 1, 1, 1, 0.5, 1.3);
+      }
       p.tell.x = p.x; p.tell.y = p.y; p.tell.z = p.z; p.tell.t = T;
       sfx.exhale(p.x, p.y, p.z, p === ME, big);
     }
@@ -309,7 +319,7 @@ export default {
           if (s.judge && foe.alive && ctx.phase === 'live') {
             capsule(foe);
             const u = segCap(s.x, s.y, s.z, mx, my, mz, capA, capB, HIT_R);
-            if (u >= 0 && u * len < best) { best = u * len; what = capT < 0.25 ? 'head' : 'diver'; }
+            if (u >= 0 && u * len < best) { best = u * len; what = capT < 0.05 ? 'head' : 'diver'; }
           }
           for (const d of decoys) {
             if (!d.alive || d.owner === s.owner) continue;

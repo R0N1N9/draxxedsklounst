@@ -80,12 +80,12 @@ export default {
     const Q = { rich: true, scale: 1, bloom: true, fxaa: true, lite: false, shadows: true };
     try {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
-      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { rich: false, scale: 0.42, bloom: false, fxaa: false, lite: true, shadows: false });
+      if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { rich: false, scale: 0.4, bloom: false, fxaa: false, lite: true, shadows: false });
     } catch { /* masked: assume a real GPU */ }
     const W = buildWorld(ctx.rng);
     const scene = new THREE.Scene();
     const sunDir = new THREE.Vector3(-0.86, 0.44, 0.05).normalize();
-    const mats = makeMats(THREE, sunDir, Q.rich), art = makeArt(THREE);
+    const mats = makeMats(THREE, sunDir, Q.rich, Q.shadows), art = makeArt(THREE);
     const city = buildCity(THREE, W, mats, art, ctx.seed), fx = buildFx(THREE, mats, W);
     const post = makePost(THREE, renderer, Q), sfx = makeSfx(ctx), letters = makeLetters(), kit = makeHeroKit(THREE, mats);
     scene.add(city.group, fx.group);
@@ -174,7 +174,8 @@ export default {
     const depthMat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
     scene.traverse((o) => { if (o.isMesh && o.castShadow) o.customDepthMaterial = depthMat; });
 
-    const view = makeView(ctx, THREE, renderer, { scene, W, fx, post, P, G, letters, Q, sfx });
+    const stage = (n) => { city.stage(n); fx.group.visible = n >= 3; for (const p of P) p.model.root.visible = p.model.root.visible && n >= 1; };
+    const view = makeView(ctx, THREE, renderer, { scene, W, fx, post, P, G, letters, Q, sfx, stage });
 
     // ---- shooting ----
     function spawnBullet(owner, ox, oy, oz, dx, dy, dz, judge, flags) {
@@ -291,7 +292,9 @@ export default {
       p.scoped = false;
       if (mini) { if (p === me) sfx.hop(); return; }
       for (let i = 0; i < 5; i++) fx.puff(p.x + (Math.random() - 0.5) * 0.8, p.y + 0.2, p.z + (Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 3, 0.4, (Math.random() - 0.5) * 3, 0.2, 0.75, 0.7, i & 1 ? CREAM : FLAME);
-      view.pop('FWOOSH', p.x, p.y + 2.6, p.z, p === me ? 0.7 : 1.1, 0.8);
+      // yours is written along the way you are going (the lens follows you into it); theirs where they left
+      const L = p.leap, k = p === me ? 0.45 : 0;
+      view.pop('FWOOSH', lerp(L.x0, L.x1, k), lerp(L.y0, L.y1, k) + L.H * 4 * k * (1 - k) + (p === me ? 1.2 : 2.6), lerp(L.z0, L.z1, k), p === me ? 0.8 : 1.1, 0.8);
       sfx.leap(p.x, p.y, p.z, p === me);
       fx.scare(p.x, p.y, p.z, 8);
     }
@@ -484,7 +487,11 @@ export default {
         p.model.update(phase === 'over' ? dt : rdt, s);
         p.model.root.visible = !(p === me && view.S.scope > 0.5 && p.alive) && p.y > -30;
         // sudden death: a column of your colour says where you are
-        if (ts >= 0 && p.alive && phase === 'live') fx.beam(p.x, p.y + 2.6, p.z, p.x, p.y + 30, p.z, 0.12 + Math.sin(wt * 8 + p.i) * 0.03, p.c[0], p.c[1], p.c[2]);
+        // (as thick on the page far away as near: a hairline would be all ink)
+        if (ts >= 0 && p.alive && phase === 'live') {
+          const cp = view.camera.position, d = Math.hypot(p.x - cp.x, p.z - cp.z);
+          fx.beam(p.x, p.y + 2.6, p.z, p.x, p.y + 30, p.z, (0.12 + Math.sin(wt * 8 + p.i) * 0.03) * Math.max(1, d / 22), p.c[0], p.c[1], p.c[2]);
+        }
       }
       fx.end();
 

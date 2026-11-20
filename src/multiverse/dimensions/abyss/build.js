@@ -35,8 +35,8 @@ function merge(THREE, list) {
   return out;
 }
 // A displaced blob: rock (faceted, rough) or coral (smooth, ridged).
-function blob(THREE, seed, kind) {
-  const g = kind === 'rock' ? new THREE.IcosahedronGeometry(1, 2) : new THREE.SphereGeometry(1, 22, 14);
+function blob(THREE, seed, kind, lean) {
+  const g = kind === 'rock' ? new THREE.IcosahedronGeometry(1, lean ? 2 : 3) : new THREE.SphereGeometry(1, 22, 14);
   const p = g.attributes.position, v = new THREE.Vector3();
   for (let i = 0; i < p.count; i++) {
     v.fromBufferAttribute(p, i);
@@ -92,6 +92,7 @@ const KELP_VERT = VERT_COMMON + `
 attribute float aLeaf;
 attribute vec2 aKelp;
 uniform float uTime;
+uniform vec3 uCam;
 uniform vec4 uWake;
 varying float vLeaf;
 varying float vH;
@@ -112,6 +113,11 @@ void main() {
   w.y -= dot(sway, sway) * k * 0.06;
   w.x += sin(uTime * 2.6 + ph + h) * aLeaf * 0.12;
   vW = w.xyz;
+  // a plant you are swimming through would fill the mask with blades, layer on layer: the
+  // ones within arm's reach step aside
+  // (the test is the same for every vertex of a plant, so a plant goes as a whole)
+  vec2 stalk = base.xz - uCam.xz;
+  if (dot(stalk, stalk) < 2.2) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vN = normalize(mat3(modelMatrix) * n);
   vLeaf = aLeaf;
   vH = h / 9.0;
@@ -224,7 +230,7 @@ export function buildReef(THREE, W, mats, U, seed, lean) {
     group.add(m);
     return m;
   };
-  const rockGeos = [0, 1, 2].map((k) => paint(blob(THREE, k * 7.3 + 1, 'rock'), 1, 1, 1));
+  const rockGeos = [0, 1, 2].map((k) => paint(blob(THREE, k * 7.3 + 1, 'rock', lean), 1, 1, 1));
   const rocks = W.decor.boulder.concat(W.decor.outcrop);
   for (let v = 0; v < 3; v++) {
     inst(rockGeos[v], mats.rock, rocks.filter((_, i) => i % 3 === v), (r, d, c) => {

@@ -154,7 +154,7 @@ export function makePost(THREE, renderer, q) {
     sun: mRays.uniforms.uSun.value,
     get scale() { return scale; },
     // A software rasteriser trades sharpness for time: the view moves this with what a draw is costing.
-    setScale(k) { k = Math.max(0.42, Math.min(1, k)); if (Math.abs(k - scale) > 0.02) { scale = k; api.resize(); } },
+    setScale(k) { k = Math.max(0.3, Math.min(1, k)); if (Math.abs(k - scale) > 0.02) { scale = k; api.resize(); } },
     resize() {
       renderer.getDrawingBufferSize(size);
       const w = Math.max(8, Math.round(size.x * scale)), h = Math.max(8, Math.round(size.y * scale));

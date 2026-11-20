@@ -32,6 +32,7 @@ void main() {
 
 const FRAG = (soft) => `precision highp float;
 #define SKY_LOD ${soft ? '4.5' : '5.5'}
+${soft ? '#define SOFT' : ''}
 uniform vec3 uCam, uSunDir, uSunCol;
 uniform sampler2D tDetail;
 uniform vec4 uCast[2];  // each rider: feet (xyz), height (0 = none)
@@ -63,11 +64,19 @@ void main() {
   float far = smoothstep(30.0, 520.0, dist);
   vec4 d1 = texture2D(tDetail, vP0 * 0.031 + t * vec2(0.011, 0.017));
   vec4 d2 = texture2D(tDetail, vP0 * 0.0093 + t * vec2(-0.006, 0.0045) + 0.37);
+#ifdef SOFT
+  vec4 d3 = vec4(d2.yx, d1.zw); // (a software rasteriser pays for every texture fetch: the fine layer borrows the coarse ones)
+#else
   vec4 d3 = texture2D(tDetail, vP0 * 0.13 + t * vec2(-0.025, 0.04) + 0.71);
+#endif
   vec2 rip = (d1.xy - 0.5) * 1.15 + (d2.xy - 0.5) * 0.6 + (d3.xy - 0.5) * 0.8 * (1.0 - far);
   N = normalize(N + vec3(rip.x, 0.0, rip.y) * mix(0.42, 0.2, far) * (0.3 + 0.7 * uSea.y));
   float ndv = max(dot(N, V), 0.0), sunN = max(dot(N, uSunDir), 0.0);
+#ifdef SOFT
+  float sh = 1.0;
+#else
   float sh = shade(vW, uCast[0]) * shade(vW, uCast[1]);
+#endif
 
   // what the surface mirrors
   float fres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
@@ -97,7 +106,11 @@ void main() {
   }
 
   // foam: where the surface folds, in streaks on the high water, and along the sand
+#ifdef SOFT
+  float lace = d1.z * 0.6 * (0.35 + d2.w);
+#else
   float lace = d3.z * 0.45 * d2.w + texture2D(tDetail, vP0 * 0.071 + rip * 0.12 - t * vec2(0.013, 0.006)).z * 0.75 * (0.35 + d1.w);
+#endif
   float foam = smoothstep(0.3, 0.72, (1.0 - smoothstep(0.44, 0.8, J)) * (0.72 + lace * 0.7)) + smoothstep(1.2, 3.0, h) * smoothstep(1.0, 1.35, lace + d2.w * 0.7) * 0.35;
   float band = sin(depth * 2.6 + t * 1.25 + d2.w * 3.0 + vP0.x * 0.02);
   foam += (smoothstep(0.55, 1.0, band) * (0.35 + lace) * (1.0 - smoothstep(0.6, 4.5, depth)) + (1.0 - smoothstep(0.05, 0.55, depth)) * (0.6 + lace)) * step(-0.3, depth);

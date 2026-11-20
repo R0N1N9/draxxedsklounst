@@ -28,8 +28,7 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
     project(FOE.x, FOE.y + 0.3, FOE.z, tmp);
     const dist = Math.hypot(FOE.x - ME.x, FOE.y - ME.y, FOE.z - ME.z);
     const label = phase === 'intro' ? `RIVAL · ${Math.round(dist)} M` : ctx.sudden ? `${Math.round(dist)} M` : `CONTACT · ${Math.round(dist)} M`;
-    const a = phase === 'intro' ? clamp((ctx.time, 1), 0, 1) : 1;
-    marker(g, tmp, w, h, FOE.color, label, k, a, safe, phone);
+    marker(g, tmp, w, h, FOE.color, label, k, 1, safe, phone);
   }
   // the ping warning: an arrow at the edge towards whoever pinged you
   const pg = H.ping;
@@ -118,7 +117,7 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
 
   // ---- the dive computer: depth and air, low on the left (clear of the touch stick)
   if (!killing && !view.shot) {
-    const x = Math.max(16, safe.left > 0 && phone ? 16 : 16) * k + (safe.left > 0 ? 0 : 0);
+    const x = 16 * k;
     const y = safe.bottom > 0 ? Math.min(h * 0.42, h - safe.bottom - 40 * k) : h - 46 * k;
     const depth = Math.max(0, -view.camera.position.y);
     g.textAlign = 'left';

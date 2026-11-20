@@ -18,7 +18,7 @@ export function makeView(ctx, THREE, renderer, X) {
   const S = {
     w: 1, h: 1, t: 0, ui: 1, touch: false, safeL: 0, safeR: 0, safeB: 0, live: false, alive: true, scope: 0, spreadPx: 10, blocked: false,
     ammo: 4, mag: 4, cycle: 0, reload: 0, range: 0, holds: [{ px: 0, label: '80' }, { px: 0, label: '100' }, { px: 0, label: '120' }],
-    leap: { a: 0, n: 0, ready: false, pts: new Float32Array(ARC_N * 2), x: 0, y: 0, rx: 1, ry: 1, tag: '' }, arcs: [mkArc(), mkArc()],
+    leap: { a: 0, n: 0, ready: false, seen: false, pts: new Float32Array(ARC_N * 2), x: 0, y: 0, ry: 1, tag: '' }, arcs: [mkArc(), mkArc()],
     marks: [], pops: [], prompt: '', note: '', noteA: 0, splash: { a: 0, t: 0, word: 'KAPOW', x: 0, y: 0, side: 1, caption: '' },
   };
   for (let i = 0; i < 5; i++) S.marks.push({ on: false, x: 0, y: 0, ang: 0, a: 0, kind: '', color: '#fff', hollow: false, text: '' });
@@ -68,16 +68,31 @@ export function makeView(ctx, THREE, renderer, X) {
     return m;
   }
   // Sample a leap's arc into screen points; returns how many landed in front of the lens.
+  // clip: stop where the city hides the rest of the arc from the lens.
   const pm = { on: false, front: false, x: 0, y: 0, ang: 0 };
-  function arcPts(L, u0, u1, pts) {
+  function arcPts(L, u0, u1, pts, clip) {
     let n = 0;
+    const cp = camera.position, T = G.time();
     for (let i = 0; i < ARC_N; i++) {
-      const u = lerp(u0, u1, i / (ARC_N - 1));
-      project(lerp(L.x0, L.x1, u), lerp(L.y0, L.y1, u) + L.H * 4 * u * (1 - u) + 0.3, lerp(L.z0, L.z1, u), pm);
+      const u = lerp(u0, u1, i / (ARC_N - 1)), x = lerp(L.x0, L.x1, u), y = lerp(L.y0, L.y1, u) + L.H * 4 * u * (1 - u) + 0.3, z = lerp(L.z0, L.z1, u);
+      project(x, y, z, pm);
       if (!pm.front) { if (n) break; continue; }
+      if (clip && n > 1 && !W.los(cp.x, cp.y, cp.z, x, y, z, T, true)) break;
       pts[n * 2] = pm.x; pts[n * 2 + 1] = pm.y; n++;
     }
     return n;
+  }
+  // The landing ring is built into the world, so parapets and walls hide it as they should.
+  function ring(x, y, z, d, ready, a) {
+    const r = Math.max(0.95, d * 0.024) * (1 + Math.sin(wt * 6) * 0.07), w = Math.max(0.09, d * 0.0042), n = 20;
+    const c0 = ready ? 1 : 0.95, c1 = ready ? 0.86 : 0.93, c2 = ready ? 0.25 : 0.82;
+    for (const k of [1, 0.42]) {
+      const rr = r * k * (0.6 + 0.4 * a);
+      for (let i = 0; i < n; i++) {
+        const a0 = (i / n) * 6.2832, a1 = ((i + 1) / n) * 6.2832;
+        fx.beam(x + Math.cos(a0) * rr, y + 0.07, z + Math.sin(a0) * rr, x + Math.cos(a1) * rr, y + 0.07, z + Math.sin(a1) * rr, w, c0, c1, c2);
+      }
+    }
   }
   const nearer = (sx, sy, sz, x, y, z, t) => {
     const cx = x - sx, cy = y - sy, cz = z - sz, tc = cx * F.x + cy * F.y + cz * F.z;
@@ -215,15 +230,16 @@ export function makeView(ctx, THREE, renderer, X) {
       const lp = S.leap;
       lp.a = phase === 'live' ? damp(lp.a, lt.ok && scopeAmt < 0.3 ? 1 : 0, 12, rdt) : 0;
       if (lt.ok) {
-        const L = G.arcOf(me, lt.x, lt.z, lt.roof);
-        lp.n = arcPts(L, 0.12, 1, lp.pts);
+        const L = G.arcOf(me, lt.x, lt.z, lt.roof), cp = camera.position;
+        lp.n = arcPts(L, 0.12, 1, lp.pts, true);
         project(L.x1, L.y1 + 0.05, L.z1, pm);
-        const d = Math.hypot(L.x1 - camera.position.x, L.y1 - camera.position.y, L.z1 - camera.position.z) || 1;
-        lp.x = pm.x; lp.y = pm.y; lp.rx = clamp((pointScale * 1.2) / d, 7, 90); lp.ry = lp.rx * clamp((camera.position.y - L.y1) / d + 0.12, 0.16, 0.9);
+        const d = Math.hypot(L.x1 - cp.x, L.y1 - cp.y, L.z1 - cp.z) || 1;
+        lp.x = pm.x; lp.y = pm.y; lp.ry = clamp((pointScale * 1.2) / d, 7, 90) * clamp((cp.y - L.y1) / d + 0.12, 0.16, 0.9);
+        lp.seen = pm.on && W.los(cp.x, cp.y, cp.z, L.x1, L.y1 + 0.35, L.z1, T, true);
         lp.ready = me.leapCd <= 0;
-        lp.tag = G.taught.leap ? '' : ctx.input.device === 'touch' ? 'LEAP' : ctx.input.device === 'gamepad' ? 'LB: LEAP' : 'SHIFT: LEAP';
-        if (!pm.on) lp.n = 0;
-      }
+        lp.tag = G.taught.leap ? '' : ctx.input.device === 'touch' ? 'TAP LEAP' : ctx.input.device === 'gamepad' ? 'LB: LEAP' : 'SHIFT: LEAP';
+        if (lp.a > 0.05) ring(L.x1, L.y1, L.z1, d, lp.ready, lp.a);
+      } else lp.n = 0;
       // leaps in flight draw their own line
       for (let i = 0; i < 2; i++) {
         const p = P[i], a = S.arcs[i];
@@ -317,8 +333,8 @@ export function makeView(ctx, THREE, renderer, X) {
     render() {
       // A machine with no GPU cannot draw this page sixty times a second. It draws one, waits
       // for the rasteriser to really finish it (left to queue, a software GPU falls further
-      // behind with every page and the whole browser stalls), rests five times as long as the
-      // page took, and keeps the duel and the 2D layer running true in between. A render with no
+      // behind with every page and the whole browser stalls), rests seven times as long as the
+      // page took (and never less than about half a second), and keeps the duel and the 2D layer running true in between. A render with no
       // update before it is the core photographing the world for a transition: always drawn.
       const inBand = fresh;
       fresh = false;
@@ -330,12 +346,13 @@ export function makeView(ctx, THREE, renderer, X) {
       frames++;
       renderer.shadowMap.needsUpdate = Q.rich || shadowDirty;
       shadowDirty = false;
+      if (!Q.rich && frames <= 4) X.stage(frames - 1);
       const t0 = performance.now();
       post.render(scene, camera);
       if (!Q.rich) {
         try { const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); } catch { /* a lost context: nothing to wait for */ }
         cost = performance.now() - t0;
-        drawAfter = performance.now() + Math.min(6000, cost * 5);
+        drawAfter = performance.now() + clamp(cost * 7, 600, 6000);
       }
     },
   });
