@@ -309,6 +309,9 @@ async function startMultiverse(mode, opts = {}) {
     first: opts.first,
     only: opts.only,
     off: store.get('mvOff', null),
+    // The first match this device hosts shows off the surf-into-underwater pair (see the owner's menu).
+    opener: mode === 'host' && store.get('mvOpener', true),
+    onOpener: () => store.set('mvOpener', false),
     dev: { ...DEV, ...(opts.dev || {}) },
     valley: { build: (o) => buildValley(o.mode, { ...o, pal: opts.pal, code: opts.code }) },
     hello: () => ({ rules: { ...RULES } }),
@@ -426,7 +429,16 @@ syncMode();
 // also lists what is still being built.
 const openLab = async () => {
   showPanel('panel-lab');
-  const { DIMENSIONS, TRANSITIONS, loadDimension, loadTransition } = await import('./multiverse/registry.js');
+  const { DIMENSIONS, TRANSITIONS, loadDimension, loadTransition, openerDimension } = await import('./multiverse/registry.js');
+  // Whether the next hosted match opens with the showpiece pair: spent by the first match
+  // that plays it, and re-armed here (shown only once both worlds are playable).
+  const showpiece = openerDimension();
+  $('lab-opener').style.display = showpiece ? '' : 'none';
+  if (showpiece) {
+    const box = $('lab-opener').querySelector('input');
+    box.checked = store.get('mvOpener', true);
+    box.onchange = () => store.set('mvOpener', box.checked);
+  }
   const all = params.has('lab');
   const listed = (list) => list.filter((x) => !x.dev && (all || !x.wip));
   const off = { dims: [], fx: [], ...(store.get('mvOff', null) || {}) };

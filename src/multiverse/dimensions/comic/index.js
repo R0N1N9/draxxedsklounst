@@ -575,8 +575,6 @@ export default {
         art.dispose();
       },
     };
-    inst.view = view; // test scripts only: view.shot = { x, y, z, tx, ty, tz, fov } pins the camera
-    inst.P = P; inst.Q = Q; inst.G = G; inst.W = W; inst.post = post; inst.scene = scene;
     post.resize();
     return inst;
   },

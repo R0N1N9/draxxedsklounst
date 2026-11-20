@@ -14,9 +14,9 @@ const WORDS = {
   BLAM: ['BLAM!', '#fff27a', '#ff7a2e', '#e2413a'], KRAK: ['KRAK!', '#ffffff', '#ffd23f', null], PING: ['PING!', '#f2ffff', '#7df9ff', null],
   THUNK: ['THUNK!', '#ffe7b3', '#e0914d', null], BOINK: ['BOINK!', '#fff4d6', '#ff8fb0', null], WHIFF: ['WHIFF!', '#ffffff', '#cfe0ff', null],
   THUD: ['THUD!', '#ffe7b3', '#d9764a', null], POOF: ['POOF!', '#ffffff', '#d9c2ff', '#8e5bd6'], FWOOSH: ['FWOOSH!', '#fff27a', '#ff9d2e', null],
-  HUP: ['HUP!', '#ffffff', '#9dffd0', null], CHAK: ['CHK-CHAK!', '#ffffff', '#c9c2e6', null], RATTLE: ['RATTLE RATTLE', '#fff4d6', '#c9c2e6', null],
+  RATTLE: ['RATTLE RATTLE', '#fff4d6', '#c9c2e6', null],
   KAPOW: ['KA-POW!', '#fff27a', '#ff3d5e', '#ffd23f'], WHAM: ['WHAMMO!', '#fff27a', '#ff3d5e', '#7df9ff'], ZOK: ['ZOK!!', '#ffffff', '#ffd23f', '#e2413a'],
-  SKRITCH: ['SKRITCH…', '#dff0ff', '#8fc4ff', null], FLAP: ['FLAP FLAP', '#ffffff', '#e6dcff', null],
+  SKRITCH: ['SKRITCH…', '#dff0ff', '#8fc4ff', null],
 };
 
 // One word, set by hand: every letter a little off its neighbours, fat ink round a two-tone fill.
@@ -119,7 +119,11 @@ export function drawOverlay(g, S, L) {
     path(g, lp.pts, lp.n); g.strokeStyle = INK; g.lineWidth = 7.5 * ui; g.stroke();
     path(g, lp.pts, lp.n); g.strokeStyle = lp.ready ? YEL : PAPER; g.lineWidth = 3.5 * ui; g.stroke();
     g.setLineDash([]);
-    if (lp.tag && lp.seen) inked(g, lp.tag, lp.x, lp.y - lp.ry - 16 * ui, Math.max(12, 16 * ui), YEL);
+    // the label sits over the ring when the landing is in view, else on the end of the arc that is
+    if (lp.tag) {
+      const k = (lp.n - 1) * 2, lx = lp.seen ? lp.x : lp.pts[k], ly = lp.seen ? lp.y - lp.ry - 16 * ui : lp.pts[k + 1] - 18 * ui;
+      inked(g, lp.tag, lx, ly, Math.max(12, 16 * ui), YEL);
+    }
     g.globalAlpha = 1;
   }
 
