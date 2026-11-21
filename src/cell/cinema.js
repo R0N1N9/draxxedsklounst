@@ -9,6 +9,7 @@ import { Avatar } from '../avatar.js';
 import { hazeUniforms } from '../atmosphere.js';
 import { terrainHeight, lam } from './facility.js';
 import { buildVan, setVanLights } from './van.js';
+import { VanSound } from './vansound.js';
 
 const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -73,6 +74,8 @@ export class Cinema {
     this.vz1 = 143;
     this.title.textContent = '';
     this._voiced = new Set();
+    this.vs = new VanSound(g.audio);
+    this._pz = null;
     this._fadeTo(1);
   }
 
@@ -97,6 +100,18 @@ export class Cinema {
     // Doors open at 6 s, close at 9.5 s.
     const doorOpen = t > 6 && t < 9.5 ? Math.min(1, (t - 6) * 2.5) : Math.max(0, 1 - (t - 9.5) * 2.5);
     for (const D of Object.values(this.van.userData.doors)) D.hinge.rotation.y = D.sx * (t > 6 ? doorOpen : 0) * 1.15;
+    // Sound: the van rolling in, braking, the doors, and the two of them kitting up.
+    const VS = this.vs;
+    if (!VS.on) VS.start(this.van.position, true);
+    const spd = this._pz === null || dt <= 0 ? 0 : Math.abs(this._pz - vz) / dt;
+    this._pz = vz;
+    VS.update(dt, this.van.position, spd);
+    const cross = (at) => t >= at && t - dt < at;
+    if (cross(6)) VS.door(true);
+    if (cross(6.15)) VS.door(true);
+    if (cross(7.1) || cross(8.3)) VS.gear();
+    if (cross(9.6)) VS.door(false);
+    if (cross(9.85)) VS.door(false);
     // Actors.
     const two = this.actors.length === 2;
     for (const A of this.actors) {
@@ -173,6 +188,7 @@ export class Cinema {
     this.active = null;
     for (const A of this.actors) g.scene.remove(A.av.root);
     g.scene.remove(this.van);
+    if (this.vs) this.vs.stop();
     this._show(false);
     this._say('');
     this.title.classList.remove('on');
@@ -189,6 +205,7 @@ export class Cinema {
     this.el.classList.add('outro');
     this._say('');
     this._buildOutro();
+    this.vs2 = new VanSound(this.g.audio);
     this._fadeTo(1);
   }
 
@@ -281,6 +298,8 @@ export class Cinema {
     v.userData.body.position.y = Math.sin(t * 9) * 0.01;
     for (const w of v.userData.wheels) w.rotation.x -= (speed / 0.38) * dt;
     setVanLights(v, true, t);
+    if (!this.vs2.on) this.vs2.start(v.position, false);
+    this.vs2.update(dt, v.position, speed);
     const vp = v.position;
     if (t < 3.6) {
       // Low chase behind, the sun dead ahead.

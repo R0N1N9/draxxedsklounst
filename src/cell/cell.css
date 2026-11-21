@@ -327,3 +327,13 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 @keyframes subs-blink { 50% { opacity: 0; } }
 body.cell-pip #cell-subs { top: 178px; }
 @media (pointer: coarse) { #cell-subs { font-size: 12px; } }
+
+/* Touch (iPad / phone): the action buttons sit in a compact strip along the bottom centre,
+   like the desktop key hints, between the move stick and the fire cluster. The ability chips
+   are hidden (the strip has the same actions), so nothing covers SCOPE / FIRE. */
+#touch .cell-tbar { top: auto !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); left: 50%; transform: translateX(-50%); max-width: min(640px, 54vw); flex-wrap: wrap; justify-content: center; gap: 5px; }
+#touch .cell-tbar .pill { min-width: 0; padding: 7px 9px; font-size: 11px; letter-spacing: 0.12em; background: rgba(2, 10, 14, 0.62); border-color: rgba(0, 255, 224, 0.35); }
+#touch .cell-tbar #cell-tpause { border-color: rgba(232, 230, 240, 0.5); color: #e8e6f0; }
+@media (pointer: coarse) {
+  #cell-hud .c-kit, #cell-hud .c-keys { display: none !important; }
+}
