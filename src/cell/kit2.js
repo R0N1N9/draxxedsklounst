@@ -7,6 +7,7 @@ import { ROOMS, BUILDING } from './facility.js';
 import { guardCapsules } from './sentinel.js';
 import { addStrobes, blinkStrobes, IRLaser, ghostAvatar, tickGhosts, IR_LAYER } from './irfx.js';
 
+const SUP_DUR = 1.25;
 export const Kit2 = {
   // A payload target ({x,z,y?}) inside the building → its room (floor from y, else the
   // tablet's floor, else the operator's).
@@ -25,12 +26,35 @@ export const Kit2 = {
     this.atmos.syncLamps();
   },
 
+  // B: the support hand comes up to the muzzle and twists the can off (pocketed), or brings
+  // it up from the pouch and threads it on. You can't fire mid-gesture; the state flips the
+  // moment the can comes free (off) or the last thread bites (on).
   _toggleSup() {
     const w = this.player.w;
     if (w.def.slot === 'rifle') { this.hud.flash('RIFLE SUPPRESSOR IS INTEGRAL', 'dim'); return; }
-    w.sup = !w.sup;
+    if (this.supAnim) return;
+    if (this.player.reloadT > 0 || this.downed) { w.sup = !w.sup; this._supFlash(w); return; }
+    this.supAnim = { t: 0, w, to: !w.sup, done: false, ticks: 0 };
+    this.audio.nvgReach && this.audio.nvgReach();
+  },
+  _supFlash(w) {
     this.hud.flash(w.sup ? 'SUPPRESSOR ON' : 'SUPPRESSOR OFF — LOUD', w.sup ? 'cyan' : 'red');
     this.audio.click();
+  },
+  // Progress 0..1 for the viewmodel, or 0 when idle. Commit points: off at 0.55, on at 0.78.
+  _supTick(dt) {
+    const A = this.supAnim;
+    if (!A) return 0;
+    if (this.player.w !== A.w) { this.supAnim = null; return 0; }
+    A.t += dt;
+    const u = Math.min(1, A.t / SUP_DUR);
+    // Thread clicks while the can turns.
+    const tw0 = A.to ? 0.5 : 0.24, tw1 = A.to ? 0.78 : 0.52;
+    const n = Math.floor(Math.max(0, Math.min(1, (u - tw0) / (tw1 - tw0))) * 5);
+    while (A.ticks < n) { A.ticks++; this.audio.supThread && this.audio.supThread(A.ticks / 5); }
+    if (!A.done && u >= (A.to ? 0.78 : 0.55)) { A.done = true; A.w.sup = A.to; this._supFlash(A.w); }
+    if (u >= 1) this.supAnim = null;
+    return u;
   },
   _cycleMode() {
     const w = this.player.w, M = w.def.modes;
@@ -241,6 +265,7 @@ export const Kit2 = {
   // low: optional chatter (callouts), skipped when the net is busy.
   _radio(who, text, low = false) {
     if (who === 'me') who = this.role;
+    if (who === 'partner') who = this.partnerRole;
     if (low === 'soft' ? !this.radio.idle() : low && !this.radio.free()) return;
     this._voice(who, text, false, low === true);
     this.comms(text, who === 'shooter' ? '#ffb040' : '#40d0ff', who === this.role ? this.name : this.partnerName);

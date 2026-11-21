@@ -21,7 +21,7 @@
 // Headshots kill anything, whatever the weapon. Infiltration keeps its plain security guards.
 // Reinforcements always come from OUTSIDE the building: the barracks door and the south gate.
 import * as THREE from 'three';
-import { lam, glowMat, SPOTS, ROOMS } from './facility.js';
+import { lam, glowMat, SPOTS, ROOMS, drawX } from './facility.js';
 import { clamp, mulberry32 } from '../util.js';
 
 export const DIFFS = {
@@ -350,6 +350,7 @@ export class Sentinel {
     this.hunt = { shooter: { seen: -99, lkp: null, broke: true }, spotter: { seen: -99, lkp: null, broke: true } };
     this.lastBackup = -99;
     if (mission === 'nightwatch') this._populateNW(); else this._populate();
+    this._pickets(mission === 'nightwatch');
     this._cameras();
   }
 
@@ -457,6 +458,27 @@ export class Sentinel {
     this._spread(34);
     this._drones();
     this.garrison = this.guards.length;
+  }
+
+  // Pickets in the draw south of the ridge, between the drop-off and the crest: a sentry at
+  // the observation post, two walkers on the valley floor, a lookout on the slope below the
+  // crest (and, sometimes, one up on the tree line). Out here they walk straight over open
+  // ground. Each one that sees you radios it in, so take them quietly before you go over.
+  _pickets(nw) {
+    const R = this.rng, keep = (p) => R() < this.D.count || p;
+    const T = nw ? 'scav' : 'guard';
+    const at = (z, off) => ({ x: drawX(z) + off, z });
+    const add = (o) => { const g = this.spawnGuard({ type: T, ...o }); g.picket = true; g.free = true; return g; };
+    const op = this.fac.outpost || at(230, 6);
+    add({ post: { x: op.x - 0.2, z: op.z - 0.3, face: Math.PI + 0.15, sweep: 0.9 } });
+    const walk = [at(198, -1), at(214, 2), at(236, -2), at(250, 1)];
+    add({ route: walk.map((p) => ({ ...p })), start: [walk[0].x, walk[0].z] });
+    const back = [...walk].reverse();
+    add({ route: back.map((p) => ({ ...p })), start: [back[0].x, back[0].z] });
+    const cr = at(166, -9);
+    add({ post: { x: cr.x, z: cr.z, face: Math.PI - 0.35, sweep: 0.8 } });
+    if (keep()) { const tl = at(212, 19); add({ post: { x: tl.x, z: tl.z, face: Math.PI / 2 + 0.6, sweep: 0.7 } }); }
+    this.pickets = this.guards.filter((g) => g.picket).length;
   }
 
   // Static posts that make sense for a site like this, both missions:
@@ -775,7 +797,7 @@ export class Sentinel {
       if (g.type === 'jugg' || g.type === 'overseer') { this.emit({ t: 'bark', k: 'jugg', id: g.id }); this.noise({ x: g.x, y: g.y, z: g.z }, 30, true); }
       else if (g.type === 'bulwark') this.emit({ t: 'bark', k: 'bulwark', id: g.id });
       else if (g.type === 'scav') { this.emit({ t: 'bark', k: 'scav', id: g.id }); this.noise({ x: g.x, y: g.y, z: g.z }, 22, true); }
-      if (g.jamT <= 0 && g.type !== 'scav' && !this.commsDown) g.radioT = 1.5;
+      if (g.jamT <= 0 && (g.type !== 'scav' || g.picket) && !this.commsDown) g.radioT = g.picket ? 2.6 : 1.5;
     }
   }
 
@@ -1044,7 +1066,7 @@ export class Sentinel {
   }
 
   _reinforce(dt) {
-    const alive = this.guards.filter((g) => g.state !== 'dead').length;
+    const alive = this.guards.filter((g) => g.state !== 'dead' && !g.picket).length;
     const cap = this.garrison + (this.lockdown ? 6 : this.alarm >= 1 ? 3 : 0);
     const every = this.lockdown ? 9 : this.alarm >= 1 ? 14 : this.alarm > 0.3 ? 28 : 45;
     this.respawnT -= dt;
@@ -1094,6 +1116,7 @@ export class Sentinel {
     if (g.stagger > 0) { g.moving = false; return false; }
     if (ty === undefined) ty = g.y;
     g.pathT -= dt;
+    if (g.free && g.z > 112 && tz > 112 && (!g.path || g.pathT <= 0 || !g.goal || Math.hypot(g.goal.x - tx, g.goal.z - tz) > 3)) { g.path = [{ x: tx, z: tz }]; g.goal = { x: tx, z: tz, y: ty }; g.pathT = 2.5; }
     if (!g.path || g.pathT <= 0 || !g.goal || Math.hypot(g.goal.x - tx, g.goal.z - tz, (g.goal.y - ty) * 2) > 3) {
       g.path = this.fac.path(g.x, g.z, tx, tz, g.y, ty);
       // Don't double back to the nearest node when the next one is straight ahead.

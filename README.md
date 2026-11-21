@@ -202,6 +202,8 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 **Inside the building:** patrols on both floors.
 
+**The approach:** the van drops you in a wooded draw south of the ridge. Walk north up the draw, using the tree line as cover (tree crowns block sight), over the crest and out to the cliff that overlooks the compound. Four or five **pickets** hold the draw: a sentry at a sandbagged observation post, two walkers on the valley floor, a lookout below the crest and sometimes one on the tree line. Each one that spots you radios it in, so take them quietly. The objective board counts the ones left until you're over the crest. An AI partner walks the draw with you (crouching when you do) and moves to its post once you crest the hill.
+
 The garrison is kept lean, about 34 in NightWatch and 28 in Infiltration, and spread out: no two starting guards stand within about 9 m of each other, except a pack leader and its follower.
 
 ### Guards notice
@@ -236,8 +238,9 @@ The garrison is kept lean, about 34 in NightWatch and 28 in Infiltration, and sp
 - **Downed but alive:** a body-shot kill leaves an enemy down but alive. It's out of the fight, but the reticle still goes red over it. Headshot it on the ground to finish it, and your character calls "X-ray down".
 - **Radio chatter:**
   - Operators call fresh contacts in their field of view: "Contact, north-east, 60 meters".
-  - When your partner drops an enemy you pinged, they call "X-ray down".
+  - When your partner drops an enemy you pinged, they call "X-ray down". Marking an enemy gets no spoken acknowledgement.
   - Switching on night vision sometimes gets a "Going dark".
+- **Zoom:** the ISR sensor zooms smoothly from 40° to 1.8° (wheel, + / −, hold [ or ], pinch, or the ZOOM pills on touch), with a zoom ladder on the right of the view. On the tablet, pinch or scroll the map, and zoom the live camera / bodycam feed up to 6× with its ＋ − buttons, the scroll wheel or a pinch (double-click resets).
 - **HUD:**
   - The comms log fades after a few seconds; the tablet keeps the full log.
   - **O** shows or hides the objective board, and **P** expands or compacts it.
@@ -247,7 +250,7 @@ The garrison is kept lean, about 34 in NightWatch and 28 in Infiltration, and sp
 **Shooter** (default callsign **Ra**):
 
 - KR-50 Nightjar: bolt-action, integrally suppressed, with Halo-style hitscan and a night-vision scope.
-- Secondary: the **K9 HUSH SMG** (40-round magazine; full / burst / semi) or the **M50 Magnum** (7 rounds and a heavy hit, like Halo's magnum). Its suppressor is fitted by default and removable.
+- Secondary: the **K9 HUSH SMG** (40-round magazine; full / burst / semi) or the **M50 Magnum** (7 rounds and a heavy hit, like Halo's magnum). Its suppressor is fitted by default and removable: your support hand comes up to the muzzle and twists the can off and pockets it (or threads it back on). You can't fire mid-gesture.
 - **Stealth kit:**
   - **G** active camo. **Firing breaks it.**
   - **H** Deadeye.
@@ -258,7 +261,7 @@ The garrison is kept lean, about 34 in NightWatch and 28 in Infiltration, and sp
 
 **Spotter** (default callsign **Rōnin**):
 
-- P-9 pistol (2 magazines) with a removable suppressor.
+- P-9 pistol (2 magazines) with a removable suppressor (**B**: animated twist off / on).
 - **TAB:**
   - **Tap** for the tablet. Tap again for the ISR view, and again to return to first person.
   - **Hold** for **quickhacks**: your left hand brings up your phone and the HUD switches to scan mode (time slows in solo). Everything hackable in view gets tagged.

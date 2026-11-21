@@ -1,7 +1,7 @@
 // Sniper Cell — the two cut-scenes, played locally on each client (skippable).
 //   INTRO  the van comes down the plateau track with its lights on, stops, both doors swing
 //          open, the operators step out, gear up (rifle up, comms check, a flicker of active
-//          camo, the tablet lights), and walk together to the cliff over Kestrel Ridge.
+//          camo, the tablet lights), and walk together into the wooded draw below Kestrel Ridge.
 //   OUTRO  after the van pulls out: an open road across a plain, the van running flat out
 //          toward a sunrise, ending on its silhouette against the sun as the debrief rolls.
 import * as THREE from 'three';
@@ -70,8 +70,9 @@ export class Cinema {
     this.van = buildVan();
     g.scene.add(this.van);
     this.vx = 6;
-    this.vz0 = 196;
-    this.vz1 = 143;
+    // Down the draw from the south to the drop-off (the walk-out ends at SPOTS.insert).
+    this.vz0 = 336;
+    this.vz1 = 298;
     this.title.textContent = '';
     this._voiced = new Set();
     this.vs = new VanSound(g.audio);
@@ -138,8 +139,9 @@ export class Cinema {
     const S = this.actors[0];
     if (t < 6) {
       // Wide: watching the van come down the track toward us, the valley glow beyond.
-      const cp = new THREE.Vector3(vx + 13, terrainHeight(vx + 13, 150) + 2.4, 150);
-      cam.position.lerpVectors(new THREE.Vector3(vx + 16, cp.y + 3, 165), cp, ease(t / 6));
+      const z1 = this.vz1 + 7, z0 = this.vz1 + 22;
+      const cp = new THREE.Vector3(vx + 13, terrainHeight(vx + 13, z1) + 2.4, z1);
+      cam.position.lerpVectors(new THREE.Vector3(vx + 16, cp.y + 3, z0), cp, ease(t / 6));
       cam.lookAt(vx, vy + 1, vz);
       cam.fov = 42;
     } else if (t < 9) {
@@ -154,10 +156,10 @@ export class Cinema {
       cam.lookAt(vx, terrainHeight(vx, fz) + 1.35, fz);
       cam.fov = 40;
     } else {
-      // Walking out together toward the cliff and Kestrel Ridge below.
+      // Walking out together up the draw, into the trees toward the ridge.
       const ahead = S.p;
       cam.position.set(vx + 0.4, ahead.y + 1.9, ahead.z + 3.6);
-      cam.lookAt(vx, ahead.y - 2 - (t - 11) * 1.2, ahead.z - 40);
+      cam.lookAt(vx, ahead.y + 0.6, ahead.z - 40);
       cam.fov = 52;
     }
     cam.aspect = innerWidth / innerHeight;
