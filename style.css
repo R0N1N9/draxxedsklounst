@@ -431,3 +431,4 @@ body.reckoning .tag { color: #f2c81e; }
 /* iPad / tablet with a mouse: the touch aim-and-fire buttons step back; stick and pills stay. */
 body.mouse-mode #touch .tb.big, body.mouse-mode #touch .tb.mid.scope { opacity: 0.25; }
 body.mouse-mode #touch { cursor: crosshair; }
+

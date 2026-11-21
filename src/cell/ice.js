@@ -48,7 +48,8 @@ export const IceOps = {
     ob.plan = null;
     ob.voteT = VOTE_TIME;
     const n = this.sentinel.guards.filter((g) => g.icePost && g.state !== 'dead').length;
-    this._say2('isr', `Overwatch to Sniper Cell. ICE just tripped. I count ${n} hostiles moving to ring the building. You've been made.`, 0.6);
+    this._say2('isr', 'Overwatch to Sniper Cell. ICE just tripped. Multiple hostiles are moving to ring the building. You\'ve been made.', 0.6);
+    void n;
     this._say2('spotter', 'Damn it. We\'ve been made.', 6.2);
     this._say2('shooter', 'Copy. So what\'s it gonna be, quiet or loud?', 8.4);
   },

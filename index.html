@@ -3,23 +3,24 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <title>Draxxed Sklounst</title>
+  <title>Sniper Cell: NightWatch</title>
   <meta name="description" content="A 1v1 long-range sniper duel in the browser." />
   <meta name="theme-color" content="#120f2e" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Draxxed Sklounst" />
+  <meta name="apple-mobile-web-app-title" content="Sniper Cell" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon-180.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="src/multiverse/multiverse.css" />
-  <link rel="stylesheet" href="src/multiverse/input.css" />
-  <link rel="stylesheet" href="src/cell/cell.css" />
+  <!-- ?v= tags make browsers fetch fresh copies after an update (GitHub Pages caches files for 10 min). -->
+  <link rel="stylesheet" href="style.css?v=20261121c" />
+  <link rel="stylesheet" href="src/multiverse/multiverse.css?v=20261121c" />
+  <link rel="stylesheet" href="src/multiverse/input.css?v=20261121c" />
+  <link rel="stylesheet" href="src/cell/cell.css?v=20261121c" />
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
   </script>
@@ -35,7 +36,7 @@
     <div class="menu-card">
       <div class="brand">
         <div class="kicker"><span>// TACTICAL DUEL</span><span>v1.0<i class="rec rec-alt" aria-hidden="true"></i></span></div>
-        <h1 id="title">DRAXXED<br />SKLOUNST</h1>
+        <h1 id="title">SNIPER<br />CELL</h1>
         <p class="tag" id="tagline">One valley. Two rifles. Eight hundred metres.</p>
       </div>
 
@@ -45,7 +46,7 @@
           <select data-setting="mode"><option value="classic">Duel</option><option value="app">Do you want to develop an app?</option></select></label>
         <label class="field" id="field-target" style="display:none"><span>Points to win</span>
           <select data-setting="mvTarget"><option value="3">First to 3</option><option value="5">First to 5</option><option value="7">First to 7</option><option value="10">First to 10</option></select></label>
-        <button id="btn-cell" class="cell-btn"><span class="t-w">SNIPER</span>&nbsp;<span class="t-r">CELL</span> <em>NightWatch · co-op stealth</em></button>
+        <button id="btn-cell" class="cell-btn">NIGHT<span class="t-r">WATCH</span></button>
         <button id="btn-host" class="primary">Host a match</button>
         <button id="btn-join-open">Join with code</button>
         <button id="btn-ai-open">Vs AI</button>
@@ -320,6 +321,6 @@
     </div>
   </div>
 
-  <script type="module" src="src/main.js"></script>
+  <script type="module" src="src/main.js?v=20261121c"></script>
 </body>
 </html>

@@ -40,7 +40,7 @@ It also has **[Sniper Cell: NightWatch](#sniper-cell)**, a co-op (or solo) night
 - Both players start on opposite ridgelines, about 800 m apart. Spawns are random among three points per ridge, and sides swap every round.
 - You get one life per round. First to 4 rounds wins.
 - **Predator UAV**: a drone circles high over the valley. Every 60 s of live play it pings both players in red on each other's HUD. For 8 s afterwards you can press **U** to tune into its live thermal feed of the enemy. A UAV jammer blocks the ping and the feed.
-- **Pollo Hermano** (easter egg): pick the Thermal poncho, then the *Pollo Hermano* poncho skin. You wear a yellow chicken suit and your rifle flings yellow chickens instead of bullets: held by the beak, pulled back by the feet, slingshot style. They fly exactly like the rifle's bullets under the current sniping style and do the same damage on a direct hit. A chicken that lands gets up and runs at the enemy (5 m/s) and pecks them (4 damage every 0.6 s) until it's shot: the pistol is ideal. Fling yours at the ground near enemy chickens and they brawl. Up to 8 live chickens each; they wander off after 45 s. The AI shoots chickens near it with its pistol. With the suit selected, the main menu becomes *Draxxed Sklounst: The Reckoning*. Pecked to death? You don't just die: a kraken bursts out of the ground and swallows the town, then a vast AI overlord reaches down from the sky and flicks you off the map: "The AI Overlords have deemed this one unworthy." (Both players watch it instead of the killcam.) In flight a chicken glows and trails yellow like a tracer.
+- **Pollo Hermano** (easter egg): pick the Thermal poncho, then the *Pollo Hermano* poncho skin. You wear a yellow chicken suit and your rifle flings yellow chickens instead of bullets: held by the beak, pulled back by the feet, slingshot style. They fly exactly like the rifle's bullets under the current sniping style and do the same damage on a direct hit. A chicken that lands gets up and runs at the enemy (5 m/s) and pecks them (4 damage every 0.6 s) until it's shot: the pistol is ideal. Fling yours at the ground near enemy chickens and they brawl. Up to 8 live chickens each; they wander off after 45 s. The AI shoots chickens near it with its pistol. With the suit selected, the main menu becomes *Draxxed Sklounst: The Reckoning*. The suit isn't remembered between visits: every fresh load starts on the standard poncho and the classic title. Pecked to death? You don't just die: a kraken bursts out of the ground and swallows the town, then a vast AI overlord reaches down from the sky and flicks you off the map: "The AI Overlords have deemed this one unworthy." (Both players watch it instead of the killcam.) In flight a chicken glows and trails yellow like a tracer.
 - **Sniping style** (main menu, host's choice applies to both players). Two bars: the shooting style (bullet physics) and, underneath, the shooting distance:
   - **Halo** (the default): instant hit, no drop, wind or sway, 5×/10×/20× zoom. Plays at Close range.
   - **Call of Duty**: fast bullets, light drop, no wind, slightly bigger hitboxes. Plays at Medium range.
@@ -113,7 +113,9 @@ Click the game view with the mouse and it switches to mouse mode: the mouse aims
 
 A night stealth mode for one or two players, built around the feel of a classic night sniping level: a dark valley, a lit compound below, a suppressed rifle with a night-vision scope and a white vapour trail on every shot. Its rules are adapted from **Cold Archive**'s co-op infiltration (agent + Overwatch, SENTINEL's alarm, bandwidth-based payloads). The players use the Draxxed Sklounst operator models in Multicam Black. The shooter wears a chest rig and a dark urban-digital poncho; the spotter wears a plate carrier and a cap.
 
-Pick **SNIPER CELL** on the main menu, then a mission, the **staging area** loadout, and how to play.
+Pick **NIGHTWATCH** (the cyan button) on the main menu, then a mission, the **staging area** loadout, and how to play.
+
+**Play it:** [r0n1n9.github.io/snipercellnightwatch/#nightwatch](https://r0n1n9.github.io/snipercellnightwatch/#nightwatch) opens Sniper Cell with NightWatch selected. Use `#infiltration` for the other mission.
 
 ### Missions
 
@@ -285,7 +287,11 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 ### Comms
 
 - **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER, SYNC and SNIPER POS, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
-- **Radio:** operators and ISR Overwatch talk over a tactical squad net. You hear a mic click and static on key-up, clipped male voices over a crackling static bed with dropouts, and a squelch tail on key-down; Overwatch ends with a talk-permit chirp. Every line is **subtitled**.
+- **Radio:** operators and ISR Overwatch talk over a tactical squad net, inspired by close-quarters tactical shooters.
+  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (an American dispatcher).
+  - The recordings are run through a radio treatment: narrow band, presence boost, hard compression and grit.
+  - In the game each line opens with a mic click and a burst of static, sits on a crackling static bed with dropouts, and ends on a squelch tail; Overwatch adds a talk-permit chirp.
+  - Every line is **subtitled** as a terminal entry: the callsign, then the line typed out, cleared when it ends. Overwatch opens each op with a short, clipped brief. A line without a recording, or the offline single-file build, falls back to the browser's own voice.
 - **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
 - **Cut-scenes:**
   - Opening: drive in, gear up, walk out.
@@ -394,6 +400,17 @@ The game is a static site with all dependencies vendored in `vendor/`, so there'
 Matchmaking uses the free public PeerJS broker only to exchange connection details. Gameplay traffic goes directly between the two devices, with a TURN relay as fallback on restrictive networks.
 
 **Testing on one machine:** add `?local=1` to the URL and open two tabs. The tabs then talk over `BroadcastChannel` instead of WebRTC.
+
+## Radio voice lines
+
+`audio/vo/` holds the Sniper Cell radio lines, rendered with [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) (Apache-2.0) and processed with ffmpeg. The script list is `tools/vo/lines.py`; to add or change a line, edit it there (keep the text identical to the game's), then run:
+
+```
+pip install kokoro-onnx soundfile        # plus ffmpeg
+python3 tools/vo/generate.py kokoro-v1.0.int8.onnx voices-v1.0.bin
+```
+
+The two model files are on the kokoro-onnx releases page. Existing clips are kept; only new lines are rendered.
 
 ## Graphics presets
 

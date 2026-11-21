@@ -417,7 +417,7 @@ export const KitMethods = {
       const d = Math.hypot(x - this.partner.pos.x, z - this.partner.pos.z);
       A.moveTo = 3;
       A.moveT = Math.max(5, Math.min(25, d / 9));
-      say(`Copy, moving to your mark. ${Math.round(A.moveT)} seconds.`);
+      say('Copy, moving to your mark.');
     } else if (k === 'move') {
       const best = SPOTS.perches.map((p, i) => [Math.hypot(p.x - at.x, p.z - at.z), i]).sort((a, b) => a[0] - b[0])[0][1];
       if (best !== A.perch) this._execPayload('perch', { i: best }, 'spotter'); else say('Already here.');
@@ -429,7 +429,7 @@ export const KitMethods = {
     if (k === 'look') {
       const near = this.sentinel.guards.filter((g) => g.state !== 'dead' && Math.hypot(g.x - at.x, g.z - at.z) < 15);
       for (const g of near) g.tagT = 12;
-      say(near.length ? `${near.length} contact${near.length > 1 ? 's' : ''} there — tagged.` : 'Looks clear from here.');
+      say(near.length ? (near.length > 1 ? 'Contacts there. Tagged.' : 'One contact there. Tagged.') : 'Looks clear from here.');
     } else if (k === 'enemy') say(enemyId ? 'Marked.' : 'I don’t see anything there.');
     else say('Copy.');
   },

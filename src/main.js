@@ -70,7 +70,9 @@ const settings = {
   sensitivity: store.get('sens', 1),
   invertY: store.get('invert', false),
   scopeToggle: store.get('toggle', 'ontouchstart' in window),
-  loadout: store.get('loadout', null),
+  // The Pollo Hermano skin is never remembered between visits: every fresh load starts on the
+  // standard poncho, the classic title and the default operator.
+  loadout: (() => { const lo = store.get('loadout', null); if (lo && lo.skin === 'pollo') { lo.skin = 'std'; store.set('loadout', lo); } return lo; })(),
   touchSensR: store.get('touchSensR', 1),
   touchSensL: store.get('touchSensL', 1),
   gyroMode: store.get('gyroMode', 'ontouchstart' in window ? 'scoped' : 'off'),
@@ -123,7 +125,7 @@ function primeGyro() {
   const DM = window.DeviceMotionEvent;
   if (settings.gyroMode !== 'off' && DM && typeof DM.requestPermission === 'function') DM.requestPermission().catch(() => {});
 }
-settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); updateTitle(); };
+settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo && lo.skin === 'pollo' ? { ...lo, skin: 'std' } : lo); updateTitle(); };
 
 // Easter egg: with the Pollo Hermano skin selected, the main menu becomes The Reckoning.
 // (Main menu only, and only for your own Pollo Hermano skin.)
@@ -133,9 +135,9 @@ function polloOn() {
 }
 function updateTitle() {
   const on = polloOn();
-  $('title').innerHTML = on ? 'DRAXXED<br />SKLOUNST<span class="reckon">: THE RECKONING</span>' : 'DRAXXED<br />SKLOUNST';
+  $('title').innerHTML = on ? 'DRAXXED<br />SKLOUNST<span class="reckon">: THE RECKONING</span>' : 'SNIPER<br />CELL';
   $('tagline').textContent = on ? 'One pollo. Two hermanos. Eight hundred sauce packets.' : 'One valley. Two rifles. Eight hundred metres.';
-  document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Draxxed Sklounst';
+  document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Sniper Cell: NightWatch';
   document.body.classList.toggle('reckoning', on);
   $('in-name').placeholder = on ? 'Pollo' : 'Ghost';
 }
@@ -718,6 +720,12 @@ $('btn-cell-share').onclick = async () => {
   (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? text : link) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied to clipboard!'), () => prompt('Copy this link:', link));
 };
 $('btn-cell-copy').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? hostCode : inviteLink()) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied!'), () => prompt('Copy:', FILE_MODE ? hostCode : inviteLink()));
+// Direct link: …/#nightwatch (or ?nightwatch) opens Sniper Cell with NightWatch selected;
+// #infiltration does the same for the other mission.
+{
+  const want = ['nightwatch', 'infiltration'].find((m) => location.hash === '#' + m || params.has(m));
+  if (want && !params.get('join') && !params.get('cell')) { cellSet.mission = want; store.set('cellMission', want); $('btn-cell').onclick(); }
+}
 if (params.get('cell')) { audio.unlock(); startCell(params.get('cell') === 'lone' ? 'operative' : 'solo', { cell: { role: params.get('role') === 'spotter' ? 'spotter' : 'shooter', diff: params.get('diff') || 'operative', mission: params.get('mission') || 'nightwatch', seed: 7 } }); }
 
 if (params.get('join')) {
