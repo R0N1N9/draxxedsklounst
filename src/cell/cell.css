@@ -337,3 +337,7 @@ body.cell-pip #cell-subs { top: 178px; }
 @media (pointer: coarse) {
   #cell-hud .c-kit, #cell-hud .c-keys { display: none !important; }
 }
+
+/* Pause menu and debrief open: the HUD goes above the touch layer (z-index 6) so its buttons
+   (Resume, Exit to main menu, Back to menu) take taps on iPad and phones. */
+body.cell-modal #cell-hud, #cell-hud:has(.c-pause.on), #cell-hud:has(.c-debrief.on) { z-index: 60; }
