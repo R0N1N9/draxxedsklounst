@@ -287,7 +287,11 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 ### Comms
 
 - **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER, SYNC and SNIPER POS, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
-- **Radio:** operators and ISR Overwatch talk over a tactical squad net. You hear a mic click and static on key-up, clipped male voices over a crackling static bed with dropouts, and a squelch tail on key-down; Overwatch ends with a talk-permit chirp. Every line is **subtitled**.
+- **Radio:** operators and ISR Overwatch talk over a tactical squad net, inspired by close-quarters tactical shooters.
+  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (British, the calm command voice).
+  - The recordings are run through a radio treatment: narrow band, presence boost, hard compression and grit.
+  - In the game each line opens with a mic click and a burst of static, sits on a crackling static bed with dropouts, and ends on a squelch tail; Overwatch adds a talk-permit chirp.
+  - Every line is **subtitled**. A line without a recording, or the offline single-file build, falls back to the browser's own voice.
 - **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
 - **Cut-scenes:**
   - Opening: drive in, gear up, walk out.
@@ -396,6 +400,17 @@ The game is a static site with all dependencies vendored in `vendor/`, so there'
 Matchmaking uses the free public PeerJS broker only to exchange connection details. Gameplay traffic goes directly between the two devices, with a TURN relay as fallback on restrictive networks.
 
 **Testing on one machine:** add `?local=1` to the URL and open two tabs. The tabs then talk over `BroadcastChannel` instead of WebRTC.
+
+## Radio voice lines
+
+`audio/vo/` holds the Sniper Cell radio lines, rendered with [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) (Apache-2.0) and processed with ffmpeg. The script list is `tools/vo/lines.py`; to add or change a line, edit it there (keep the text identical to the game's), then run:
+
+```
+pip install kokoro-onnx soundfile        # plus ffmpeg
+python3 tools/vo/generate.py kokoro-v1.0.int8.onnx voices-v1.0.bin
+```
+
+The two model files are on the kokoro-onnx releases page. Existing clips are kept; only new lines are rendered.
 
 ## Graphics presets
 

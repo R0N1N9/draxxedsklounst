@@ -311,12 +311,13 @@ export const Kit2 = {
     const ang = Math.atan2(f.g.x - P.pos.x, -(f.g.z - P.pos.z));
     const dirs = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
     const comp = dirs[((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8];
-    const m = Math.round(f.d / 10) * 10;
-    const what = { scav: 'officer', jugg: 'juggernaut', bulwark: 'bulwark', titan: 'titan', overseer: 'the Overseer', guard: 'tango' }[f.g.type] || 'tango';
+    // Range in bands (close / mid / long), so every callout has a recorded radio line.
+    const band = f.d < 30 ? 'close' : f.d < 80 ? 'mid range' : 'long range';
+    const what = { scav: 'an officer', jugg: 'a juggernaut', bulwark: 'a bulwark', titan: 'a titan', overseer: 'the Overseer', guard: 'a tango' }[f.g.type] || 'a tango';
     const n = fresh.length;
     const lines = n > 1
-      ? [`Contact. ${n} tangos, ${comp}, ${m} meters.`, `Multiple contacts, ${comp}, ${m} out.`]
-      : [`Contact, ${comp}, ${m} meters.`, `Got a ${what}, ${comp}, ${m} meters.`, `Eyes on a ${what}, ${comp}.`, 'Contact.'];
+      ? [`Multiple contacts, ${comp}, ${band}.`]
+      : [`Contact, ${comp}, ${band}.`, `Eyes on ${what}, ${comp}.`, 'Contact.'];
     this._radio('me', lines[Math.floor(Math.random() * lines.length)]);
   },
 };

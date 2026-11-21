@@ -7,6 +7,10 @@
 //               Overwatch is a longer-range link, so its bed is heavier
 //   key-down    a falling squelch tail; Overwatch ends on a two-tone talk-permit chirp
 // Every line is subtitled on screen (speaker + text), even where speech isn't available.
+// Recorded lines: audio/vo/ holds every scripted line pre-rendered with neural male voices
+// (Kokoro; Ra, Ronin and Overwatch each have their own) and run through a radio treatment
+// (narrow band, presence bump, hard compression, grit). A line with a recording plays that;
+// anything else falls back to the browser's speech synthesis. See tools/vo/.
 // Lines queue so nobody talks over anybody, and stale chatter is dropped.
 const SPEAKERS = {
   shooter: { pitch: 0.62, rate: 1.06, color: '#ffb040', bed: 0.045 },
@@ -44,6 +48,12 @@ export class Radio {
       } catch {}
     };
     try { load(); speechSynthesis.onvoiceschanged = load; } catch {}
+    // Recorded voice lines (absent in the single-file build or offline: speech synthesis then).
+    this.vo = null;
+    this.buf = new Map();
+    try {
+      fetch(VO_DIR + 'manifest.json').then((r) => (r.ok ? r.json() : null)).then((m) => { this.vo = m; }).catch(() => {});
+    } catch {}
     // Subtitles.
     const el = (this.sub = document.createElement('div'));
     el.id = 'cell-subs';
@@ -87,7 +97,7 @@ export class Radio {
     this._keyUp();
     this._bed(true, item.who);
     this._subtitle(item);
-    let done = false;
+    let done = false, guard = 0;
     const finish = () => {
       if (done) return;
       done = true;
@@ -98,7 +108,48 @@ export class Radio {
       this._subT = setTimeout(() => this._subtitle(null), 1600);
       setTimeout(() => this._next(), 260);
     };
-    const guard = setTimeout(finish, 1400 + item.text.length * 75);
+    const rec = this._recorded(item);
+    if (rec) {
+      // A safety timeout until the clip's real length is known.
+      guard = setTimeout(finish, 3000 + item.text.length * 90);
+      this._play(rec).then((dur) => { clearTimeout(guard); guard = setTimeout(finish, dur * 1000 + 120); }, () => this._speak(item, S, finish));
+      return;
+    }
+    guard = setTimeout(finish, 1400 + item.text.length * 75);
+    this._speak(item, S, finish);
+  }
+
+  // Which recording (if any) carries this line for this speaker.
+  _recorded(item) {
+    const V = this.vo && this.vo[item.who];
+    if (!V || !this.a || !this.a.ctx) return null;
+    return V[normLine(item.text)] || null;
+  }
+
+  // Fetch + decode (cached; the oldest buffers are dropped past 48) and play a recording just
+  // after the key-up. Resolves with its duration.
+  async _play(rel) {
+    const A = this.a, ctx = A.ctx;
+    let b = this.buf.get(rel);
+    if (!b) {
+      const r = await fetch(VO_DIR + rel);
+      if (!r.ok) throw new Error('missing');
+      const ab = await r.arrayBuffer();
+      // Callback form: older iPad Safari doesn't return a promise from decodeAudioData.
+      b = await new Promise((res, rej) => ctx.decodeAudioData(ab, res, rej));
+      this.buf.set(rel, b);
+      if (this.buf.size > 48) this.buf.delete(this.buf.keys().next().value);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = b;
+    const g = ctx.createGain();
+    g.gain.value = 1.15;
+    src.connect(g).connect(A.master);
+    src.start(ctx.currentTime + 0.1);
+    return b.duration + 0.1;
+  }
+
+  _speak(item, S, finish) {
     try {
       if (!window.speechSynthesis) throw new Error('no tts');
       const u = new SpeechSynthesisUtterance(item.text);
@@ -222,6 +273,12 @@ export class Radio {
       try { b.g.gain.setTargetAtTime(0, ctx.currentTime, 0.02); setTimeout(() => { try { b.src.stop(); b.lfo.stop(); } catch {} }, 120); } catch {}
     }
   }
+}
+
+const VO_DIR = 'audio/vo/';
+// Same normalisation as tools/vo/generate.py: lower case, letters/digits/spaces only.
+export function normLine(t) {
+  return String(t).toLowerCase().replace(/\u2019/g, "'").replace(/\u2026/g, '...').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function esc(s) {
