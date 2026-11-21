@@ -28,7 +28,7 @@ build, so unfinished work can sit in the tree safely.
 
 ## Status
 
-Work was paused on 20 November 2026 to fit a usage limit. In matches now: nine worlds
+Work was paused on 20 November 2026 to fit a usage limit. In matches now: ten worlds
 and five transitions.
 
 | Module | Kind | State |
@@ -36,11 +36,10 @@ and five transitions.
 | dev-app | transition (the first-kill reveal) | in matches |
 | synapse, flashback, shatter, continue | transitions | in matches |
 | valley | world (the original game; always opens the match) | in matches |
-| neon, ww2, pixel, terminal, manga, toon, toybox, surf | worlds | in matches |
-| comic | world | built, stopped early, never fully tested; second-engineer pass in progress when work paused |
+| neon, ww2, pixel, terminal, manga, toon, toybox, surf, comic | worlds | in matches |
 | abyss | world (underwater; the owner's showpiece) | first build done (report in `reports/`); needs its second-engineer pass, then a top-tier polish pass |
 | paper | world (flat-drawn first person) | first build done (report in `reports/`); second-engineer pass not started |
-| plunge | linking transition, surf → abyss | brief only; build once both worlds are finished |
+| plunge | linking transition, surf → abyss | built and reviewed from stills; goes live with abyss after an end-to-end run of the real surf kill → plunge → abyss |
 | snow, orbit, heli, worm, arcade, noir, tapestry, petri | worlds | brief only |
 | radar, telescope, wormhole, bullet-hole, channel-surf and the rest | transitions | brief only |
 
@@ -60,7 +59,7 @@ In the owner's order of priority:
 3. **plunge** — the transition that carries that dive into abyss. The registry already
    chains surf → abyss through it (`then` / `via`); the chain wakes up when all three lose
    their `wip` flag.
-4. **comic**, **paper** — second-engineer passes.
+4. **paper** — second-engineer pass.
 5. New worlds the owner asked for: **snow** (top-down 3D), **orbit** with the
    **telescope** transition (space; telescope replaces cosmic-zoom unless the owner wants
    both), **heli** with **radar**, **worm**.

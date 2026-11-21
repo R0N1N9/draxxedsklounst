@@ -59,7 +59,10 @@ void main() {
     float b = texture2D(tNoise, q * 0.011 + vec2(-uTime * 0.004, uTime * 0.003)).r;
     float shaft = smoothstep(0.3, 0.8, a * 1.5 * (0.45 + b));
     float depth = exp(min(p.y, 0.0) * 0.045);
-    sun += vec3(shaft * shadowAt(p) * depth * ext) * exp(min(p.y, 0.0) * vec3(0.06, 0.02, 0.012));
+    // (the first few metres scatter less than they should: what is close keeps its contrast,
+    // and the beams read as beams out in the blue instead of a haze over everything)
+    float nearK = smoothstep(0.5, 7.0, d);
+    sun += vec3(shaft * shadowAt(p) * depth * ext * nearK) * exp(min(p.y, 0.0) * vec3(0.06, 0.02, 0.012));
     for (int k = 0; k < 2; k++) {
       vec3 l = p - uLampPos[k];
       float ld = length(l);
@@ -105,8 +108,8 @@ void main() {
   vec2 uv = 0.5 + c * (1.0 - 0.035 * r2 * uMaskK) + wob;
   // the mask going on: a film of water on the glass, draining down and away
   float line = uMask * 1.2 - 0.1 + sin(vUv.x * 13.0 + uTime * 2.3) * 0.025 + sin(vUv.x * 37.0 - uTime) * 0.01;
-  float wet = smoothstep(line + 0.02, line - 0.03, vUv.y) * step(0.001, uMask);
-  float men = smoothstep(0.035, 0.0, abs(vUv.y - line)) * step(0.001, uMask);
+  float wet = (1.0 - smoothstep(line - 0.03, line + 0.02, vUv.y)) * step(0.001, uMask);
+  float men = (1.0 - smoothstep(0.0, 0.035, abs(vUv.y - line))) * step(0.001, uMask);
   uv += vec2(sin(vUv.y * 31.0 + uTime * 3.0), cos(vUv.x * 23.0 + uTime * 2.0)) * 0.014 * wet + vec2(0.0, men * 0.01);
 #ifdef LEAN
   vec3 col = texture2D(tSrc, uv).rgb;
@@ -123,7 +126,7 @@ void main() {
   col *= mix(vec3(0.86, 1.02, 1.08), vec3(1.08, 1.0, 0.86), smoothstep(0.2, 0.85, l));
   col = clamp((col - 0.5) * 1.06 + 0.5 + 0.004, 0.0, 1.0);
   // ink: a blinding violet-black that thins from the middle out
-  col = mix(col, uInkCol, uInk * (0.7 + 0.3 * smoothstep(0.6, 0.0, sqrt(r2))));
+  col = mix(col, uInkCol, uInk * (0.7 + 0.3 * (1.0 - smoothstep(0.0, 0.6, sqrt(r2)))));
   col = pow(col, vec3(1.0 / 2.2));
   // vignette, and the mask: dark rubber in the corners, a glint where the glass ends
   float vig = 1.0 - smoothstep(0.35, 1.05, length(ca2 * vec2(0.82, 1.0)));
@@ -132,7 +135,7 @@ void main() {
   float box = length(max(m - vec2(0.86, 0.8), 0.0)) - 0.17;
   float rim = smoothstep(0.0, 0.07, box) * uMaskK;
   col *= 1.0 - rim * 0.9;
-  col += vec3(0.5, 0.65, 0.7) * smoothstep(0.03, 0.0, abs(box + 0.004)) * 0.06 * uMaskK;
+  col += vec3(0.5, 0.65, 0.7) * (1.0 - smoothstep(0.0, 0.03, abs(box + 0.004))) * 0.06 * uMaskK;
   // holding your breath: the world narrows, the colour drains from the edges
   float tun = smoothstep(0.25, 0.9, length(ca2)) * uBreath;
   col = mix(col, vec3(dot(col, vec3(0.3, 0.55, 0.15))) * 0.5, tun * 0.8);

@@ -8,6 +8,8 @@ const FONT = "'JetBrains Mono', Menlo, monospace";
 const HEAD = "'Rajdhani', 'Futura', sans-serif";
 const AQUA = '#bff6ee', WARN = '#ff8a6a';
 const tmp = { x: 0, y: 0, behind: false };
+// text scales with the screen, but never below what a phone held at arm's length can read
+const fpx = (n, k) => Math.round(Math.max(n * k, n * 0.85, 9));
 
 export function drawOverlay(ctx, H, view, S, camera, project) {
   const g = ctx.g, w = ctx.width, h = ctx.height, phase = ctx.phase, ME = S.ME, FOE = S.FOE;
@@ -23,12 +25,15 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
   const killing = phase === 'over';
 
   // ---- markers: a sonar contact, the rival during the arrival, sudden death
-  const revealed = FOE.alive && (ctx.sudden || ctx.time < FOE.revealT || phase === 'intro');
+  // (the arrival's RIVAL mark stays a few seconds into the round, fading: a newcomer's
+  // first question is where the other diver is)
+  const opening = live && !ctx.sudden && ctx.time < 3.5 && ctx.time >= FOE.revealT ? clamp((3.5 - ctx.time) / 1.2, 0, 1) : 0;
+  const revealed = FOE.alive && (ctx.sudden || ctx.time < FOE.revealT || phase === 'intro' || opening > 0);
   if (revealed && !killing) {
     project(FOE.x, FOE.y + 0.3, FOE.z, tmp);
     const dist = Math.hypot(FOE.x - ME.x, FOE.y - ME.y, FOE.z - ME.z);
-    const label = phase === 'intro' ? `RIVAL · ${Math.round(dist)} M` : ctx.sudden ? `${Math.round(dist)} M` : `CONTACT · ${Math.round(dist)} M`;
-    marker(g, tmp, w, h, FOE.color, label, k, 1, safe, phone);
+    const label = phase === 'intro' || opening > 0 ? `RIVAL · ${Math.round(dist)} M` : ctx.sudden ? `${Math.round(dist)} M` : `CONTACT · ${Math.round(dist)} M`;
+    marker(g, tmp, w, h, FOE.color, label, k, opening > 0 ? opening : 1, safe, phone);
   }
   // the ping warning: an arrow at the edge towards whoever pinged you
   const pg = H.ping;
@@ -55,7 +60,7 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
     // hold-over marks: where to put a target at 20 / 40 / 60 m so the spear's sink lands on it
     if (z > 0.05) {
       g.globalAlpha = z;
-      g.font = `${Math.round(10 * k)}px ${FONT}`;
+      g.font = `${fpx(10, k)}px ${FONT}`;
       g.textAlign = 'left';
       for (const d of [20, 40, 60]) {
         const t = -Math.log(1 - Math.min(0.95, (d * S.G.DRAG) / S.G.V0)) / S.G.DRAG;
@@ -80,7 +85,7 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
       g.lineWidth = 2.6 * k;
       g.strokeStyle = low ? WARN : ME.holdLock ? 'rgba(255,138,106,0.6)' : AQUA;
       g.beginPath(); g.arc(rx, ry, r, a1 - (a1 - a0) * ME.air, a1); g.stroke();
-      g.font = `${Math.round(9 * k)}px ${FONT}`;
+      g.font = `${fpx(9, k)}px ${FONT}`;
       g.textAlign = 'right';
       shadowText(g, ME.holdLock ? 'GASP' : 'AIR', rx - r - 5 * k, ry + r * 0.55, low ? WARN : AQUA);
     }
@@ -92,7 +97,7 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
       g.beginPath(); g.arc(rx, ry, r, a0, a1); g.stroke();
       g.lineWidth = 2.6 * k; g.strokeStyle = ME.loaded ? ME.color : 'rgba(191,246,238,0.8)';
       g.beginPath(); g.arc(rx, ry, r, a1 - (a1 - a0) * load, a1); g.stroke();
-      g.font = `${Math.round(9 * k)}px ${FONT}`;
+      g.font = `${fpx(9, k)}px ${FONT}`;
       g.textAlign = 'left';
       if (phase === 'live') shadowText(g, ME.loaded ? 'SPEAR' : 'RELOAD', rx + r + 5 * k, ry + r * 0.55, ME.loaded ? AQUA : 'rgba(191,246,238,0.7)');
     }
@@ -109,7 +114,7 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
         if (on || flash > 0) { g.fillStyle = flash > 0 ? rgba(WARN, flash) : 'rgba(191,246,238,0.6)'; g.fill(); }
       }
       if (flash > 0 && !S.firstShot()) {
-        g.font = `${Math.round(9 * k)}px ${FONT}`; g.textAlign = 'center';
+        g.font = `${fpx(9, k)}px ${FONT}`; g.textAlign = 'center';
         shadowText(g, 'YOUR BUBBLES SHOW WHERE YOU ARE', bx, by + 13 * k, rgba(WARN, Math.min(1, flash * 2)));
       }
     }
@@ -121,10 +126,10 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
     const y = safe.bottom > 0 ? Math.min(h * 0.42, h - safe.bottom - 40 * k) : h - 46 * k;
     const depth = Math.max(0, -view.camera.position.y);
     g.textAlign = 'left';
-    g.font = `600 ${Math.round(22 * k)}px ${HEAD}`;
+    g.font = `600 ${fpx(22, k)}px ${HEAD}`;
     shadowText(g, `${depth.toFixed(1)}`, x, y, AQUA);
     const tw = g.measureText(`${depth.toFixed(1)}`).width;
-    g.font = `${Math.round(10 * k)}px ${FONT}`;
+    g.font = `${fpx(10, k)}px ${FONT}`;
     shadowText(g, 'M DEPTH', x + tw + 5 * k, y + 2 * k, 'rgba(191,246,238,0.75)');
     // air bar
     const bw = 86 * k, by = y + 16 * k;
@@ -135,20 +140,20 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
   // ---- notes and first-time prompts (bottom centre, above the thumbs)
   const baseY = h - Math.max(safe.bottom > 0 && phone ? safe.bottom + 8 : 0, 0) - (phone ? 26 : 64) * k;
   if (H.notes.a > 0 && !killing) {
-    g.font = `600 ${Math.round(17 * k)}px ${HEAD}`;
+    g.font = `600 ${fpx(17, k)}px ${HEAD}`;
     g.textAlign = 'center';
     shadowText(g, H.notes.text, cx, phone ? h * 0.3 : cy + 96 * k, rgba('#eafffb', Math.min(1, H.notes.a * 2)));
   }
   if (live && !S.firstShot() && ME.alive && !ME.bot) {
     const t = ctx.time, touch = ctx.input.device === 'touch', pad = ctx.input.device === 'gamepad';
     const tips = touch
-      ? ['DRAG TO LOOK · SWIM WHERE YOU LOOK', 'TAP HOLD BREATH: STEADY AIM, ZOOM, NO BUBBLES', 'SPEARS SINK — AIM ABOVE A FAR TARGET']
+      ? ['STICK SWIMS WHERE YOU LOOK · DRAG THE RIGHT SIDE TO LOOK', 'TAP HOLD BREATH: STEADY AIM, ZOOM, NO BUBBLES', 'SPEARS SINK — AIM ABOVE A FAR TARGET']
       : pad
         ? ['LEFT STICK SWIMS WHERE YOU LOOK · A KICKS UP', 'HOLD LT — HOLD BREATH: STEADY AIM, NO BUBBLES', 'SPEARS SINK — AIM ABOVE A FAR TARGET']
         : ['WASD SWIMS WHERE YOU LOOK · SPACE KICKS UP', 'HOLD RIGHT MOUSE — HOLD BREATH: STEADY AIM, NO BUBBLES', 'SPEARS SINK — AIM ABOVE A FAR TARGET · SHIFT SONAR · E DECOY'];
     const i = t < 4.5 ? 0 : t < 10 ? 1 : 2;
     const a = Math.min(1, (t - [0, 4.5, 10][i]) * 2) * (i === 2 ? 1 : Math.min(1, ([4.5, 10][i] - t) * 2));
-    g.font = `600 ${Math.round((phone ? 12 : 14) * k)}px ${HEAD}`;
+    g.font = `600 ${fpx((phone ? 12 : 14), k)}px ${HEAD}`;
     g.textAlign = 'center';
     const tw = g.measureText(tips[i]).width + 26 * k;
     const maxW = w - (safe.left + safe.right) - 20;
@@ -199,7 +204,7 @@ function marker(g, p, w, h, color, label, k, a, safe, phone) {
     brackets(g, p.x, p.y, s);
     g.strokeStyle = color; g.lineWidth = 1.8 * k;
     brackets(g, p.x, p.y, s);
-    g.font = `600 ${Math.round(12 * k)}px ${HEAD}`;
+    g.font = `600 ${fpx(12, k)}px ${HEAD}`;
     g.textAlign = 'center';
     shadowText(g, label, p.x, p.y - s - 10 * k, color);
   } else edgeArrow(g, p, w, h, color, label, k, a, safe);
@@ -232,7 +237,7 @@ function edgeArrow(g, p, w, h, color, label, k, a, safe) {
   g.restore();
   g.save();
   g.globalAlpha = a;
-  g.font = `600 ${Math.round(11 * k)}px ${HEAD}`;
+  g.font = `600 ${fpx(11, k)}px ${HEAD}`;
   g.textAlign = 'center';
   shadowText(g, label, x - Math.cos(ang) * 24 * k, y - Math.sin(ang) * 20 * k, color);
   g.restore();

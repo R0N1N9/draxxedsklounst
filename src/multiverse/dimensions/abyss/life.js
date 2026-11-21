@@ -44,7 +44,7 @@ void main() {
   // countershading: dark back, pale belly; a stripe for the reef kinds
   float up = clamp(vO.y * 6.0 + 0.5, 0.0, 1.0);
   vec3 alb = mix(vC * 1.25 + 0.05, vC * 0.35, up);
-  alb = mix(alb, vC.gbr * 1.2, (1.0 - uSilver) * smoothstep(0.04, 0.0, abs(vO.z - 0.05)) * 0.8);
+  alb = mix(alb, vC.gbr * 1.2, (1.0 - uSilver) * (1.0 - smoothstep(0.0, 0.04, abs(vO.z - 0.05))) * 0.8);
   vec3 col = litWater(alb, vW, n, 1.0, 0.4, 0.5);
   // silver flanks mirror the bright water above: shoals flash as they turn
   vec3 r = reflect(-v, n);
@@ -357,7 +357,7 @@ ${WATER_GLSL}
 void main() {
   vec3 n = normalize(vN), v = normalize(uCam - vW);
   float fr = pow(1.0 - abs(dot(n, v)), 2.0);
-  float rim = smoothstep(0.25, 0.0, vO.y);
+  float rim = (1.0 - smoothstep(0.0, 0.25, vO.y));
   float d = length(vW - uCam);
   vec3 col = uGlowCol * (fr * 0.9 + rim * 1.4) * (0.55 + 0.45 * uPulse);
   gl_FragColor = vec4(col * exp(-d * 0.02), 0.85);
@@ -411,7 +411,7 @@ void main() {
       const tdx = tmp.x - prevTx, tdz = tmp.z - prevTz;
       if (Math.abs(tdx) + Math.abs(tdz) > 1e-5) turtle.rotation.y = Math.atan2(tdx, tdz);
       prevTx = tmp.x; prevTz = tmp.z;
-      for (const [i, f] of turtle.flippers.entries()) f.rotation.z = Math.sin(t * 1.5 + (i < 2 ? 0 : 1.2)) * (i < 2 ? 0.6 : 0.3) * (i % 2 ? -1 : 1);
+      for (let i = 0; i < 4; i++) turtle.flippers[i].rotation.z = Math.sin(t * 1.5 + (i < 2 ? 0 : 1.2)) * (i < 2 ? 0.6 : 0.3) * (i % 2 ? -1 : 1);
       // manta: a wide circuit overhead, silhouetted against the light
       const ma = t * 0.06 + 1;
       const mx = 2 + 26 * Math.cos(ma), mz = 34 * Math.sin(ma), my = -5.5 + 1.5 * Math.sin(t * 0.21);
@@ -420,7 +420,8 @@ void main() {
       prevMx = mx; prevMz = mz;
       // shark: circles, and every so often comes in for a look at the nearest diver
       sharkT -= dt;
-      const near = c.divers.length ? c.divers.reduce((b, d) => (Math.hypot(d.x - sharkX, d.z - sharkZ) < Math.hypot(b.x - sharkX, b.z - sharkZ) ? d : b), c.divers[0]) : null;
+      let near = null;
+      for (const d of c.divers) if (!near || Math.hypot(d.x - sharkX, d.z - sharkZ) < Math.hypot(near.x - sharkX, near.z - sharkZ)) near = d;
       let gx, gy, gz;
       if (sharkMode === 0) {
         sharkA += dt * 0.11;

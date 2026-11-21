@@ -21,7 +21,7 @@
 export const DIMENSIONS = [
   { id: 'valley', view: 'fp', look: '3d', load: () => import('./dimensions/valley/index.js') },
   { id: 'neon', view: 'top', look: '2d', load: () => import('./dimensions/neon/index.js') },
-  { id: 'comic', view: 'tp', look: '3d', wip: true, load: () => import('./dimensions/comic/index.js') },
+  { id: 'comic', view: 'tp', look: '3d', load: () => import('./dimensions/comic/index.js') },
   { id: 'pixel', view: 'side', look: '2d', load: () => import('./dimensions/pixel/index.js') },
   { id: 'ww2', view: 'tp', look: '3d', load: () => import('./dimensions/ww2/index.js') },
   { id: 'surf', view: 'tp', look: '3d', then: 'abyss', via: 'plunge', opener: true, load: () => import('./dimensions/surf/index.js') },
