@@ -2523,6 +2523,8 @@ class CellHud {
   setPause(on) {
     this.el.pause.classList.toggle('on', on);
     this.g.paused = on;
+    // Lift the HUD (with this menu) above the touch controls, or taps never reach its buttons.
+    document.body.classList.toggle('cell-modal', on || this.el.debrief.classList.contains('on'));
   }
 
   objToggle() {
@@ -2596,6 +2598,7 @@ class CellHud {
       <tr><td>Your shots / hits / heads</td><td>${st.shots} / ${st.hits} / ${st.heads}</td></tr><tr><td>Longest kill</td><td>${st.longest} m</td></tr></table>
       <button class="primary c-again">Back to menu</button></div>`;
     el.classList.add('on');
+    document.body.classList.add('cell-modal');
     el.querySelector('.c-again').onclick = () => g.exit();
   }
 
