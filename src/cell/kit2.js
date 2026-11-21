@@ -191,7 +191,8 @@ export const Kit2 = {
     if (!marks) { this.syncAim = 0; this.syncPartner = 0; this._syncT = 0; this._syncSaid = false; return; }
     const o = P.eyePos(new THREE.Vector3());
     const live = !this.downed && !this.kia && !this.isr.active && !(this.quad && this.quad.active) && !this.tablet.visible;
-    this.syncAim = live && P.scopeT > 0.4 ? this._syncAimFrom(o, P.aimDir(new THREE.Vector3()), this.camera.fov, 0) : 0;
+    // Your crosshair on a head counts, aimed down sights or not.
+    this.syncAim = live ? this._syncAimFrom(o, P.aimDir(new THREE.Vector3()), this.camera.fov, 0) : 0;
     if (this.aiShoot) {
       // Ra: a sync target in view from the perch (not the one you're on).
       const perch = this.partner.pos;
@@ -206,7 +207,7 @@ export const Kit2 = {
     } else this.syncPartner = this.partner.sy || 0;
     // Hold together for a beat, then everyone fires.
     if (this.syncReady && this._syncCd <= 0) {
-      if (!this._syncSaid) { this._syncSaid = true; this._radio('me', this.role === 'shooter' ? 'On target.' : 'On mine. Sync ready.'); }
+      if (!this._syncSaid) { this._syncSaid = true; this._radio('me', this.role === 'shooter' ? 'On target.' : 'Sync ready.'); }
       this._syncT = (this._syncT || 0) + dt;
       if (this._syncT >= 0.7) { this._syncT = 0; this._syncCd = 1.5; this._autoFire = true; this._syncKill = { id: this.syncAim, t: 0.45 }; }
     } else { this._syncT = 0; if (!this.syncReady) this._syncSaid = false; }
@@ -269,14 +270,17 @@ export const Kit2 = {
         c.fillRect(p.x - 26, p.y - 13, 52 * k, 3);
         c.strokeStyle = 'rgba(255,40,60,0.95)';
         c.lineWidth = 2;
-        c.strokeRect(p.x - 8, p.y - 8 + 20, 16, 16);
+        c.beginPath(); c.arc(p.x, p.y + 12, 10, 0, Math.PI * 2); c.stroke();
       } else {
-        c.strokeStyle = 'rgba(80,255,200,0.9)';
-        c.lineWidth = 1.5;
-        c.strokeRect(p.x - 9, p.y - 9, 18, 18);
+        // Sync target: a pulsing circle over the head.
+        const r = 11 + Math.sin(this.t * 5) * 1.5;
+        c.strokeStyle = 'rgba(80,255,200,0.95)';
+        c.lineWidth = 2;
+        c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.arc(p.x, p.y, 2, 0, Math.PI * 2); c.fillStyle = 'rgba(80,255,200,0.95)'; c.fill();
         c.fillStyle = 'rgba(80,255,200,0.9)';
         c.font = '600 10px JetBrains Mono, monospace';
-        c.fillText(g.id === this.syncAim ? 'SYNC \u00B7 YOU' : g.id === this.syncPartner ? 'SYNC \u00B7 ALLY' : 'SYNC', p.x, p.y - 13);
+        c.fillText(g.id === this.syncAim ? 'SYNC \u00B7 YOU' : g.id === this.syncPartner ? 'SYNC \u00B7 ALLY' : 'SYNC', p.x, p.y - 17);
       }
     }
     c.lineWidth = 1;

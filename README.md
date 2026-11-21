@@ -202,6 +202,8 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 **Inside the building:** patrols on both floors.
 
+The garrison is kept lean, about 34 in NightWatch and 28 in Infiltration, and spread out: no two starting guards stand within about 9 m of each other, except a pack leader and its follower.
+
 ### Guards notice
 
 - Guards who see a comrade drop, or find a body, walk over to check it.
@@ -228,9 +230,9 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
   - **IR strobes** on both operators' helmets and shoulders, and **IR lasers** from both weapons, show only in night vision and the ISR IR view.
 - **Weapon lights (L):** a weapon light makes you easy to see. Guards also walk over to wherever the beam lands, so it works as a distraction.
 - **Sync shots:**
-  1. Aim down sights at an enemy and **hold Q** (or SYNC) to mark it as a sync target for your ally. The wheel's SYNC option works too.
-  2. Each player puts their sights on a head that dies to one shot (no helmet). At least one of the two has to be a sync mark.
-  3. A solid **FIRE** block locks over both heads, both weapons fire on their own, and the operators call it on the radio ("On target" … "X-ray down").
+  1. Look at an enemy and **hold F** (or tap SYNC on touch) to mark it for your teammate: a pulsing circle sits over its head. The wheel's SYNC option works too.
+  2. Put your own crosshair on another enemy's head. You don't need to aim down sights. Your teammate holds theirs on the marked one, or an AI Ra takes it.
+  3. When both crosshairs are on heads that die to one shot (no helmet), a solid **FIRE** block locks on, both weapons fire on their own, and both enemies go down.
 - **Downed but alive:** a body-shot kill leaves an enemy down but alive. It's out of the fight, but the reticle still goes red over it. Headshot it on the ground to finish it, and your character calls "X-ray down".
 - **Radio chatter:**
   - Operators call fresh contacts in their field of view: "Contact, north-east, 60 meters".
@@ -287,7 +289,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 ### Comms
 
 - **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER, SYNC and SNIPER POS, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
-- **Radio:** operators and ISR Overwatch talk over a tactical squad net, inspired by close-quarters tactical shooters.
+- **Radio:** operators and ISR Overwatch talk over a tactical squad net, in short, clipped lines with a beat between transmissions. Turn **Radio voices** off on the NightWatch screen or in the pause menu to get subtitles only.
   - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (a low, calm American dispatcher). Voices are pitched down with their character preserved, at a natural, unhurried pace.
   - The recordings get a radio treatment: mostly the natural voice with a lighter Codec2 digital-radio layer, band-limited to radio width (300–3400 Hz), with presence and compression.
   - In the game each line opens with a mic click and a burst of static, sits on a crackling static bed with dropouts, and ends on a squelch tail; Overwatch adds a talk-permit chirp.
@@ -316,11 +318,11 @@ Play with headphones. Every sound is positioned in 3D (HRTF panning):
 | 1 / 2 | Rifle / sidearm | — |
 | B | Fire mode (SMG); hold for the suppressor | Suppressor |
 | TAB | Map | Tap: tablet → ISR → back; hold: quickhacks |
-| Q | Hold on an enemy (aiming): sync mark | Quad (tap: launch / park / fly; hold: recall); hold on an enemy (aiming): sync mark |
+| Q | — | Quad (tap: launch / park / fly; hold: recall) |
 | G | Active camo | — |
 | H / X / T | Deadeye / lure / Mark & Execute | — |
 | E | Use, knife takedown, plant C4 | Use, pick locks, hack stations |
-| F | Tag | Tag |
+| F | Tap: tag · hold on an enemy: sync mark | Same |
 | V | Ping (hold: wheel); downed: call for pickup | Same |
 | Y / U | Acknowledge | Approve / deny requests |
 | I | — | ISR view (P: ping sweep) |

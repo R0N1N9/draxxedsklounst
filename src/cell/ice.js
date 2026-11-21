@@ -48,10 +48,10 @@ export const IceOps = {
     ob.plan = null;
     ob.voteT = VOTE_TIME;
     const n = this.sentinel.guards.filter((g) => g.icePost && g.state !== 'dead').length;
-    this._say2('isr', 'Overwatch to Sniper Cell. ICE just tripped. Multiple hostiles are moving to ring the building. You\'ve been made.', 0.6);
+    this._say2('isr', 'ICE tripped. Hostiles ringing the building.', 0.6);
     void n;
-    this._say2('spotter', 'Damn it. We\'ve been made.', 6.2);
-    this._say2('shooter', 'Copy. So what\'s it gonna be, quiet or loud?', 8.4);
+    this._say2('spotter', 'We\'ve been made.', 6.2);
+    this._say2('shooter', 'Quiet or loud?', 8.4);
   },
 
   // Local operator's vote.
@@ -66,16 +66,16 @@ export const IceOps = {
     if (!this._voteOpen()) return;
     const changed = ob.vote[role] !== v;
     ob.vote[role] = v;
-    if (changed) this._say2(role, v === 'quiet' ? 'I say we go quiet. Find a hole and let them walk past.' : 'I say we go loud. Punch through and get to the van.');
+    if (changed) this._say2(role, v === 'quiet' ? 'I say quiet.' : 'I say loud.');
     // Solo: the AI partner backs your call. Lone operative: one vote settles it.
     if (this.solo) {
-      if (!this.operative && changed) { ob.vote[this.partnerRole] = v; this._say2(this.partnerRole, v === 'quiet' ? 'Your call. Quiet it is.' : 'Your call. Going loud.', 2.2); }
+      if (!this.operative && changed) { ob.vote[this.partnerRole] = v; this._say2(this.partnerRole, v === 'quiet' ? 'Quiet it is.' : 'Going loud.', 2.2); }
       this._settle(v, 3.6);
       return;
     }
     const a = ob.vote.shooter, b = ob.vote.spotter;
     if (a && b && a === b) this._settle(a, 2);
-    else if (a && b && changed) this._say2(role === 'shooter' ? 'spotter' : 'shooter', a === 'quiet' || b === 'quiet' ? 'No, I want to stay quiet.' : 'No. We go loud.', 1.8);
+    else if (a && b && changed) this._say2(role === 'shooter' ? 'spotter' : 'shooter', a === 'quiet' || b === 'quiet' ? 'Negative. Stay quiet.' : 'Negative. We go loud.', 1.8);
   },
 
   _settle(plan, delay = 0) {
@@ -85,12 +85,12 @@ export const IceOps = {
     ob.voteT = 0;
     this.sentinel.sweepStart(plan);
     if (plan === 'quiet') {
-      this._say2(this.role === 'spotter' ? 'shooter' : 'spotter', 'Going quiet. Ra, keep the camo up. Ronin, stay light on your feet.', delay);
-      this._say2('isr', 'Overwatch copies quiet. They\'re forming up to clear the building, ground floor first. Don\'t be there.', delay + 5);
+      this._say2(this.role === 'spotter' ? 'shooter' : 'spotter', 'Going quiet. Stay low.', delay);
+      this._say2('isr', 'Copy quiet. They\'re clearing the building.', delay + 5);
     } else {
       this.sentinel.raise(1, null);
-      this._say2(this.role === 'spotter' ? 'shooter' : 'spotter', 'Going loud. Weapons free. Stay on me.', delay);
-      this._say2('isr', 'Overwatch copies loud. Hostiles are stacking on the doors. Make it fast.', delay + 4);
+      this._say2(this.role === 'spotter' ? 'shooter' : 'spotter', 'Weapons free.', delay);
+      this._say2('isr', 'Copy loud. Make it fast.', delay + 4);
     }
     this._toast(plan === 'quiet' ? 'PLAN: QUIET. Squads will sweep the building room by room. Stay unseen and slip out.' : 'PLAN: LOUD. They\'re coming in. Fight your way to the van.', plan === 'quiet' ? 'cyan' : 'red');
   },
@@ -106,7 +106,7 @@ export const IceOps = {
       if (ob.voteT <= 0) {
         const v = Object.values(ob.vote);
         const plan = v.length && v.every((x) => x === 'loud') ? 'loud' : 'quiet';
-        if (v.length && !v.every((x) => x === v[0])) this._say2('isr', 'No consensus, Sniper Cell. Stay quiet until they make you.');
+        if (v.length && !v.every((x) => x === v[0])) this._say2('isr', 'No consensus. Stay quiet.');
         this._settle(plan, 2.5);
       }
     }
@@ -116,8 +116,8 @@ export const IceOps = {
     const spotted = agents.find((a) => S.huntState(a.role) === 'detected');
     if (spotted && ob.plan === 'quiet' && !ob.blown) {
       ob.blown = true;
-      this._say2(spotted.role, 'Contact! They\'ve got me! Going loud!');
-      this._say2('isr', 'You\'re spotted. All units converging. Fight it out, Sniper Cell.', 2.5);
+      this._say2(spotted.role, 'I\'m spotted! Going loud!');
+      this._say2('isr', 'You\'re spotted. Fight it out.', 2.5);
     }
     // Close calls: a sweeping squad works the room you're hiding in and moves on without seeing you.
     for (const a of agents) {
@@ -132,9 +132,9 @@ export const IceOps = {
         C.away += dt;
         if (C.away > 3 && C.cool <= 0) {
           C.armed = false; C.near = 0; C.cool = 25;
-          const hid = a.role === 'shooter' ? ['Walked right past me. Camo held.', 'He was close enough to touch. Clear now.'] : ['That was way too close. They\'re moving on.', 'Held my breath the whole time. They\'re gone.'];
+          const hid = a.role === 'shooter' ? ['Walked right past me.', 'Close one. Clear.'] : ['Too close. They\'re moving on.', 'They\'re gone.'];
           this._say2(a.role, hid[Math.floor(Math.random() * hid.length)]);
-          this._say2(a.role === 'shooter' ? 'spotter' : 'shooter', 'Nice. Keep moving, get to the van.', 2.6);
+          this._say2(a.role === 'shooter' ? 'spotter' : 'shooter', 'Nice. Keep moving.', 2.6);
         }
       } else C.near = 0;
     }
@@ -143,11 +143,11 @@ export const IceOps = {
     if (out && ob.drive && ob.drive !== 'ground' && !ob.escaped && !agents.some((a) => S.huntState(a.role) === 'detected')) {
       ob.escaped = true;
       if (ob.plan === 'quiet' && !ob.blown) {
-        this._say2(ob.drive === 'spotter' ? 'spotter' : 'shooter', 'We\'re through the ring. Nobody saw a thing. Moving to the van.');
-        this._say2('isr', 'Good copy, Sniper Cell. Clean exit. The van is warm on the east track.', 3);
+        this._say2(ob.drive === 'spotter' ? 'spotter' : 'shooter', 'Through the ring. Moving to the van.');
+        this._say2('isr', "Clean exit. Van's on the east track.", 3);
       } else {
-        this._say2(ob.drive === 'spotter' ? 'spotter' : 'shooter', 'We\'re out of the building! Moving to the van!');
-        this._say2('isr', 'Copy. Van on the east track. Don\'t stop.', 2.5);
+        this._say2(ob.drive === 'spotter' ? 'spotter' : 'shooter', 'We\'re out! Moving to the van!');
+        this._say2('isr', 'Van\'s on the east track. Don\'t stop.', 2.5);
       }
     }
   },

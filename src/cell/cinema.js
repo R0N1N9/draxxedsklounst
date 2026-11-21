@@ -164,8 +164,8 @@ export class Cinema {
     cam.updateProjectionMatrix();
     // Words and title.
     const lines = g.operative
-      ? [[6.8, 'Comms check. Rifle, tablet, quad — all on me tonight.'], [9.2, 'Camo’s good.'], [11.4, 'Kestrel Ridge. In and out before sunrise.']]
-      : [[6.8, `${g._nameFor('spotter')}: Link’s up. Console’s synced.`], [8.4, `${g._nameFor('shooter')}: Rifle’s cold and quiet.`], [9.8, `${g._nameFor('shooter')}: Camo check… good.`], [11.4, `${g._nameFor('spotter')}: Kestrel Ridge. In and out before sunrise.`]];
+      ? [[6.8, 'Comms check. All on me tonight.'], [9.2, 'Camo’s good.'], [11.4, 'In and out before sunrise.']]
+      : [[6.8, `${g._nameFor('spotter')}: Link’s up. Console’s synced.`], [8.4, `${g._nameFor('shooter')}: Rifle’s cold and quiet.`], [9.8, `${g._nameFor('shooter')}: Camo check. Good.`], [11.4, `${g._nameFor('spotter')}: In and out before sunrise.`]];
     let line = '';
     for (const [at, l] of lines) if (t >= at && t < at + 2.2) line = l;
     this._say(line);

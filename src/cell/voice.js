@@ -39,6 +39,8 @@ export class Radio {
     this.enabled = true;
     this.voices = [];
     this.names = { shooter: 'RA', spotter: 'RŌNIN', isr: 'OVERWATCH' };
+    // Voice audio can be switched off (menu / pause): lines then show as subtitles only.
+    this.voiceOn = voiceSetting();
     const load = () => {
       try {
         const all = speechSynthesis.getVoices();
@@ -109,8 +111,8 @@ export class Radio {
     if (!item) { this.busy = false; return; }
     this.busy = true;
     const S = SPEAKERS[item.who] || SPEAKERS.shooter;
-    this._keyUp();
-    this._bed(true, item.who);
+    const sound = this.voiceOn;
+    if (sound) { this._keyUp(); this._bed(true, item.who); }
     this._subtitle(item);
     let done = false, guard = 0;
     // Each entry stays up long enough to type out and be read, even if the audio is quicker
@@ -122,12 +124,13 @@ export class Radio {
       if (wait > 30) { clearTimeout(guard); guard = setTimeout(finish, wait); return; }
       done = true;
       clearTimeout(guard);
-      this._bed(false);
-      this._keyDown(item.who);
+      if (sound) { this._bed(false); this._keyDown(item.who); }
       clearTimeout(this._subT);
       this._subT = setTimeout(() => this._subtitle(null), 900);
-      setTimeout(() => this._next(), 260);
+      // A beat between transmissions, like a real net: replies don't land on top of each other.
+      setTimeout(() => this._next(), 650 + Math.random() * 400);
     };
+    if (!sound) { guard = setTimeout(finish, 0); return; }
     const rec = this._recorded(item);
     if (rec) {
       // A safety timeout until the clip's real length is known.
@@ -307,6 +310,13 @@ export class Radio {
 }
 
 const VO_DIR = 'audio/vo/';
+const VOICE_KEY = 'draxxed.cellVoice';
+export function voiceSetting() {
+  try { return localStorage.getItem(VOICE_KEY) !== 'off'; } catch { return true; }
+}
+export function setVoiceSetting(on) {
+  try { localStorage.setItem(VOICE_KEY, on ? 'on' : 'off'); } catch {}
+}
 // Same normalisation as tools/vo/generate.py: lower case, letters/digits/spaces only.
 export function normLine(t) {
   return String(t).toLowerCase().replace(/\u2019/g, "'").replace(/\u2026/g, '...').replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
