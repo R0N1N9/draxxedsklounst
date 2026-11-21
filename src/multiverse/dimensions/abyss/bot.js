@@ -115,8 +115,9 @@ export function makeBot(ctx, W, G) {
   function wantRange(b, T) {
     if (ctx.sudden) return 9;
     // and a hunt that has gone cold makes it bolder
+    // (and the clock: by the last quarter of the round everyone is hunting)
     const cold = clamp((T - Math.max(b.lastSeen, 0) - 8) / 12, 0, 1);
-    return Math.max(17, lerp(52, 30, b.style) - clamp(T / 75, 0, 1) * 16 - skill * 3 - cold * 12);
+    return Math.max(16, lerp(52, 30, b.style) - clamp(T / 50, 0, 1) * 20 - skill * 3 - cold * 12);
   }
 
   // A post to hold or move to. `sightline`: it wants to see (tx,ty,tz) from there (sniping);
@@ -166,7 +167,7 @@ export function makeBot(ctx, W, G) {
     const want = wantRange(b, T);
     // sonar when it knows nothing for long enough
     // (bubbles say roughly where; it wants to know exactly)
-    if (p.pingCd <= 0 && T - Math.max(b.lastSeen, 0) > lerp(11, 5, skill) && T > 3 && Math.random() < dt * (0.4 + skill)) cmd.a1 = true;
+    if (p.pingCd <= 0 && T - Math.max(b.lastSeen, 0) > (T > 35 ? 3 : lerp(11, 5, skill)) && T > 3 && Math.random() < dt * (0.4 + skill)) cmd.a1 = true;
     // a decoy before it moves off, now and then
     if (p.decoyCd <= 0 && T > 6 && b.moveT > 0 && Math.random() < dt * 0.5 * (0.3 + skill)) cmd.a2 = true;
 
@@ -198,7 +199,7 @@ export function makeBot(ctx, W, G) {
       // otherwise it works in through cover
       // the opening: cover near its own end of the reef, the duel starts from there
       const opening = T < b.firstShot - 1.5;
-      const sightline = !opening && (dist < want + 12 || (b.style < 0.5 && T > 12) || T - b.lastLos > 8);
+      const sightline = !opening && (dist < want + 12 || (b.style < 0.5 && T > 12) || T - b.lastLos > 8 || T > 38);
       b.post = pickPost(b, tx, ty, tz, opening ? 56 : tooClose ? want + 6 : want, sightline, opening);
     }
     let wx = 0, wy = 0, wz = 0;

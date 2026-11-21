@@ -63,7 +63,7 @@ export default {
   aim: 'look',
   palette: { bg: '#03141d', fg: '#dcf4ee', accent: '#ffc861' },
   controls: { move: 'SWIM', fire: 'SHOOT', alt: 'HOLD BREATH', a1: 'SONAR', a2: 'DECOY', jump: 'KICK UP' },
-  hint: 'Spears are slow and sink. Hold your breath to aim steady and hide your bubbles.',
+  hint: 'You swim where you look. Spears are slow and sink: aim above a far diver.',
   altToggle: true,
   roundTime: ROUND,
   overTime: 3,
@@ -152,7 +152,7 @@ export default {
     let breathedT = 0; // seconds the "you breathed out" ripple shows on the HUD
     let T = 0, clock = 0, introT = 0, suddenAt = -1, killInfo = null, firstShot = false, tick = 0;
     const v3 = new THREE.Vector3(), e3 = { x: 0, y: 0, z: 0 }, push = { x: 0, y: 0, z: 0 }, tch = { x: 0, y: 0, z: 0, d: 0, vx: 0, vy: 0, vz: 0 };
-    const extra = [];
+    const extra = [], extraLive = [], diversLive = [], lifeCtx = { divers: diversLive, extra: extraLive, glow: null, kraken: sim.S };
     for (let i = 0; i < 6; i++) extra.push([0, 0, 0, 0]);
 
     // eye: the mask, a little ahead of the chest
@@ -629,11 +629,14 @@ export default {
       let ne = 0;
       for (const s of spears) if (s.on && !s.stuck && ne < 4) { const e = extra[ne++]; e[0] = s.x; e[1] = s.y; e[2] = s.z; e[3] = 7; }
       for (const d of decoys) if (d.alive && ne < 6) { const e = extra[ne++]; e[0] = d.x; e[1] = d.y; e[2] = d.z; e[3] = 2.5; }
-      extra.length = 6;
       bubbles.update(dt, clock, true);
       smoke.update(dt, clock, false);
       glow.update(dt, clock, false);
-      life.update(dt, clock, { divers: P.filter((p) => p.alive || p.dead < 3), extra: extra.slice(0, ne), glow, kraken: sim.S });
+      // (the same two arrays every frame: nothing allocated here)
+      extraLive.length = 0; for (let i = 0; i < ne; i++) extraLive.push(extra[i]);
+      diversLive.length = 0; for (const p of P) if (p.alive || p.dead < 3) diversLive.push(p);
+      lifeCtx.glow = glow;
+      life.update(dt, clock, lifeCtx);
       view.update(dt, T, introT);
       sfx.update(dt, sim.distance(ME.x, ME.y, ME.z), sim.S.pass);
       // the network and the HUD

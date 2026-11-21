@@ -253,8 +253,9 @@ export function buildReef(THREE, W, mats, U, seed, lean) {
       d.position.set(r.x, r.y, r.z);
       d.rotation.set(r.rot * 0.3, r.rot, r.rot * 0.7);
       d.scale.set(r.r * 1.12, r.r * 0.95, r.r * 1.05);
-      const k = 0.72 + rng() * 0.25;
-      c.setRGB(0.5 * k, 0.45 * k, 0.4 * k);
+      // grey-brown stone, a few warmer and a few colder
+      const k = 0.6 + rng() * 0.25, w = rng() - 0.5;
+      c.setRGB(0.42 * k * (1 + w * 0.2), 0.38 * k, 0.34 * k * (1 - w * 0.2));
     });
   }
   // brain coral

@@ -44,7 +44,7 @@ void main() {
 #ifdef BUBBLE
   // a bubble: a bright rim, a hot highlight up and towards the sun, clear in the middle
   float rim = smoothstep(0.62, 0.95, r) * (1.0 - smoothstep(0.95, 1.0, r));
-  float hl = smoothstep(0.3, 0.0, length(vQ - vec2(-0.32, 0.38)));
+  float hl = (1.0 - smoothstep(0.0, 0.3, length(vQ - vec2(-0.32, 0.38))));
   vec3 light = sunAt(vW.y) * 0.5 + ambientAt(vec3(0.0, 1.0, 0.0), vW.y) * 3.0 + lamps(vW, vec3(0.0, 1.0, 0.0)) * 1.5;
   col = light * (rim * 0.9 + hl * 1.6) + vCol.rgb * 0.0;
   a = (rim * 0.75 + hl + 0.06) * vCol.a;
@@ -57,7 +57,7 @@ void main() {
 #endif
 #ifdef SMOKE
   // ink and silt: soft, dense, lit only by the water around it
-  float g = smoothstep(1.0, 0.15, r);
+  float g = (1.0 - smoothstep(0.15, 1.0, r));
   vec3 light = ambientAt(vec3(0.0, 1.0, 0.0), vW.y) * 2.0 + sunAt(vW.y) * 0.08;
   col = vCol.rgb * light;
   col = waterFog(col, vW, 1.0);
@@ -187,7 +187,7 @@ void main() {
   vQ = position.xy * 2.0;
   vW = w;
   float d = length(c - uCam);
-  vA = smoothstep(uBox * 0.5, uBox * 0.3, d) * smoothstep(0.3, 1.2, d) * iSize.y;
+  vA = (1.0 - smoothstep(uBox * 0.3, uBox * 0.5, d)) * smoothstep(0.3, 1.2, d) * iSize.y;
   gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0);
 }`;
 const SNOW_FRAG = `
@@ -203,7 +203,7 @@ void main() {
   float d = length(vW - uCam);
   vec3 col = light * vec3(0.9, 0.95, 0.85);
   col = mix(col, waterBg(normalize(vW - uCam), vW.y), 1.0 - exp(-d * 0.06));
-  gl_FragColor = vec4(col, smoothstep(1.0, 0.2, r) * vA * 0.55);
+  gl_FragColor = vec4(col, (1.0 - smoothstep(0.2, 1.0, r)) * vA * 0.55);
 }`;
 export function makeSnow(THREE, mats, count) {
   const g = new THREE.InstancedBufferGeometry();
@@ -245,7 +245,8 @@ varying vec3 vW;
 ${WATER_GLSL}
 void main() {
   float d = length(vW - uCam);
-  gl_FragColor = vec4(uColor * (0.25 + 0.75 * vU), uAlpha * vU * vU * exp(-d * 0.018));
+  // (faded where it leaves your own gun: a streak out in the water, not a pole across your mask)
+  gl_FragColor = vec4(uColor * (0.25 + 0.75 * vU), uAlpha * vU * vU * exp(-d * 0.018) * smoothstep(0.8, 4.0, d));
 }`;
 export class Ribbon {
   constructor(THREE, mats, n, color) {

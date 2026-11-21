@@ -9,9 +9,11 @@
 import { clamp, lerp, smoothstep, noise2, fbm, rand } from '../../kit.js';
 
 export const ARENA = { x0: -36, x1: 32, z: 47, y0: -46, y1: -1.7 };
+// Out over the drop-off, a body's length off the lip of the wall: open water between the
+// two ends of the reef, the shelf and its kelp to one side, the deep to the other.
 export const SPAWN = [
-  { x: 2, y: -12.5, z: -31, yaw: Math.PI },
-  { x: 2, y: -12.5, z: 31, yaw: 0 },
+  { x: 4.5, y: -11.5, z: -31, yaw: Math.PI },
+  { x: 4.5, y: -11.5, z: 31, yaw: 0 },
 ];
 export const RADIUS = 0.5; // a diver, for the world
 

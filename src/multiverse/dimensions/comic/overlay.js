@@ -232,8 +232,9 @@ export function drawOverlay(g, S, L) {
   if (sp.a > 0) {
     // The word lands beside the victim, never on them: the reader must see who took the hit.
     const word = L.sprites[sp.word], u = clamp(sp.t / 0.22, 0, 1), k = ease.outBack(u) * (1 + Math.max(0, sp.t - 0.22) * 0.04);
-    const tw = Math.min(w * 0.5, h * 0.9), sc = (tw / word.w) * k;
-    const wx = clamp(sp.x + sp.side * w * 0.2, w * 0.3, w * 0.7), wy = clamp(sp.y - h * 0.24, h * 0.24, h * 0.42);
+    // (on a phone held sideways it sits lower, clear of the core's kill banner across the top)
+    const short = h < 480, tw = short ? Math.min(w * 0.42, h * 0.85) : Math.min(w * 0.5, h * 0.9), sc = (tw / word.w) * k;
+    const wx = clamp(sp.x + sp.side * w * (short ? 0.24 : 0.2), w * 0.28, w * 0.72), wy = short ? clamp(sp.y - h * 0.16, h * 0.34, h * 0.48) : clamp(sp.y - h * 0.24, h * 0.24, h * 0.42);
     g.globalAlpha = sp.a;
     g.save(); g.translate(wx, wy); g.rotate(-0.1 * sp.side + Math.sin(sp.t * 40) * 0.012 * Math.max(0, 1 - sp.t * 2));
     g.drawImage(word.canvas, -word.w * sc / 2, -word.h * sc / 2, word.w * sc, word.h * sc);

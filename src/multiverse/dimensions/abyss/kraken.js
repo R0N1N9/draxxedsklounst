@@ -94,7 +94,8 @@ export function makeKrakenSim(seed) {
     const r = new Float32Array(N);
     for (let k = 0; k < N; k++) {
       const s = k / (N - 1);
-      r[k] = a < ARMS ? 1.45 * Math.pow(1 - s, 0.85) + 0.1 : 0.62 * (1 - s) + 0.12 + 0.42 * Math.exp(-Math.pow((s - 0.88) / 0.05, 2));
+      // arms taper from a trunk to a whip; a feeding tentacle is a long stalk with a club
+      r[k] = a < ARMS ? 1.45 * Math.pow(1 - s, 0.85) + 0.1 : 0.85 * Math.pow(1 - s, 0.7) + 0.16 + 0.5 * Math.exp(-Math.pow((s - 0.88) / 0.05, 2));
     }
     S.radii.push(r);
     S.box.push([0, 0, 0, 0, 0, 0]);
@@ -358,6 +359,10 @@ void main() {
   // uv.x runs round the arm (0.5 = the sucker face), vS along it in units of its own girth
   float side = abs(uv.x - 0.5);
   float under = 1.0 - smoothstep(0.1, 0.19, side);
+#ifdef TENT
+  // a feeding tentacle is bare stalk until the club
+  under *= smoothstep(0.78, 0.83, uv.y);
+#endif
   vec4 nz = texture2D(tNoise, vec2(uv.x * 1.5, vS * 0.045));
   float band = smoothstep(0.35, 0.65, 0.5 + 0.5 * sin(vS * 0.42 + nz.r * 3.0));
   vec3 back = mix(vec3(0.13, 0.01, 0.018), vec3(0.46, 0.05, 0.045), smoothstep(0.3, 0.75, nz.r));
@@ -407,7 +412,8 @@ void main() {
   // the light, not a ghost in the haze
   col = waterFog(col, vW, 0.3);
   float d = length(vW - uCam);
-  col += emit * exp(-d * 0.022);
+  // (its lights carry further than its shape: from the reef you see them moving in the deep)
+  col += emit * exp(-d * 0.014);
   gl_FragColor = vec4(col, d);
 }`;
 const EYE_FRAG = `
@@ -422,7 +428,7 @@ void main() {
   vec3 n = normalize(vN), v = normalize(uCam - vW);
   vec3 d = normalize(vO);
   float c = d.z;
-  float ang = atan(d.y, d.x);
+  float ang = atan(d.y, d.x + 1e-4); // (never atan(0, 0): undefined)
   vec3 sclera = vec3(0.5, 0.5, 0.44);
   // a gold iris with fibres running out from the pupil
   float fib = texture2D(tNoise, vec2(ang * 0.8, c * 3.0)).g;
@@ -531,9 +537,11 @@ export function buildKraken(THREE, mats, U, sim) {
   const group = new THREE.Group();
   const shader = (frag, defines) => mats.shader({ vertexShader: SKIN_VERT, fragmentShader: frag, defines, uniforms: { uFlinch: { value: 0 }, uGlow: { value: 1 }, uBlink: { value: 0 } } });
   const bodyMat = shader(SKIN_FRAG, {}), finMat = mats.lean ? bodyMat : shader(SKIN_FRAG, { FIN: 1 }), armMat = shader(SKIN_FRAG, { ARM: 1 }), eyeMat = shader(EYE_FRAG, {});
+  const tentMat = mats.lean ? armMat : shader(SKIN_FRAG, { ARM: 1, TENT: 1 });
   finMat.side = THREE.DoubleSide;
   armMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch; finMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch;
   armMat.uniforms.uGlow = bodyMat.uniforms.uGlow; finMat.uniforms.uGlow = bodyMat.uniforms.uGlow;
+  tentMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch; tentMat.uniforms.uGlow = bodyMat.uniforms.uGlow;
   // mantle: a lathe along +y through a smoothed outline, turned to lie along +z (front = +z)
   const prof = [];
   for (let i = 0; i < MANTLE.length - 1; i++) {
@@ -583,7 +591,7 @@ export function buildKraken(THREE, mats, U, sim) {
   for (let a = 0; a < sim.ALL; a++) {
     const arm = a < sim.ARMS;
     const t = new Tube(THREE, sim.N, mats.lean ? 1 : 2, mats.lean ? 10 : arm ? 16 : 12, sim.S.radii[a], (arm ? sim.ARM_LEN : sim.TENT_LEN) / (sim.N - 1));
-    const mesh = new THREE.Mesh(t.geo, armMat);
+    const mesh = new THREE.Mesh(t.geo, arm ? armMat : tentMat);
     mesh.frustumCulled = false;
     group.add(mesh);
     tubes.push({ t, mesh });

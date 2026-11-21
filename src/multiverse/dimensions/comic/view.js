@@ -179,7 +179,7 @@ export function makeView(ctx, THREE, renderer, X) {
         camera.position.set(kc.x, kc.y + kc.t * 0.12, kc.z);
         camera.up.set(Math.sin(kc.roll), Math.cos(kc.roll), 0);
         camera.lookAt(look);
-        camera.fov = lerp(46, 58, smoothstep(1, 2.3, kc.t));
+        camera.fov = lerp(46, 58, smoothstep(1, 2.2, kc.t));
         scopeAmt = 0;
       } else {
         camera.position.copy(play.pos);
@@ -280,9 +280,9 @@ export function makeView(ctx, THREE, renderer, X) {
         project(kc.v.x, kc.v.y + 1.1, kc.v.z, pm);
         if (kc.t < 0.05) { spl.x = pm.x; spl.y = pm.y; }
         // the burst holds while the page is read, then the city comes back behind the tumble
-        const k = kc.t < 1.4 ? 1 : Math.max(0, 1 - (kc.t - 1.4) / 0.5);
+        const k = kc.t < 1.35 ? 1 : Math.max(0, 1 - (kc.t - 1.35) / 0.45);
         u.uSplash.value.set(spl.x / ctx.width, 1 - spl.y / ctx.height, k, kc.depth);
-        spl.a = kc.t < 2.2 ? 1 : Math.max(0, 1 - (kc.t - 2.2) / 0.4);
+        spl.a = kc.t < 2.05 ? 1 : Math.max(0, 1 - (kc.t - 2.05) / 0.4);
       } else { u.uSplash.value.z = 0; spl.a = 0; }
 
       // ---- 2D layer state ----
