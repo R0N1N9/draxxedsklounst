@@ -47,7 +47,7 @@ A 1v1 long-range sniper duel, plus **NightWatch**, a co-op night stealth mode, t
   - **Custom**: sliders for drop, bullet speed (slow to instant), wind, drag, sway and hitbox size.
   - **Distance** (mix and match with any physics; Close is the default; each sits under the style it suits): Close ~250 m (valley floor between the town and the meadow), Medium ~500 m (forward slopes, in the trees), Long ~800 m (ridge to ridge), Extreme ~1150 m (opposite ridges at opposite ends of the valley) or Auto (the style's own). It sets where both sides spawn and where the AI sets up; the valley itself doesn't change.
   - Option: the rangefinder (F) auto-sets your zero to the measured distance.
-- **Graphics** (same panel, host's choice applies to both players, in every mode):
+- **Graphics style** (on this panel, under Settings, and on the NightWatch panel: all three are the same setting; the host's choice applies to both players, in the duel and in NightWatch):
   - **Inked** (the default): comic-book ink lines around everything (silhouettes and folds, found in the depth buffer and fading with distance) and three-tone cel shading on props, figures and your rifle, with fuller color. Grass is left uninked so the slopes don't turn to noise.
   - **OG**: the original look, with soft shading, a light silhouette-only outline and a slightly desaturated filmic grade.
   - On Low quality there's no post-processing, so Inked gets the cel shading but no ink lines.

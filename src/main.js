@@ -187,6 +187,7 @@ function renderStyle() {
   // Graphics look bar.
   $('style-look').innerHTML = Object.entries(LOOKS).map(([k, l]) => `<button class="${r.look === k ? 'on' : ''}" data-look="${k}"><b>${l.name.toUpperCase()}</b><i>${l.sub}</i></button>`).join('');
   $('look-desc').textContent = LOOKS[r.look].desc;
+  if ($('in-look')) $('in-look').value = r.look;
   $('range-desc').textContent = sel === 'auto' ? `Follows the style: ${RANGES[def].name} (${RANGES[def].dist}, like ${GAME[def]}). ${RANGES[def].desc}` : `Like ${GAME[sel]} (${RANGES[sel].dist}). ${RANGES[sel].desc}`;
 }
 $('style-presets').onclick = (e) => {
@@ -222,6 +223,9 @@ $('in-toggle').checked = settings.scopeToggle;
 $('in-name').oninput = (e) => store.set('name', (settings.name = e.target.value.trim()));
 $('in-pal').onchange = (e) => store.set('pal', (settings.pal = e.target.value));
 $('in-quality').onchange = (e) => store.set('quality', (settings.quality = e.target.value));
+// Graphics style (Inked / OG): one setting, also on the Sniping style panel and the NightWatch panel.
+$('in-look').value = settings.rules.look;
+$('in-look').onchange = (e) => saveRules({ ...settings.rules, look: e.target.value });
 $('in-sens').oninput = (e) => {
   settings.sensitivity = +e.target.value;
   $('sens-val').textContent = settings.sensitivity.toFixed(2);
