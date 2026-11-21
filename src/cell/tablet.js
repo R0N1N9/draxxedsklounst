@@ -40,7 +40,7 @@ export class Tablet {
             <div class="ct-sec ct-bw"></div>
             <div class="ct-sec ct-pay"></div>
             <div class="ct-sec ct-hold"></div>
-            <div class="ct-feedbox"><div class="ct-feedlbl"></div><canvas class="ct-feed"></canvas></div>
+            <div class="ct-feedbox"><div class="ct-feedtop"><div class="ct-feedlbl"></div><span class="ct-fz"><button data-fz="-1">－</button><em>1.0×</em><button data-fz="1">＋</button></span></div><canvas class="ct-feed"></canvas></div>
             <div class="ct-sec ct-log"></div>
           </div>
         </div>
@@ -49,7 +49,7 @@ export class Tablet {
     const $ = (s) => el.querySelector(s);
     this.canvas = $('.ct-map');
     this.ctx = this.canvas.getContext('2d');
-    this.parts = { reqs: $('.ct-reqs'), obj: $('.ct-obj'), bw: $('.ct-bw'), pay: $('.ct-pay'), hold: $('.ct-hold'), feed: $('.ct-feed'), feedLbl: $('.ct-feedlbl'), log: $('.ct-log'), clock: $('.ct-clock'), link: $('.ct-link'), hint: $('.ct-hint') };
+    this.parts = { reqs: $('.ct-reqs'), obj: $('.ct-obj'), bw: $('.ct-bw'), pay: $('.ct-pay'), hold: $('.ct-hold'), feed: $('.ct-feed'), feedLbl: $('.ct-feedlbl'), fz: $('.ct-fz em'), log: $('.ct-log'), clock: $('.ct-clock'), link: $('.ct-link'), hint: $('.ct-hint') };
     $('.ct-x').onclick = () => this.close();
     this.floor = 0;
     el.querySelectorAll('[data-f]').forEach((b) => (b.onclick = () => { this.floor = +b.dataset.f; this._floorBtns(); }));
@@ -123,6 +123,18 @@ export class Tablet {
       const p = this._toWorld(e.clientX - r.left, e.clientY - r.top);
       this._click(p, e.clientX - r.left, e.clientY - r.top);
     });
+    // Pinch to zoom the map (two fingers); cancels any one-finger drag.
+    const zoomMap = (s) => (this.view.s = Math.min(14, Math.max(1.2, s)));
+    this._pinchOn(cv, () => this.view.s, zoomMap, () => { drag = null; clearTimeout(this._lp); });
+    // Live feed zoom: wheel / pinch / the ＋ － buttons; double-tap resets.
+    this.feedZoom = 1;
+    const fz = (z) => { this.feedZoom = Math.min(6, Math.max(1, z)); this.parts.fz.textContent = this.feedZoom.toFixed(1) + '\u00D7'; };
+    this._fzSet = fz;
+    el.querySelectorAll('[data-fz]').forEach((b) => (b.onclick = () => fz(this.feedZoom * (+b.dataset.fz > 0 ? 1.5 : 1 / 1.5))));
+    const fc = this.parts.feed;
+    fc.addEventListener('wheel', (e) => { e.preventDefault(); fz(this.feedZoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2)); }, { passive: false });
+    fc.addEventListener('dblclick', () => fz(1));
+    this._pinchOn(fc, () => this.feedZoom, fz);
     cv.addEventListener('wheel', (e) => { e.preventDefault(); this.view.s = Math.min(14, Math.max(1.2, this.view.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15))); }, { passive: false });
     addEventListener('keydown', (e) => {
       if (!this.visible) return;
@@ -305,6 +317,21 @@ export class Tablet {
     }
   }
 
+  // Two-finger pinch on an element: get() the current scale, set(scale), onStart() when it begins.
+  _pinchOn(elm, get, set, onStart) {
+    let d0 = 0, s0 = 1;
+    const dist = (e) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    elm.addEventListener('touchstart', (e) => { if (e.touches.length === 2) { d0 = dist(e); s0 = get(); onStart && onStart(); } }, { passive: true });
+    elm.addEventListener('touchmove', (e) => { if (e.touches.length === 2 && d0) { e.preventDefault(); set(s0 * dist(e) / Math.max(10, d0)); } }, { passive: false });
+    elm.addEventListener('touchend', (e) => { if (e.touches.length < 2) d0 = 0; }, { passive: true });
+  }
+
+  // Field of view narrowed by the feed zoom.
+  _fzFov(base) {
+    const z = this.feedZoom || 1;
+    return THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(base / 2)) / z));
+  }
+
   // Rect (CSS px, top-left origin) and camera for the live feed, or null.
   feed() {
     if (!this.visible) return null;
@@ -317,7 +344,7 @@ export class Tablet {
     if (c && c.hacked) {
       cam.position.set(c.x, c.y - 0.2, c.z);
       cam.rotation.set(-0.35, c.yaw, 0);
-      cam.fov = 62;
+      cam.fov = this._fzFov(62);
       label = `CAM-${c.id} // ${c.tier >= 3 ? 'CORE' : c.tier >= 2 ? 'DATA FLOOR' : 'PERIMETER'}`;
     } else {
       const Q = g.partner;
@@ -330,7 +357,7 @@ export class Tablet {
         // Step forward out of the partner's own head.
         cam.translateZ(-0.4);
       }
-      cam.fov = Q.scoped && Q.role === 'shooter' ? 22 : 60;
+      cam.fov = this._fzFov(Q.scoped && Q.role === 'shooter' ? 22 : 60);
       label = `BODYCAM // ${Q.name}`;
     }
     cam.updateProjectionMatrix();

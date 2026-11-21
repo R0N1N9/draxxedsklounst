@@ -414,7 +414,7 @@ export const KitMethods = {
     const A = this.aiShoot, quiet = (k === 'look' || k === 'enemy') && Math.random() < 0.75;
     const say = (m) => { this.comms(m, 'amber', this.partnerName); if (!quiet) this._voice('partner', m); };
     if (k === 'hold') { A.holdT = 30; say('Holding fire.'); }
-    else if (k === 'enemy') { A.holdT = 0; say(enemyId ? 'I see him.' : 'Nothing under your mark.'); }
+    else if (k === 'enemy') { A.holdT = 0; if (!enemyId) say('Nothing under your mark.'); }
     else if (k === 'perch') {
       // A sniper position anywhere the spotter marks (outside the building): Ra relocates there.
       if (this.fac.insideBuilding(at.x, at.z)) { say('No shot from inside. Pick a view.'); return; }

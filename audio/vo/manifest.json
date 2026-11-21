@@ -14,6 +14,7 @@
 "intel s out get to the van": "isr/5a2aa1d7c8.mp3",
 "night shift s augmented watch the towers": "isr/ae0e143e85.mp3",
 "no consensus stay quiet": "isr/87ae9fe9bd.mp3",
+"pickets in the draw drop them quiet": "isr/4e2aeae0e5.mp3",
 "relay in electrical keycards in the office drawers": "isr/3d4cbcd6f4.mp3",
 "sniper cell overwatch isr on station": "isr/5763d52dbc.mp3",
 "sweep running": "isr/820a29aa46.mp3",
@@ -71,6 +72,7 @@
 "copy pulse scan inbound": "shooter/c938318126.mp3",
 "copy supply drop inbound": "shooter/fa5bd90ea2.mp3",
 "cover me": "shooter/96ecf7ec5a.mp3",
+"draw s clear": "shooter/ef29775ec0.mp3",
 "drone bay s down": "shooter/2124e22d1b.mp3",
 "enemy marked": "shooter/d18b0c986c.mp3",
 "eyes on": "shooter/82e387e358.mp3",
@@ -138,7 +140,6 @@
 "i m spotted going loud": "shooter/b9719f2236.mp3",
 "i say loud": "shooter/10dd85b878.mp3",
 "i say quiet": "shooter/058a737ec2.mp3",
-"i see him": "shooter/7c79a6e5eb.mp3",
 "in and out before sunrise": "shooter/61e7de5e0b.mp3",
 "jacking in cover me": "shooter/14ab62dbe2.mp3",
 "link s up console s synced": "shooter/f588f01ac3.mp3",
@@ -148,6 +149,7 @@
 "medevac s cycling stay with me": "shooter/ac8bf26668.mp3",
 "medevac s on you hang on": "shooter/f792b75c23.mp3",
 "moving to my mark": "shooter/fcbd3673de.mp3",
+"moving to the cliff": "shooter/8f9a015e49.mp3",
 "multiple contacts east close": "shooter/78ddad4ffe.mp3",
 "multiple contacts east long range": "shooter/0de6dd2352.mp3",
 "multiple contacts east mid range": "shooter/b5b2ca3f30.mp3",
@@ -196,6 +198,7 @@
 "rifle s cold and quiet": "shooter/48163e94aa.mp3",
 "roger": "shooter/a61a1add71.mp3",
 "set up there good sightline": "shooter/5169d4fd76.mp3",
+"setting up on the ridge": "shooter/43e42e4031.mp3",
 "sync ready": "shooter/79e216da13.mp3",
 "sync target get on him": "shooter/f0a499355a.mp3",
 "sync target marked": "shooter/e87e884f47.mp3",
@@ -211,8 +214,7 @@
 "weapons free": "shooter/5a186b9d3d.mp3",
 "x ray down": "shooter/58c86d4c1c.mp3",
 "x ray down confirmed": "shooter/d82a6a217e.mp3",
-"yellow keycard": "shooter/6f2c59316d.mp3",
-"your mark is down": "shooter/437080a93c.mp3"
+"yellow keycard": "shooter/6f2c59316d.mp3"
 },
 "spotter": {
 "already here": "spotter/629d8889d1.mp3",
@@ -261,6 +263,7 @@
 "copy pulse scan inbound": "spotter/c938318126.mp3",
 "copy supply drop inbound": "spotter/fa5bd90ea2.mp3",
 "cover me": "spotter/96ecf7ec5a.mp3",
+"draw s clear": "spotter/ef29775ec0.mp3",
 "drone bay s down": "spotter/2124e22d1b.mp3",
 "enemy marked": "spotter/d18b0c986c.mp3",
 "eyes on": "spotter/82e387e358.mp3",
@@ -328,7 +331,6 @@
 "i m spotted going loud": "spotter/b9719f2236.mp3",
 "i say loud": "spotter/10dd85b878.mp3",
 "i say quiet": "spotter/058a737ec2.mp3",
-"i see him": "spotter/7c79a6e5eb.mp3",
 "in and out before sunrise": "spotter/61e7de5e0b.mp3",
 "jacking in cover me": "spotter/14ab62dbe2.mp3",
 "link s up console s synced": "spotter/f588f01ac3.mp3",
@@ -338,6 +340,7 @@
 "medevac s cycling stay with me": "spotter/ac8bf26668.mp3",
 "medevac s on you hang on": "spotter/f792b75c23.mp3",
 "moving to my mark": "spotter/fcbd3673de.mp3",
+"moving to the cliff": "spotter/8f9a015e49.mp3",
 "multiple contacts east close": "spotter/78ddad4ffe.mp3",
 "multiple contacts east long range": "spotter/0de6dd2352.mp3",
 "multiple contacts east mid range": "spotter/b5b2ca3f30.mp3",
@@ -386,6 +389,7 @@
 "rifle s cold and quiet": "spotter/48163e94aa.mp3",
 "roger": "spotter/a61a1add71.mp3",
 "set up there good sightline": "spotter/5169d4fd76.mp3",
+"setting up on the ridge": "spotter/43e42e4031.mp3",
 "sync ready": "spotter/79e216da13.mp3",
 "sync target get on him": "spotter/f0a499355a.mp3",
 "sync target marked": "spotter/e87e884f47.mp3",
@@ -401,7 +405,6 @@
 "weapons free": "spotter/5a186b9d3d.mp3",
 "x ray down": "spotter/58c86d4c1c.mp3",
 "x ray down confirmed": "spotter/d82a6a217e.mp3",
-"yellow keycard": "spotter/6f2c59316d.mp3",
-"your mark is down": "spotter/437080a93c.mp3"
+"yellow keycard": "spotter/6f2c59316d.mp3"
 }
 }

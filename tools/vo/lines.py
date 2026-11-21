@@ -18,6 +18,9 @@ OP = [
     "I'm down! Need a pickup!",
     'Set up there. Good sightline.',
     'Roger.',
+    'Moving to the cliff.',
+    'Setting up on the ridge.',
+    "Draw's clear.",
     'Copy.',
     'Copy. On its way.',
     'Negative.',
@@ -35,7 +38,6 @@ OP = [
     'Copy. cut lights inbound.',
     'Copy. drone overwatch inbound.',
     'Holding fire.',
-    'I see him.',
     'Nothing under your mark.',
     'No shot from inside. Pick a view.',
     'Copy, moving to your mark.',
@@ -53,7 +55,6 @@ OP = [
     'X-ray down.',
     'X-ray down. Confirmed.',
     'Tango down.',
-    'Your mark is down.',
     'Target down.',
     "He's down.",
     'On target.',
@@ -199,6 +200,7 @@ OP = [
 ]
 
 ISR = [
+    'Pickets in the draw. Drop them quiet.',
     'Sniper Cell, Overwatch. ISR on station.',
     'Target: archive server. Two floors, six rack rooms.',
     'Relay in electrical. Keycards in the office drawers.',

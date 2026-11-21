@@ -344,3 +344,15 @@ body.cell-pip #cell-subs { top: 178px; }
 /* Pause menu and debrief open: the HUD goes above the touch layer (z-index 6) so its buttons
    (Resume, Exit to main menu, Back to menu) take taps on iPad and phones. */
 body.cell-modal #cell-hud, #cell-hud:has(.c-pause.on), #cell-hud:has(.c-debrief.on) { z-index: 60; }
+
+/* Tablet live-feed zoom. */
+#cell-tablet .ct-feedtop { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 3px; }
+#cell-tablet .ct-feedtop .ct-feedlbl { margin-bottom: 0; }
+#cell-tablet .ct-fz { display: flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 10px; color: rgba(0, 255, 224, 0.75); }
+#cell-tablet .ct-fz em { font-style: normal; min-width: 34px; text-align: center; }
+#cell-tablet .ct-fz button { background: rgba(0, 255, 224, 0.1); border: 1px solid rgba(0, 255, 224, 0.4); color: var(--cell); font-size: 11px; width: 24px; height: 20px; padding: 0; cursor: pointer; }
+#cell-tablet .ct-feed { touch-action: none; }
+#cell-tablet .ct-map { touch-action: none; }
+/* ISR zoom pills: only while the sensor is up. */
+body:not(:has(#cell-hud.isr)) .cell-tbar .pill.z { display: none; }
+#cell-hud .c-obj-a { font-size: 11px; letter-spacing: 0.1em; color: #ffb040; margin: 3px 0 2px; font-family: var(--mono); }

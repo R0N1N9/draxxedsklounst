@@ -3,19 +3,22 @@
 // a cliff the shooter can work from. Everything here is axis-aligned boxes, so collision,
 // line of sight and bullets share one cheap model:
 //   solid  blocks movement      sight  blocks vision      shot  stops bullets
-// Units are metres; +x east, +z south, y up. Players spawn on the cliff (z ≈ 125) looking north.
+// Units are metres; +x east, +z south, y up. The van drops the cell in a wooded draw south of
+// the ridge (z ≈ 276); they walk north up the draw, over the crest (z ≈ 148) and out to the cliff.
 import * as THREE from 'three';
 import { withHaze } from '../atmosphere.js';
 import { segBox, clamp, smoothstep, fbm, mulberry32 } from '../util.js';
 
-export const BOUNDS = { x0: -175, x1: 175, z0: -150, z1: 205 };
+export const BOUNDS = { x0: -175, x1: 175, z0: -150, z1: 335 };
 export const FENCE = { x: 80, z: 60 };
 export const BUILDING = { x0: -36, x1: 36, z0: -40, z1: 0, h: 7.6, f1: 3.8 }; // two storeys; upper floor at f1
 export const CLIFF = { y: 22, z: 104 };
 
 // Named places the mission and the AI use.
 export const SPOTS = {
-  insert: [{ x: 4, z: 128 }, { x: -6, z: 131 }],
+  insert: [{ x: 6.9, z: 276 }, { x: 5.1, z: 276 }], // the drop-off in the draw (shooter, spotter)
+  overlook: { x: -6, z: 131 }, // where an AI spotter sets up once you're over the crest
+  crest: 150, // north of this you're over the hill and the approach is behind you
   perches: [
     { id: 'cliff', name: 'SOUTH CLIFF', x: 2, z: 110.5, yaw: 0 },
     { id: 'east', name: 'EAST KNOLL', x: 128, z: -72, yaw: Math.PI / 2 + 0.5 },
@@ -65,6 +68,23 @@ export const ROOMS = [
 // ---------------------------------------------------------------------------
 // Terrain
 // ---------------------------------------------------------------------------
+// The approach: a wooded draw winding south from the ridge to the drop-off. Its floor sits
+// ~11 m below the plateau, hemmed in by forested sides; a low crest just behind the cliff top
+// hides the compound until you're over it.
+export const DRAW = { z0: 150, z1: 300 };
+export function drawX(z) {
+  return 4 + 16 * Math.sin((z - 160) / 30) * smoothstep(160, 190, z) * (1 - smoothstep(250, 285, z));
+}
+function approachH(x, z) {
+  if (z < 128) return 0;
+  const off = Math.abs(x - drawX(z));
+  const crest = 3 * smoothstep(128, 146, z) * (1 - smoothstep(150, 168, z));
+  const drop = -11 * smoothstep(150, 186, z);
+  const walls = (9 + 10 * fbm(z * 0.02 + 1.7, x * 0.02, 2)) * smoothstep(12, 46, off) * smoothstep(150, 182, z);
+  const end = smoothstep(330, 390, z) * 30;
+  return crest + drop + walls + end;
+}
+
 function bump(x, z, cx, cz, r, h) {
   const d2 = ((x - cx) ** 2 + (z - cz) ** 2) / (r * r);
   return d2 > 4 ? 0 : h * Math.exp(-d2);
@@ -80,7 +100,7 @@ export function terrainHeight(x, z) {
   const cliff = steep + (gentle - steep) * trail;
   h = Math.max(h, 0) * (1 - smoothstep(90, 104, z)) + cliff + (z > 108 ? (fbm(x * 0.03, z * 0.03, 3) - 0.5) * 2.2 * smoothstep(108, 120, z) : 0);
   // A lip on the cliff edge, then the plateau climbing into the hills behind.
-  h += bump(x, z, 2, 108.5, 3, 0.6) + smoothstep(160, 205, z) * 30;
+  h += bump(x, z, 2, 108.5, 3, 0.6) + approachH(x, z);
   // Knolls east and west (alternate perches), and mountains hemming in the valley.
   h += bump(x, z, 128, -72, 16, 12) + bump(x, z, -136, -28, 15, 10);
   h += smoothstep(120, 175, Math.abs(x)) * 34 * (0.7 + 0.6 * fbm(z * 0.02, x * 0.01, 2));
@@ -690,8 +710,9 @@ export class Facility {
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
     let i = 0, guard = 0;
     while (i < n && guard++ < 6000) {
-      const x = BOUNDS.x0 + rng() * (BOUNDS.x1 - BOUNDS.x0), z = BOUNDS.z0 + rng() * (BOUNDS.z1 - BOUNDS.z0);
+      const x = BOUNDS.x0 + rng() * (BOUNDS.x1 - BOUNDS.x0), z = BOUNDS.z0 + rng() * (205 - BOUNDS.z0);
       if (Math.abs(x) < FENCE.x + 8 && Math.abs(z) < FENCE.z + 8) continue;
+      if (z > DRAW.z0 - 6) continue; // the draw has its own forest
       if (Math.abs(x) < 9 && z > 60 && z < 100) continue; // road
       if (Math.hypot(x - SPOTS.lz.x, z - SPOTS.lz.z) < 16 || (x > 80 && Math.abs(z + 18) < 6)) continue;
       if (Math.abs(x - 2) < 14 && z > 104 && z < 136) continue; // the perch and insertion stay clear
@@ -705,6 +726,81 @@ export class Facility {
     }
     it.count = ic.count = i;
     this.root.add(it, ic);
+    this._drawForest(trunk, crown);
+  }
+
+  // The draw: a dark tree line down both sides, a few stands on the floor to move between, and
+  // the drop-off lane kept clear for the van. Crowns block sight (see ray), so the trees are cover.
+  _drawForest(trunk, crown) {
+    const rng = mulberry32(911);
+    const n = this.quality === 'low' ? 170 : 340;
+    const it = new THREE.InstancedMesh(trunk, lam('#251d16'), n);
+    const ic = new THREE.InstancedMesh(crown, lam('#112019'), n);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+    this.foliage = [];
+    let i = 0, guard = 0;
+    while (i < n && guard++ < 8000) {
+      const z = DRAW.z0 - 4 + rng() * (325 - DRAW.z0), xc = drawX(z);
+      // Mostly the tree line (8–34 m off the floor's centre), some scattered on the floor.
+      const side = rng() < 0.5 ? -1 : 1;
+      const off = rng() < 0.82 ? 8 + Math.pow(rng(), 0.7) * 28 : rng() * 8;
+      const x = xc + side * off;
+      if (z > 266 && Math.abs(x - 6) < 7) continue; // the van's lane and the drop-off
+      if (z < 156 && Math.abs(x - 2) < 16) continue; // the crest path stays open
+      if (this.foliage.some((f) => Math.hypot(f.x - x, f.z - z) < 2.6)) continue;
+      const h = terrainHeight(x, z);
+      const sc = 0.8 + rng() * 0.9;
+      m.compose(p.set(x, h - 0.2, z), q.setFromAxisAngle(s.set(0, 1, 0), rng() * 6), s.set(sc, sc * (0.85 + rng() * 0.4), sc));
+      it.setMatrixAt(i, m);
+      ic.setMatrixAt(i, m);
+      this.foliage.push({ x, z, y0: h + 1.6 * sc, y1: h + 7.6 * sc, r: 1.25 * sc });
+      i++;
+    }
+    it.count = ic.count = i;
+    this.root.add(it, ic);
+    // A grid so sight rays only test the trees near them.
+    this.folGrid = new Map();
+    for (const f of this.foliage) { const k = Math.floor(f.x / 10) + ':' + Math.floor(f.z / 10); if (!this.folGrid.has(k)) this.folGrid.set(k, []); this.folGrid.get(k).push(f); }
+    this._outpost();
+  }
+
+  // A picket's observation post in the draw: sandbags, a camo net on poles, an ammo crate.
+  _outpost() {
+    const z = 230, x = drawX(z) + 6, y = terrainHeight(x, z);
+    this.outpost = { x, z, y };
+    const bag = '#3b382c', net = '#1d2a1c';
+    this.box(x - 2.2, y - 0.3, z + 1.1, x + 2.2, y + 0.85, z + 1.7, bag, { sight: false });
+    this.box(x - 2.2, y - 0.3, z - 1.4, x - 1.6, y + 0.85, z + 1.1, bag, { sight: false });
+    for (const [px, pz] of [[-2, -1.2], [2, -1.2], [-2, 1.5], [2, 1.5]]) this.box(x + px - 0.06, y - 0.2, z + pz - 0.06, x + px + 0.06, y + 2.1, z + pz + 0.06, '#2b241b', { sight: false, shot: false });
+    this.box(x - 2.4, y + 2.1, z - 1.5, x + 2.4, y + 2.22, z + 1.8, net, { solid: false, shot: false });
+    this.box(x + 0.6, y - 0.1, z - 0.9, x + 1.4, y + 0.45, z - 0.4, '#3a3f2a', {});
+  }
+
+  // Tree crowns between a and b? (Sight only; only trees in the draw are counted.)
+  _foliageHit(a, b) {
+    if (!this.folGrid || (a.z < DRAW.z0 - 8 && b.z < DRAW.z0 - 8)) return false;
+    const dx = b.x - a.x, dz = b.z - a.z, L2 = dx * dx + dz * dz || 1;
+    const steps = Math.max(1, Math.ceil(Math.sqrt(L2) / 10));
+    const seen = new Set();
+    for (let s = 0; s <= steps; s++) {
+      const cx = a.x + dx * s / steps, cz = a.z + dz * s / steps;
+      for (let ox = -1; ox <= 1; ox++) for (let oz = -1; oz <= 1; oz++) {
+        const L = this.folGrid.get((Math.floor(cx / 10) + ox) + ':' + (Math.floor(cz / 10) + oz));
+        if (!L) continue;
+        for (const f of L) {
+          if (seen.has(f)) continue;
+          seen.add(f);
+          const t = Math.max(0, Math.min(1, ((f.x - a.x) * dx + (f.z - a.z) * dz) / L2));
+          const px = a.x + dx * t - f.x, pz = a.z + dz * t - f.z;
+          if (px * px + pz * pz > f.r * f.r) continue;
+          // Ignore a tree right at either end (you can see someone leaning on one).
+          if (t * Math.sqrt(L2) < 1.5 || (1 - t) * Math.sqrt(L2) < 1.5) continue;
+          const y = a.y + (b.y - a.y) * t;
+          if (y > f.y0 && y < f.y1) return true;
+        }
+      }
+    }
+    return false;
   }
 
   // ---- navigation graph for guards (two storeys: nodes carry a floor height) ----------
@@ -888,7 +984,7 @@ export class Facility {
   }
 
   los(a, b) {
-    return !this.ray(a, b, 'sight');
+    return !this.ray(a, b, 'sight') && !this._foliageHit(a, b);
   }
 
   insideBuilding(x, z, y = 0) {

@@ -47,7 +47,7 @@ import { Cinema } from './cinema.js';
 import { Radio, setVoiceSetting } from './voice.js';
 import { Minigame } from './minigame.js';
 import { SMG, MAGNUM, P9, buildSMG, buildMagnum, buildKnife, normLoadout } from './arms.js';
-import { ISR } from './isr.js';
+import { ISR, ISR_FOV } from './isr.js';
 import { addStrobes, blinkStrobes, IRLaser, ghostAvatar, tickGhosts, IR_LAYER } from './irfx.js';
 import { AtmosFX } from '../atmofx.js';
 import { applyLook } from '../look.js';
@@ -85,6 +85,7 @@ const BLEED = 30;
 const BRIEF = {
   nightwatch: [
     'Sniper Cell, Overwatch. ISR on station.',
+    'Pickets in the draw. Drop them quiet.',
     'Target: archive server. Two floors, six rack rooms.',
     'Relay in electrical. Keycards in the office drawers.',
     'Find the amber beacon. Upload clean, pull the drive.',
@@ -94,6 +95,7 @@ const BRIEF = {
   ],
   infiltration: [
     'Sniper Cell, Overwatch. ISR on station.',
+    'Pickets in the draw. Drop them quiet.',
     'Target: archive server. Two floors, six rack rooms.',
     'Relay in electrical. Keycards in the office drawers.',
     'Find the amber beacon. Upload clean, pull the drive.',
@@ -393,6 +395,8 @@ export class CellGame {
     if ((this.role === 'spotter' || this.operative) && this.loadout.spotter.perk === 'drops') this.obj.drops += 2;
     this.aiSpot = this.aiPartner && this.role === 'shooter' ? new AiSpotter(this, this.ops) : null;
     this.aiShoot = this.aiPartner && this.role === 'spotter' ? { perch: 0, cool: 3, aim: null, aimT: 0, moveT: 0, sayT: 0, holdT: 0, coverT: 0 } : null;
+    // The approach: until you're over the crest an AI partner walks the draw with you.
+    this.approach = true;
     this.quad = null;
     this.quadCd = 0;
     this._kitInit();
@@ -495,8 +499,9 @@ export class CellGame {
   _setupPlayer() {
     const P = (this.player = new LocalPlayer());
     const i = this.role === 'shooter' ? 0 : 1;
-    const sp = this.role === 'shooter' ? SPOTS.perches[0] : SPOTS.insert[1];
-    const sx = this.role === 'shooter' ? sp.x : SPOTS.insert[1].x, sz = this.role === 'shooter' ? sp.z + 3 : SPOTS.insert[1].z;
+    // Both of you start at the drop-off in the draw and walk in.
+    const sp = SPOTS.insert[this.role === 'shooter' ? 0 : 1];
+    const sx = sp.x, sz = sp.z;
     P.vest = this.role === 'shooter' ? 'rig' : 'plate';
     P.reset(new THREE.Vector3(sx, terrainHeight(sx, sz), sz), 0);
     this._arm();
@@ -535,6 +540,16 @@ export class CellGame {
     can.position.set(0, 0.022, -0.225);
     pm.add(can);
     this.pistolCan = can;
+    // A knurled ring and a witness mark on each can so you can see it turn.
+    for (const c of [can, this.viewmodel.models.smg.userData.can, this.viewmodel.models.mag50.userData.can]) {
+      if (!c) continue;
+      const r = c.geometry.parameters.radiusTop;
+      const ring = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.08, r * 1.08, 0.014, 12).rotateX(Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#2a2c30', emissive: '#2a2c30', emissiveIntensity: 0.2 }));
+      ring.position.z = c.geometry.parameters.height * 0.42;
+      const mark = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.003, c.geometry.parameters.height * 0.7), new THREE.MeshBasicMaterial({ color: '#6c7076' }));
+      mark.position.set(0, r * 1.02, 0);
+      c.add(ring, mark);
+    }
     this.viewmodel.root.traverse((o) => { o.renderOrder = 10; o.frustumCulled = false; });
     this.viewmodel.setLook({ outfit: 'wraith', poncho: this.role === 'shooter', theme: 'mcblack' });
     this.i = i;
@@ -566,10 +581,10 @@ export class CellGame {
     this.scene.add(av.root);
     this.cloakMat = cloakMaterial();
     const ai = this.aiPartner;
-    const p = r === 'shooter' ? SPOTS.perches[0] : { x: SPOTS.insert[1].x + 3, z: SPOTS.insert[1].z - 3 };
+    const p = SPOTS.insert[r === 'shooter' ? 0 : 1];
     this.partner = {
       role: r, name: this.partnerName, ai, avatar: av, pos: new THREE.Vector3(p.x, terrainHeight(p.x, p.z), p.z), tpos: null,
-      yaw: 0, pitch: -0.05, st: ai ? (r === 'shooter' ? 2 : 1) : 0, w: r === 'spotter', moving: false, sprinting: false, cloak: false, cloakFlicker: false,
+      yaw: 0, pitch: -0.05, st: 0, w: r === 'spotter', moving: false, sprinting: false, cloak: false, cloakFlicker: false,
       hp: 100, downed: false, kia: false, alive: true, tablet: false, e: false, quad: null, seen: ai, ammo: 1, lastT: 0,
     };
     // Your own (local) operator model, used when you are down and the camera pulls out.
@@ -1158,6 +1173,7 @@ export class CellGame {
 
     // Fire. (A green sync pulls the trigger for you.)
     if (this._autoFire) { this._autoFire = false; if (live && !quad && !seat) { act.fire = true; this._syncShotId = this.syncAim; } }
+    if (this.supAnim) { act.fire = false; act.fireHeld = false; }
     const mode = P.w.mode;
     if (act.fire && live && P.w.chamber === 0 && P.w.mag === 0) { this.audio.click(); if (P.w.reserve > 0) P.startReload(); }
     else if (live && mode === 'full') { if (act.fireHeld || act.fire) { if (P.canFire()) this._fire(); } }
@@ -1199,14 +1215,18 @@ export class CellGame {
     // First-person weapon.
     const scopedRifle = P.def.scope && P.scopeT > 0.6;
     this.viewmodel.visible = live && !scopedRifle && !quad && !tab && !seat && !isr && !(this.knifeT > 0);
-    this.pistolCan.visible = !!(P.arms.find((w) => w.def.key === 'm18') || {}).sup;
-    for (const w of P.arms) { const M = this.viewmodel.models[w.def.key]; if (M && M.userData.can) M.userData.can.visible = !!w.sup; }
+    // Suppressor cans (mid-gesture the can shows while it's in your hand).
+    const supU = this._supTick(dt), SA = this.supAnim;
+    const canShow = (w) => (SA && SA.w === w ? (SA.to ? supU > 0.18 : supU < 0.82) : !!w.sup);
+    const canOf = (w) => (w.def.key === 'm18' ? this.pistolCan : (this.viewmodel.models[w.def.key] || {}).userData?.can);
+    for (const w of P.arms) { const c = canOf(w); if (c) c.visible = canShow(w); }
     this.carry.visible = this.obj.drive === this.role && live && !quad && !isr;
     this._knifeTick(dt);
     this.viewmodel.update(dt, {
       def: P.def, scopeT: P.scopeT, speed: P.speed, sprint: P.sprinting, bobPhase: P.bobPhase, cycleT: P.cycleT,
       reloadT: P.reloadT, reloadDur: P.reloadDur, reloadEmpty: P.reloadEmpty, switchT: P.switchT, bipodT: 0, bipodState: 'stowed', bipodU: 0,
       empty: P.w.chamber === 0 && P.def.kind === 'semi', boltPending: false,
+      supU: SA ? supU : 0, supTo: SA ? SA.to : false, supCan: SA ? canOf(SA.w) : null,
     });
     this._cloakViewmodel(C.on);
     this.input.isScoped = P.scoped;
@@ -1386,7 +1406,7 @@ export class CellGame {
     if (how !== 'takedown' && this.t - (this._xrayT || -99) > 10 && Math.random() < 0.55) {
       this._xrayT = this.t;
       const pinged = e.tagBy && e.tagBy !== killer;
-      const lines = pinged ? ['Your mark is down.', 'X-ray down.'] : ['X-ray down.', 'Tango down.', 'Target down.', "He's down."];
+      const lines = pinged ? ['X-ray down.'] : ['X-ray down.', 'Tango down.', 'Target down.', "He's down."];
       const line = lines[Math.floor(Math.random() * lines.length)];
       setTimeout(() => this._radio(killer, line), 600);
     }
@@ -1570,7 +1590,6 @@ export class CellGame {
       if (this.isHost) best.tagT = HACK.tag;
       this.audio.ping && this.audio.ping();
       this.hud.flash(best.kind === 'd' ? 'DRONE TAGGED' : best.chief ? 'SITE CHIEF TAGGED' : 'TAGGED');
-      if (this.aiShoot) this.comms('Ra: I see him.', 'amber', this.partnerName);
     } else {
       // Nothing there: drop a ping on the spot instead.
       const at = this._aimPoint();
@@ -1747,6 +1766,40 @@ export class CellGame {
     }
   }
 
+  // AI partner on foot: follows you up the draw (a few metres back and to the side, crouched
+  // when you are), then walks out to its post once you're over the crest. True while walking.
+  _aiWalk(dt) {
+    const Q = this.partner, me = this.player.pos;
+    if (!Q.ai || Q.kia || Q.downed) return false;
+    if (this.approach && me.z < SPOTS.crest) {
+      this.approach = false;
+      Q.walkTo = Q.role === 'shooter' ? { x: SPOTS.perches[0].x, z: SPOTS.perches[0].z } : { x: SPOTS.overlook.x, z: SPOTS.overlook.z };
+      this._radio('partner', Q.role === 'shooter' ? 'Moving to the cliff.' : 'Setting up on the ridge.');
+    }
+    let tx, tz, run = false;
+    if (this.approach) {
+      const side = Q.role === 'shooter' ? 1 : -1, yaw = this.player.yaw;
+      tx = me.x + Math.sin(yaw) * 3.2 + Math.cos(yaw) * 2.2 * side;
+      tz = me.z + Math.cos(yaw) * 3.2 - Math.sin(yaw) * 2.2 * side;
+      Q.st = this.player.stance === 2 ? 1 : this.player.stance;
+    } else if (Q.walkTo) {
+      tx = Q.walkTo.x; tz = Q.walkTo.z; run = true; Q.st = 0;
+    } else return false;
+    const dx = tx - Q.pos.x, dz = tz - Q.pos.z, d = Math.hypot(dx, dz);
+    if (!this.approach && d < 0.8) { Q.walkTo = null; Q.moving = false; Q.sprinting = false; return false; }
+    const sp = (run ? 4.2 : Q.st === 1 ? 2.2 : 3.4) * Math.min(1, d / 2.5 + (d > 8 ? 1 : 0));
+    if (d > 0.4) {
+      const k = Math.min(d, sp * dt) / d;
+      Q.pos.x += dx * k; Q.pos.z += dz * k;
+      Q.yaw += angDiff(Math.atan2(-dx, -dz), Q.yaw) * Math.min(1, dt * 6);
+      Q.moving = true;
+    } else { Q.moving = false; Q.yaw += angDiff(this.player.yaw, Q.yaw) * Math.min(1, dt * 3); }
+    if (d > 40) { Q.pos.x = tx; Q.pos.z = tz; } // left far behind: catch up
+    Q.pos.y = this.fac.groundAt(Q.pos.x, Q.pos.z, Q.pos.y + 0.6, 0.6);
+    Q.sprinting = run && Q.moving;
+    return true;
+  }
+
   // Solo spotter: Ra holds a perch and takes the shots you tag.
   _aiShooter(dt) {
     const A = this.aiShoot, S = this.sentinel, Q = this.partner;
@@ -1756,14 +1809,18 @@ export class CellGame {
     A.holdT = Math.max(0, (A.holdT || 0) - dt);
     A.coverT = Math.max(0, (A.coverT || 0) - dt);
     if (Q.seated) return; // aboard the van
+    // On the approach Ra walks with you (and shoots from wherever he is); then out to the cliff.
+    const walking = this._aiWalk(dt);
+    if (walking) { A.walkEye = { x: Q.pos.x, y: Q.pos.y + (Q.st === 1 ? 1.0 : 1.45), z: Q.pos.z }; }
+    else A.walkEye = null;
     if (A.moveT > 0) {
       A.moveT -= dt;
       Q.avatarHidden = true;
       if (A.moveT <= 0) { A.perch = A.moveTo; const p = SPOTS.perches[A.perch]; Q.pos.set(p.x, terrainHeight(p.x, p.z), p.z); Q.yaw = p.yaw; Q.avatarHidden = false; this._toast(`Ra: set at ${p.name}.`, 'amber', this.partnerName); }
       return;
     }
-    Q.pos.set(perch.x, terrainHeight(perch.x, perch.z), perch.z);
-    const eye = { x: perch.x, y: Q.pos.y + 1.3, z: perch.z };
+    if (!A.walkEye) { Q.pos.set(perch.x, terrainHeight(perch.x, perch.z), perch.z); Q.st = 2; }
+    const eye = A.walkEye || { x: perch.x, y: Q.pos.y + 1.3, z: perch.z };
     // Candidates: anything tagged, anything with eyes on the spotter, drones locked on.
     const me = this.player.pos;
     const cands = [];
@@ -2227,7 +2284,10 @@ export class CellGame {
       Q.pos.lerp(Q.tpos, Math.min(1, dt * 12));
       Q.yaw += angDiff(Q.tyaw || 0, Q.yaw) * Math.min(1, dt * 12);
     }
-    if (Q.ai && Q.role === 'spotter') { Q.yaw = Math.PI * 0.02; }
+    if (Q.ai && Q.role === 'spotter' && !this.ended && !(this.paused && this.solo) && !this._aiWalk(dt)) {
+      if (!this.approach) { const o = SPOTS.overlook; Q.pos.set(o.x, terrainHeight(o.x, o.z), o.z); Q.st = 1; Q.moving = false; }
+      Q.yaw = Math.PI * 0.02;
+    }
     const av = Q.avatar;
     av.setVisible(Q.seen && !Q.avatarHidden && !Q.kia);
     if (!Q.seen) return;
@@ -2454,7 +2514,7 @@ class CellHud {
     document.body.classList.toggle('cell-pip', !!pip);
     root.innerHTML = `
       <canvas id="cell-overlay"></canvas>
-      <div class="c-obj"><div class="c-obj-n"></div><div class="c-obj-t"></div><div class="c-obj-h"></div></div>
+      <div class="c-obj"><div class="c-obj-n"></div><div class="c-obj-t"></div><div class="c-obj-a"></div><div class="c-obj-h"></div></div>
       <div class="c-alarm"><span class="c-al-l">SENTINEL</span><b class="c-al-s">QUIET</b><i><em></em></i></div>
       <div class="c-partner"></div>
       <div class="c-feed"></div>
@@ -2478,7 +2538,7 @@ class CellHud {
     document.body.classList.add('cell-mode', 'cell-' + game.role);
     const $ = (s) => root.querySelector(s);
     this.el = {
-      overlay: $('#cell-overlay'), objN: $('.c-obj-n'), objT: $('.c-obj-t'), objH: $('.c-obj-h'), alS: $('.c-al-s'), alBar: $('.c-alarm em'), alarm: $('.c-alarm'),
+      overlay: $('#cell-overlay'), objN: $('.c-obj-n'), objT: $('.c-obj-t'), objH: $('.c-obj-h'), objA: $('.c-obj-a'), alS: $('.c-al-s'), alBar: $('.c-alarm em'), alarm: $('.c-alarm'),
       partner: $('.c-partner'), feed: $('.c-feed'), comms: $('.c-comms'), hp: $('.c-hp em'), camo: $('.c-camo em'), camoBox: $('.c-camo'), chips: $('.c-chips'),
       amN: $('.c-am-n'), amR: $('.c-am-r'), amW: $('.c-am-w'), amS: $('.c-am-s'), prompt: $('.c-prompt'), promptT: $('.c-prompt span'), promptB: $('.c-prompt em'),
       flash: $('.c-flash'), keys: $('.c-keys'), dmg: $('.c-dmg'), pause: $('.c-pause'), debrief: $('.c-debrief'),
@@ -2536,14 +2596,14 @@ class CellHud {
     if (!t) return;
     const bar = document.createElement('div');
     bar.className = 'cell-tbar';
-    const extra = (g.role === 'spotter' || g.operative) ? [['cell-isr', 'ISR'], ['cell-sweep', 'SWEEP'], ['cell-hack', 'HACK']] : [];
+    const extra = (g.role === 'spotter' || g.operative) ? [['cell-zout', 'ZOOM \u2212', 'z'], ['cell-zin', 'ZOOM +', 'z'], ['cell-isr', 'ISR'], ['cell-sweep', 'SWEEP'], ['cell-hack', 'HACK']] : [];
     const common = [...extra, ['cell-light', 'LIGHT'], ['cell-drop', 'DROP'], ['cell-ping', 'PING \u25CE'], ['cell-help', 'HELP \u271A'], ['cell-sync', 'SYNC'], ['cell-tag', 'TAG'], ['cell-use', 'USE'], ['cell-sup', 'SUPP'], ['cell-nv', 'NV'], ['cell-chat', 'CHAT'], ...(g.net ? [['cell-mic', 'MIC'], ['cell-talk', 'TALK']] : [])];
     const pills = g.operative
       ? [['cell-tab', 'TABLET'], ['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-quad', 'QUAD'], ['cell-recall', 'RECALL'], ...common]
       : g.role === 'shooter'
         ? [['cell-ability', 'CAMO'], ['cell-deadeye', 'DEADEYE'], ['cell-lure', 'LURE'], ['cell-exec', 'EXEC'], ['cell-tab', 'MAP'], ...common]
         : [['cell-tab', 'TABLET'], ['cell-ability', 'QUAD'], ['cell-recall', 'RECALL'], ['cell-yes', 'SEND \u2713'], ['cell-no', 'DENY \u2715'], ...common];
-    bar.innerHTML = pills.map(([a, l]) => `<div class="pill" data-act="${a}">${l}</div>`).join('') + '<div class="pill" id="cell-tpause">❚❚</div>';
+    bar.innerHTML = pills.map(([a, l, c]) => `<div class="pill${c ? ' ' + c : ''}" data-act="${a}">${l}</div>`).join('') + '<div class="pill" id="cell-tpause">❚❚</div>';
     t.appendChild(bar);
     bar.querySelector('#cell-tpause').addEventListener('touchstart', (e) => { e.preventDefault(); e.stopPropagation(); this.setPause(true); }, { passive: false });
     // PING: hold and drag your thumb to pick from the wheel.
@@ -2657,6 +2717,15 @@ class CellHud {
     if (lab !== this._al) { this._al = lab; this.el.alS.textContent = lab; this.el.alarm.dataset.s = lab.toLowerCase(); }
     this.el.alBar.style.width = `${Math.round(S.alarm * 100)}%`;
     if (ob.step !== this._step) { this._step = ob.step; this.objective(ob.step, OBJECTIVES[ob.step], false); }
+    // The approach: pickets left in the draw, while you're still south of the crest.
+    {
+      const left = S.guards.filter((q) => q.picket && q.state !== 'dead' && !q.incap).length;
+      const show = P.pos.z > SPOTS.crest && left > 0 && ob.step === 0;
+      const txt = show ? `APPROACH \u00B7 ${left} PICKET${left > 1 ? 'S' : ''} IN THE DRAW \u2014 DROP THEM QUIET` : '';
+      if (txt !== this._apTxt) { this._apTxt = txt; this.el.objA.textContent = txt; this.el.objA.style.display = txt ? '' : 'none'; }
+      if (this._apLeft > 0 && left === 0 && !this._apClear) { this._apClear = true; g._radio(g.aiPartner ? 'partner' : 'me', "Draw's clear."); }
+      this._apLeft = left;
+    }
     // Partner card.
     const Q = g.partner;
     const qd = Q.seen ? Math.round(Q.pos.distanceTo(P.pos)) : 0;
@@ -2942,10 +3011,23 @@ class CellHud {
     for (const [x, y, sx, sy] of [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]]) { c.beginPath(); c.moveTo(x, y + sy * 40); c.lineTo(x, y); c.lineTo(x + sx * 40, y); c.stroke(); }
     c.font = '600 13px JetBrains Mono, monospace';
     c.textAlign = 'left';
-    c.fillText(`ISR // PREDATOR \u00B7 ${I.mode === 'IR' ? 'IR WHT-HOT' : 'EO'} \u00B7 FOV ${I.fov}\u00B0`, m + 10, m + 20);
+    c.fillText(`ISR // PREDATOR \u00B7 ${I.mode === 'IR' ? 'IR WHT-HOT' : 'EO'} \u00B7 ${I.mag.toFixed(1)}\u00D7 \u00B7 FOV ${I.fov.toFixed(1)}\u00B0`, m + 10, m + 20);
+    // Zoom ladder on the right edge.
+    {
+      const x = W - m - 6, y0 = H / 2 - 90, y1 = H / 2 + 90;
+      c.beginPath(); c.moveTo(x, y0); c.lineTo(x, y1);
+      for (let i = 0; i <= 8; i++) { const y = y0 + (y1 - y0) * i / 8; c.moveTo(x - (i % 4 ? 5 : 10), y); c.lineTo(x, y); }
+      c.stroke();
+      const k = Math.log(ISR_FOV.max / I.fov) / Math.log(ISR_FOV.max / ISR_FOV.min);
+      const y = y1 - (y1 - y0) * k;
+      c.beginPath(); c.moveTo(x - 2, y); c.lineTo(x - 16, y - 6); c.lineTo(x - 16, y + 6); c.closePath(); c.fill();
+      c.textAlign = 'right';
+      c.fillText('ZOOM', x, y0 - 10);
+      c.textAlign = 'left';
+    }
     c.fillText(`ALT ${Math.round(I.pos.y)} m \u00B7 SLANT ${Math.round(I.slant())} m \u00B7 SPI ${Math.round(I.spi.x)} ${Math.round(-I.spi.z)}`, m + 10, m + 38);
     c.textAlign = 'right';
-    c.fillText(`MOUSE/DRAG SLEW \u00B7 WHEEL ZOOM \u00B7 N IR/EO \u00B7 F TAG \u00B7 P SWEEP${I.sweepCd > 0 ? ' ' + Math.ceil(I.sweepCd) + 's' : ''} \u00B7 V PING \u00B7 I EXIT`, W - m - 10, H - m - 12);
+    c.fillText(`MOUSE/DRAG SLEW \u00B7 WHEEL / +\u2212 / [ ] / PINCH ZOOM \u00B7 N IR/EO \u00B7 F TAG \u00B7 P SWEEP${I.sweepCd > 0 ? ' ' + Math.ceil(I.sweepCd) + 's' : ''} \u00B7 V PING \u00B7 I EXIT`, W - m - 10, H - m - 12);
     c.textAlign = 'center';
   }
 

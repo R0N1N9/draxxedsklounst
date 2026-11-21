@@ -352,6 +352,13 @@ export class Audio {
   }
 
   // Night vision: the reach (cloth rustle), the mount click, and the tubes whining up (or down).
+  // One thread of a suppressor turning: a small metallic tick, the last one a firm seat.
+  supThread(k) {
+    if (!this.ctx) return;
+    const t = this.now;
+    this._noiseBurst(this.master, t, 0.018, 'bandpass', 5200 + 900 * k, 4, k >= 1 ? 0.12 : 0.05, 0.012);
+    if (k >= 1) this._noiseBurst(this.master, t + 0.01, 0.03, 'bandpass', 2600, 2, 0.08, 0.02);
+  }
   nvgReach() {
     if (!this.ctx) return;
     this._noiseBurst(this.master, this.now, 0.18, 'bandpass', 1800, 0.7, 0.05, 0.12);
