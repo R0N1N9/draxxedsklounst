@@ -264,6 +264,8 @@ The garrison is kept lean, about 34 in NightWatch and 28 in Infiltration, and sp
   - **Hold** for **quickhacks**: your left hand brings up your phone and the HUD switches to scan mode (time slows in solo). Everything hackable in view gets tagged.
   - Look at a target, pick a hack (mouse wheel or 1/2) and click or press E. Your thumb taps the screen and the hack uploads.
   - Hacks: loop a camera, short-circuit a drone, open an electronic door, cut a light, set off an IoT device, or jam a guard's comms / reboot his optics (blind for 6 s).
+  - **Commands:** look at open ground instead and the menu becomes **Commands** for that spot: supply drop, pulse scan, EMP, decoy, cut lights or recon quad. The phone comes up, your thumb taps, and it lands where you're aiming. Ping-wheel requests get the same quick phone gesture.
+  - On touch, tap an option row to pick it and run it.
   - Quickhacks still work when ICE knocks the console offline.
 - **Lock-pick set:** mechanical locks (maintenance and side doors) can't be hacked; the spotter picks them in person. Electronic locks (front, dock) open over the network, from the console or a quickhack.
 - **CYBER OPS tablet:** a map of both floors, with payloads (pulse scan, jam, EMP, supply drop, cut lights, spoof cameras, decoy, quad, medevac), door and camera hacks, and camera feeds.

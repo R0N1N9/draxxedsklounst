@@ -331,6 +331,7 @@ export const KitMethods = {
     if (k === 'supply' && Math.hypot(at.x - P.x, at.z - P.z) > 60) at = { x: P.x + 1.5, z: P.z + 1 };
     // Spotter / lone operative: you own the tablet, so it just happens.
     if (this.ops && (this.role === 'spotter' || this.operative)) {
+      if (this._phonePulse && !(this.qh && this.qh.on)) this._phonePulse();
       const why = this._runRequest(k, at);
       this.hud.flash(why ? `${REQ_LABEL[k]}: ${why}` : REQ_LABEL[k], why ? 'red' : 'cyan');
       return;
