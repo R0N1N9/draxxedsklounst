@@ -2396,6 +2396,10 @@ class CellHud {
     const root = (this.root = document.createElement('div'));
     root.id = 'cell-hud';
     root.className = 'role-' + game.role;
+    // The spotter (and lone operative) get the CYBER OPS / ISR panels across the top right.
+    const pip = game.role === 'spotter' || game.operative;
+    if (pip) root.classList.add('has-pip');
+    document.body.classList.toggle('cell-pip', !!pip);
     root.innerHTML = `
       <canvas id="cell-overlay"></canvas>
       <div class="c-obj"><div class="c-obj-n"></div><div class="c-obj-t"></div><div class="c-obj-h"></div></div>

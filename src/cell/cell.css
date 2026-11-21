@@ -252,7 +252,10 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 #cell-hud .c-sync i.on { background: #ffb020; box-shadow: 0 0 8px #ffb020; }
 #cell-hud .c-sync.go i { background: #30ff90; box-shadow: 0 0 12px #30ff90; }
 #cell-hud .c-sync.go b { color: #30ff90; animation: cellblink 0.3s infinite alternate; }
-#cell-hud .c-pip { position: absolute; right: 18px; top: 84px; display: flex; flex-direction: column; gap: 6px; pointer-events: auto; }
+/* Top right: CYBER OPS and ISR side by side at the very top, the partner chip under them,
+   then the radio subtitles. */
+#cell-hud .c-pip { position: absolute; right: 18px; top: 14px; display: flex; flex-direction: row; gap: 6px; pointer-events: auto; }
+#cell-hud.has-pip .c-partner { top: 140px; }
 #cell-hud .c-sq { width: 168px; cursor: pointer; border: 1px solid rgba(0, 255, 224, 0.45); background: rgba(0, 10, 14, 0.7); }
 #cell-hud .c-sq span { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; color: var(--cell); padding: 2px 5px; }
 #cell-hud .c-sq span em { font-style: normal; opacity: 0.6; float: right; }
@@ -317,9 +320,10 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 
 /* Radio subtitles */
 /* Radio subtitles: one terminal entry at a time, typed out, then cleared. */
-#cell-subs { position: fixed; left: 50%; bottom: 128px; transform: translateX(-50%); z-index: 30; width: min(620px, calc(100vw - 32px)); padding: 5px 10px; background: rgba(2, 8, 10, 0.62); border-left: 2px solid var(--c, #8dff9e); color: #dff7ee; font: 500 13px/1.45 var(--mono, ui-monospace, monospace); text-align: left; text-shadow: 0 0 6px rgba(0, 0, 0, 0.9); opacity: 0; transition: opacity 0.35s; pointer-events: none; }
+#cell-subs { position: fixed; right: 18px; top: 52px; z-index: 30; width: min(420px, calc(100vw - 32px)); padding: 5px 10px; background: rgba(2, 8, 10, 0.62); border-left: 2px solid var(--c, #8dff9e); color: #dff7ee; font: 500 13px/1.45 var(--mono, ui-monospace, monospace); text-align: left; text-shadow: 0 0 6px rgba(0, 0, 0, 0.9); opacity: 0; transition: opacity 0.35s; pointer-events: none; }
 #cell-subs.on { opacity: 1; }
 #cell-subs b { letter-spacing: 0.08em; margin-right: 8px; font-weight: 700; }
 #cell-subs .cur { display: inline-block; width: 7px; height: 12px; margin-left: 2px; vertical-align: -1px; background: var(--c, #8dff9e); animation: subs-blink 0.8s steps(1) infinite; }
 @keyframes subs-blink { 50% { opacity: 0; } }
-@media (pointer: coarse) { #cell-subs { bottom: 170px; font-size: 12px; } }
+body.cell-pip #cell-subs { top: 178px; }
+@media (pointer: coarse) { #cell-subs { font-size: 12px; } }
