@@ -292,9 +292,13 @@ export const KitMethods = {
     const label = k === 'enemy' && (this.role === 'spotter' || this.aiShoot) ? 'TAKE THE SHOT' : COMMS_LABEL[k];
     const pin = { x: at.x, z: at.z, label, by: this.role, k };
     this._addPin(pin);
-    this.send({ t: 'cm', ...pin, id: enemyId || 0 });
+    // Routine pings are voiced only now and then (and never over other radio); the marker and
+    // text always show. Orders and requests for help always speak.
+    const routine = k === 'look' || k === 'enemy' || k === 'move';
+    const voiced = !routine || (this.radio && this.radio.idle() && Math.random() < 0.35);
+    this.send({ t: 'cm', ...pin, id: enemyId || 0, v: voiced ? 1 : 0 });
     this.comms(label.charAt(0) + label.slice(1).toLowerCase() + '.', ROLES_COLOR[this.role], this.name);
-    this._voice('me', CALL_LINE[k] || label.toLowerCase());
+    if (voiced) this._voice('me', CALL_LINE[k] || label.toLowerCase());
     if (k === 'pickup') return;
     if (this.aiShoot) this._aiShooterCall(k, at, enemyId);
     if (this.aiSpot) this._aiSpotterCall(k, at, enemyId);
@@ -318,7 +322,7 @@ export const KitMethods = {
     this._addPin({ x: m.x, z: m.z, label: m.label, by: m.by }, true);
     this.lastCm = { k: m.k, label: m.label, t: 10 };
     this.comms(`${m.label}${m.k === 'enemy' ? ' — marked' : ''}. (Y: roger)`, '#ffd040', this.partnerName);
-    this._voice('partner', CALL_LINE[m.k] || m.label.toLowerCase());
+    if (m.v !== 0) this._voice('partner', CALL_LINE[m.k] || m.label.toLowerCase());
     this.sfx.ui(true);
   },
 
@@ -405,7 +409,9 @@ export const KitMethods = {
 
   // AI partners hearing your calls.
   _aiShooterCall(k, at, enemyId) {
-    const A = this.aiShoot, say = (m) => { this.comms(m, 'amber', this.partnerName); this._voice('partner', m); };
+    // The AI's spoken acknowledgements are occasional for routine pings (text always shows).
+    const A = this.aiShoot, quiet = (k === 'look' || k === 'enemy') && Math.random() < 0.75;
+    const say = (m) => { this.comms(m, 'amber', this.partnerName); if (!quiet) this._voice('partner', m); };
     if (k === 'hold') { A.holdT = 30; say('Holding fire.'); }
     else if (k === 'enemy') { A.holdT = 0; say(enemyId ? 'I see him.' : 'Nothing under your mark.'); }
     else if (k === 'perch') {
@@ -425,7 +431,8 @@ export const KitMethods = {
     else if (k === 'look') say('Eyes on.');
   },
   _aiSpotterCall(k, at, enemyId) {
-    const say = (m) => { this.comms(m, 'cyan', this.partnerName); this._voice('partner', m); };
+    const quiet = (k === 'look' || k === 'enemy') && Math.random() < 0.75;
+    const say = (m) => { this.comms(m, 'cyan', this.partnerName); if (!quiet) this._voice('partner', m); };
     if (k === 'look') {
       const near = this.sentinel.guards.filter((g) => g.state !== 'dead' && Math.hypot(g.x - at.x, g.z - at.z) < 15);
       for (const g of near) g.tagT = 12;

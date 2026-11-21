@@ -185,7 +185,7 @@ export const Kit2 = {
       if (K.t <= 0) {
         this._syncKill = null;
         const g = S.byId(K.id);
-        if (g && g.state === 'dead') this._radio('me', ['X-ray down.', 'Tango down.', 'Target down.', 'He\'s down.'][Math.floor(Math.random() * 4)], true);
+        if (g && g.state === 'dead') this._radio('me', ['X-ray down.', 'Tango down.', 'Target down.', 'He\'s down.'][Math.floor(Math.random() * 4)], 'soft');
       }
     }
     if (!marks) { this.syncAim = 0; this.syncPartner = 0; this._syncT = 0; this._syncSaid = false; return; }
@@ -240,8 +240,8 @@ export const Kit2 = {
   // low: optional chatter (callouts), skipped when the net is busy.
   _radio(who, text, low = false) {
     if (who === 'me') who = this.role;
-    if (low && !this.radio.free()) return;
-    this._voice(who, text, false, low);
+    if (low === 'soft' ? !this.radio.idle() : low && !this.radio.free()) return;
+    this._voice(who, text, false, low === true);
     this.comms(text, who === 'shooter' ? '#ffb040' : '#40d0ff', who === this.role ? this.name : this.partnerName);
     this._broadcast({ k: 'radio', who, text });
   },
