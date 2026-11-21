@@ -115,8 +115,6 @@ export function makeView(ctx, THREE, renderer, S) {
   const api = {
     camera, post,
     get zoom() { return zoom; },
-    shot: null, // test scripts: pin the camera
-    always: false, // test scripts: never skip a draw
     note(text, dur = 2) { notes.text = text; notes.a = dur; },
     kick() { kickA = 1; },
     shove() { shoveA = 1; hurt = 1; api.note('THE KRAKEN SHOVED YOU', 1.6); },
@@ -251,12 +249,7 @@ export function makeView(ctx, THREE, renderer, S) {
       const phase = ctx.phase;
 
       // ---- the camera
-      if (api.shot) {
-        const s = api.shot;
-        camera.position.set(s.x, s.y, s.z);
-        camera.lookAt(s.tx, s.ty, s.tz);
-        camera.fov = s.fov || 60;
-      } else if (kill) {
+      if (kill) {
         // slow orbit beside the victim, from below, looking up through the light
         const v = kill.v, k = smoothstep(0, 0.7, kill.t);
         const side = tmpV.set(-kill.dir.z, 0, kill.dir.x).normalize();
@@ -321,7 +314,7 @@ export function makeView(ctx, THREE, renderer, S) {
         drawOverlay(ctx, HUD, api, S, camera, project);
         return;
       }
-      if (api.freeze || Q.soft && !api.always && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < (staged.length ? Math.max(700, cost * 1.2) : Math.min(6000, Math.max(1000, cost * 5, worst * 5)))) draw = false;
+      if (Q.soft && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < (staged.length ? Math.max(700, cost * 1.2) : Math.min(6000, Math.max(1000, cost * 5, worst * 5)))) draw = false;
       fresh = false;
       if (!draw) {
         if (drawn > 0) post.present();
@@ -348,10 +341,10 @@ export function makeView(ctx, THREE, renderer, S) {
       pf.uFlash.value = kill ? Math.max(0, 0.5 - kill.t * 1.5) : 0;
       pf.uFlashCol.value.setRGB(0.85, 1, 1);
       pf.uSat.value = kill ? lerp(1.12, 1.25, Math.min(1, kill.t)) : 1.12;
-      pf.uMaskK.value = kill || api.shot ? 0.25 : 1;
+      pf.uMaskK.value = kill ? 0.25 : 1;
       pf.uExposure.value = lerp(1.34, 1.15, U.uDim.value);
       if (frames % shadowEvery === 0 || frames < 3) post.shadowPass(scene, clamp(camera.position.x, -20, 25), clamp(camera.position.z, -35, 35));
-      post.render(scene, camera, !kill && !api.shot && ME.alive ? hands : null);
+      post.render(scene, camera, !kill && ME.alive ? hands : null);
       renderer.setRenderTarget(null);
       // ---- the HUD
       HUD.w = ctx.width; HUD.h = ctx.height;

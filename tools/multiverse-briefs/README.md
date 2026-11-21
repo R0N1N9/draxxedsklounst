@@ -28,8 +28,8 @@ build, so unfinished work can sit in the tree safely.
 
 ## Status
 
-Work was paused on 20 November 2026 to fit a usage limit. In matches now: ten worlds
-and five transitions.
+Work was paused on 20 November 2026 to fit a usage limit. In matches now: eleven worlds
+and five transitions, plus the plunge that links surf to the underwater world.
 
 | Module | Kind | State |
 | --- | --- | --- |
@@ -37,9 +37,9 @@ and five transitions.
 | synapse, flashback, shatter, continue | transitions | in matches |
 | valley | world (the original game; always opens the match) | in matches |
 | neon, ww2, pixel, terminal, manga, toon, toybox, surf, comic | worlds | in matches |
-| abyss | world (underwater; the owner's showpiece) | first build done (report in `reports/`); needs its second-engineer pass, then a top-tier polish pass |
+| abyss | world (underwater; the owner's showpiece) | in matches, always straight after surf; still owed a top-tier polish pass |
+| plunge | linking transition, surf → abyss | in matches |
 | paper | world (flat-drawn first person) | first build done (report in `reports/`); second-engineer pass not started |
-| plunge | linking transition, surf → abyss | built and reviewed from stills; goes live with abyss after an end-to-end run of the real surf kill → plunge → abyss |
 | snow, orbit, heli, worm, arcade, noir, tapestry, petri | worlds | brief only |
 | radar, telescope, wormhole, bullet-hole, channel-surf and the rest | transitions | brief only |
 
@@ -50,15 +50,14 @@ without `wip` is in matches.
 
 In the owner's order of priority:
 
-1. **abyss** — finish the build if needed, second-engineer pass, then a polish pass on
-   the strongest model available: the owner wants it to be the best-looking world.
-2. **surf** — in matches; a character and spray art pass would lift it (see `reports/surf-handoff.md`). The owner asked for three things by name, all now in:
-   waves that push the surfers around, strictly third person, and a kill moment where the
-   loser falls into the sea and the winner dives in after them, ending on the lens
-   crossing the waterline.
-3. **plunge** — the transition that carries that dive into abyss. The registry already
-   chains surf → abyss through it (`then` / `via`); the chain wakes up when all three lose
-   their `wip` flag.
+1. **abyss** — in matches, but the owner wants it to be the best-looking world and its second
+   engineer scored the picture 7/10: give it a polish pass on the strongest model available
+   (kraken eyes and arms, the wreck, rival readability at 50 m, longer cat-and-mouse). The
+   hook that forced the full-quality build for stills was removed; add one back while polishing.
+2. **surf** — in matches; a character and spray art pass would lift it (see
+   `reports/surf-handoff.md`).
+3. **plunge** — in matches. The first match a device hosts plays surf → plunge → abyss straight
+   after the first kill (`opener` in the registry, re-armed from the owner's menu).
 4. **paper** — second-engineer pass.
 5. New worlds the owner asked for: **snow** (top-down 3D), **orbit** with the
    **telescope** transition (space; telescope replaces cosmic-zoom unless the owner wants

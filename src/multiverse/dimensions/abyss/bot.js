@@ -24,11 +24,11 @@ export function makeBot(ctx, W, G) {
       p, know: null, // { x, y, z, vx, vy, vz, t (when), seen (bool), decoy }
       seenT: 0, settle: 0, notice: 0, err: { y: 0, p: 0 }, post: null, replan: 0,
       // temperament: 0 sniper .. 1 stalker, and when it allows itself the first shot
-      style: Math.random(), firstShot: 6 + Math.random() * 4, jitter: 1,
+      style: Math.random(), firstShot: 4 + Math.random() * 2.5, jitter: 1,
       lastSeen: -99, lastLos: -99, postT: 0, dodge: 0, dodgeX: 0, dodgeY: 0, dodgeZ: 0,
       // the opening: dive for cover before anything else
-      moveT: 1.5 + Math.random() * 2.5, firedAt: { x: 0, y: 0, z: 0 }, drift: Math.random() * 6.28,
-      resid: { y: gauss(Math.random) * lerp(0.024, 0.008, skill), p: gauss(Math.random) * lerp(0.016, 0.0055, skill) },
+      moveT: 1.2 + Math.random() * 2, firedAt: { x: 0, y: 0, z: 0 }, drift: Math.random() * 6.28,
+      resid: { y: gauss(Math.random) * lerp(0.02, 0.0065, skill), p: gauss(Math.random) * lerp(0.0135, 0.0045, skill) },
     };
   }
 
@@ -114,10 +114,11 @@ export function makeBot(ctx, W, G) {
   // goes on; in sudden death the ring decides.
   function wantRange(b, T) {
     if (ctx.sudden) return 9;
-    // and a hunt that has gone cold makes it bolder
-    // (and the clock: by the last quarter of the round everyone is hunting)
+    // a hunt that has gone cold makes it bolder, and so does the clock: past the middle of
+    // the round everyone is closing in
     const cold = clamp((T - Math.max(b.lastSeen, 0) - 8) / 12, 0, 1);
-    return Math.max(16, lerp(52, 30, b.style) - clamp(T / 50, 0, 1) * 20 - skill * 3 - cold * 12);
+    const late = clamp((T - 22) / 12, 0, 1);
+    return Math.max(16, lerp(52, 30, b.style) - clamp(T / 50, 0, 1) * 20 - skill * 3 - cold * 12 - late * 14);
   }
 
   // A post to hold or move to. `sightline`: it wants to see (tx,ty,tz) from there (sniping);
@@ -167,7 +168,7 @@ export function makeBot(ctx, W, G) {
     const want = wantRange(b, T);
     // sonar when it knows nothing for long enough
     // (bubbles say roughly where; it wants to know exactly)
-    if (p.pingCd <= 0 && T - Math.max(b.lastSeen, 0) > (T > 35 ? 3 : lerp(11, 5, skill)) && T > 3 && Math.random() < dt * (0.4 + skill)) cmd.a1 = true;
+    if (p.pingCd <= 0 && T - Math.max(b.lastSeen, 0) > (T > 25 ? 2.5 : lerp(11, 5, skill)) && T > 3 && Math.random() < dt * (0.4 + skill)) cmd.a1 = true;
     // a decoy before it moves off, now and then
     if (p.decoyCd <= 0 && T > 6 && b.moveT > 0 && Math.random() < dt * 0.5 * (0.3 + skill)) cmd.a2 = true;
 
@@ -199,7 +200,7 @@ export function makeBot(ctx, W, G) {
       // otherwise it works in through cover
       // the opening: cover near its own end of the reef, the duel starts from there
       const opening = T < b.firstShot - 1.5;
-      const sightline = !opening && (dist < want + 12 || (b.style < 0.5 && T > 12) || T - b.lastLos > 8 || T > 38);
+      const sightline = !opening && (dist < want + 12 || (b.style < 0.5 && T > 12) || T - b.lastLos > 8 || T > 28);
       b.post = pickPost(b, tx, ty, tz, opening ? 56 : tooClose ? want + 6 : want, sightline, opening);
     }
     let wx = 0, wy = 0, wz = 0;
@@ -255,7 +256,7 @@ export function makeBot(ctx, W, G) {
     cmd.alt = wantHold;
     // fire when the aim has settled on the solution
     const settled = Math.abs(angDiff(cmd.yaw, wantYaw)) < 0.01 + 0.004 * (1 - skill) && Math.abs(cmd.pitch - wantPitch) < 0.012;
-    const patience = (lerp(0.8, 0.4, skill) + (dist > 30 ? lerp(0.6, 0.2, skill) : 0) + (dist > 45 ? lerp(1.2, 0.5, skill) : 0)) * b.jitter;
+    const patience = (lerp(0.65, 0.35, skill) + (dist > 30 ? lerp(0.6, 0.2, skill) : 0) + (dist > 45 ? lerp(1.2, 0.5, skill) : 0)) * b.jitter;
     const close = fresh && dist < 14 && T - b.lastLos < 0.6; // up close it shoots from the hip
     if (fresh && p.loaded && settled && T > b.firstShot && ((engage && b.settle > patience && (p.holding || p.air < 0.2)) || (close && b.settle > patience * 0.6))) {
       cmd.fire = true;
@@ -264,8 +265,8 @@ export function makeBot(ctx, W, G) {
       b.err.y = gauss(Math.random) * lerp(0.035, 0.008, skill);
       b.err.p = gauss(Math.random) * lerp(0.025, 0.006, skill);
       // its hands are never perfectly still: a little error that the wait does not remove
-      b.resid.y = gauss(Math.random) * lerp(0.024, 0.008, skill);
-      b.resid.p = gauss(Math.random) * lerp(0.016, 0.0055, skill);
+      b.resid.y = gauss(Math.random) * lerp(0.02, 0.0065, skill);
+      b.resid.p = gauss(Math.random) * lerp(0.0135, 0.0045, skill);
       // and then it moves: its spear just drew a line of bubbles back to it
       if (Math.random() < lerp(0.5, 0.85, skill) || dist < 22) {
         b.moveT = lerp(1.4, 2.4, Math.random());

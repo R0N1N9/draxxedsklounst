@@ -41,7 +41,10 @@ void main() {
   col += uTeam * fr * 0.32 * uGlow;
   if (vC.r < -1.5 && vC.r > -2.5) col += waterBg(reflect(-v, n), vW.y) * 1.2 * (0.3 + fr);
   col = waterFog(col, vW, 0.9);
-  col += emit * exp(-d * 0.02);
+  col += emit * exp(-d * 0.013);
+  // at range the shape keeps a thin edge of its own colour through the murk: you can make out
+  // a diver, and whose, at 50 m (an outline, not a flare)
+  col += uTeam * fr * 0.3 * uGlow * smoothstep(10.0, 30.0, d) * exp(-d * 0.012);
   // sonar: the whole diver outlined in their colour, through the murk
   col += uTeam * (0.06 + fr * 1.1) * uGhost;
   gl_FragColor = vec4(col * uFade, d);
