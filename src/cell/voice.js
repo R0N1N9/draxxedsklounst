@@ -13,7 +13,7 @@
 // anything else falls back to the browser's speech synthesis. See tools/vo/.
 // Lines queue so nobody talks over anybody, and stale chatter is dropped.
 const SPEAKERS = {
-  shooter: { pitch: 0.62, rate: 1.06, color: '#ffb040', bed: 0.012 },
+  shooter: { pitch: 0.5, rate: 1.04, color: '#ffb040', bed: 0.012 },
   spotter: { pitch: 0.82, rate: 1.1, color: '#4fd8ff', bed: 0.012 },
   isr: { pitch: 0.72, rate: 1.02, color: '#8dff9e', bed: 0.02 },
 };
@@ -75,8 +75,14 @@ export class Radio {
   }
 
   // keep: a line that must not be dropped (e.g. the opening brief), however long it waits.
-  say(who, text, prio = false, keep = false) {
+  // Free for optional chatter: nothing playing or queued, and none in the last few seconds.
+  free() {
+    return !this.busy && !this.q.length && performance.now() - (this._lastLow || -1e9) > 6000;
+  }
+
+  say(who, text, prio = false, keep = false, low = false) {
     if (!this.enabled || !text) return;
+    if (low) { if (!this.free()) return; this._lastLow = performance.now(); }
     const item = { who, text, t: performance.now(), keep };
     if (this.vo && window.__voMiss && !this._recorded(item)) window.__voMiss.push(`${who}: ${text}`); // test hook: lines with no clip
     if (prio) this.q.unshift(item); else this.q.push(item);

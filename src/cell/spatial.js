@@ -1,7 +1,7 @@
 // Sniper Cell — directional audio cues, made for headphones (HRTF panning on every source):
 //   guard footsteps     nearby walkers, heavier for juggernauts and titans; muffled through walls
 //   radio chatter       squelch bursts from alerted / searching guards
-//   patrol-drone hum    a rotor loop on each nearby drone, quieter behind cover
+//   patrol-drone rotors a soft rotor whoosh on the two nearest drones, quieter behind cover
 //   partner footsteps   so you can hear your buddy coming up beside you
 import * as THREE from 'three';
 
@@ -45,22 +45,22 @@ export const Spatial = {
         }
         sp.steps.set(g.id, t);
       }
-      if ((g.state === 'alert' || g.state === 'search' || g.radioT > 0) && d < 30) {
-        let r = (sp.radio.get(g.id) ?? 1 + Math.random() * 3) - dt;
-        if (r <= 0) { r = 4 + Math.random() * 6; A.radioAt({ x: g.x, y, z: g.z }, !heard(g, y)); }
+      if ((g.state === 'alert' || g.state === 'search' || g.radioT > 0) && d < 18) {
+        let r = (sp.radio.get(g.id) ?? 3 + Math.random() * 6) - dt;
+        if (r <= 0) { r = 12 + Math.random() * 14; if (this.t - (sp.lastRadio || -99) > 6) { sp.lastRadio = this.t; A.radioAt({ x: g.x, y, z: g.z }, !heard(g, y)); } }
         sp.radio.set(g.id, r);
       }
     }
     // Patrol-drone hum: the three nearest drones within earshot.
     const want = new Set();
     if (!off) {
-      const ds = S.drones.filter((d) => d.state !== 'dead').map((d) => ({ d, r: Math.hypot(d.x - ear.x, d.y - ear.y, d.z - ear.z) })).filter((o) => o.r < 70).sort((a, b) => a.r - b.r).slice(0, 3);
+      const ds = S.drones.filter((d) => d.state !== 'dead').map((d) => ({ d, r: Math.hypot(d.x - ear.x, d.y - ear.y, d.z - ear.z) })).filter((o) => o.r < 45).sort((a, b) => a.r - b.r).slice(0, 2);
       for (const { d } of ds) {
         const key = 'pd' + d.id;
         want.add(key);
-        if (!sp.loops.has(key)) { A.startLoop(key, { x: d.x, y: d.y, z: d.z }, 'drone', 0.16); sp.loops.add(key); }
+        if (!sp.loops.has(key)) { A.startLoop(key, { x: d.x, y: d.y, z: d.z }, 'rotor', 0.1); sp.loops.add(key); }
         A.updateLoop(key, { x: d.x, y: d.y, z: d.z });
-        A.loopGain(key, heard(d, d.y) ? 0.16 : 0.06);
+        A.loopGain(key, heard(d, d.y) ? 0.1 : 0.035);
       }
     }
     for (const key of [...sp.loops]) if (!want.has(key)) { A.stopLoop(key); sp.loops.delete(key); }
