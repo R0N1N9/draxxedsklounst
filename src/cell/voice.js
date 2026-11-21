@@ -78,6 +78,7 @@ export class Radio {
   say(who, text, prio = false, keep = false) {
     if (!this.enabled || !text) return;
     const item = { who, text, t: performance.now(), keep };
+    if (this.vo && window.__voMiss && !this._recorded(item)) window.__voMiss.push(`${who}: ${text}`); // test hook: lines with no clip
     if (prio) this.q.unshift(item); else this.q.push(item);
     // Too much chatter queued: drop the oldest throwaway line.
     while (this.q.filter((q) => !q.keep).length > 4) this.q.splice(this.q.findIndex((q) => !q.keep), 1);
