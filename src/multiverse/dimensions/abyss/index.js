@@ -21,13 +21,15 @@
 //   arms dragging through the fight. Arms shove and spin you; a spear in it jets ink. It
 //   never kills.
 // THE BOT      bot.js: knows what a diver could know (sight through murk, kelp and ink;
-//   bubbles; sonar), works from post to post, holds its breath for the long shot, leads
-//   and holds over, dodges spears it sees, pings and drops decoys.
+//   bubbles; sonar). A sniper or a stalker by temperament, it fights from range across the
+//   open water, holds its breath for the long shot, leads and holds over, moves off the
+//   line of its own spear while it reloads, dodges spears it sees, pings and drops decoys,
+//   and will not swim into your mask.
 // THE KILL     slow motion: the spear's bubble trail hangs in the water, the victim's mask
 //   and fins drift off as they tumble up through the light in a column of bubbles, the
 //   fish burst away and the kraken's eye rolls round to watch.
-// SUDDEN DEATH both divers glow through everything, and the kraken settles under the
-//   wreck and raises all eight arms round the arena in a ring that closes to 12 m.
+// SUDDEN DEATH both divers glow through everything, and the kraken settles in the deep off
+//   the wreck's ledge and raises all eight arms round the arena in a ring that closes to 12 m.
 //
 // FILES  world.js (layout, colliders, queries) · kraken.js (the animal: motion, collision,
 //   meshes) · build.js (reef meshes) · life.js · diver.js · fx.js · shaders.js (the water) ·
@@ -66,7 +68,7 @@ export default {
   hint: 'You swim where you look. Spears are slow and sink: aim above a far diver.',
   altToggle: true,
   roundTime: ROUND,
-  overTime: 3,
+  overTime: 2.5,
   angleFields: ['yaw', 'pitch'],
 
   create(ctx) {
@@ -80,7 +82,6 @@ export default {
       const gl = renderer.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
       if (ext && /swiftshader|llvmpipe|software|basic render/i.test(String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)))) Object.assign(Q, { soft: true, tier: 2, scale: 0.25, shadow: 512, fish: 60, snow: 700, msaa: false });
     } catch { /* masked: assume a GPU */ }
-    if (globalThis.__abyssRich) Object.assign(Q, { soft: false, tier: 0, scale: 1, shadow: 2048, fish: 260, snow: 2600, msaa: false }); // (test stills only)
     const tex = makeTextures(THREE, renderer, Q.soft);
     const U = makeShared(THREE, tex);
     const mats = makeMaterials(THREE, U, Q.soft);
@@ -715,8 +716,6 @@ export default {
         tex.dispose();
       },
     };
-    inst.view = view; // test scripts: view.shot = {x,y,z,tx,ty,tz,fov} pins the camera
-    inst.P = P; inst.sim = sim;
     view.resize(ctx.width, ctx.height);
     return inst;
   },

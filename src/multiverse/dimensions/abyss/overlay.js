@@ -44,7 +44,7 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
   }
 
   // ---- the reticle: where the spear will go, drifting with your breath
-  if (ME.alive && !killing && !view.shot) {
+  if (ME.alive && !killing) {
     const z = view.zoom;
     const rx = cx - ME.swayX * focal, ry = cy - ME.swayY * focal;
     const loaded = ME.loaded && phase !== 'intro';
@@ -121,7 +121,7 @@ export function drawOverlay(ctx, H, view, S, camera, project) {
   }
 
   // ---- the dive computer: depth and air, low on the left (clear of the touch stick)
-  if (!killing && !view.shot) {
+  if (!killing) {
     const x = 16 * k;
     const y = safe.bottom > 0 ? Math.min(h * 0.42, h - safe.bottom - 40 * k) : h - 46 * k;
     const depth = Math.max(0, -view.camera.position.y);

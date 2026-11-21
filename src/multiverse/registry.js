@@ -25,7 +25,7 @@ export const DIMENSIONS = [
   { id: 'pixel', view: 'side', look: '2d', load: () => import('./dimensions/pixel/index.js') },
   { id: 'ww2', view: 'tp', look: '3d', load: () => import('./dimensions/ww2/index.js') },
   { id: 'surf', view: 'tp', look: '3d', then: 'abyss', via: 'plunge', opener: true, load: () => import('./dimensions/surf/index.js') },
-  { id: 'abyss', view: 'fp', look: '3d', wip: true, load: () => import('./dimensions/abyss/index.js') },
+  { id: 'abyss', view: 'fp', look: '3d', load: () => import('./dimensions/abyss/index.js') },
   { id: 'orbit', view: 'side', look: '2d', wip: true, load: () => import('./dimensions/orbit/index.js') },
   { id: 'arcade', view: 'fp', look: '3d', wip: true, load: () => import('./dimensions/arcade/index.js') },
   { id: 'toon', view: 'side', look: '2d', load: () => import('./dimensions/toon/index.js') },
@@ -60,7 +60,7 @@ export const TRANSITIONS = [
   { id: 'continue', load: () => import('./transitions/continue.js') },
   { id: 'radar', wip: true, load: () => import('./transitions/radar.js') },
   { id: 'telescope', wip: true, load: () => import('./transitions/telescope.js') },
-  { id: 'plunge', link: true, wip: true, load: () => import('./transitions/plunge.js') },
+  { id: 'plunge', link: true, load: () => import('./transitions/plunge.js') },
   { id: 'example', dev: true, load: () => import('./transitions/example.js') },
 ];
 
