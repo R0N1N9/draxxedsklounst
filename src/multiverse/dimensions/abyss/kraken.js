@@ -9,8 +9,8 @@
 //   PASS     twice a round it rises up the wall and glides over the arena just under the
 //            surface, its bulk darkening the reef and cutting the light shafts, its arms
 //            dragging down through the depth the divers fight at.
-//   CAGE     sudden death: it settles under the wreck and raises all eight arms round the
-//            arena in a ring of pillars that closes in.
+//   CAGE     sudden death: it settles in the deep off the wreck and raises all eight arms
+//            round the arena in a ring of pillars that closes in.
 // It shoves and blinds; it never kills. Only a spear scores.
 import { clamp, lerp, smoothstep, makeRng, hashSeed } from '../../kit.js';
 import { WATER_GLSL, VERT_COMMON } from './shaders.js';
@@ -37,7 +37,10 @@ function spline(pts, u, out) {
 
 export function makeKrakenSim(seed) {
   const rng = makeRng(hashSeed(seed, 'kraken'));
-  const ph = [rng() * 6.28, rng() * 6.28, rng() * 6.28];
+  // The patrol starts high in its loop, out past the ledge and square in front of the reef:
+  // from either spawn, looking down the wall on arrival, it is the lights and the eyes moving
+  // far below.
+  const ph = [rng() * Math.PI, Math.PI / 2, rng() < 0.5 ? 0 : Math.PI];
   const W = (Math.PI * 2) / 84;
   const passes = [];
   const p1 = 15 + rng() * 6, d1 = rng() < 0.5 ? 1 : -1;
@@ -51,9 +54,10 @@ export function makeKrakenSim(seed) {
     p.pts = [null, [34, -32, -48 * s], [9, -9.5, -30 * s], [1.5, -6.2, -4 * s], [3, -6.6, 22 * s], [30, -30, 50 * s], null];
   }
 
+  // (out past the second wall, where the water is deep enough to hold it)
   function patrol(t, out) {
-    out[0] = 25 + 11 * Math.sin(W * t + ph[0]);
-    out[1] = -49 + 5 * Math.sin(W * 1.7 * t + ph[1]);
+    out[0] = 31 + 6 * Math.sin(W * t + ph[0]);
+    out[1] = -47 + 4 * Math.sin(W * 1.7 * t + ph[1]);
     out[2] = 28 * Math.sin(W * 0.5 * t + ph[2]);
     return out;
   }
@@ -72,11 +76,13 @@ export function makeKrakenSim(seed) {
       pw = env(t, p.t0, p.t0 + p.dur, 6);
     }
     if (t > ROUND) {
-      // sudden death: down under the wreck, rising a little as the cage closes
-      const k = smooth(ROUND, ROUND + 7, t);
-      out[0] = lerp(out[0], CAGE_C.x + 6, k);
-      out[1] = lerp(out[1], -58 + 6 * smooth(ROUND + 7, ROUND + 30, t), k);
-      out[2] = lerp(out[2], CAGE_C.z, k);
+      // sudden death: square in front of the wreck's ledge, deep, rising a little as the
+      // cage closes
+      // (out over the deep first, then down: never through the reef)
+      const k = smooth(ROUND, ROUND + 7, t), kx = smooth(ROUND, ROUND + 4, t), ky = smooth(ROUND + 2.5, ROUND + 7, t);
+      out[0] = lerp(out[0], CAGE_C.x + 24, kx);
+      out[1] = lerp(out[1], -50 + 6 * smooth(ROUND + 7, ROUND + 30, t), ky);
+      out[2] = lerp(out[2], CAGE_C.z, kx);
       pw *= 1 - k;
     }
     return pw;
