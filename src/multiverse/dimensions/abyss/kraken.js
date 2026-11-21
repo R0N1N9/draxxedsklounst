@@ -9,8 +9,8 @@
 //   PASS     twice a round it rises up the wall and glides over the arena just under the
 //            surface, its bulk darkening the reef and cutting the light shafts, its arms
 //            dragging down through the depth the divers fight at.
-//   CAGE     sudden death: it settles under the wreck and raises all eight arms round the
-//            arena in a ring of pillars that closes in.
+//   CAGE     sudden death: it settles in the deep off the wreck and raises all eight arms
+//            round the arena in a ring of pillars that closes in.
 // It shoves and blinds; it never kills. Only a spear scores.
 import { clamp, lerp, smoothstep, makeRng, hashSeed } from '../../kit.js';
 import { WATER_GLSL, VERT_COMMON } from './shaders.js';
@@ -37,7 +37,10 @@ function spline(pts, u, out) {
 
 export function makeKrakenSim(seed) {
   const rng = makeRng(hashSeed(seed, 'kraken'));
-  const ph = [rng() * 6.28, rng() * 6.28, rng() * 6.28];
+  // The patrol starts high in its loop, out past the ledge and square in front of the reef:
+  // from either spawn, looking down the wall on arrival, it is the lights and the eyes moving
+  // far below.
+  const ph = [rng() * Math.PI, Math.PI / 2, rng() < 0.5 ? 0 : Math.PI];
   const W = (Math.PI * 2) / 84;
   const passes = [];
   const p1 = 15 + rng() * 6, d1 = rng() < 0.5 ? 1 : -1;
@@ -51,9 +54,10 @@ export function makeKrakenSim(seed) {
     p.pts = [null, [34, -32, -48 * s], [9, -9.5, -30 * s], [1.5, -6.2, -4 * s], [3, -6.6, 22 * s], [30, -30, 50 * s], null];
   }
 
+  // (out past the second wall, where the water is deep enough to hold it)
   function patrol(t, out) {
-    out[0] = 25 + 11 * Math.sin(W * t + ph[0]);
-    out[1] = -49 + 5 * Math.sin(W * 1.7 * t + ph[1]);
+    out[0] = 31 + 6 * Math.sin(W * t + ph[0]);
+    out[1] = -47 + 4 * Math.sin(W * 1.7 * t + ph[1]);
     out[2] = 28 * Math.sin(W * 0.5 * t + ph[2]);
     return out;
   }
@@ -72,11 +76,13 @@ export function makeKrakenSim(seed) {
       pw = env(t, p.t0, p.t0 + p.dur, 6);
     }
     if (t > ROUND) {
-      // sudden death: down under the wreck, rising a little as the cage closes
-      const k = smooth(ROUND, ROUND + 7, t);
-      out[0] = lerp(out[0], CAGE_C.x + 6, k);
-      out[1] = lerp(out[1], -58 + 6 * smooth(ROUND + 7, ROUND + 30, t), k);
-      out[2] = lerp(out[2], CAGE_C.z, k);
+      // sudden death: square in front of the wreck's ledge, deep, rising a little as the
+      // cage closes
+      // (out over the deep first, then down: never through the reef)
+      const k = smooth(ROUND, ROUND + 7, t), kx = smooth(ROUND, ROUND + 4, t), ky = smooth(ROUND + 2.5, ROUND + 7, t);
+      out[0] = lerp(out[0], CAGE_C.x + 24, kx);
+      out[1] = lerp(out[1], -50 + 6 * smooth(ROUND + 7, ROUND + 30, t), ky);
+      out[2] = lerp(out[2], CAGE_C.z, kx);
       pw *= 1 - k;
     }
     return pw;
@@ -94,7 +100,8 @@ export function makeKrakenSim(seed) {
     const r = new Float32Array(N);
     for (let k = 0; k < N; k++) {
       const s = k / (N - 1);
-      r[k] = a < ARMS ? 1.45 * Math.pow(1 - s, 0.85) + 0.1 : 0.62 * (1 - s) + 0.12 + 0.42 * Math.exp(-Math.pow((s - 0.88) / 0.05, 2));
+      // arms taper from a trunk to a whip; a feeding tentacle is a long stalk with a club
+      r[k] = a < ARMS ? 1.45 * Math.pow(1 - s, 0.85) + 0.1 : 0.85 * Math.pow(1 - s, 0.7) + 0.16 + 0.5 * Math.exp(-Math.pow((s - 0.88) / 0.05, 2));
     }
     S.radii.push(r);
     S.box.push([0, 0, 0, 0, 0, 0]);
@@ -151,9 +158,12 @@ export function makeKrakenSim(seed) {
         const s = k / (N - 1), lf = lagF[Math.min(N - 1, Math.round(k * lagk))];
         const w1 = 0.42 * Math.sin(s * 6.3 - t * 1.05 + th * 2.1) * (0.3 + s);
         const w2 = 0.34 * Math.cos(s * 4.7 - t * 0.8 + th * 1.3) * (0.3 + s);
-        let dx = -lf[0] + rx * (0.22 + 0.3 * s) + px * w1 + U[0] * w2;
-        let dy = -lf[1] + ry * (0.22 + 0.3 * s) + py * w1 + U[1] * w2 - droop * s * (tent ? 1.6 : 1);
-        let dz = -lf[2] + rz * (0.22 + 0.3 * s) + pz * w1 + U[2] * w2;
+        // the last third of each arm coils, slowly, the coil turning as it goes
+        const curl = tent ? 0 : Math.pow(s, 2.2) * 1.5, cph = th * 1.7 + t * 0.35 + s * 5;
+        const cc = Math.cos(cph) * curl, cs = Math.sin(cph) * curl;
+        let dx = -lf[0] + rx * (0.22 + 0.3 * s) + px * (w1 + cc) + U[0] * (w2 + cs);
+        let dy = -lf[1] + ry * (0.22 + 0.3 * s) + py * (w1 + cc) + U[1] * (w2 + cs) - droop * s * (tent ? 1.6 : 1);
+        let dz = -lf[2] + rz * (0.22 + 0.3 * s) + pz * (w1 + cc) + U[2] * (w2 + cs);
         const dl = Math.hypot(dx, dy, dz) || 1;
         x += (dx / dl) * seg; y += (dy / dl) * seg; z += (dz / dl) * seg;
       }
@@ -305,18 +315,25 @@ export function makeKrakenSim(seed) {
     return best;
   }
 
-  return { S, update, snapshot, ray, touch, distance, passes, reaches, N, ARMS, ALL };
+  return { S, update, snapshot, ray, touch, distance, passes, reaches, N, ARMS, ALL, ARM_LEN, TENT_LEN };
 }
+
 
 // ---------------------------------------------------------------------------------------
 // The look: one skin shader for mantle, fins, arms and tentacles; a separate one for the eye.
+// An oxblood back mottled and banded like a cuttlefish's, a paler salmon underside, rows of
+// ringed suckers that shrink with the arm, a few cold-blue photophores, and a wet sheen.
+// It is the darkest, reddest thing in the sea: against the light it reads as a silhouette.
 const SKIN_VERT = VERT_COMMON + `
+attribute float aS;
 varying vec2 vUv;
 varying vec3 vO;
+varying float vS;
 uniform float uTime;
 void main() {
   vUv = uv;
   vO = position;
+  vS = aS;
   vec3 p = position;
 #ifdef FIN
   // the fins ripple from root to edge
@@ -333,6 +350,7 @@ varying vec3 vW;
 varying vec3 vN;
 varying vec2 vUv;
 varying vec3 vO;
+varying float vS;
 uniform float uFlinch, uGlow;
 ${WATER_GLSL}
 void main() {
@@ -341,56 +359,67 @@ void main() {
   vec3 v = normalize(uCam - vW);
   vec2 uv = vUv;
   float t = uTime;
-#ifdef ARM
-  vec4 nz = texture2D(tNoise, vec2(uv.x * 2.0, uv.y * 7.0));
-  float under = smoothstep(0.17, 0.05, abs(uv.x - 0.5));
-  float top = smoothstep(0.2, 0.0, min(uv.x, 1.0 - uv.x));
-#else
-  vec4 nz = texture2D(tNoise, vO.xz * 0.06 + vO.y * 0.02);
-  float under = smoothstep(0.1, -0.6, vO.y / 3.0) * 0.0;
-  float top = 0.0;
-#endif
-  vec3 skin = mix(vec3(0.3, 0.03, 0.045), vec3(0.72, 0.16, 0.1), smoothstep(0.35, 0.7, nz.r));
-  // darker along the back, paler towards the belly: the shape reads even in the murk
-  skin *= mix(0.5, 1.0, smoothstep(-1.0, 1.0, -n.y));
-  // chromatophores: speckles that flush darker and brighter, slowly
-  float sp = texture2D(tNoise, uv * vec2(6.0, 30.0) + vec2(t * 0.013, -t * 0.02)).b;
-  skin *= 0.7 + 0.6 * smoothstep(0.45, 0.65, sp);
-  skin = mix(skin, vec3(0.78, 0.5, 0.46), under * 0.7);
   vec3 emit = vec3(0.0);
+  vec3 skin;
 #ifdef ARM
-  // suckers: two rows of pale rings down the inside of each arm
-  float cnt = 70.0;
-  float row = fract(uv.y * cnt + step(0.5, uv.x) * 0.5);
-  float dd = length(vec2((row - 0.5) * 1.7, (abs(uv.x - 0.5) - 0.07) * 13.0));
-  float ring = smoothstep(0.5, 0.38, dd) * under;
-  skin = mix(skin, vec3(0.92, 0.68, 0.62), ring * 0.85);
-  skin *= 1.0 - smoothstep(0.24, 0.12, dd) * under * 0.6;
-  // photophores along the top, a wave of light running out to the tips
-  float dots = smoothstep(0.32, 0.12, length(vec2(fract(uv.y * 36.0) - 0.5, (min(uv.x, 1.0 - uv.x) - 0.04) * 9.0)));
-  float wave = 0.25 + 0.75 * pow(0.5 + 0.5 * sin(uv.y * 18.0 - t * 2.6 + vO.x * 0.01), 3.0);
-  emit = vec3(0.2, 0.42, 1.25) * dots * wave * (1.0 - uv.y * 0.5) * 0.8;
+  // uv.x runs round the arm (0.5 = the sucker face), vS along it in units of its own girth
+  float side = abs(uv.x - 0.5);
+  float under = 1.0 - smoothstep(0.1, 0.19, side);
+#ifdef TENT
+  // a feeding tentacle is bare stalk until the club
+  under *= smoothstep(0.78, 0.83, uv.y);
+#endif
+  vec4 nz = texture2D(tNoise, vec2(uv.x * 1.5, vS * 0.045));
+  float band = smoothstep(0.35, 0.65, 0.5 + 0.5 * sin(vS * 0.42 + nz.r * 3.0));
+  vec3 back = mix(vec3(0.13, 0.01, 0.018), vec3(0.46, 0.05, 0.045), smoothstep(0.3, 0.75, nz.r));
+  back *= mix(0.55, 1.0, band);
+  vec3 belly = vec3(0.42, 0.17, 0.14) * (0.8 + 0.35 * nz.g);
+  skin = mix(back, belly, under);
+  // suckers: two staggered rows, each a pale rim round a dark cup, spaced and sized with the arm
+  float row = step(0.5, uv.x);
+  float f = fract(vS * 1.15 + row * 0.5) - 0.5;
+  float across = (side - 0.055) * 6.283;
+  float dd = length(vec2(f / 1.15, across));
+  float rim = (1.0 - smoothstep(0.17, 0.23, dd)) * smoothstep(0.08, 0.13, dd) * under;
+  float cup = (1.0 - smoothstep(0.07, 0.12, dd)) * under;
+  skin = mix(skin, vec3(0.72, 0.5, 0.42), rim * 0.85);
+  skin *= 1.0 - cup * 0.75;
+  // photophores along the back, a wave of light running out to the tips
+  float pf = fract(vS * 0.55) - 0.5, pa = min(uv.x, 1.0 - uv.x) * 6.283 - 0.35;
+  float dots = 1.0 - smoothstep(0.06, 0.14, length(vec2(pf / 0.55, pa)));
+  float wave = 0.2 + 0.8 * pow(0.5 + 0.5 * sin(uv.y * 16.0 - t * 2.2), 4.0);
+  emit = vec3(0.15, 0.4, 1.2) * dots * wave * (1.0 - uv.y * 0.4) * 0.9;
 #else
-  // a scatter of small photophores down the mantle, pulsing in slow waves from the tip
+  vec4 nz = texture2D(tNoise, vO.xz * 0.05 + vO.y * 0.03);
+  vec4 fine = texture2D(tNoise, vO.xz * 0.21 + vO.yz * 0.13);
+  // blotches of dark and red, a darker saddle along the back, paler towards the belly
+  skin = mix(vec3(0.12, 0.01, 0.016), vec3(0.5, 0.055, 0.045), smoothstep(0.35, 0.7, nz.r + fine.b * 0.25));
+  float belly = smoothstep(0.1, 0.9, -dot(n, vec3(0.0, 1.0, 0.0)));
+  skin = mix(skin, vec3(0.4, 0.19, 0.16) * (0.85 + 0.3 * fine.g), belly * 0.75);
+  // a scatter of small photophores, pulsing in slow waves from the tip
   vec2 cell = uv * vec2(46.0, 30.0);
   vec2 cf = fract(cell) - 0.5;
-  float pick = step(0.72, fract(sin(dot(floor(cell), vec2(12.9898, 78.233))) * 43758.5453));
-  float spots = smoothstep(0.22, 0.06, length(cf)) * pick;
-  emit = vec3(0.22, 0.45, 1.3) * spots * (0.25 + 0.75 * pow(0.5 + 0.5 * sin(t * 1.4 - uv.y * 14.0), 2.0)) * 0.9;
+  float pick = step(0.74, fract(sin(dot(floor(cell), vec2(12.9898, 78.233))) * 43758.5453));
+  float spots = (1.0 - smoothstep(0.06, 0.2, length(cf))) * pick;
+  emit = vec3(0.16, 0.42, 1.25) * spots * (0.25 + 0.75 * pow(0.5 + 0.5 * sin(t * 1.4 - uv.y * 14.0), 2.0)) * 0.8;
 #endif
+  // chromatophores: speckles that flush darker and brighter, slowly
+  float sp = texture2D(tNoise, uv * vec2(6.0, 30.0) + vec2(t * 0.013, -t * 0.02)).b;
+  skin *= 0.75 + 0.5 * smoothstep(0.45, 0.65, sp);
   emit *= uGlow;
-  vec3 col = litWater(skin, vW, n, 1.0, 0.35, 0.8);
-  // wet sheen and a rim of scattered light: the silhouette that reads in the murk
+  vec3 col = litWater(skin, vW, n, 1.0, 0.3, 0.8);
+  // a wet sheen, and the faintest rim of the water's own light round the silhouette
   float fr = pow(1.0 - max(dot(n, v), 0.0), 3.0);
-  col += vec3(0.05, 0.2, 0.22) * fr * exp(min(vW.y, 0.0) * 0.03) * 0.7;
+  col += vec3(0.03, 0.09, 0.1) * fr * exp(min(vW.y, 0.0) * 0.03) * 0.5;
   vec3 h = normalize(uL + v);
-  col += sunAt(vW.y) * pow(max(dot(n, h), 0.0), 60.0) * 0.35 * sunShadow(vW, 0.002);
-  col += vec3(0.6, 0.1, 0.1) * uFlinch * 0.4;
+  col += sunAt(vW.y) * pow(max(dot(n, h), 0.0), 50.0) * 0.3 * sunShadow(vW, 0.002);
+  col += vec3(0.6, 0.08, 0.06) * uFlinch * 0.4;
   // it holds its colour through more water than anything else: a dark crimson bulk against
   // the light, not a ghost in the haze
   col = waterFog(col, vW, 0.3);
   float d = length(vW - uCam);
-  col += emit * exp(-d * 0.022);
+  // (its lights carry further than its shape: from the reef you see them moving in the deep)
+  col += emit * exp(-d * 0.014);
   gl_FragColor = vec4(col, d);
 }`;
 const EYE_FRAG = `
@@ -405,59 +434,82 @@ void main() {
   vec3 n = normalize(vN), v = normalize(uCam - vW);
   vec3 d = normalize(vO);
   float c = d.z;
-  float ang = atan(d.y, d.x);
-  vec3 sclera = vec3(0.72, 0.74, 0.7);
-  vec3 iris = mix(vec3(0.85, 0.55, 0.12), vec3(1.0, 0.86, 0.4), texture2D(tNoise, vec2(ang * 0.6, c * 2.0)).g);
-  float irisM = smoothstep(0.52, 0.58, c);
+  float ang = atan(d.y, d.x + 1e-4); // (never atan(0, 0): undefined)
+  vec3 sclera = vec3(0.5, 0.5, 0.44);
+  // a gold iris with fibres running out from the pupil
+  float fib = texture2D(tNoise, vec2(ang * 0.8, c * 3.0)).g;
+  vec3 iris = mix(vec3(0.7, 0.4, 0.08), vec3(1.0, 0.82, 0.35), fib) * mix(0.6, 1.0, smoothstep(0.55, 0.85, c));
+  float irisM = smoothstep(0.5, 0.56, c);
   // a horizontal slit that is the darkest thing in the sea
-  float slit = smoothstep(0.1, 0.05, abs(d.y) / max(0.12, (c - 0.6) * 1.1)) * smoothstep(0.7, 0.76, c);
+  float slit = (1.0 - smoothstep(0.05, 0.1, abs(d.y) / max(0.12, (c - 0.6) * 1.1))) * smoothstep(0.7, 0.76, c);
   vec3 alb = mix(sclera, iris, irisM);
   alb = mix(alb, vec3(0.0), slit);
-  alb *= 1.0 - smoothstep(0.5, 0.56, c) * (1.0 - irisM) * 0.6; // the limbal ring
+  alb *= 1.0 - smoothstep(0.48, 0.54, c) * (1.0 - irisM) * 0.7; // the limbal ring
   vec3 col = litWater(alb, vW, n, 1.0, 0.5, 0.4);
   vec3 h = normalize(uL + v);
-  col += sunAt(vW.y) * pow(max(dot(n, h), 0.0), 120.0) * 1.2;
-  col += vec3(0.18, 0.28, 0.3) * pow(1.0 - max(dot(n, v), 0.0), 4.0);
+  col += sunAt(vW.y) * pow(max(dot(n, h), 0.0), 140.0) * 1.4;
+  col += vec3(0.1, 0.16, 0.17) * pow(1.0 - max(dot(n, v), 0.0), 4.0);
   // it glows faintly from within: you see the eye before you see the animal
-  vec3 glow = mix(vec3(0.25, 0.3, 0.28), vec3(1.3, 0.85, 0.25), irisM) * (1.0 - slit) * 0.55;
-  col = waterFog(col, vW, 0.7);
+  vec3 glow = mix(vec3(0.16, 0.2, 0.18), vec3(1.4, 0.85, 0.22), irisM) * (1.0 - slit) * 0.6;
+  col = waterFog(col, vW, 0.6);
   float dist = length(vW - uCam);
-  col += glow * exp(-dist * 0.016);
-  col = mix(col, vec3(0.08, 0.02, 0.03) * exp(-dist * 0.03), uBlink);
+  col += glow * exp(-dist * 0.015);
+  col = mix(col, vec3(0.06, 0.01, 0.015) * exp(-dist * 0.03), uBlink);
   gl_FragColor = vec4(col, dist);
 }`;
 
-// A tube whose centreline is rewritten every frame.
+// A tube whose centreline is rewritten every frame: the sim's points, smoothed through a
+// Catmull-Rom so the arm bends rather than kinks, with a static coordinate along it in
+// units of its own girth (so suckers and bands shrink towards the tip, as they do).
 class Tube {
-  constructor(THREE, n, m) {
-    this.n = n; this.m = m;
+  constructor(THREE, nIn, sub, m, radii, segLen) {
+    const n = (nIn - 1) * sub + 1;
+    this.nIn = nIn; this.sub = sub; this.n = n; this.m = m;
+    this.r = new Float32Array(n);
+    this.c = new Float32Array(n * 3);
+    for (let k = 0; k < n; k++) {
+      const f = k / sub, i = Math.min(nIn - 2, Math.floor(f)), u = f - i;
+      this.r[k] = radii[i] + (radii[i + 1] - radii[i]) * u;
+    }
     const verts = n * (m + 1);
     this.pos = new Float32Array(verts * 3);
     this.nrm = new Float32Array(verts * 3);
-    const uv = new Float32Array(verts * 2), idx = [];
-    for (let k = 0; k < n; k++) for (let j = 0; j <= m; j++) { uv[(k * (m + 1) + j) * 2] = j / m; uv[(k * (m + 1) + j) * 2 + 1] = k / (n - 1); }
+    const uv = new Float32Array(verts * 2), as = new Float32Array(verts), idx = [];
+    let acc = 0;
+    for (let k = 0; k < n; k++) {
+      if (k) acc += (segLen / sub) / Math.max(0.05, (this.r[k] + this.r[k - 1]) * 0.5);
+      for (let j = 0; j <= m; j++) { const i = k * (m + 1) + j; uv[i * 2] = j / m; uv[i * 2 + 1] = k / (n - 1); as[i] = acc; }
+    }
     for (let k = 0; k < n - 1; k++) for (let j = 0; j < m; j++) {
       const a = k * (m + 1) + j, b = a + m + 1;
       idx.push(a, b, a + 1, b, b + 1, a + 1);
     }
-    // a rounded cap at the tip
     const g = new THREE.BufferGeometry();
     this.pa = new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage);
     this.na = new THREE.BufferAttribute(this.nrm, 3).setUsage(THREE.DynamicDrawUsage);
     g.setAttribute('position', this.pa);
     g.setAttribute('normal', this.na);
     g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    g.setAttribute('aS', new THREE.BufferAttribute(as, 1));
     g.setIndex(idx);
     this.geo = g;
-    this.T = [0, 0, 1]; this.Nv = [1, 0, 0]; this.B = [0, 1, 0];
   }
-  // parallel-transported frames along L (Float32Array n*3), radii r
-  set(L, r, U) {
-    const n = this.n, m = this.m, P = this.pos, Nn = this.nrm;
+  // parallel-transported frames along the smoothed centreline of L (Float32Array nIn*3)
+  set(L, U) {
+    const n = this.n, m = this.m, P = this.pos, Nn = this.nrm, C = this.c, sub = this.sub, last = this.nIn - 1;
+    for (let k = 0; k < n; k++) {
+      const f = k / sub, i = Math.min(last - 1, Math.floor(f)), u = f - i;
+      const i0 = Math.max(0, i - 1) * 3, i1 = i * 3, i2 = (i + 1) * 3, i3 = Math.min(last, i + 2) * 3;
+      const u2 = u * u, u3 = u2 * u;
+      for (let c = 0; c < 3; c++) {
+        const p0 = L[i0 + c], p1 = L[i1 + c], p2 = L[i2 + c], p3 = L[i3 + c];
+        C[k * 3 + c] = 0.5 * (2 * p1 + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u2 + (-p0 + 3 * p1 - 3 * p2 + p3) * u3);
+      }
+    }
     let nx = U[0], ny = U[1], nz = U[2];
     for (let k = 0; k < n; k++) {
       const a = Math.max(0, k - 1), b = Math.min(n - 1, k + 1);
-      let tx = L[b * 3] - L[a * 3], ty = L[b * 3 + 1] - L[a * 3 + 1], tz = L[b * 3 + 2] - L[a * 3 + 2];
+      let tx = C[b * 3] - C[a * 3], ty = C[b * 3 + 1] - C[a * 3 + 1], tz = C[b * 3 + 2] - C[a * 3 + 2];
       const tl = Math.hypot(tx, ty, tz) || 1;
       tx /= tl; ty /= tl; tz /= tl;
       // remove the tangent component from the carried normal
@@ -467,11 +519,12 @@ class Tube {
       if (nl < 1e-4) { nx = ty; ny = -tx; nz = 0; nl = Math.hypot(nx, ny, nz) || 1; }
       nx /= nl; ny /= nl; nz /= nl;
       const bx = ty * nz - tz * ny, by = tz * nx - tx * nz, bz = tx * ny - ty * nx;
-      const cx = L[k * 3], cy = L[k * 3 + 1], cz = L[k * 3 + 2], rad = r[k];
+      const cx = C[k * 3], cy = C[k * 3 + 1], cz = C[k * 3 + 2], rad = this.r[k];
       for (let j = 0; j <= m; j++) {
         const ang = (j / m) * Math.PI * 2, ca = Math.cos(ang), sa = Math.sin(ang);
         // flattened a little across the sucker side, as real arms are
-        const ox = nx * ca + bx * sa * 0.82, oy = ny * ca + by * sa * 0.82, oz = nz * ca + bz * sa * 0.82;
+        const fl = ca < 0 ? 0.78 : 1;
+        const ox = nx * ca * fl + bx * sa * 0.86, oy = ny * ca * fl + by * sa * 0.86, oz = nz * ca * fl + bz * sa * 0.86;
         const i = (k * (m + 1) + j) * 3;
         P[i] = cx + ox * rad; P[i + 1] = cy + oy * rad; P[i + 2] = cz + oz * rad;
         const ol = Math.hypot(ox, oy, oz) || 1;
@@ -483,38 +536,68 @@ class Tube {
   }
 }
 
+// The mantle's outline, from the tail (+y, the end it swims towards) to the collar.
+const MANTLE = [[0.05, 10.8], [0.9, 10.2], [1.9, 8.8], [2.85, 6.6], [3.55, 4.0], [3.95, 1.4], [4.05, -1.0], [3.85, -2.7], [3.45, -3.6], [3.2, -4.1], [3.35, -4.9], [3.4, -5.7], [3.05, -6.6], [2.4, -7.2], [1.5, -7.55], [0.3, -7.7]];
+
 export function buildKraken(THREE, mats, U, sim) {
   const group = new THREE.Group();
   const shader = (frag, defines) => mats.shader({ vertexShader: SKIN_VERT, fragmentShader: frag, defines, uniforms: { uFlinch: { value: 0 }, uGlow: { value: 1 }, uBlink: { value: 0 } } });
   const bodyMat = shader(SKIN_FRAG, {}), finMat = mats.lean ? bodyMat : shader(SKIN_FRAG, { FIN: 1 }), armMat = shader(SKIN_FRAG, { ARM: 1 }), eyeMat = shader(EYE_FRAG, {});
+  const tentMat = mats.lean ? armMat : shader(SKIN_FRAG, { ARM: 1, TENT: 1 });
   finMat.side = THREE.DoubleSide;
   armMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch; finMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch;
   armMat.uniforms.uGlow = bodyMat.uniforms.uGlow; finMat.uniforms.uGlow = bodyMat.uniforms.uGlow;
-  // mantle: a lathe along +y, turned to lie along +z (front = +z)
-  const prof = [[0.05, 10.5], [1.1, 10], [2.2, 8.6], [3.2, 6.4], [3.9, 3.8], [4.2, 1.2], [4.15, -1.2], [3.8, -2.8], [3.35, -3.4], [3.0, -3.6], [3.05, -4.4], [3.25, -5.2], [2.95, -6.2], [2.3, -6.9], [1.6, -7.3], [0.3, -7.5]];
-  const lathe = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 40);
+  tentMat.uniforms.uFlinch = bodyMat.uniforms.uFlinch; tentMat.uniforms.uGlow = bodyMat.uniforms.uGlow;
+  // mantle: a lathe along +y through a smoothed outline, turned to lie along +z (front = +z)
+  const prof = [];
+  for (let i = 0; i < MANTLE.length - 1; i++) {
+    const a = MANTLE[Math.max(0, i - 1)], b = MANTLE[i], c = MANTLE[i + 1], d = MANTLE[Math.min(MANTLE.length - 1, i + 2)];
+    for (let k = 0; k < 4; k++) {
+      const u = k / 4, u2 = u * u, u3 = u2 * u, cr = (q) => 0.5 * (2 * b[q] + (-a[q] + c[q]) * u + (2 * a[q] - 5 * b[q] + 4 * c[q] - d[q]) * u2 + (-a[q] + 3 * b[q] - 3 * c[q] + d[q]) * u3);
+      prof.push(new THREE.Vector2(Math.max(0.02, cr(0)), cr(1)));
+    }
+  }
+  prof.push(new THREE.Vector2(0.02, MANTLE[MANTLE.length - 1][1]));
+  const lathe = new THREE.LatheGeometry(prof, mats.lean ? 28 : 48);
   lathe.rotateX(Math.PI / 2);
   lathe.scale(1, 0.86, 1);
   const body = new THREE.Mesh(lathe, bodyMat);
   const fins = [];
   for (const s of [-1, 1]) {
-    const g = new THREE.SphereGeometry(1, 24, 10);
-    g.scale(4.6, 0.22, 3.4);
-    g.translate(s * 4.4, 0, 0);
+    // a long rhomboid fin near the tail
+    const g = new THREE.SphereGeometry(1, 28, 10);
+    g.scale(4.6, 0.2, 3.6);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); p.setZ(i, z - Math.abs(x) * 0.35); }
+    g.computeVertexNormals();
+    g.translate(s * 4.2, 0, 0);
     const fin = new THREE.Mesh(g, finMat);
-    fin.position.set(0, 0, 6.2);
+    fin.position.set(0, 0, 6.4);
     fin.rotation.z = s * 0.08;
     fins.push(fin);
   }
   const head = new THREE.Group();
   head.add(body, ...fins);
-  const eyeGeo = new THREE.SphereGeometry(1.25, 32, 20);
-  const eyes = [0, 1].map((e) => { const m = new THREE.Mesh(eyeGeo, eyeMat); m.position.set(e ? 2.75 : -2.75, 0.5, -4.6); head.add(m); return m; });
+  const eyeGeo = new THREE.SphereGeometry(1.4, 32, 20);
+  // a heavy lid of skin round each eye: an eye set in the animal, not stuck on it
+  const lidGeo = new THREE.TorusGeometry(1.42, 0.42, 10, 28);
+  const eyes = [0, 1].map((e) => {
+    const m = new THREE.Mesh(eyeGeo, eyeMat);
+    m.position.set(e ? 2.85 : -2.85, 0.45, -4.6);
+    head.add(m);
+    const lid = new THREE.Mesh(lidGeo, bodyMat);
+    lid.position.copy(m.position);
+    lid.rotation.y = e ? Math.PI / 2 : -Math.PI / 2;
+    lid.scale.set(1, 0.85, 1);
+    head.add(lid);
+    return m;
+  });
   group.add(head);
   const tubes = [];
   for (let a = 0; a < sim.ALL; a++) {
-    const t = new Tube(THREE, sim.N, a < sim.ARMS ? 12 : 9);
-    const mesh = new THREE.Mesh(t.geo, armMat);
+    const arm = a < sim.ARMS;
+    const t = new Tube(THREE, sim.N, mats.lean ? 1 : 2, mats.lean ? 10 : arm ? 16 : 12, sim.S.radii[a], (arm ? sim.ARM_LEN : sim.TENT_LEN) / (sim.N - 1));
+    const mesh = new THREE.Mesh(t.geo, arm ? armMat : tentMat);
     mesh.frustumCulled = false;
     group.add(mesh);
     tubes.push({ t, mesh });
@@ -543,13 +626,13 @@ export function buildKraken(THREE, mats, U, sim) {
         if (e === near) eye.lookAt(eyeTarget);
         else { look.set(e ? 9 : -9, -0.5, -3); head.localToWorld(look); eye.lookAt(look); }
       }
-      for (let a = 0; a < tubes.length; a++) tubes[a].t.set(S.lines[a], S.radii[a], S.U);
+      for (let a = 0; a < tubes.length; a++) tubes[a].t.set(S.lines[a], S.U);
       flinch = Math.max(0, flinch - dt * 0.8);
       bodyMat.uniforms.uFlinch.value = flinch;
       blinkT -= dt;
       eyeMat.uniforms.uBlink.value = blinkT < 0 ? Math.sin(clamp(-blinkT / 0.5, 0, 1) * Math.PI) : 0;
       if (blinkT < -0.5) blinkT = 4 + Math.random() * 6;
     },
-    dispose() { for (const { t } of tubes) t.geo.dispose(); lathe.dispose(); eyeGeo.dispose(); for (const f of fins) f.geometry.dispose(); },
+    dispose() { for (const { t } of tubes) t.geo.dispose(); lathe.dispose(); eyeGeo.dispose(); lidGeo.dispose(); for (const f of fins) f.geometry.dispose(); },
   };
 }

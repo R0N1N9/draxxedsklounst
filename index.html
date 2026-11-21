@@ -16,10 +16,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
-  <link rel="stylesheet" href="src/multiverse/multiverse.css" />
-  <link rel="stylesheet" href="src/multiverse/input.css" />
-  <link rel="stylesheet" href="src/cell/cell.css" />
+  <!-- ?v= tags make browsers fetch fresh copies after an update (GitHub Pages caches files for 10 min). -->
+  <link rel="stylesheet" href="style.css?v=20261122e" />
+  <link rel="stylesheet" href="src/multiverse/multiverse.css?v=20261122e" />
+  <link rel="stylesheet" href="src/multiverse/input.css?v=20261122e" />
+  <link rel="stylesheet" href="src/cell/cell.css?v=20261122e" />
   <script type="importmap">
     { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
   </script>
@@ -116,6 +117,7 @@
           <div class="seg" id="cell-diff"><button data-d="recruit">Recruit</button><button data-d="operative">Operative</button><button data-d="ghost">Ghost</button></div>
           <div class="seg" id="cell-look" title="Graphics: the host's look applies to both"><button data-look="inked">Inked</button><button data-look="og">OG graphics</button></div>
           <button id="btn-cell-stage">Staging area · loadout</button>
+          <button id="btn-cell-voice">Radio voices: ON</button>
           <button id="btn-cell-solo" class="primary">Solo · AI partner</button>
           <button id="btn-cell-lone">Solo · lone operative <em class="cur">both roles, one sniper</em></button>
           <button id="btn-cell-host">Host co-op</button>
@@ -211,6 +213,7 @@
 
       <div id="panel-lab" class="panel">
         <p class="hint small">Tick what "Do you want to develop an app?" may use when you host or play solo. ▶ plays one on its own against the AI.</p>
+        <label class="check" id="lab-opener" style="display:none"><input type="checkbox" /> Next match I host: surf, then underwater, straight after the first kill</label>
         <div class="lab-head">// WORLDS</div>
         <div class="lab-list" id="lab-dims"></div>
         <div class="lab-head">// TRANSITIONS</div>
@@ -325,6 +328,6 @@
     </div>
   </div>
 
-  <script type="module" src="src/main.js"></script>
+  <script type="module" src="src/main.js?v=20261122e"></script>
 </body>
 </html>

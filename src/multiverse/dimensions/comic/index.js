@@ -21,7 +21,7 @@
 //   sightlines while it does. Pigeons burst from wherever a round lands or a sniper touches
 //   down; the el rattles through; newspapers ride the wind. Decoration runs on its own clock.
 // THE BOT      settles in, sends a ranging shot or two wide on purpose (nothing it fires in
-//   the first ten seconds can kill), then duels from cover — peek, steady, fire, hide for the
+//   the first six and a half seconds can kill), then duels from cover — peek, steady, fire, hide for the
 //   bolt — and when the long shots fail it leaps a terrace closer, and finally across the
 //   street. Near misses make it smoke and move. Skill scales notice, settle, lead and drop.
 // THE KILL     a freeze-frame splash page: everything behind the victim becomes a halftone
@@ -51,7 +51,7 @@ import { makeSfx } from './sound.js';
 const LOOK = 0.0022;
 const V = 165, GRAV = 6, ZERO = (0.5 * GRAV * (60 / V) ** 2) / 60; // zeroed at 60 m
 const BOLT = 1.05, RELOAD = 2.3, MAG = 4, RUN = 6.4;
-const LEAP_CD = 4.5, SMOKES = 2, SMOKE_CD = 3, SMOKE_LIFE = 8.5, SMOKE_R = 5.2, SHOWDOWN = 14;
+const LEAP_CD = 4.5, SMOKES = 2, SMOKE_CD = 3, SMOKE_LIFE = 7, SMOKE_R = 5.2, SHOWDOWN = 14;
 const WORD = { brick: 'KRAK', metal: 'PING', wood: 'THUNK', paper: 'THUNK', glass: 'KRAK', blimp: 'BOINK' };
 const CHIP = { brick: rgb('#c9583c'), metal: rgb('#a9bcc9'), wood: rgb('#b36a3c'), paper: rgb('#fff4d6'), glass: rgb('#ffe9a0'), blimp: rgb('#f6e7c1') };
 const STAR = [rgb('#ffe066'), rgb('#fff4d6'), rgb('#ff5e62')];
@@ -69,7 +69,7 @@ export default {
   hint: 'LEAP flies you to the rooftop you are looking at.',
   altToggle: true,
   roundTime: 60,
-  overTime: 3,
+  overTime: 2.5,
   angleFields: ['yaw', 'pitch'],
 
   create(ctx) {
@@ -575,8 +575,6 @@ export default {
         art.dispose();
       },
     };
-    inst.view = view; // test scripts only: view.shot = { x, y, z, tx, ty, tz, fov } pins the camera
-    inst.P = P; inst.Q = Q; inst.G = G; inst.W = W; inst.post = post; inst.scene = scene;
     post.resize();
     return inst;
   },

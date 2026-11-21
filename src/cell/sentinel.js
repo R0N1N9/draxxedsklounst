@@ -10,7 +10,7 @@
 //
 // NightWatch troops are SENTINEL's augmented security, and they fight like a night-time
 // alien patrol in an old shooter:
-//   OFFICER     small, unshielded, cowardly: alone and shot at, it shrieks and runs.
+//   OFFICER     human-sized, unshielded, cowardly: alone and shot at, it shrieks and runs.
 //   JUGGERNAUT  big and shielded (energy shell that recharges); shoots heavy plasma, and
 //               when its shell breaks, a pack-mate dies or you get close, it goes berserk
 //               and charges with an energy blade.
@@ -32,9 +32,9 @@ export const DIFFS = {
 
 export const TYPES = {
   guard: { name: 'GUARD', hp: 125, shield: 0, sight: 30, rate: 1, speed: [1.45, 1.9, 2.4, 3.6], scale: 1, color: '#4aa8ff' },
-  scav: { name: 'OFFICER', hp: 60, shield: 0, sight: 24, rate: 0.8, speed: [1.6, 2.1, 2.8, 4.0], scale: 0.8, flee: true, color: '#ffb030' },
+  scav: { name: 'OFFICER', hp: 60, shield: 0, sight: 24, rate: 0.8, speed: [1.6, 2.1, 2.8, 4.0], scale: 1, flee: true, color: '#ffb030' },
   jugg: { name: 'JUGGERNAUT', hp: 260, shield: 120, sight: 30, rate: 1, speed: [1.35, 1.8, 2.3, 2.9], scale: 1.22, berserk: true, color: '#ff3a6a' },
-  bulwark: { name: 'BULWARK', hp: 90, shield: 0, sight: 40, rate: 1.3, speed: [1.6, 2.0, 2.8, 3.3], scale: 0.95, wall: true, color: '#30e0ff' },
+  bulwark: { name: 'BULWARK', hp: 90, shield: 0, sight: 40, rate: 1.3, speed: [1.6, 2.0, 2.8, 3.3], scale: 1, wall: true, color: '#30e0ff' },
   overseer: { name: 'OVERSEER', hp: 300, shield: 160, sight: 32, rate: 1.1, speed: [1.35, 1.8, 2.3, 2.9], scale: 1.28, berserk: true, helmet: true, color: '#c070ff' },
   // Heavy armour: plate halves body damage, and the helmet eats the first headshot.
   titan: { name: 'TITAN', hp: 380, shield: 0, sight: 30, rate: 1, speed: [1.15, 1.5, 2.0, 2.5], scale: 1.32, armor: 0.5, helmet: true, color: '#ff8030' },
@@ -397,6 +397,7 @@ export class Sentinel {
     this.spawnGuard({ post: { x: 11, z: -30, y: 3.8, face: Math.PI / 2, sweep: 0.8 } });
     if (keep()) this.spawnGuard({ post: { x: 0, z: -9, y: 3.8, face: Math.PI, sweep: 1 } });
     this._securityPosts(false);
+    this._spread(28);
     this._drones();
     this.garrison = this.guards.length;
   }
@@ -411,11 +412,11 @@ export class Sentinel {
       const pts = P(routes[routeKey]);
       if (rev) pts.reverse();
       const L = this.spawnGuard({ type: 'jugg', route: pts, start: [pts[0].x, pts[0].z] });
-      const offs = [[-1.6, 1.8], [1.6, 1.8], [0, 3.2]];
+      const offs = [[-3, 3.5], [3, 3.5], [0, 6]];
       for (let i = 0; i < n; i++) if (i === 0 || keep()) this.spawnGuard({ type: 'scav', x: L.x + offs[i][0], z: L.z + offs[i][1], leader: L.id, off: offs[i] });
     };
-    pack('yardS', 3);
-    pack('yardN', 2);
+    pack('yardS', 1);
+    pack('yardN', 1);
     // Lone scavs and a bulwark on the flanks.
     this.spawnGuard({ type: 'scav', route: P(routes.yardW), start: routes.yardW[0] });
     if (keep()) this.spawnGuard({ type: 'scav', route: P(routes.yardW).reverse(), start: routes.yardW[2] });
@@ -453,6 +454,7 @@ export class Sentinel {
     this.spawnGuard({ type: 'bulwark', post: { x: 11, z: -30, y: 3.8, face: Math.PI / 2, sweep: 0.8 } });
     this.spawnGuard({ type: 'titan', post: { x: 24, z: -31, y: 3.8, face: 0, sweep: 0.9 } });
     this._securityPosts(true);
+    this._spread(34);
     this._drones();
     this.garrison = this.guards.length;
   }
@@ -487,6 +489,32 @@ export class Sentinel {
     this.spawnGuard({ type: T('scav'), route: lap, start: [lap[0].x, lap[0].z] });
     const lap2 = lap.slice(4).concat(lap.slice(0, 4));
     this.spawnGuard({ type: T('jugg'), route: lap2, start: [lap2[0].x, lap2[0].z] });
+  }
+
+  // Natural separation: drop any starting guard within 9 m of one already kept on the same
+  // floor (never the chief, the tower snipers, or a leader's follower), then trim to a cap.
+  _spread(cap) {
+    const keep = [];
+    const near = (a, b, r) => Math.abs((a.y || 0) - (b.y || 0)) < 2 && Math.hypot(a.x - b.x, a.z - b.z) < r;
+    const drop = (g) => { this.scene.remove(g.obj); g.dropped = true; };
+    for (const g of this.guards) {
+      const vital = g.chief || g.tower;
+      const follower = g.leader && keep.some((k) => k.id === g.leader);
+      if (!vital && !follower && keep.some((k) => near(k, g, 9))) { drop(g); continue; }
+      if (follower && keep.some((k) => k.id !== g.leader && !(k.leader === g.leader) && near(k, g, 3))) { drop(g); continue; }
+      keep.push(g);
+    }
+    // Over the cap: thin out the least important (not chief / towers / pack leaders) at random.
+    const spare = () => keep.filter((g) => !g.chief && !g.tower && !keep.some((k) => k.leader === g.id));
+    while (keep.length > cap) {
+      const pool = spare();
+      if (!pool.length) break;
+      const g = pool[Math.floor(this.rng() * pool.length)];
+      drop(g);
+      keep.splice(keep.indexOf(g), 1);
+      for (const f of keep.filter((k) => k.leader === g.id)) { drop(f); keep.splice(keep.indexOf(f), 1); }
+    }
+    this.guards = keep;
   }
 
   static upper() {
@@ -1008,7 +1036,7 @@ export class Sentinel {
     const hunt = { x: lkp.x, z: lkp.z, y: lkp.y || 0 };
     if (this.mission === 'nightwatch') {
       const lead = this.spawnGuard({ type: this.rng() < 0.5 ? 'titan' : 'jugg', x: s.x, z: s.z, hunt });
-      for (const o of [[-1.6, 1.8], [1.6, 1.8]]) this.spawnGuard({ type: 'scav', x: s.x + o[0], z: s.z + o[1], leader: lead.id, off: o, hunt });
+      for (const o of [[-3, 3.5], [3, 3.5]]) this.spawnGuard({ type: 'scav', x: s.x + o[0], z: s.z + o[1], leader: lead.id, off: o, hunt });
     } else for (let i = 0; i < 3; i++) this.spawnGuard({ x: s.x + i - 1, z: s.z, hunt });
     this.stats.backups++;
     this.emit({ t: 'toast', m: 'SENTINEL: backup requested \u2014 a fireteam is moving on your position.', c: 'red' });
@@ -1034,7 +1062,7 @@ export class Sentinel {
           if (this.mission === 'nightwatch') {
             // A fresh pack: a juggernaut with scavs at heel (or a bulwark and a scav).
             const lead = this.spawnGuard({ type: this.rng() < 0.6 ? 'jugg' : 'bulwark', route, x: s.x, z: s.z, hunt });
-            const offs = [[-1.6, 1.8], [1.6, 1.8]];
+            const offs = [[-3, 3.5], [3, 3.5]];
             const n = this.lockdown || this.alarm >= 1 ? 2 : 1;
             for (let i = 0; i < n && alive + 1 + i < cap; i++) this.spawnGuard({ type: 'scav', x: s.x + offs[i][0], z: s.z + offs[i][1], leader: lead.id, off: offs[i], hunt });
           } else this.spawnGuard({ route, x: s.x + (this.rng() - 0.5) * 2, z: s.z, hunt });

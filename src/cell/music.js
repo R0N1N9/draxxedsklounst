@@ -71,13 +71,13 @@ export class Score {
   _drone() {
     const ctx = this.a.ctx;
     const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass'; lp.frequency.value = 260; lp.Q.value = 2;
+    lp.type = 'lowpass'; lp.frequency.value = 170; lp.Q.value = 0.7;
     const lfo = ctx.createOscillator(), lg = ctx.createGain();
     lfo.frequency.value = 0.07; lg.gain.value = 120;
     lfo.connect(lg).connect(lp.frequency);
     lfo.start();
     const g = ctx.createGain();
-    g.gain.value = 0.16;
+    g.gain.value = 0.06;
     for (const [f, type] of [[hz(0), 'sawtooth'], [hz(0) * 1.004, 'sawtooth'], [hz(7), 'triangle'], [hz(-12), 'sine']]) {
       const o = ctx.createOscillator();
       o.type = type; o.frequency.value = f;

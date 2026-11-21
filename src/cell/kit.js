@@ -18,7 +18,7 @@ export const KIT = {
   lure: { charges: 3, life: 7, radius: 16 },
   exec: { max: 2, start: 1, range: 35, targets: 3, gap: 0.22 },
 };
-const CALL_LINE = { look: 'Eyes on my mark.', enemy: 'Enemy, marked.', move: 'Moving to my mark.', hold: 'Hold position.', regroup: 'On me.', cover: 'Cover me.', sync: 'Sync target marked. Get on him.', pickup: 'I\'m down! I need a pickup on my position!', perch: 'Need you set up there. Good sightline on the compound.' };
+const CALL_LINE = { look: 'Eyes on my mark.', enemy: 'Enemy, marked.', move: 'Moving to my mark.', hold: 'Hold position.', regroup: 'On me.', cover: 'Cover me.', sync: 'Sync target. Get on him.', pickup: 'I\'m down! Need a pickup!', perch: 'Set up there. Good sightline.' };
 const COMMS_LABEL = { look: 'LOOK HERE', enemy: 'ENEMY', move: 'MOVE HERE', hold: 'HOLD', regroup: 'ON ME', cover: 'COVER ME', sync: 'SYNC TARGET', pickup: 'PICK ME UP', perch: 'SNIPER POSITION' };
 const REQ_LABEL = { supply: 'SUPPLY DROP', scan: 'PULSE SCAN', emp: 'EMP', decoy: 'DECOY', lights: 'CUT LIGHTS', drone: 'DRONE OVERWATCH' };
 const BOLT = {
@@ -292,9 +292,13 @@ export const KitMethods = {
     const label = k === 'enemy' && (this.role === 'spotter' || this.aiShoot) ? 'TAKE THE SHOT' : COMMS_LABEL[k];
     const pin = { x: at.x, z: at.z, label, by: this.role, k };
     this._addPin(pin);
-    this.send({ t: 'cm', ...pin, id: enemyId || 0 });
+    // Routine pings are voiced only now and then (and never over other radio); the marker and
+    // text always show. Orders and requests for help always speak.
+    const routine = k === 'look' || k === 'enemy' || k === 'move';
+    const voiced = !routine || (this.radio && this.radio.idle() && Math.random() < 0.35);
+    this.send({ t: 'cm', ...pin, id: enemyId || 0, v: voiced ? 1 : 0 });
     this.comms(label.charAt(0) + label.slice(1).toLowerCase() + '.', ROLES_COLOR[this.role], this.name);
-    this._voice('me', CALL_LINE[k] || label.toLowerCase());
+    if (voiced) this._voice('me', CALL_LINE[k] || label.toLowerCase());
     if (k === 'pickup') return;
     if (this.aiShoot) this._aiShooterCall(k, at, enemyId);
     if (this.aiSpot) this._aiSpotterCall(k, at, enemyId);
@@ -308,9 +312,9 @@ export const KitMethods = {
     // An AI partner can't carry an IFAK to you from the cliff: it gets the medevac drone up.
     if (this.solo && this.aiPartner && this.ops) {
       const say = (m) => { this.comms(m, 'amber', this.partnerName); setTimeout(() => this._voice('partner', m), 2200); };
-      if (this.medevac) say('Medevac drone is already on you. Hang on.');
-      else if (this.ops.ready('medevac')) { this.ops.use('medevac'); say('Hang on, medevac drone is on the way!'); }
-      else say('Medevac\'s still cycling. Stay with me!');
+      if (this.medevac) say("Medevac's on you. Hang on.");
+      else if (this.ops.ready('medevac')) { this.ops.use('medevac'); say('Medevac inbound!'); }
+      else say('Medevac\'s cycling. Stay with me!');
     }
   },
 
@@ -318,7 +322,7 @@ export const KitMethods = {
     this._addPin({ x: m.x, z: m.z, label: m.label, by: m.by }, true);
     this.lastCm = { k: m.k, label: m.label, t: 10 };
     this.comms(`${m.label}${m.k === 'enemy' ? ' — marked' : ''}. (Y: roger)`, '#ffd040', this.partnerName);
-    this._voice('partner', CALL_LINE[m.k] || m.label.toLowerCase());
+    if (m.v !== 0) this._voice('partner', CALL_LINE[m.k] || m.label.toLowerCase());
     this.sfx.ui(true);
   },
 
@@ -327,6 +331,7 @@ export const KitMethods = {
     if (k === 'supply' && Math.hypot(at.x - P.x, at.z - P.z) > 60) at = { x: P.x + 1.5, z: P.z + 1 };
     // Spotter / lone operative: you own the tablet, so it just happens.
     if (this.ops && (this.role === 'spotter' || this.operative)) {
+      if (this._phonePulse && !(this.qh && this.qh.on)) this._phonePulse();
       const why = this._runRequest(k, at);
       this.hud.flash(why ? `${REQ_LABEL[k]}: ${why}` : REQ_LABEL[k], why ? 'red' : 'cyan');
       return;
@@ -405,31 +410,34 @@ export const KitMethods = {
 
   // AI partners hearing your calls.
   _aiShooterCall(k, at, enemyId) {
-    const A = this.aiShoot, say = (m) => { this.comms(m, 'amber', this.partnerName); this._voice('partner', m); };
+    // The AI's spoken acknowledgements are occasional for routine pings (text always shows).
+    const A = this.aiShoot, quiet = (k === 'look' || k === 'enemy') && Math.random() < 0.75;
+    const say = (m) => { this.comms(m, 'amber', this.partnerName); if (!quiet) this._voice('partner', m); };
     if (k === 'hold') { A.holdT = 30; say('Holding fire.'); }
     else if (k === 'enemy') { A.holdT = 0; say(enemyId ? 'I see him.' : 'Nothing under your mark.'); }
     else if (k === 'perch') {
       // A sniper position anywhere the spotter marks (outside the building): Ra relocates there.
-      if (this.fac.insideBuilding(at.x, at.z)) { say('Can\'t shoot from inside that building. Pick somewhere with a view.'); return; }
+      if (this.fac.insideBuilding(at.x, at.z)) { say('No shot from inside. Pick a view.'); return; }
       const x = at.x, z = at.z;
       const yaw = Math.atan2(-(0 - x), -(-15 - z));
       SPOTS.perches[3] = { id: 'mark', name: 'SPOTTER\'S MARK', x, z, yaw, custom: true };
       const d = Math.hypot(x - this.partner.pos.x, z - this.partner.pos.z);
       A.moveTo = 3;
       A.moveT = Math.max(5, Math.min(25, d / 9));
-      say(`Copy, moving to your mark. ${Math.round(A.moveT)} seconds.`);
+      say('Copy, moving to your mark.');
     } else if (k === 'move') {
       const best = SPOTS.perches.map((p, i) => [Math.hypot(p.x - at.x, p.z - at.z), i]).sort((a, b) => a[0] - b[0])[0][1];
       if (best !== A.perch) this._execPayload('perch', { i: best }, 'spotter'); else say('Already here.');
-    } else if (k === 'regroup' || k === 'cover') { A.coverT = 40; A.holdT = 0; say('Got you covered. Anything near you is mine.'); }
+    } else if (k === 'regroup' || k === 'cover') { A.coverT = 40; A.holdT = 0; say('Got you covered.'); }
     else if (k === 'look') say('Eyes on.');
   },
   _aiSpotterCall(k, at, enemyId) {
-    const say = (m) => { this.comms(m, 'cyan', this.partnerName); this._voice('partner', m); };
+    const quiet = (k === 'look' || k === 'enemy') && Math.random() < 0.75;
+    const say = (m) => { this.comms(m, 'cyan', this.partnerName); if (!quiet) this._voice('partner', m); };
     if (k === 'look') {
       const near = this.sentinel.guards.filter((g) => g.state !== 'dead' && Math.hypot(g.x - at.x, g.z - at.z) < 15);
       for (const g of near) g.tagT = 12;
-      say(near.length ? `${near.length} contact${near.length > 1 ? 's' : ''} there — tagged.` : 'Looks clear from here.');
+      say(near.length ? (near.length > 1 ? 'Contacts there. Tagged.' : 'One contact there. Tagged.') : 'Looks clear from here.');
     } else if (k === 'enemy') say(enemyId ? 'Marked.' : 'I don’t see anything there.');
     else say('Copy.');
   },
@@ -506,7 +514,7 @@ export const KitMethods = {
     }
     if (ev.t === 'laser' && pos) this.sfx.laser(pos);
     if (ev.t === 'fx' && ev.k === 'helmet' && pos) { this.sfx.shieldPop(pos); this.effects.puff(pos, 'metal', 0.9, 0.4); }
-    if (ev.t === 'backup') this._voice('isr', 'Heads up, they called for backup. A fireteam is moving on your position.');
+    if (ev.t === 'backup') this._voice('isr', 'Backup inbound on your position.');
   },
 
   // Laser sights of tower snipers taking aim.

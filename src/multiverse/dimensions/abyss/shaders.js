@@ -79,7 +79,7 @@ float caustics(vec3 p) {
 vec3 lamps(vec3 p, vec3 n) {
   vec3 acc = vec3(0.0);
 #ifdef LEAN
-  for (int i = 0; i < 2; i++) { vec3 l = uLampPos[i] - p; acc += uLampCol[i] * 0.3 / (1.0 + dot(l, l) * 0.08); }
+  for (int i = 0; i < 2; i++) { vec3 l = uLampPos[i] - p; float d2 = dot(l, l); acc += uLampCol[i] * 0.3 * smoothstep(0.3, 2.0, d2) / (1.0 + d2 * 0.08); }
   return acc;
 #endif
   for (int i = 0; i < 2; i++) {
@@ -87,21 +87,24 @@ vec3 lamps(vec3 p, vec3 n) {
     float d = length(l);
     l /= max(d, 1e-3);
     float cone = smoothstep(0.78, 0.95, dot(-l, uLampDir[i]));
-    acc += uLampCol[i] * (cone * 0.85 + 0.15) * max(dot(n, l) * 0.8 + 0.2, 0.0) * exp(-d * 0.06) / (1.0 + d * d * 0.045);
+    // (nothing within arm's reach takes its own lamp's light: no hot spot on the gun in your hands)
+    acc += uLampCol[i] * (cone * 0.85 + 0.15) * max(dot(n, l) * 0.8 + 0.2, 0.0) * exp(-d * 0.06) / (1.0 + d * d * 0.045) * smoothstep(0.5, 1.4, d);
   }
   return acc;
 }
 
 vec3 ambientAt(vec3 n, float y) {
-  return mix(vec3(0.003, 0.016, 0.026), vec3(0.032, 0.13, 0.15), n.y * 0.5 + 0.5) * exp(min(y, 0.0) * vec3(0.05, 0.027, 0.021)) * (1.0 - 0.5 * uDim);
+  // (the water itself is the sky down here: shade is blue-green, never black)
+  return mix(vec3(0.008, 0.04, 0.062), vec3(0.05, 0.2, 0.23), n.y * 0.5 + 0.5) * exp(min(y, 0.0) * vec3(0.05, 0.027, 0.021)) * (1.0 - 0.5 * uDim);
 }
 
 // albedo lit by the sun (shadowed, with caustics), the water's ambient and the torches.
 vec3 litWater(vec3 albedo, vec3 p, vec3 n, float ao, float wrap, float cauK) {
   float sh = sunShadow(p + n * 0.09, 0.0012); // normal offset: no acne on the wall
   float ndl = max((dot(n, uL) + wrap) / (1.0 + wrap), 0.0);
-  float cau = caustics(p) * smoothstep(-0.3, 0.7, n.y) * cauK;
-  vec3 direct = sunAt(p.y) * sh * ndl * (0.5 + cau * 1.7);
+  // (the net lies on what faces the sky: walls get a faint, broken version of it)
+  float cau = caustics(p) * (0.25 + 0.75 * smoothstep(0.1, 0.8, n.y)) * smoothstep(-0.4, 0.3, n.y) * cauK;
+  vec3 direct = sunAt(p.y) * sh * ndl * (0.5 + cau * 1.45);
   return albedo * (direct + ambientAt(n, p.y) * ao + lamps(p, n));
 }
 `;
@@ -176,7 +179,7 @@ vec4 tri(vec3 p, vec3 n, float s) {
 void main() {
 #ifdef FAN
   // a sea fan's lattice: radial veins and cross-links, the rest is water
-  float fr = length(vO.xy), fa = atan(vO.y, vO.x);
+  float fr = length(vO.xy), fa = atan(vO.y, vO.x + 1e-4);
   float veins = abs(fract(fa * 4.5 + fr * 0.6) - 0.5), links = abs(fract(fr * 8.0 + sin(fa * 23.0) * 0.15) - 0.5);
   if (min(veins, links * 1.4) > 0.09 && fr < 0.96) discard;
 #endif
@@ -193,8 +196,8 @@ void main() {
   float flt = smoothstep(0.55, 0.85, n.y);
   // sand: ripples across the current, combed by noise
   float rip = sin(vW.x * 1.7 + vW.z * 0.6 + big.r * 9.0) * 0.5 + 0.5;
-  vec3 sand = vec3(0.6, 0.55, 0.45) * (0.78 + rip * 0.2 + fine.b * 0.16);
-  vec3 rock = mix(vec3(0.3, 0.27, 0.25), vec3(0.46, 0.4, 0.35), big.g) * (0.7 + fine.r * 0.5);
+  vec3 sand = vec3(0.52, 0.46, 0.36) * (0.78 + rip * 0.2 + fine.b * 0.16);
+  vec3 rock = mix(vec3(0.22, 0.2, 0.19), vec3(0.4, 0.34, 0.29), big.g) * (0.7 + fine.r * 0.5);
   // banded strata on the wall
   rock *= 0.85 + 0.2 * sin(vW.y * 2.3 + big.r * 6.0);
   float sandy = flt * smoothstep(0.35, 0.6, vC.r + big.a * 0.5 - 0.25);
@@ -203,11 +206,14 @@ void main() {
   alb = mix(alb, vec3(0.2, 0.3, 0.13), (1.0 - sandy) * smoothstep(0.3, 0.8, n.y) * smoothstep(0.5, 0.75, big.r) * 0.45);
   alb = mix(alb, vec3(0.42, 0.18, 0.34), (1.0 - sandy) * smoothstep(0.55, 0.8, fine.g) * 0.35);
   ao = mix(0.55, 1.0, vC.b);
+  alb *= 0.85;
 #endif
 #ifdef ROCK
-  alb *= 0.65 + big.g * 0.5 + fine.r * 0.25;
-  alb = mix(alb, vec3(0.2, 0.31, 0.13), smoothstep(0.35, 0.85, n.y) * smoothstep(0.4, 0.65, big.r) * 0.7);
-  alb = mix(alb, vec3(0.45, 0.2, 0.38), smoothstep(0.6, 0.85, fine.g) * 0.3);
+  alb *= 0.6 + big.g * 0.5 + fine.r * 0.25;
+  // weed on what faces up, pink coralline crusts and dark sponge in the hollows
+  alb = mix(alb, vec3(0.16, 0.24, 0.09), smoothstep(0.35, 0.85, n.y) * smoothstep(0.4, 0.65, big.r) * 0.7);
+  alb = mix(alb, vec3(0.5, 0.2, 0.32), smoothstep(0.6, 0.85, fine.g) * 0.35);
+  alb = mix(alb, vec3(0.12, 0.08, 0.1), smoothstep(0.55, 0.8, big.a) * (1.0 - smoothstep(-0.4, 0.2, n.y)) * 0.5);
 #endif
 #ifdef CORAL
   // polyps: a fine bumpy grain and paler tips
@@ -218,7 +224,7 @@ void main() {
   float streak = texture2D(tNoise, vec2(vW.x * 0.35 + vW.z * 0.35, vW.y * 0.04)).g;
   alb *= 0.6 + 0.5 * fine.r;
   alb = mix(alb, vec3(0.36, 0.17, 0.07), smoothstep(0.45, 0.8, streak) * 0.75);
-  alb = mix(alb, vec3(0.16, 0.26, 0.1), smoothstep(0.2, 0.8, n.y) * smoothstep(0.4, 0.62, big.r) * 0.85);
+  alb = mix(alb, vec3(0.17, 0.17, 0.08), smoothstep(0.3, 0.85, n.y) * smoothstep(0.45, 0.65, big.r) * 0.7);
   // planking: strakes down the hull, boards across the deck
   float plank = mix(sin(vO.y * 9.0), sin(vO.x * 14.0), smoothstep(0.6, 0.9, abs(n.y)));
   alb *= 0.82 + 0.18 * plank + 0.1 * smoothstep(0.92, 1.0, abs(plank)) * -1.0;

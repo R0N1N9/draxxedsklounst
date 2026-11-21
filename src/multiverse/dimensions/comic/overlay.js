@@ -14,9 +14,9 @@ const WORDS = {
   BLAM: ['BLAM!', '#fff27a', '#ff7a2e', '#e2413a'], KRAK: ['KRAK!', '#ffffff', '#ffd23f', null], PING: ['PING!', '#f2ffff', '#7df9ff', null],
   THUNK: ['THUNK!', '#ffe7b3', '#e0914d', null], BOINK: ['BOINK!', '#fff4d6', '#ff8fb0', null], WHIFF: ['WHIFF!', '#ffffff', '#cfe0ff', null],
   THUD: ['THUD!', '#ffe7b3', '#d9764a', null], POOF: ['POOF!', '#ffffff', '#d9c2ff', '#8e5bd6'], FWOOSH: ['FWOOSH!', '#fff27a', '#ff9d2e', null],
-  HUP: ['HUP!', '#ffffff', '#9dffd0', null], CHAK: ['CHK-CHAK!', '#ffffff', '#c9c2e6', null], RATTLE: ['RATTLE RATTLE', '#fff4d6', '#c9c2e6', null],
+  RATTLE: ['RATTLE RATTLE', '#fff4d6', '#c9c2e6', null],
   KAPOW: ['KA-POW!', '#fff27a', '#ff3d5e', '#ffd23f'], WHAM: ['WHAMMO!', '#fff27a', '#ff3d5e', '#7df9ff'], ZOK: ['ZOK!!', '#ffffff', '#ffd23f', '#e2413a'],
-  SKRITCH: ['SKRITCH…', '#dff0ff', '#8fc4ff', null], FLAP: ['FLAP FLAP', '#ffffff', '#e6dcff', null],
+  SKRITCH: ['SKRITCH…', '#dff0ff', '#8fc4ff', null],
 };
 
 // One word, set by hand: every letter a little off its neighbours, fat ink round a two-tone fill.
@@ -119,7 +119,11 @@ export function drawOverlay(g, S, L) {
     path(g, lp.pts, lp.n); g.strokeStyle = INK; g.lineWidth = 7.5 * ui; g.stroke();
     path(g, lp.pts, lp.n); g.strokeStyle = lp.ready ? YEL : PAPER; g.lineWidth = 3.5 * ui; g.stroke();
     g.setLineDash([]);
-    if (lp.tag && lp.seen) inked(g, lp.tag, lp.x, lp.y - lp.ry - 16 * ui, Math.max(12, 16 * ui), YEL);
+    // the label sits over the ring when the landing is in view, else on the end of the arc that is
+    if (lp.tag) {
+      const k = (lp.n - 1) * 2, lx = lp.seen ? lp.x : lp.pts[k], ly = lp.seen ? lp.y - lp.ry - 16 * ui : lp.pts[k + 1] - 18 * ui;
+      inked(g, lp.tag, lx, ly, Math.max(12, 16 * ui), YEL);
+    }
     g.globalAlpha = 1;
   }
 
@@ -228,8 +232,9 @@ export function drawOverlay(g, S, L) {
   if (sp.a > 0) {
     // The word lands beside the victim, never on them: the reader must see who took the hit.
     const word = L.sprites[sp.word], u = clamp(sp.t / 0.22, 0, 1), k = ease.outBack(u) * (1 + Math.max(0, sp.t - 0.22) * 0.04);
-    const tw = Math.min(w * 0.5, h * 0.9), sc = (tw / word.w) * k;
-    const wx = clamp(sp.x + sp.side * w * 0.2, w * 0.3, w * 0.7), wy = clamp(sp.y - h * 0.24, h * 0.24, h * 0.42);
+    // (on a phone held sideways it sits lower, clear of the core's kill banner across the top)
+    const short = h < 480, tw = short ? Math.min(w * 0.42, h * 0.85) : Math.min(w * 0.5, h * 0.9), sc = (tw / word.w) * k;
+    const wx = clamp(sp.x + sp.side * w * (short ? 0.24 : 0.2), w * 0.28, w * 0.72), wy = short ? clamp(sp.y - h * 0.16, h * 0.34, h * 0.48) : clamp(sp.y - h * 0.24, h * 0.24, h * 0.42);
     g.globalAlpha = sp.a;
     g.save(); g.translate(wx, wy); g.rotate(-0.1 * sp.side + Math.sin(sp.t * 40) * 0.012 * Math.max(0, 1 - sp.t * 2));
     g.drawImage(word.canvas, -word.w * sc / 2, -word.h * sc / 2, word.w * sc, word.h * sc);

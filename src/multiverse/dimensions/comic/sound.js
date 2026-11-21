@@ -70,7 +70,6 @@ export function makeSfx(ctx) {
     deny() { A.sfx('error', { gain: 0.3 }); },
     step() { A.noise({ filter: 'lowpass', freq: 900, dur: 0.05, gain: 0.1 }); },
     glint() { A.tone({ type: 'sine', freq: 3100, dur: 0.2, gain: 0.05 }); A.tone({ type: 'sine', freq: 4650, dur: 0.14, gain: 0.03, delay: 0.03 }); },
-    flap(x, y, z) { const g = at(x, y, z, 20); for (let i = 0; i < 5; i++) A.noise({ filter: 'bandpass', freq: 900 + i * 140, q: 1.5, dur: 0.06, gain: 0.16 * g, delay: i * 0.07, pan: at.pan }); },
     train() { for (let i = 0; i < 14; i++) A.noise({ filter: 'lowpass', freq: 420, dur: 0.09, gain: 0.16 * (1 - Math.abs(i - 7) / 9), delay: i * 0.17 + (i & 1) * 0.05 }); A.tone({ type: 'sawtooth', freq: 62, dur: 2.6, gain: 0.06, attack: 0.8 }); },
     erase() { A.noise({ filter: 'bandpass', freq: 1800, freqEnd: 3800, q: 0.7, dur: 1.4, gain: 0.3, attack: 0.3 }); A.sfx('riser', { gain: 0.4 }); },
     showdown() { A.sfx('drop', { gain: 0.6 }); A.sfx('bell', { gain: 0.5, delay: 0.1 }); },

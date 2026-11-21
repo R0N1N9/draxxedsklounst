@@ -62,7 +62,7 @@ void main() {
   for (int i = 0; i < 2; i++) {
     vec3 c = i == 0 ? uBoilA : uBoilB;
     float r = length(vW.xz - c.xz);
-    foam += smoothstep(8.0, 0.0, r) * smoothstep(0.42, 0.7, texture2D(tNoise, q * 0.35 + uTime * 0.05 + float(i) * 3.0).b + smoothstep(4.0, 0.0, r) * 0.3);
+    foam += (1.0 - smoothstep(0.0, 8.0, r)) * smoothstep(0.42, 0.7, texture2D(tNoise, q * 0.35 + uTime * 0.05 + float(i) * 3.0).b + (1.0 - smoothstep(0.0, 4.0, r)) * 0.3);
   }
   col = mix(col, vec3(1.6, 1.65, 1.6), clamp(foam * uBoil, 0.0, 1.0));
   // distance hazes the surface into the water
@@ -115,8 +115,6 @@ export function makeView(ctx, THREE, renderer, S) {
   const api = {
     camera, post,
     get zoom() { return zoom; },
-    shot: null, // test scripts: pin the camera
-    always: false, // test scripts: never skip a draw
     note(text, dur = 2) { notes.text = text; notes.a = dur; },
     kick() { kickA = 1; },
     shove() { shoveA = 1; hurt = 1; api.note('THE KRAKEN SHOVED YOU', 1.6); },
@@ -194,7 +192,8 @@ export function makeView(ctx, THREE, renderer, S) {
           if (Math.random() < real * 40) bubbles.emit(p.x + (Math.random() - 0.5) * 0.6, p.y + (Math.random() - 0.5) * 0.5, p.z + (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.4, 1.5, (Math.random() - 0.5) * 0.4, 0.05 + Math.random() * 0.08, 0.01, 5, 1, 1, 1, 1, 0.5, 1.2);
         }
         p.model.pose(pose, real);
-        p.model.root.visible = p !== ME || !!kill;
+        // your own body shows only once the kill camera has pulled out of it
+        p.model.root.visible = p !== ME || (!!kill && camera.position.distanceToSquared(tmpV.set(p.x, p.y, p.z)) > 2.5);
         const reveal = (ctx.sudden || ctx.time < p.revealT || (phase === 'intro' && p !== ME)) && p.alive;
         p.model.ghost.visible = reveal && p !== ME;
         p.model.mat.uniforms.uGhost.value = damp(p.model.mat.uniforms.uGhost.value, p.model.ghost.visible ? 1 : 0, 8, real);
@@ -208,9 +207,11 @@ export function makeView(ctx, THREE, renderer, S) {
         const on = p.alive ? 1 : Math.max(0, 1 - p.dead * 0.5);
         U.uLampCol.value[li].set(p.r * 1.7 * on, p.g * 1.7 * on, p.b * 1.7 * on);
         if (p !== ME || kill) {
-          const lp = U.uLampPos.value[li];
-          glow.put(lp.x, lp.y, lp.z, 1.3, p.r * 1.6 * on, p.g * 1.6 * on, p.b * 1.6 * on, 0.9);
-          glow.put(lp.x, lp.y, lp.z, 4.5, p.r * 0.25 * on, p.g * 0.25 * on, p.b * 0.25 * on, 0.7);
+          // a small lamp up close, a beacon far off: the glow grows with distance
+          // (up close it is a lamp on a diver, not a sun: the diver must show round it)
+          const lp = U.uLampPos.value[li], cd = Math.max(1, camera.position.distanceTo(lp)), sc = clamp(cd / 22, 0.35, 2.2), hot = clamp(cd / 30, 0.25, 1);
+          glow.put(lp.x, lp.y, lp.z, 0.9 * sc, p.r * 1.6 * on * hot, p.g * 1.6 * on * hot, p.b * 1.6 * on * hot, 0.9);
+          glow.put(lp.x, lp.y, lp.z, 3.6 * sc, p.r * 0.2 * on, p.g * 0.2 * on, p.b * 0.2 * on, 0.6 * clamp(cd / 15, 0.12, 1));
         }
       }
       for (const d of S.decoys) {
@@ -228,7 +229,8 @@ export function makeView(ctx, THREE, renderer, S) {
       // its bulk overhead dims the whole sea; its wake bends the kelp
       const camY = camera.position.y;
       const hd = Math.hypot(KS.pos[0] - camera.position.x, KS.pos[2] - camera.position.z);
-      U.uDim.value = clamp(smoothstep(18, 5, hd) * smoothstep(-1, 5, KS.pos[1] - camY), 0, 1) * 0.7;
+      // (the arms spread 25 m round the body: the shade does too)
+      U.uDim.value = clamp(smoothstep(32, 8, hd) * smoothstep(-1, 6, KS.pos[1] - camY), 0, 1) * 0.72;
       U.uWake.value.set(KS.pos[0], KS.pos[1], KS.pos[2], KS.wake);
       // the gun in your hands
       const load = phase === 'intro' ? introLoad : ME.loaded ? 1 : 1 - ME.reload / S.RELOAD;
@@ -247,12 +249,7 @@ export function makeView(ctx, THREE, renderer, S) {
       const phase = ctx.phase;
 
       // ---- the camera
-      if (api.shot) {
-        const s = api.shot;
-        camera.position.set(s.x, s.y, s.z);
-        camera.lookAt(s.tx, s.ty, s.tz);
-        camera.fov = s.fov || 60;
-      } else if (kill) {
+      if (kill) {
         // slow orbit beside the victim, from below, looking up through the light
         const v = kill.v, k = smoothstep(0, 0.7, kill.t);
         const side = tmpV.set(-kill.dir.z, 0, kill.dir.x).normalize();
@@ -281,7 +278,7 @@ export function makeView(ctx, THREE, renderer, S) {
         camera.rotation.set(pitch + kickA * 0.03 + Math.sin(frames * 0.7) * sh * 0.05, ME.yaw + Math.sin(frames * 0.9) * sh * 0.06, Math.sin(bob * 0.5) * 0.008 + sh * 0.1 * Math.sin(frames * 0.5));
         camera.fov = 72 - zoom * 34;
       }
-      camera.aspect = ctx.width / ctx.height;
+      camera.aspect = ctx.width / Math.max(1, ctx.height);
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld();
       U.uCam.value.copy(camera.position);
@@ -307,11 +304,17 @@ export function makeView(ctx, THREE, renderer, S) {
         renderer.setClearColor(0x062a33, 1);
         renderer.clear();
         fresh = false;
+        // (not a flat colour: light from above fading into the deep, on the 2D layer, which
+        // costs the CPU nothing to build)
+        const g = ctx.g, wg = g.createLinearGradient(0, 0, 0, ctx.height);
+        wg.addColorStop(0, '#3f8f93'); wg.addColorStop(0.12, '#1d6a72'); wg.addColorStop(0.55, '#0a3a46'); wg.addColorStop(1, '#03141d');
+        g.fillStyle = wg;
+        g.fillRect(0, 0, ctx.width, ctx.height);
         HUD.w = ctx.width; HUD.h = ctx.height;
         drawOverlay(ctx, HUD, api, S, camera, project);
         return;
       }
-      if (api.freeze || Q.soft && !api.always && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < (staged.length ? Math.max(700, cost * 1.2) : Math.min(6000, Math.max(1000, cost * 5, worst * 5)))) draw = false;
+      if (Q.soft && drawn > 2 && fresh && phase === drawnPhase && now - drawAt < (staged.length ? Math.max(700, cost * 1.2) : Math.min(6000, Math.max(1000, cost * 5, worst * 5)))) draw = false;
       fresh = false;
       if (!draw) {
         if (drawn > 0) post.present();
@@ -338,10 +341,10 @@ export function makeView(ctx, THREE, renderer, S) {
       pf.uFlash.value = kill ? Math.max(0, 0.5 - kill.t * 1.5) : 0;
       pf.uFlashCol.value.setRGB(0.85, 1, 1);
       pf.uSat.value = kill ? lerp(1.12, 1.25, Math.min(1, kill.t)) : 1.12;
-      pf.uMaskK.value = kill || api.shot ? 0.25 : 1;
-      pf.uExposure.value = lerp(1.42, 1.25, U.uDim.value);
+      pf.uMaskK.value = kill ? 0.25 : 1;
+      pf.uExposure.value = lerp(1.34, 1.15, U.uDim.value);
       if (frames % shadowEvery === 0 || frames < 3) post.shadowPass(scene, clamp(camera.position.x, -20, 25), clamp(camera.position.z, -35, 35));
-      post.render(scene, camera, !kill && !api.shot && ME.alive ? hands : null);
+      post.render(scene, camera, !kill && ME.alive ? hands : null);
       renderer.setRenderTarget(null);
       // ---- the HUD
       HUD.w = ctx.width; HUD.h = ctx.height;
@@ -350,7 +353,7 @@ export function makeView(ctx, THREE, renderer, S) {
     },
 
     resize(w, h) {
-      camera.aspect = w / h;
+      camera.aspect = w / Math.max(1, h);
       camera.updateProjectionMatrix();
       post.resize();
     },
@@ -413,20 +416,25 @@ export function makeView(ctx, THREE, renderer, S) {
     if (govN < 90) return;
     const avg = govT / govN;
     govT = govN = 0;
-    if (avg > 20 && Q.tier < 2) {
+    // tiers: 0 everything · 1 lighter shafts, 1k shadows · 2 fewest shaft steps, 512 shadows
+    // every other frame, less snow · 3 the HDR scene itself at 80 % (the core may also lower
+    // the canvas's own resolution on top of this)
+    if (avg > 20 && Q.tier < 3) {
       Q.tier++;
-      post.setTier(Q.tier);
+      post.setTier(Math.min(2, Q.tier));
       if (Q.tier === 1) post.setShadow(1024);
       if (Q.tier === 2) { post.setShadow(512); shadowEvery = 2; S.snow.setCount(1200); }
+      if (Q.tier === 3) post.setScale(0.8);
       govGood = 0;
     } else if (avg < 13 && Q.tier > 0) {
       if (++govGood < 5) return;
       govGood = 0;
       Q.tier--;
-      post.setTier(Q.tier);
-      shadowEvery = 1;
-      post.setShadow(Q.tier === 0 ? 2048 : 1024);
-      S.snow.setCount(Q.tier === 0 ? Q.snow : 1800);
+      post.setTier(Math.min(2, Q.tier));
+      post.setScale(1);
+      shadowEvery = Q.tier === 2 ? 2 : 1;
+      post.setShadow(Q.tier === 0 ? 2048 : Q.tier === 1 ? 1024 : 512);
+      S.snow.setCount(Q.tier === 0 ? Q.snow : Q.tier === 1 ? 1800 : 1200);
     }
   }
 

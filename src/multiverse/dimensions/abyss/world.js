@@ -9,9 +9,11 @@
 import { clamp, lerp, smoothstep, noise2, fbm, rand } from '../../kit.js';
 
 export const ARENA = { x0: -36, x1: 32, z: 47, y0: -46, y1: -1.7 };
+// Out over the drop-off, a body's length off the lip of the wall: open water between the
+// two ends of the reef, the shelf and its kelp to one side, the deep to the other.
 export const SPAWN = [
-  { x: 2, y: -12.5, z: -31, yaw: Math.PI },
-  { x: 2, y: -12.5, z: 31, yaw: 0 },
+  { x: 4.5, y: -11.5, z: -31, yaw: Math.PI },
+  { x: 4.5, y: -11.5, z: 31, yaw: 0 },
 ];
 export const RADIUS = 0.5; // a diver, for the world
 
@@ -32,7 +34,7 @@ export function heightAt(x, z) {
   y -= 30 * smoothstep(L, L + 6.5, t) + 92 * smoothstep(L + 4, L + 72, t); // the second, into the deep
   // rock texture where it is steep
   const steep = smoothstep(-1, 2, t) * (1 - smoothstep(L + 9, L + 20, t)) + smoothstep(L - 1, L + 4, t) * (1 - smoothstep(L + 8, L + 26, t));
-  y += 1.6 * fbm(x * 0.21, z * 0.21 + y * 0.08, 3) * steep;
+  y += 1.6 * fbm(x * 0.21, zz * 0.21 + y * 0.08, 3) * steep; // (mirrored too: neither end of the reef is the better one)
   return y;
 }
 
@@ -106,6 +108,8 @@ export function buildWorld(rng) {
 
   // ---- coral heads, boulders, wall outcrops
   const clearOfArches = (x, z, pad) => arches.every((a) => Math.hypot(x - a.x, z - a.z) > a.span * 0.5 + pad);
+  // the lane between the two spawns stays open water: rock may frame it, never close it
+  const clearOfLane = (x, y, z, r) => Math.abs(z) > SPAWN[1].z + 2 || Math.hypot(x - SPAWN[0].x, y - SPAWN[0].y) > r + 2.2;
   for (let i = 0; i < 15; i++) {
     const x = R(-32, -1.5), z = R(3, 44), r = R(0.8, 2.1), kind = R(0, 1);
     if (!clearOfArches(x, z, 2)) continue;
@@ -133,7 +137,7 @@ export function buildWorld(rng) {
     if (!clearOfArches(x, z, r + 1)) continue;
     mirrored((m) => {
       const y = heightAt(x, z * m);
-      if (y < -36) return;
+      if (y < -36 || !clearOfLane(x, y + r * 0.25, z, r)) return;
       decor.boulder.push({ x, y: y + r * 0.25, z: z * m, r, rot: R(0, 6.28) });
       spheres.push({ x, y: y + r * 0.25, z: z * m, r: r * 0.92, surf: 'rock' });
     });
@@ -146,6 +150,7 @@ export function buildWorld(rng) {
       // find the wall's x at this depth
       let x = -2;
       for (let k = 0; k < 40 && heightAt(x, zz) > depth; k++) x += 0.6;
+      if (!clearOfLane(x - r * 0.3, depth, z, r)) return;
       decor.outcrop.push({ x: x - r * 0.3, y: depth, z: zz, r, rot: R(0, 6.28) });
       spheres.push({ x: x - r * 0.3, y: depth, z: zz, r: r * 0.9, surf: 'rock' });
     });
@@ -206,9 +211,12 @@ export function buildWorld(rng) {
   for (let x = -30; x <= 26; x += 6) {
     for (let z = -42; z <= 42; z += 6) {
       const floor = heightAt(x, z);
-      for (const up of [2.6, 6.5]) {
-        const y = Math.min(floor + up, -7.5);
-        if (y < ARENA.y0 + 3 || y - floor < 1.6) continue;
+      // two heights over the bottom, and open water over the drop-off at the depths the duel
+      // is fought (where the long shots are)
+      for (const up of [2.6, 6.5, -9, -14, -19]) {
+        const y = up > 0 ? Math.min(floor + up, -7.5) : up;
+        if (y < ARENA.y0 + 3 || y - floor < (up > 0 ? 1.6 : 4)) continue;
+        if (up < 0 && posts.some((q) => q.x === x && q.z === z && Math.abs(q.y - y) < 2.5)) continue;
         const p = { x, y, z, cover: 0 };
         let blocked = false;
         for (const s of spheres) {

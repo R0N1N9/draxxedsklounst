@@ -9,6 +9,7 @@
 // Each costs bandwidth.
 import * as THREE from 'three';
 import { glove } from './nvg.js';
+import { PAYLOAD } from './ops.js';
 
 const RANGE = 45;
 const OPTS = {
@@ -20,6 +21,16 @@ const OPTS = {
   guard: [{ k: 'jam', name: 'JAM COMMS', bw: 6 }, { k: 'blind', name: 'REBOOT OPTICS', bw: 10 }],
 };
 const EXEC = 0.6;
+// Commands at the spot under your crosshair (when nothing hackable is targeted): the console's
+// payloads, sent from the phone. Same costs and cooldowns as the tablet.
+const CMDS = [
+  { k: 'supply', name: 'SUPPLY DROP', p: 'supply' },
+  { k: 'scan', name: 'PULSE SCAN', p: 'scan' },
+  { k: 'emp', name: 'EMP', p: 'emp' },
+  { k: 'decoy', name: 'DECOY', p: 'decoy' },
+  { k: 'lights', name: 'CUT LIGHTS', p: 'lights' },
+  { k: 'drone', name: 'RECON QUAD', p: 'quad' },
+];
 
 function buildPhone() {
   const g = new THREE.Group();
@@ -49,7 +60,38 @@ export const Phone = {
     this.phoneObj.traverse((o) => { o.renderOrder = 12; o.frustumCulled = false; });
     this.camera.add(this.phoneObj);
     addEventListener('wheel', (e) => { if (this.qh.on) this._qhWheel = Math.sign(e.deltaY); }, { passive: true });
-    addEventListener('mousedown', (e) => { if (this.qh.on && e.button === 0) this._qhClick = true; });
+    addEventListener('mousedown', (e) => { if (this.qh.on && e.button === 0 && !this._qhHit(e.clientX, e.clientY)) this._qhClick = true; });
+    // Tap / click an option row to pick it and run it (caught before the touch controls).
+    const tap = (e) => {
+      if (!this.qh.on) return;
+      const pt = e.touches ? e.touches[0] : e;
+      if (!pt || !this._qhHit(pt.clientX, pt.clientY)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    addEventListener('touchstart', tap, { capture: true, passive: false });
+    addEventListener('pointerdown', tap, { capture: true, passive: false });
+  },
+
+  // An option row under this screen point? Picks it and queues the run.
+  _qhHit(x, y) {
+    const Q = this.qh;
+    for (const r of Q.rects || []) {
+      if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
+        if (performance.now() - (this._qhTapT || 0) < 250) return true;
+        this._qhTapT = performance.now();
+        Q.opt = r.i;
+        this._qhClick = true;
+        return true;
+      }
+    }
+    return false;
+  },
+
+  // A quick phone gesture outside quickhack mode (e.g. a wheel request): up, thumb tap, down.
+  _phonePulse() {
+    this.qh.pulse = 1;
+    this.qh.pulseT = 0;
   },
 
   _qhCan() {
@@ -109,11 +151,20 @@ export const Phone = {
     if (Q.on && !this._qhCan()) this._qhExit();
     Q.k += ((Q.on ? 1 : 0) - Q.k) * Math.min(1, dt * 9);
     Q.press = Math.max(0, Q.press - dt * 5);
+    // A one-off gesture: up (0-0.3 s), thumb tap (0.35 s), down (0.75-1.05 s).
+    let pk = 0;
+    if (Q.pulse) {
+      Q.pulseT += dt;
+      const t = Q.pulseT;
+      pk = t < 0.3 ? t / 0.3 : t < 0.75 ? 1 : Math.max(0, 1 - (t - 0.75) / 0.3);
+      if (t >= 0.35 && !Q.pulsed) { Q.pulsed = true; Q.press = 1; this.audio.click(); }
+      if (t > 1.05) { Q.pulse = 0; Q.pulsed = false; }
+    }
     // The phone in your left hand.
     const ph = this.phoneObj;
-    ph.visible = Q.k > 0.02;
+    const k = Math.max(Q.k, pk);
+    ph.visible = k > 0.02;
     if (ph.visible) {
-      const k = Q.k;
       ph.position.set(-0.3 + 0.17 * k, -0.48 + 0.35 * k - Q.press * 0.012, -0.38 + 0.03 * k - Q.press * 0.01);
       ph.rotation.set(0.75 - 0.4 * k, 0.55 - 0.15 * k, 0.12);
       const U = ph.userData;
@@ -135,19 +186,22 @@ export const Phone = {
       Q.scanT = 0.15;
       const r = this._qhScan();
       Q.list = r.list;
-      if (!Q.target || !r.best || Q.target.kind !== r.best.kind || Q.target.id !== r.best.id) Q.opt = 0;
-      Q.target = r.best;
+      const prev = Q.target ? Q.target.kind + Q.target.id : 'cmd';
+      // Nothing hackable under the crosshair: commands at the spot you're aiming at.
+      Q.target = r.best || (this.ops ? { kind: 'cmd', id: 0, name: 'COMMANDS', at: this._aimPoint() } : null);
+      if (Q.target && Q.target.kind === 'cmd') { const a = Q.target.at, P = this.player.pos; Q.target.d = a ? Math.hypot(a.x - P.x, a.z - P.z) : 0; }
+      if (!Q.target || (Q.target.kind + Q.target.id) !== prev) Q.opt = 0;
     }
-    const opts = Q.target ? OPTS[Q.target.kind] : null;
+    const opts = Q.target ? (Q.target.kind === 'cmd' ? CMDS : OPTS[Q.target.kind]) : null;
     if (opts) {
-      if (I.pressed('Digit1')) Q.opt = 0;
-      if (I.pressed('Digit2') && opts.length > 1) Q.opt = 1;
+      for (let i = 0; i < Math.min(opts.length, 6); i++) if (I.pressed('Digit' + (i + 1))) Q.opt = i;
       if (this._qhWheel) { Q.opt = (Q.opt + (this._qhWheel > 0 ? 1 : opts.length - 1)) % opts.length; this._qhWheel = 0; }
       const go = fired || this._qhClick || I.pressed('KeyE') || I.pressed('cell-use');
       this._qhClick = false;
       if (go) {
         const o = opts[Q.opt];
-        if (this.ops && this.ops.bw < o.bw) { this.hud.flash('NOT ENOUGH BANDWIDTH', 'red'); return; }
+        const cost = o.p ? (PAYLOAD[o.p] || {}).bw || 0 : o.bw;
+        if (this.ops && this.ops.bw < cost) { this.hud.flash('NOT ENOUGH BANDWIDTH', 'red'); return; }
         Q.exec = { t: 0, tg: Q.target, opt: o };
         Q.press = 1;
         this.audio.click();
@@ -156,6 +210,13 @@ export const Phone = {
   },
 
   _qhRun(tg, o) {
+    if (tg.kind === 'cmd') {
+      // A console command at the aimed spot (costs and cooldowns handled by the console).
+      const why = this._runRequest(o.k, tg.at || this._aimPoint());
+      this.hud.flash(why ? `${o.name}: ${why}` : o.name, why ? 'red' : 'cyan', 0.9);
+      if (!why) this.sfx.ui(true);
+      return;
+    }
     if (this.ops) this.ops.bw = Math.max(0, this.ops.bw - o.bw);
     this.sfx.ui(true);
     if (o.k === 'jam') this.payload('jam', { x: tg.x, z: tg.z });
@@ -197,41 +258,56 @@ export const Phone = {
       if (!sel) { c.fillStyle = c.strokeStyle; c.fillText(e.name, p.x, p.y - r - 4); }
     }
     const tg = Q.target;
+    Q.rects = [];
     if (tg) {
-      const p = proj(tg.x, tg.y, tg.z);
-      if (!p.behind) {
-        const opts = OPTS[tg.kind];
-        const x = Math.min(W - 230, p.x + 26), y = Math.max(110, p.y - 30);
-        c.textAlign = 'left';
-        c.fillStyle = 'rgba(2,12,14,0.86)';
-        c.fillRect(x, y, 210, 34 + opts.length * 22);
-        c.strokeStyle = 'rgba(48,255,208,0.9)';
-        c.lineWidth = 1;
-        c.strokeRect(x, y, 210, 34 + opts.length * 22);
-        c.fillStyle = '#e8fffb';
-        c.font = '700 12px JetBrains Mono, monospace';
-        c.fillText(`${tg.name} · ${Math.round(tg.d)} m`, x + 10, y + 18);
-        opts.forEach((o, i) => {
-          const yy = y + 30 + i * 22;
-          const on = i === Q.opt;
-          if (on) { c.fillStyle = 'rgba(48,255,208,0.25)'; c.fillRect(x + 4, yy, 202, 19); }
-          c.fillStyle = on ? '#30ffd0' : 'rgba(200,240,235,0.75)';
-          c.font = `${on ? 700 : 600} 11px JetBrains Mono, monospace`;
-          c.fillText(`${i + 1}  ${o.name}`, x + 10, yy + 14);
-          c.textAlign = 'right';
-          c.fillText(`${o.bw} BW`, x + 200, yy + 14);
-          c.textAlign = 'left';
-        });
-        if (Q.exec) {
-          c.fillStyle = '#30ffd0';
-          c.fillRect(x, y + 34 + opts.length * 22 + 4, 210 * Math.min(1, Q.exec.t / EXEC), 4);
+      const cmd = tg.kind === 'cmd';
+      let ax = W / 2 + 40, ay = H / 2 - 40;
+      if (cmd) {
+        // Where the command lands: a ring on the ground under the crosshair.
+        if (tg.at) {
+          const g = proj(tg.at.x, this.fac.groundAt(tg.at.x, tg.at.z, 60, 0.5) + 0.2, tg.at.z);
+          if (!g.behind) { c.strokeStyle = 'rgba(48,255,208,0.8)'; c.lineWidth = 1.5; c.beginPath(); c.ellipse(g.x, g.y, 18, 7, 0, 0, Math.PI * 2); c.stroke(); }
         }
+      } else {
+        const p = proj(tg.x, tg.y, tg.z);
+        if (p.behind) { c.restore(); return; }
+        ax = p.x + 26; ay = p.y - 30;
+      }
+      const opts = cmd ? CMDS : OPTS[tg.kind];
+      const rowH = 26, w = 230, h = 34 + opts.length * rowH;
+      const x = Math.min(W - w - 16, ax), y = Math.min(H - h - 150, Math.max(110, ay));
+      c.textAlign = 'left';
+      c.fillStyle = 'rgba(2,12,14,0.86)';
+      c.fillRect(x, y, w, h);
+      c.strokeStyle = 'rgba(48,255,208,0.9)';
+      c.lineWidth = 1;
+      c.strokeRect(x, y, w, h);
+      c.fillStyle = '#e8fffb';
+      c.font = '700 12px JetBrains Mono, monospace';
+      c.fillText(cmd ? `COMMANDS \u00B7 ${Math.round(tg.d || 0)} m` : `${tg.name} \u00B7 ${Math.round(tg.d)} m`, x + 10, y + 18);
+      opts.forEach((o, i) => {
+        const yy = y + 28 + i * rowH;
+        const on = i === Q.opt;
+        const cost = o.p ? (PAYLOAD[o.p] || {}).bw || 0 : o.bw;
+        const cd = o.p && this.ops ? this.ops.cd[o.p] || 0 : 0;
+        if (on) { c.fillStyle = 'rgba(48,255,208,0.25)'; c.fillRect(x + 4, yy, w - 8, rowH - 4); }
+        c.fillStyle = cd > 0 ? 'rgba(200,240,235,0.35)' : on ? '#30ffd0' : 'rgba(200,240,235,0.8)';
+        c.font = `${on ? 700 : 600} 12px JetBrains Mono, monospace`;
+        c.fillText(`${i + 1}  ${o.name}`, x + 10, yy + 16);
+        c.textAlign = 'right';
+        c.fillText(cd > 0 ? `${Math.ceil(cd)}s` : cost ? `${cost} BW` : '', x + w - 10, yy + 16);
+        c.textAlign = 'left';
+        Q.rects.push({ i, x: x + 4, y: yy, w: w - 8, h: rowH - 4 });
+      });
+      if (Q.exec) {
+        c.fillStyle = '#30ffd0';
+        c.fillRect(x, y + h + 4, w * Math.min(1, Q.exec.t / EXEC), 4);
       }
     }
     c.textAlign = 'center';
     c.font = '600 12px JetBrains Mono, monospace';
     c.fillStyle = 'rgba(200,240,235,0.85)';
-    c.fillText(tg ? 'CLICK / E — EXECUTE  ·  WHEEL / 1-2 — CHOOSE HACK  ·  RELEASE TAB — PUT AWAY' : 'LOOK AT SOMETHING TO HACK  ·  RELEASE TAB — PUT AWAY', W / 2, H - 140);
+    c.fillText(this.input.touch ? 'TAP AN OPTION  \u00B7  HACK \u2014 PUT AWAY' : 'CLICK / E \u2014 RUN  \u00B7  WHEEL / NUMBER \u2014 CHOOSE  \u00B7  RELEASE TAB \u2014 PUT AWAY', W / 2, H - 140);
     c.restore();
   },
 };

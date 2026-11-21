@@ -148,11 +148,13 @@ export const Kit2 = {
 
   // ---- radio voices ------------------------------------------------------------------
   // who: 'shooter' | 'spotter' | 'isr' (or 'partner' / 'me'). Plays locally.
-  _voice(who, text) {
+  _voice(who, text, keep = false, low = false) {
     if (!this.radio) return;
     if (who === 'me') who = this.role;
     if (who === 'partner') who = this.partnerRole;
-    this.radio.say(who, text);
+    // Subtitles carry the operators' callsigns.
+    this.radio.names = { [this.role]: this.name, [this.partnerRole]: this.partnerName, isr: 'OVERWATCH' };
+    this.radio.say(who, text, false, keep, low);
   },
 
   // ---- SYNC shots -----------------------------------------------------------------------
@@ -183,13 +185,14 @@ export const Kit2 = {
       if (K.t <= 0) {
         this._syncKill = null;
         const g = S.byId(K.id);
-        if (g && g.state === 'dead') this._radio('me', ['X-ray down.', 'Tango down.', 'Target down.', 'He\'s down.'][Math.floor(Math.random() * 4)]);
+        if (g && g.state === 'dead') this._radio('me', ['X-ray down.', 'Tango down.', 'Target down.', 'He\'s down.'][Math.floor(Math.random() * 4)], 'soft');
       }
     }
     if (!marks) { this.syncAim = 0; this.syncPartner = 0; this._syncT = 0; this._syncSaid = false; return; }
     const o = P.eyePos(new THREE.Vector3());
     const live = !this.downed && !this.kia && !this.isr.active && !(this.quad && this.quad.active) && !this.tablet.visible;
-    this.syncAim = live && P.scopeT > 0.4 ? this._syncAimFrom(o, P.aimDir(new THREE.Vector3()), this.camera.fov, 0) : 0;
+    // Your crosshair on a head counts, aimed down sights or not.
+    this.syncAim = live ? this._syncAimFrom(o, P.aimDir(new THREE.Vector3()), this.camera.fov, 0) : 0;
     if (this.aiShoot) {
       // Ra: a sync target in view from the perch (not the one you're on).
       const perch = this.partner.pos;
@@ -204,7 +207,7 @@ export const Kit2 = {
     } else this.syncPartner = this.partner.sy || 0;
     // Hold together for a beat, then everyone fires.
     if (this.syncReady && this._syncCd <= 0) {
-      if (!this._syncSaid) { this._syncSaid = true; this._radio('me', this.role === 'shooter' ? 'On target.' : 'On mine. Sync ready.'); }
+      if (!this._syncSaid) { this._syncSaid = true; this._radio('me', this.role === 'shooter' ? 'On target.' : 'Sync ready.'); }
       this._syncT = (this._syncT || 0) + dt;
       if (this._syncT >= 0.7) { this._syncT = 0; this._syncCd = 1.5; this._autoFire = true; this._syncKill = { id: this.syncAim, t: 0.45 }; }
     } else { this._syncT = 0; if (!this.syncReady) this._syncSaid = false; }
@@ -235,9 +238,11 @@ export const Kit2 = {
     this.hud.flash('SYNC TARGET MARKED', 'cyan');
   },
   // A radio line heard by both operators.
-  _radio(who, text) {
+  // low: optional chatter (callouts), skipped when the net is busy.
+  _radio(who, text, low = false) {
     if (who === 'me') who = this.role;
-    this._voice(who, text);
+    if (low === 'soft' ? !this.radio.idle() : low && !this.radio.free()) return;
+    this._voice(who, text, false, low === true);
     this.comms(text, who === 'shooter' ? '#ffb040' : '#40d0ff', who === this.role ? this.name : this.partnerName);
     this._broadcast({ k: 'radio', who, text });
   },
@@ -265,14 +270,17 @@ export const Kit2 = {
         c.fillRect(p.x - 26, p.y - 13, 52 * k, 3);
         c.strokeStyle = 'rgba(255,40,60,0.95)';
         c.lineWidth = 2;
-        c.strokeRect(p.x - 8, p.y - 8 + 20, 16, 16);
+        c.beginPath(); c.arc(p.x, p.y + 12, 10, 0, Math.PI * 2); c.stroke();
       } else {
-        c.strokeStyle = 'rgba(80,255,200,0.9)';
-        c.lineWidth = 1.5;
-        c.strokeRect(p.x - 9, p.y - 9, 18, 18);
+        // Sync target: a pulsing circle over the head.
+        const r = 11 + Math.sin(this.t * 5) * 1.5;
+        c.strokeStyle = 'rgba(80,255,200,0.95)';
+        c.lineWidth = 2;
+        c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.stroke();
+        c.beginPath(); c.arc(p.x, p.y, 2, 0, Math.PI * 2); c.fillStyle = 'rgba(80,255,200,0.95)'; c.fill();
         c.fillStyle = 'rgba(80,255,200,0.9)';
         c.font = '600 10px JetBrains Mono, monospace';
-        c.fillText(g.id === this.syncAim ? 'SYNC \u00B7 YOU' : g.id === this.syncPartner ? 'SYNC \u00B7 ALLY' : 'SYNC', p.x, p.y - 13);
+        c.fillText(g.id === this.syncAim ? 'SYNC \u00B7 YOU' : g.id === this.syncPartner ? 'SYNC \u00B7 ALLY' : 'SYNC', p.x, p.y - 17);
       }
     }
     c.lineWidth = 1;
@@ -303,19 +311,21 @@ export const Kit2 = {
     if (!fresh.length) return;
     for (const f of fresh) this._called.add(f.g.id);
     if (this._ctCd > 0) return;
-    this._ctCd = 14;
+    if (Math.random() < 0.5) return;
+    this._ctCd = 40;
     fresh.sort((a, b) => a.d - b.d);
     const f = fresh[0];
     const ang = Math.atan2(f.g.x - P.pos.x, -(f.g.z - P.pos.z));
     const dirs = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
     const comp = dirs[((Math.round(ang / (Math.PI / 4)) % 8) + 8) % 8];
-    const m = Math.round(f.d / 10) * 10;
-    const what = { scav: 'officer', jugg: 'juggernaut', bulwark: 'bulwark', titan: 'titan', overseer: 'the Overseer', guard: 'tango' }[f.g.type] || 'tango';
+    // Range in bands (close / mid / long), so every callout has a recorded radio line.
+    const band = f.d < 30 ? 'close' : f.d < 80 ? 'mid range' : 'long range';
+    const what = { scav: 'an officer', jugg: 'a juggernaut', bulwark: 'a bulwark', titan: 'a titan', overseer: 'the Overseer', guard: 'a tango' }[f.g.type] || 'a tango';
     const n = fresh.length;
     const lines = n > 1
-      ? [`Contact. ${n} tangos, ${comp}, ${m} meters.`, `Multiple contacts, ${comp}, ${m} out.`]
-      : [`Contact, ${comp}, ${m} meters.`, `Got a ${what}, ${comp}, ${m} meters.`, `Eyes on a ${what}, ${comp}.`, 'Contact.'];
-    this._radio('me', lines[Math.floor(Math.random() * lines.length)]);
+      ? [`Multiple contacts, ${comp}, ${band}.`]
+      : [`Contact, ${comp}, ${band}.`, `Eyes on ${what}, ${comp}.`, 'Contact.'];
+    this._radio('me', lines[Math.floor(Math.random() * lines.length)], true);
   },
 };
 

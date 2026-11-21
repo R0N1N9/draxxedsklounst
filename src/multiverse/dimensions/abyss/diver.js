@@ -31,18 +31,22 @@ void main() {
   float spec = 0.15;
   if (vC.r < -2.5) { alb = vec3(0.9); emit = mix(uTeam, vec3(1.0), 0.6) * 3.0; }
   else if (vC.r < -1.5) { alb = vec3(0.02, 0.03, 0.04); spec = 1.6; }
-  else if (vC.r < -0.5) { alb = uTeam; emit = uTeam * 0.22 * uGlow; spec = 0.4; }
+  else if (vC.r < -0.5) { alb = uTeam; emit = uTeam * 0.4 * uGlow; spec = 0.4; }
+  else alb = mix(alb, uTeam * 0.5, 0.18); // the suit itself carries a little of the colour
   vec3 col = litWater(alb, vW, n, 1.0, 0.4, 0.7);
   vec3 h = normalize(uL + v);
   col += sunAt(vW.y) * pow(max(dot(n, h), 0.0), 40.0) * spec * sunShadow(vW, 0.002);
   // a rim of the diver's own colour: the shape reads against dark water
   float fr = pow(1.0 - max(dot(n, v), 0.0), 2.5);
-  col += uTeam * fr * 0.12 * uGlow;
+  col += uTeam * fr * 0.32 * uGlow;
   if (vC.r < -1.5 && vC.r > -2.5) col += waterBg(reflect(-v, n), vW.y) * 1.2 * (0.3 + fr);
   col = waterFog(col, vW, 0.9);
-  col += emit * exp(-d * 0.02);
+  col += emit * exp(-d * 0.013);
+  // at range the shape keeps a thin edge of its own colour through the murk: you can make out
+  // a diver, and whose, at 50 m (an outline, not a flare)
+  col += uTeam * fr * 0.3 * uGlow * smoothstep(10.0, 30.0, d) * exp(-d * 0.012);
   // sonar: the whole diver outlined in their colour, through the murk
-  col += uTeam * (0.25 + fr * 2.2) * uGhost;
+  col += uTeam * (0.06 + fr * 1.1) * uGhost;
   gl_FragColor = vec4(col * uFade, d);
 }`;
 // Drawn over everything (no depth test) while a diver is pinged: their silhouette through rock.
@@ -56,9 +60,9 @@ uniform float uGhost;
 ${WATER_GLSL}
 void main() {
   vec3 n = normalize(vN), v = normalize(uCam - vW);
-  float fr = pow(1.0 - abs(dot(n, v)), 1.6);
+  float fr = pow(1.0 - abs(dot(n, v)), 2.2);
   float scan = 0.7 + 0.3 * sin(vW.y * 14.0 - uTime * 9.0);
-  gl_FragColor = vec4(uTeam * (0.15 + fr * 1.2) * scan * uGhost, 0.6 * uGhost);
+  gl_FragColor = vec4(uTeam * (0.03 + fr * 0.75) * scan * uGhost, 0.6 * uGhost);
 }`;
 
 function colored(THREE, g, r, gg, b) {

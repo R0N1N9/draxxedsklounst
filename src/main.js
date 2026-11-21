@@ -51,7 +51,9 @@ function detectQuality() {
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
     const r = (ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) + '';
     const ua = navigator.userAgent;
-    if (/Apple M\d|Apple GPU|Apple/i.test(r) || /iPad|iPhone|Macintosh/.test(ua)) return 'high';
+    // iPads report themselves as Macs: tell them apart by touch, and give them the medium preset.
+    if ((/iPad|iPhone/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1))) return 'medium';
+    if (/Apple M\d|Apple GPU|Apple/i.test(r) || /Macintosh/.test(ua)) return 'high';
     if (/HD Graphics (2|3|4|5)\d{3}|HD Graphics$|Mesa Intel\(R\) HD|Ivybridge|Sandybridge|Haswell|llvmpipe|SwiftShader/i.test(r)) return 'low';
     if (/Mali|Adreno|PowerVR|Immortalis|Xclipse/i.test(r) || /Android/.test(ua)) return 'medium';
     if (/NVIDIA|GeForce|Radeon|RTX|Iris Xe|Arc/i.test(r)) return 'high';
@@ -68,7 +70,9 @@ const settings = {
   sensitivity: store.get('sens', 1),
   invertY: store.get('invert', false),
   scopeToggle: store.get('toggle', 'ontouchstart' in window),
-  loadout: store.get('loadout', null),
+  // The Pollo Hermano skin is never remembered between visits: every fresh load starts on the
+  // standard poncho, the classic title and the default operator.
+  loadout: (() => { const lo = store.get('loadout', null); if (lo && lo.skin === 'pollo') { lo.skin = 'std'; store.set('loadout', lo); } return lo; })(),
   touchSensR: store.get('touchSensR', 1),
   touchSensL: store.get('touchSensL', 1),
   gyroMode: store.get('gyroMode', 'ontouchstart' in window ? 'scoped' : 'off'),
@@ -121,9 +125,9 @@ function primeGyro() {
   const DM = window.DeviceMotionEvent;
   if (settings.gyroMode !== 'off' && DM && typeof DM.requestPermission === 'function') DM.requestPermission().catch(() => {});
 }
-settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo); updateTitle(); };
+settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo && lo.skin === 'pollo' ? { ...lo, skin: 'std' } : lo); updateTitle(); };
 
-// Easter egg: with the Pollo Hermano skin selected, the main menu becomes The Reckoning.
+// Easter egg: with the Pollo Hermano skin selected, the main menu takes the game's old name, Draxxed Sklounst.
 // (Main menu only, and only for your own Pollo Hermano skin.)
 function polloOn() {
   const lo = settings.loadout || {};
@@ -322,6 +326,9 @@ async function startMultiverse(mode, opts = {}) {
     first: opts.first,
     only: opts.only,
     off: store.get('mvOff', null),
+    // The first match this device hosts shows off the surf-into-underwater pair (see the owner's menu).
+    opener: mode === 'host' && store.get('mvOpener', true),
+    onOpener: () => store.set('mvOpener', false),
     dev: { ...DEV, ...(opts.dev || {}) },
     valley: { build: (o) => buildValley(o.mode, { ...o, pal: opts.pal, code: opts.code }) },
     hello: () => ({ rules: { ...RULES } }),
@@ -439,7 +446,16 @@ syncMode();
 // also lists what is still being built.
 const openLab = async () => {
   showPanel('panel-lab');
-  const { DIMENSIONS, TRANSITIONS, loadDimension, loadTransition } = await import('./multiverse/registry.js');
+  const { DIMENSIONS, TRANSITIONS, loadDimension, loadTransition, openerDimension } = await import('./multiverse/registry.js');
+  // Whether the next hosted match opens with the showpiece pair: spent by the first match
+  // that plays it, and re-armed here (shown only once both worlds are playable).
+  const showpiece = openerDimension();
+  $('lab-opener').style.display = showpiece ? '' : 'none';
+  if (showpiece) {
+    const box = $('lab-opener').querySelector('input');
+    box.checked = store.get('mvOpener', true);
+    box.onchange = () => store.set('mvOpener', box.checked);
+  }
   const all = params.has('lab');
   const listed = (list) => list.filter((x) => !x.dev && (all || !x.wip));
   const off = { dims: [], fx: [], ...(store.get('mvOff', null) || {}) };
@@ -655,6 +671,14 @@ document.querySelectorAll('#cell-mission button').forEach((b) => (b.onclick = ()
 document.querySelectorAll('#cell-look button').forEach((b) => (b.onclick = () => { saveRules({ ...settings.rules, look: b.dataset.look }); syncCell(); }));
 $('in-cell-name').oninput = (e) => { cellSet.names[cellSet.role] = e.target.value; store.set('cellNames', cellSet.names); };
 $('btn-cell-stage').onclick = () => { renderStaging(); showPanel('panel-staging'); };
+// Radio voices on / off (off: the radio lines still show as subtitles).
+{
+  const key = 'draxxed.cellVoice';
+  const get = () => { try { return localStorage.getItem(key) !== 'off'; } catch { return true; } };
+  const label = () => { $('btn-cell-voice').innerHTML = `Radio voices: <em class="cur">${get() ? 'ON' : 'OFF \u00B7 text only'}</em>`; };
+  label();
+  $('btn-cell-voice').onclick = () => { try { localStorage.setItem(key, get() ? 'off' : 'on'); } catch {} label(); };
+}
 $('btn-stage-done').onclick = () => showPanel('panel-cell');
 $('btn-cell').onclick = () => { $('panel-cell').classList.remove('hosting'); syncCell(); showPanel('panel-cell'); };
 syncCell();
@@ -719,6 +743,12 @@ $('btn-cell-share').onclick = async () => {
   (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? text : link) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied to clipboard!'), () => prompt('Copy this link:', link));
 };
 $('btn-cell-copy').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? hostCode : inviteLink()) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied!'), () => prompt('Copy:', FILE_MODE ? hostCode : inviteLink()));
+// Direct link: …/#nightwatch (or ?nightwatch) opens Sniper Cell with NightWatch selected;
+// #infiltration does the same for the other mission.
+{
+  const want = ['nightwatch', 'infiltration'].find((m) => location.hash === '#' + m || params.has(m));
+  if (want && !params.get('join') && !params.get('cell')) { cellSet.mission = want; store.set('cellMission', want); $('btn-cell').onclick(); }
+}
 if (params.get('cell')) { audio.unlock(); startCell(params.get('cell') === 'lone' ? 'operative' : 'solo', { cell: { role: params.get('role') === 'spotter' ? 'spotter' : 'shooter', diff: params.get('diff') || 'operative', mission: params.get('mission') || 'nightwatch', seed: 7 } }); }
 
 if (params.get('join')) {

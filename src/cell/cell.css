@@ -2,7 +2,10 @@
 :root { --cell: #00ffe0; --cell-dim: rgba(0, 255, 224, 0.45); --ra: #f2b35b; --ronin: #40d8e8; --alarm: #ff2a6d; }
 
 /* Menu */
-.cell-btn { border-color: rgba(0, 255, 224, 0.55) !important; color: var(--cell) !important; background: linear-gradient(90deg, rgba(0, 255, 224, 0.14), rgba(0, 255, 224, 0.02)) !important; letter-spacing: 0.08em; }
+/* The NIGHTWATCH button: filled cyan like the amber Duel box, WATCH in red. */
+.cell-btn { border-color: #20e8f0 !important; color: #06181c !important; background: #20e8f0 !important; letter-spacing: 0.18em; }
+.cell-btn:hover { filter: brightness(1.08); }
+.menu-card .cell-btn::after { color: #06181c; opacity: 0.7; }
 .cell-btn em { font-style: normal; color: var(--ink-dim); font-size: 0.8em; margin-left: 6px; }
 /* Main-menu button: the mode's name, with a small caption underneath. */
 #btn-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
@@ -241,7 +244,7 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 #cell-cine .cc-title b .t-w, #cell-hud .c-intro h1 .t-w { color: #fff; text-shadow: 0 0 18px rgba(255, 255, 255, 0.35); }
 #cell-cine .cc-title b .t-r, #cell-hud .c-intro h1 .t-r { color: #ff3048; text-shadow: 0 0 22px rgba(255, 48, 72, 0.55); }
 #cell-cine .cc-title b .t-c, #cell-hud .c-intro h1 .t-c { color: #00ffe0; text-shadow: 0 0 22px rgba(0, 255, 224, 0.45); }
-.cell-btn .t-w { color: #fff; } .cell-btn .t-r { color: #ff3048; }
+.cell-btn .t-r { color: #d70f22; }
 
 /* ---- detection, sync, PiP squares ---- */
 #cell-hud .c-hunt { position: absolute; left: 50%; top: 66px; transform: translateX(-50%); font-family: var(--mono); font-size: 12px; letter-spacing: 0.16em; padding: 3px 10px; display: none; }
@@ -252,7 +255,10 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 #cell-hud .c-sync i.on { background: #ffb020; box-shadow: 0 0 8px #ffb020; }
 #cell-hud .c-sync.go i { background: #30ff90; box-shadow: 0 0 12px #30ff90; }
 #cell-hud .c-sync.go b { color: #30ff90; animation: cellblink 0.3s infinite alternate; }
-#cell-hud .c-pip { position: absolute; right: 18px; top: 84px; display: flex; flex-direction: column; gap: 6px; pointer-events: auto; }
+/* Top right: CYBER OPS and ISR side by side at the very top, the partner chip under them,
+   then the radio subtitles. */
+#cell-hud .c-pip { position: absolute; right: 18px; top: 14px; display: flex; flex-direction: row; gap: 6px; pointer-events: auto; }
+#cell-hud.has-pip .c-partner { top: 140px; }
 #cell-hud .c-sq { width: 168px; cursor: pointer; border: 1px solid rgba(0, 255, 224, 0.45); background: rgba(0, 10, 14, 0.7); }
 #cell-hud .c-sq span { display: block; font-family: var(--mono); font-size: 9px; letter-spacing: 0.12em; color: var(--cell); padding: 2px 5px; }
 #cell-hud .c-sq span em { font-style: normal; opacity: 0.6; float: right; }
@@ -314,3 +320,27 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 
 /* Quickhack scan mode */
 #cell-hud.qh .c-obj, #cell-hud.qh .c-ammo, #cell-hud.qh .c-keys, #cell-hud.qh .c-kit, #cell-hud.qh .c-pip, #cell-hud.qh .c-vis { opacity: 0.25; transition: opacity 0.2s; }
+
+/* Radio subtitles */
+/* Radio subtitles: one terminal entry at a time, typed out, then cleared. */
+#cell-subs { position: fixed; right: 18px; top: 52px; z-index: 30; width: min(420px, calc(100vw - 32px)); padding: 5px 10px; background: rgba(2, 8, 10, 0.62); border-left: 2px solid var(--c, #8dff9e); color: #dff7ee; font: 500 13px/1.45 var(--mono, ui-monospace, monospace); text-align: left; text-shadow: 0 0 6px rgba(0, 0, 0, 0.9); opacity: 0; transition: opacity 0.35s; pointer-events: none; }
+#cell-subs.on { opacity: 1; }
+#cell-subs b { letter-spacing: 0.08em; margin-right: 8px; font-weight: 700; }
+#cell-subs .cur { display: inline-block; width: 7px; height: 12px; margin-left: 2px; vertical-align: -1px; background: var(--c, #8dff9e); animation: subs-blink 0.8s steps(1) infinite; }
+@keyframes subs-blink { 50% { opacity: 0; } }
+body.cell-pip #cell-subs { top: 178px; }
+@media (pointer: coarse) { #cell-subs { font-size: 12px; } }
+
+/* Touch (iPad / phone): the action buttons sit in a compact strip along the bottom centre,
+   like the desktop key hints, between the move stick and the fire cluster. The ability chips
+   are hidden (the strip has the same actions), so nothing covers SCOPE / FIRE. */
+#touch .cell-tbar { top: auto !important; bottom: calc(env(safe-area-inset-bottom, 0px) + 8px); left: 50%; transform: translateX(-50%); max-width: min(640px, 54vw); flex-wrap: wrap; justify-content: center; gap: 5px; }
+#touch .cell-tbar .pill { min-width: 0; padding: 7px 9px; font-size: 11px; letter-spacing: 0.12em; background: rgba(2, 10, 14, 0.62); border-color: rgba(0, 255, 224, 0.35); }
+#touch .cell-tbar #cell-tpause { border-color: rgba(232, 230, 240, 0.5); color: #e8e6f0; }
+@media (pointer: coarse) {
+  #cell-hud .c-kit, #cell-hud .c-keys { display: none !important; }
+}
+
+/* Pause menu and debrief open: the HUD goes above the touch layer (z-index 6) so its buttons
+   (Resume, Exit to main menu, Back to menu) take taps on iPad and phones. */
+body.cell-modal #cell-hud, #cell-hud:has(.c-pause.on), #cell-hud:has(.c-debrief.on) { z-index: 60; }

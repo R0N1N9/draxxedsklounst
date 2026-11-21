@@ -25,9 +25,8 @@ export function makeView(ctx, THREE, renderer, X) {
   for (let i = 0; i < 14; i++) S.pops.push({ on: false, word: 'BLAM', wx: 0, wy: 0, wz: 0, t: 0, dur: 1, rot: 0, size: 1, rise: 1, x: 0, y: 0, px: 10, pin: false });
   let wt = 0, boom = BOOM, trauma = 0, kickV = 0, kickA = 0, introT = -1, kc = null, scopeAmt = 0, pointScale = 600, aimOk = false, flashA = 0, speedA = 0, suddenA = 0, popN = 0;
   let frames = 0, fresh = false, held = false, shadowDirty = true, glintT = 0, drawAfter = 0, since = 0;
-  let cost = 0;
   const lt = { ok: false, x: 0, z: 0, roof: 0 };
-  const api = { camera, shot: null, force: 0, lt, S, get frames() { return frames; }, get cost() { return cost; } };
+  const api = { camera, lt, S };
 
   const dirOf = (yaw, pitch, out) => out.set(-Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch));
   // The sniper's place on the page: left of centre, and on a phone clear of the left thumb's cluster.
@@ -156,7 +155,7 @@ export function makeView(ctx, THREE, renderer, X) {
       for (const p of S.pops) if (p.on && (p.t += rdt) >= p.dur) p.on = false;
       // ...but with no GPU the page is redrawn only now and then (see render), and between
       // draws the lens and the 2D layer hold still with it, so what is on screen stays one picture.
-      if (!fresh) held = !Q.rich && frames > 3 && !api.force && (performance.now() < drawAfter || since < 3); // (the staged first pages go straight out)
+      if (!fresh) held = !Q.rich && frames > 3 && (performance.now() < drawAfter || since < 3); // (the staged first pages go straight out)
       fresh = true;
       if (held) return;
       rig(me, dt, play);
@@ -180,7 +179,7 @@ export function makeView(ctx, THREE, renderer, X) {
         camera.position.set(kc.x, kc.y + kc.t * 0.12, kc.z);
         camera.up.set(Math.sin(kc.roll), Math.cos(kc.roll), 0);
         camera.lookAt(look);
-        camera.fov = lerp(46, 58, smoothstep(1, 2.4, kc.t));
+        camera.fov = lerp(46, 58, smoothstep(1, 2.2, kc.t));
         scopeAmt = 0;
       } else {
         camera.position.copy(play.pos);
@@ -193,7 +192,6 @@ export function makeView(ctx, THREE, renderer, X) {
         camera.rotation.y += noise2(5.7, wt * 29) * k * 0.04;
         camera.rotation.z += noise2(wt * 27, 9.9) * k * 0.06;
       }
-      if (api.shot) { const o = api.shot; camera.up.set(0, 1, 0); camera.position.set(o.x, o.y, o.z); camera.lookAt(o.tx, o.ty, o.tz); camera.fov = o.fov || FOV; scopeAmt = 0; }
       camera.updateProjectionMatrix();
       camera.updateMatrixWorld();
       camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
@@ -236,7 +234,7 @@ export function makeView(ctx, THREE, renderer, X) {
         project(L.x1, L.y1 + 0.05, L.z1, pm);
         const d = Math.hypot(L.x1 - cp.x, L.y1 - cp.y, L.z1 - cp.z) || 1;
         lp.x = pm.x; lp.y = pm.y; lp.ry = clamp((pointScale * 1.2) / d, 7, 90) * clamp((cp.y - L.y1) / d + 0.12, 0.16, 0.9);
-        lp.seen = pm.on && W.los(cp.x, cp.y, cp.z, L.x1, L.y1 + 1, L.z1, T, true); // (a ray grazing your own roof's edge does not hide it)
+        lp.seen = pm.on && W.los(cp.x, cp.y, cp.z, L.x1, L.y1 + 0.35, L.z1, T, true);
         lp.ready = me.leapCd <= 0;
         lp.tag = G.taught.leap ? '' : ctx.input.device === 'touch' ? 'TAP LEAP' : ctx.input.device === 'gamepad' ? 'LB: LEAP' : 'SHIFT: LEAP';
         if (lp.a > 0.05) ring(L.x1, L.y1, L.z1, d, lp.ready, lp.a);
@@ -282,9 +280,9 @@ export function makeView(ctx, THREE, renderer, X) {
         project(kc.v.x, kc.v.y + 1.1, kc.v.z, pm);
         if (kc.t < 0.05) { spl.x = pm.x; spl.y = pm.y; }
         // the burst holds while the page is read, then the city comes back behind the tumble
-        const k = kc.t < 1.5 ? 1 : Math.max(0, 1 - (kc.t - 1.5) / 0.6);
+        const k = kc.t < 1.35 ? 1 : Math.max(0, 1 - (kc.t - 1.35) / 0.45);
         u.uSplash.value.set(spl.x / ctx.width, 1 - spl.y / ctx.height, k, kc.depth);
-        spl.a = kc.t < 2.45 ? 1 : Math.max(0, 1 - (kc.t - 2.45) / 0.45);
+        spl.a = kc.t < 2.05 ? 1 : Math.max(0, 1 - (kc.t - 2.05) / 0.4);
       } else { u.uSplash.value.z = 0; spl.a = 0; }
 
       // ---- 2D layer state ----
@@ -341,7 +339,6 @@ export function makeView(ctx, THREE, renderer, X) {
       const inBand = fresh;
       fresh = false;
       const draw = Q.rich || !inBand || !held;
-      if (api.force > 0) api.force--;
       since = draw ? 0 : since + 1;
       drawOverlay(ctx.g, S, letters);
       if (!draw) return;
@@ -352,7 +349,7 @@ export function makeView(ctx, THREE, renderer, X) {
       const t0 = performance.now();
       post.render(scene, camera, !Q.rich);
       if (!Q.rich) {
-        cost = performance.now() - t0;
+        const cost = performance.now() - t0;
         drawAfter = performance.now() + clamp(cost * 7, 600, 6000);
       }
     },

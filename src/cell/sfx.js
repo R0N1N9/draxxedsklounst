@@ -1,6 +1,6 @@
 // Sniper Cell — synthesized sounds for this mode (no asset files, like the rest of the game):
 // enemy barks, plasma fire, energy shields, the juggernaut's blade, the bulwark's beam rifle,
-// the night ambience and the extraction van.
+// and the extraction van.
 export class Sfx {
   constructor(audio) {
     this.a = audio;
@@ -87,32 +87,5 @@ export class Sfx {
     this._tone(out, t, 'sine', 180, 1400, 5, 0.12);
     this._tone(out, t, 'triangle', 90, 700, 5, 0.06);
   }
-  // Night ambience: crickets and a far-off hum from the facility.
-  ambience() {
-    if (!this.ok || this._amb) return;
-    this._amb = true;
-    const c = this.a.ctx;
-    const g = c.createGain();
-    g.gain.value = 0.018;
-    g.connect(this.a.master);
-    const chirp = () => {
-      if (!this.a.ctx) return;
-      const t = this.a.now;
-      const n = 2 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < n; i++) this._tone(g, t + i * 0.055, 'sine', 4300 + Math.random() * 300, 4200, 0.035, 0.9);
-      setTimeout(chirp, 300 + Math.random() * 900);
-    };
-    chirp();
-    const hum = c.createOscillator();
-    hum.type = 'sawtooth';
-    hum.frequency.value = 60;
-    const f = c.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.value = 160;
-    const hg = c.createGain();
-    hg.gain.value = 0.012;
-    hum.connect(f).connect(hg).connect(this.a.master);
-    hum.start();
-    if (this.a.setWind) this.a.setWind(2.5);
-  }
+  // (The night ambience lives in ambient.js now: no constant hum.)
 }

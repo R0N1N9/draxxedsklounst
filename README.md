@@ -4,7 +4,9 @@
 
 <p align="center"><em>One valley. Two rifles. Eight hundred metres.</em></p>
 
-A 1v1 long-range sniper duel, plus **NightWatch**, a co-op night stealth mode, that runs in the browser on desktop, phones and tablets. (Formerly *Draxxed Sklounst*; the old name still turns up as an easter egg.) No install, no server: one player hosts, the other opens the invite link, and the two connect peer-to-peer over WebRTC.
+A 1v1 long-range sniper duel that runs in the browser on desktop, phones and tablets. (Formerly *Draxxed Sklounst*; the old name still turns up as an easter egg.) No install, no server: one player hosts, the other opens the invite link, and the two connect peer-to-peer over WebRTC.
+
+It also has **[NightWatch](#nightwatch-co-op)**, a co-op (or solo) night stealth mode: a shooter and a spotter infiltrate a guarded two-storey data center, steal intel from a hidden server and get out in a van.
 
 ![The practice range: looking out over the valley from the ridge with the Mk22 MRAD](docs/screenshots/practice-range.png)
 
@@ -38,7 +40,7 @@ A 1v1 long-range sniper duel, plus **NightWatch**, a co-op night stealth mode, t
 - Both players start on opposite ridgelines, about 800 m apart. Spawns are random among three points per ridge, and sides swap every round.
 - You get one life per round. First to 4 rounds wins.
 - **Predator UAV**: a drone circles high over the valley. Every 60 s of live play it pings both players in red on each other's HUD. For 8 s afterwards you can press **U** to tune into its live thermal feed of the enemy. A UAV jammer blocks the ping and the feed.
-- **Pollo Hermano** (easter egg): pick the Thermal poncho, then the *Pollo Hermano* poncho skin. You wear a yellow chicken suit and your rifle flings yellow chickens instead of bullets: held by the beak, pulled back by the feet, slingshot style. They fly exactly like the rifle's bullets under the current sniping style and do the same damage on a direct hit. A chicken that lands gets up and runs at the enemy (5 m/s) and pecks them (4 damage every 0.6 s) until it's shot: the pistol is ideal. Fling yours at the ground near enemy chickens and they brawl. Up to 8 live chickens each; they wander off after 45 s. The AI shoots chickens near it with its pistol. With the suit selected, the main menu takes the game's old name, *Draxxed Sklounst*. Pecked to death? You don't just die: a kraken bursts out of the ground and swallows the town, then a vast AI overlord reaches down from the sky and flicks you off the map: "The AI Overlords have deemed this one unworthy." (Both players watch it instead of the killcam.) In flight a chicken glows and trails yellow like a tracer.
+- **Pollo Hermano** (easter egg): pick the Thermal poncho, then the *Pollo Hermano* poncho skin. You wear a yellow chicken suit and your rifle flings yellow chickens instead of bullets: held by the beak, pulled back by the feet, slingshot style. They fly exactly like the rifle's bullets under the current sniping style and do the same damage on a direct hit. A chicken that lands gets up and runs at the enemy (5 m/s) and pecks them (4 damage every 0.6 s) until it's shot: the pistol is ideal. Fling yours at the ground near enemy chickens and they brawl. Up to 8 live chickens each; they wander off after 45 s. The AI shoots chickens near it with its pistol. With the suit selected, the main menu takes the game's old name, *Draxxed Sklounst*. The suit isn't remembered between visits: every fresh load starts on the standard poncho and the classic title. Pecked to death? You don't just die: a kraken bursts out of the ground and swallows the town, then a vast AI overlord reaches down from the sky and flicks you off the map: "The AI Overlords have deemed this one unworthy." (Both players watch it instead of the killcam.) In flight a chicken glows and trails yellow like a tracer.
 - **Sniping style** (main menu, host's choice applies to both players). Two bars: the shooting style (bullet physics) and, underneath, the shooting distance:
   - **Halo** (the default): instant hit, no drop, wind or sway, 5×/10×/20× zoom. Plays at Close range.
   - **Call of Duty**: fast bullets, light drop, no wind, slightly bigger hitboxes. Plays at Medium range.
@@ -116,12 +118,14 @@ Click the game view with the mouse and it switches to mouse mode: the mouse aims
 
 A night stealth mode for one or two players, built around the feel of a classic night sniping level: a dark valley, a lit compound below, a suppressed rifle with a night-vision scope and a white vapour trail on every shot. Its rules are adapted from **Cold Archive**'s co-op infiltration (agent + Overwatch, SENTINEL's alarm, bandwidth-based payloads). The players use the duel's operator models in Multicam Black. The shooter wears a chest rig and a dark urban-digital poncho; the spotter wears a plate carrier and a cap.
 
-Pick **NIGHTWATCH** on the main menu, then a mission, the **staging area** loadout, and how to play.
+Pick **NIGHTWATCH** (the cyan button) on the main menu, then a mission, the **staging area** loadout, and how to play.
+
+**Play it:** [r0n1n9.github.io/snipercellnightwatch/#nightwatch](https://r0n1n9.github.io/snipercellnightwatch/#nightwatch) opens NightWatch with the Sentinel mission selected. Use `#infiltration` for the other mission.
 
 ### Missions
 
 - **Sentinel** (default): SENTINEL's augmented night garrison.
-  - **Officers:** cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
+  - **Officers:** human-sized and cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
   - **Juggernauts:** a recharging energy shell. When it breaks, they berserk with an energy blade.
   - **Bulwarks:** behind a hard-light wall. Snipe through its sight-port, or catch them when they lower it to fire. Tower bulwarks carry beam rifles and you see a red laser before they fire.
   - **Titans:** heavy armour. Body hits do half damage, and a helmet eats the first headshot; the follow-up kills.
@@ -136,20 +140,50 @@ Headshots kill anything except a helmet's first hit.
 - **Solo · lone operative:** one sniper carrying both kits.
 - **Co-op:** the host picks a role and the friend who joins gets the other.
 
-### Sabotage
+### Mission
 
-- **Barracks:** reinforcements and backup fireteams only come out of here.
-  - The spotter can hack the door panel to lock them in for 90 s.
-  - The shooter can plant **C4** to end it for good.
-- **Drone bay** (west yard): replacement patrol drones launch from its pad.
-  - Hacking its control panel grounds it for good, and so does C4.
-- **Planting C4 alerts every guard on the map.** The fuse is 6 s, so get clear.
+1. Breach the fence.
+2. Plant the relay in the Electrical Room.
+3. Find a keycard in the office drawers, or take the Overseer's master badge.
+4. Find the server.
+5. **Upload:** the spotter jacks in with the signal-lock minigame, then holds the rack.
+   - A clean lock means a silent upload: no trace and no alarm, so you can walk the drive out.
+   - Three misses trips SENTINEL's **ICE**. The upload still forces through, but the outside guards and a fireteam take posts around the building walls, and the guards inside search their floors. Sneak out between them, or go loud.
+6. **Extract:** the drive-release minigame.
+7. **Exfil:** carry the drive to the **extraction van** on the east track. It shows on whoever carries it; drop it with **J** for your partner to pick up. The spotter drives and the shooter rides shotgun.
 
-### Guards notice
+### If ICE trips
 
-- Guards who see a comrade drop, or find a body, walk over to check it.
-- Then they get on the radio for backup, with the weapon slung low. Drop them first, jam them, or hack the comms rack.
-- Shooting out a light brings nearby guards over to look.
+1. **The report:** ISR Overwatch reports it, and the operators talk it over on the radio.
+2. **The vote:** each player votes **QUIET (1)** or **LOUD (2)**, or taps the buttons.
+   - The AI partner backs your call. In co-op, both players have to agree.
+   - If there's no agreement when the clock runs out, you stay quiet.
+3. **The sweep:** squads peel off the ring and clear the building room by room, ground floor first, then upstairs.
+   - Quiet is hide and seek: the shooter has camo, and the spotter has to stay nimble.
+   - Let a sweep walk past you and you'll hear about it. Get out through the ring and Overwatch sends you to the van.
+4. **The music:** a tense score plays while they sweep. Once they spot you, it switches to a full combat score with drums, choir and brass.
+5. **The console:** ICE also knocks the CYBER OPS tablet offline: it's all static and its network payloads are blocked. Quickhacks by line of sight still work.
+
+### The building
+
+The data center has **two storeys** with two stairwells. Guards, cameras and patrols are on both floors.
+
+- **Rack rooms:** six of them, behind **keycard doors**. Each door takes its own keycard, shown by a coloured tag on the reader and above the door (red, orange, yellow, green, blue, violet). Either player can swipe.
+- **Office drawers:** eleven desk drawers on both floors. Six of them hide the keycards; the rest hold junk. Searching takes a second and makes a little noise.
+- **Rooms you can use:**
+  - Storage shelves (upstairs): ammo for both weapons, one haul per shelf.
+  - The break-room fridge: +40 HP, three servings.
+  - The comms rack: hack it in person and guards can no longer radio for backup.
+  - The CCTV desk (Security / CCTV, ground floor): hack it in person and every camera is looped for SENTINEL and feeds your console. The cameras still see you, but nobody hears about it.
+- **The archive server:** in a random rack room. Find the cabinet with the slow amber beacon.
+- **Lights:** every lamp and ceiling panel can be **shot out**.
+- **IoT devices:** vending machines, printers, coffee machines, speakers, a TV and server fans. Hack them from the tablet or with a quickhack to make a distracting noise.
+
+**Cyber inside the building:**
+
+- Cut-lights blacks out the whole room.
+- An EMP fills the room: it drops shields, bulwark walls, cameras and lights.
+- **Supply drops can't land through a roof.**
 
 ### Security layout
 
@@ -173,53 +207,26 @@ Headshots kill anything except a helmet's first hit.
 
 **Inside the building:** patrols on both floors.
 
-### The building
+The garrison is kept lean, about 34 in NightWatch and 28 in Infiltration, and spread out: no two starting guards stand within about 9 m of each other, except a pack leader and its follower.
 
-The data center has **two storeys** with two stairwells. Guards, cameras and patrols are on both floors.
+### Guards notice
 
-- **Rack rooms:** six of them, behind **keycard doors**. Each door takes its own keycard, shown by a coloured tag on the reader and above the door (red, orange, yellow, green, blue, violet). Either player can swipe.
-- **Office drawers:** eleven desk drawers on both floors. Six of them hide the keycards; the rest hold junk. Searching takes a second and makes a little noise.
-- **Rooms you can use:**
-  - Storage shelves (upstairs): ammo for both weapons, one haul per shelf.
-  - The break-room fridge: +40 HP, three servings.
-  - The comms rack: hack it in person and guards can no longer radio for backup.
-  - The CCTV desk (Security / CCTV, ground floor): hack it in person and every camera is looped for SENTINEL and feeds your console. The cameras still see you, but nobody hears about it.
-- **The archive server:** in a random rack room. Find the cabinet with the slow amber beacon.
-- **Lights:** every lamp and ceiling panel can be **shot out**.
-- **IoT devices:** vending machines, printers, coffee machines, speakers, a TV and server fans. Hack them from the tablet to make a distracting noise.
+- Guards who see a comrade drop, or find a body, walk over to check it.
+- Then they get on the radio for backup, with the weapon slung low. Drop them first, jam them, or hack the comms rack.
+- Shooting out a light brings nearby guards over to look.
 
-**Cyber inside the building:**
+### Sabotage
 
-- Cut-lights blacks out the whole room.
-- An EMP fills the room: it drops shields, bulwark walls, cameras and lights.
-- **Supply drops can't land through a roof.**
-
-### Mission
-
-1. Breach the fence.
-2. Plant the relay in the Electrical Room.
-3. Find a keycard in the office drawers, or take the Overseer's master badge.
-4. Find the server.
-5. **Upload:** the spotter jacks in with the signal-lock minigame, then holds the rack.
-   - A clean lock means a silent upload: no trace and no alarm, so you can walk the drive out.
-   - Three misses trips SENTINEL's **ICE**. The upload still forces through, but the outside guards and a fireteam take posts around the building walls, and the guards inside search their floors. Sneak out between them, or go loud.
-6. **Extract:** the drive-release minigame.
-
-### If ICE trips
-
-1. **The report:** ISR Overwatch reports it, and the operators talk it over on the radio.
-2. **The vote:** each player votes **QUIET (1)** or **LOUD (2)**, or taps the buttons.
-   - The AI partner backs your call. In co-op, both players have to agree.
-   - If there's no agreement when the clock runs out, you stay quiet.
-3. **The sweep:** squads peel off the ring and clear the building room by room, ground floor first, then upstairs.
-   - Quiet is hide and seek: the shooter has camo, and the spotter has to stay nimble.
-   - Let a sweep walk past you and you'll hear about it. Get out through the ring and Overwatch sends you to the van.
-4. **The music:** a tense score plays while they sweep. Once they spot you, it switches to a full combat score with drums, choir and brass.
-7. Carry the drive (it shows on the carrier; drop it with **J** for your partner to pick up) to the **extraction van**. The spotter drives and the shooter rides shotgun.
+- **Barracks:** reinforcements and backup fireteams only come out of here.
+  - The spotter can hack the door panel to lock them in for 90 s.
+  - The shooter can plant **C4** to end it for good.
+- **Drone bay** (west yard): replacement patrol drones launch from its pad.
+  - Hacking its control panel grounds it for good, and so does C4.
+- **Planting C4 alerts every guard on the map.** The fuse is 6 s, so get clear.
 
 ### Stealth
 
-- **Radio for backup:** a guard who spots you radios after 1.5 s (watch for the ((•)) icon). The call brings a fireteam from outside the building to your position. Drop the guard first, or jam the radio.
+- **Radio for backup:** a guard who spots you radios after 1.5 s (watch for the ((•)) icon). The call brings a fireteam from the barracks to your position. Drop the guard first, jam his comms, or hack the comms rack so nobody can radio at all.
 - **Breaking contact:** the HUD shows DETECTED, then HUNTED. Break line of sight for long enough and the hunt is called off. While they hunt, a **white silhouette** marks your last known position.
 - **Light and night vision:**
   - **N** to reach up and pull the goggles down: your hand comes up, the goggles flip down with a click and a tube whine, and the picture irises open as the tubes warm.
@@ -228,9 +235,9 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
   - **IR strobes** on both operators' helmets and shoulders, and **IR lasers** from both weapons, show only in night vision and the ISR IR view.
 - **Weapon lights (L):** a weapon light makes you easy to see. Guards also walk over to wherever the beam lands, so it works as a distraction.
 - **Sync shots:**
-  1. Aim down sights at an enemy and **hold Q** (or SYNC) to mark it as a sync target for your ally. The wheel's SYNC option works too.
-  2. Each player puts their sights on a head that dies to one shot (no helmet). At least one of the two has to be a sync mark.
-  3. A solid **FIRE** block locks over both heads, both weapons fire on their own, and the operators call it on the radio ("On target" … "X-ray down").
+  1. Look at an enemy and **hold F** (or tap SYNC on touch) to mark it for your teammate: a pulsing circle sits over its head. The wheel's SYNC option works too.
+  2. Put your own crosshair on another enemy's head. You don't need to aim down sights. Your teammate holds theirs on the marked one, or an AI Ra takes it.
+  3. When both crosshairs are on heads that die to one shot (no helmet), a solid **FIRE** block locks on, both weapons fire on their own, and both enemies go down.
 - **Downed but alive:** a body-shot kill leaves an enemy down but alive. It's out of the fight, but the reticle still goes red over it. Headshot it on the ground to finish it, and your character calls "X-ray down".
 - **Radio chatter:**
   - Operators call fresh contacts in their field of view: "Contact, north-east, 60 meters".
@@ -262,9 +269,11 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
   - **Hold** for **quickhacks**: your left hand brings up your phone and the HUD switches to scan mode (time slows in solo). Everything hackable in view gets tagged.
   - Look at a target, pick a hack (mouse wheel or 1/2) and click or press E. Your thumb taps the screen and the hack uploads.
   - Hacks: loop a camera, short-circuit a drone, open an electronic door, cut a light, set off an IoT device, or jam a guard's comms / reboot his optics (blind for 6 s).
+  - **Commands:** look at open ground instead and the menu becomes **Commands** for that spot: supply drop, pulse scan, EMP, decoy, cut lights or recon quad. The phone comes up, your thumb taps, and it lands where you're aiming. Ping-wheel requests get the same quick phone gesture.
+  - On touch, tap an option row to pick it and run it.
   - Quickhacks still work when ICE knocks the console offline.
 - **Lock-pick set:** mechanical locks (maintenance and side doors) can't be hacked; the spotter picks them in person. Electronic locks (front, dock) open over the network, from the console or a quickhack.
-- **CYBER OPS tablet** (TAB), with ground and upper floors.
+- **CYBER OPS tablet:** a map of both floors, with payloads (pulse scan, jam, EMP, supply drop, cut lights, spoof cameras, decoy, quad, medevac), door and camera hacks, and camera feeds.
 - **Recon quad (Q):**
   - **Neurolink:** every enemy the quad can see within 45 m is marked for the team, with a lock-on animation and a red silhouette through walls. The mark stays as long as the quad keeps line of sight.
   - **Controls:** tap Q to park it; parked, it keeps marking. Tap Q again to fly it. **Hold Q** (or RECALL) for a quick calldown.
@@ -273,7 +282,6 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 - **ISR Predator** (I): a high-altitude drone orbiting the map. Slew its sensor with the mouse; it has IR (white-hot) and EO modes. Tag, ping and request from it.
   - **P (SWEEP)** runs a ping sweep: a circle on the ground that marks every unit inside it, people and machines, for 15 s, with red silhouettes through walls.
   - The tablet's pulse scan only hears electronics (drones, cameras, devices).
-- **Under ICE** the tablet is all static and its network payloads are blocked; use quickhacks.
 - **SNIPER POS** on the ping wheel asks the shooter to set up at a spot. It works from first person, the ISR cross or the tablet map. An AI shooter relocates there.
 - The HUD shows both interfaces as small live squares; tap one to open it.
 
@@ -287,11 +295,15 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 ### Comms
 
-- **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER and SYNC, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
-- **Radio voices:** operators and ISR speak over a scratchy radio for cut-scenes, pings, AI replies and the ISR mission briefing as you walk in.
+- **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER, SYNC and SNIPER POS, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
+- **Radio:** operators and ISR Overwatch talk over a tactical squad net, in short, clipped lines with a beat between transmissions. Turn **Radio voices** off on the NightWatch screen or in the pause menu to get subtitles only.
+  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (a low, calm American dispatcher). Voices are pitched down with their character preserved, at a natural, unhurried pace.
+  - The recordings get a radio treatment: mostly the natural voice with a lighter Codec2 digital-radio layer, band-limited to radio width (300–3400 Hz), with presence and compression.
+  - In the game each line opens with a mic click and a burst of static, sits on a crackling static bed with dropouts, and ends on a squelch tail; Overwatch adds a talk-permit chirp.
+  - Every line is **subtitled** as a terminal entry: the callsign, then the line typed out, cleared when it ends. Overwatch opens each op with a short, clipped brief. A line without a recording, or the offline single-file build, falls back to the browser's own voice.
 - **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
 - **Cut-scenes:**
-  - Opening: drive in, gear up, walk out.
+  - Opening: drive in, gear up, walk out. The van has its own sound: tyre and gravel roar, a quiet electric whine, a brake creak, door latches and slams, and the rustle of kit going on.
   - Ending: a sunrise on an open road under a striped, retro sun.
   - The title reads SNIPER in white, CELL in red and NIGHTWATCH in cyan.
 
@@ -305,9 +317,46 @@ Play with headphones. Every sound is positioned in 3D (HRTF panning):
 - Your partner's footsteps.
 - Shots, impacts and C4 blasts.
 
+### NightWatch controls
+
+| Key | Shooter | Spotter |
+| --- | --- | --- |
+| Mouse / right-click | Aim / scope | Aim / aim down sights |
+| 1 / 2 | Rifle / sidearm | — |
+| B | Fire mode (SMG); hold for the suppressor | Suppressor |
+| TAB | Map | Tap: tablet → ISR → back; hold: quickhacks |
+| Q | — | Quad (tap: launch / park / fly; hold: recall) |
+| G | Active camo | — |
+| H / X / T | Deadeye / lure / Mark & Execute | — |
+| E | Use, knife takedown, plant C4 | Use, pick locks, hack stations |
+| F | Tap: tag · hold on an enemy: sync mark | Same |
+| V | Ping (hold: wheel); downed: call for pickup | Same |
+| Y / U | Acknowledge | Approve / deny requests |
+| I | — | ISR view (P: ping sweep) |
+| N | Night vision | Night vision |
+| L | Weapon light | Weapon light |
+| J | Drop the drive | Drop the drive |
+| O / P | Show / expand the objective board | Same |
+| Enter / M / K | Chat / mic / push-to-talk | Same |
+
+The lone operative carries both kits. Shift+E plants C4.
+
+**Esc pauses** (❚❚ on touch). Resume, or **Exit to main menu**. In solo play the mission freezes while paused; in co-op it keeps running.
+
+**On an iPad or a phone:**
+
+- The action buttons sit in a strip along the bottom centre, like the desktop key hints, between the move stick and the fire buttons. They cover every action, including TABLET, HACK, ISR, SWEEP, QUAD, RECALL, SYNC, HELP, LIGHT, DROP, PING, TAG, USE, SUPP, NV and CHAT.
+- The Auto preset gives iPads Medium, with a capped render resolution.
+- For better radio voices, install enhanced male voices: Settings → Accessibility → Spoken Content → Voices → English, then Aaron, Arthur or Evan (Enhanced).
+
 ### Atmosphere
 
-Dust motes, low mist, fireflies and moths around the lamps, here and in the valley duel (`src/atmofx.js`).
+- **Visuals:** dust motes, low mist, fireflies and moths around the lamps, here and in the valley duel (`src/atmofx.js`).
+- **Night soundscape** (`src/cell/ambient.js`): no constant hum or tones.
+  - Outdoors: wind that gusts and settles, trees stirring with it, insects chirping around you, and now and then a distant owl, dog or high aircraft.
+  - Indoors: the outside fades to quiet air handling, with more airflow in the rack rooms.
+- **Drones:** patrol drones and your quad make a soft rotor whoosh. Only the two nearest drones are audible.
+- **Radio discipline:** about half of kills get an "X-ray down" (at most one every 10 s). Contact callouts, routine ping voices, Overwatch's spotted and clear calls and "Going dark" are occasional and rate-limited. Guards' radio squelches are sparse and close-range.
 
 ### Code
 
@@ -331,6 +380,7 @@ The code is in `src/cell/`:
 | `neuro.js` | The recon quad's neurolink marking |
 | `nvg.js` | The night-vision gesture and warm-up |
 | `spatial.js` | Positional audio cues |
+| `ambient.js` | The night soundscape |
 | `phone.js` | Quickhacks (TAB hold) |
 | `van.js`, `wheel.js`, `sfx.js` | The van, the ping wheel and synthesized sounds |
 | `cell.js` | Game loop, roles, netcode, objectives and HUD |
@@ -346,7 +396,7 @@ The first time one sniper shoots the other, the game is "hijacked": a cheerful d
 
 - Worlds so far: the valley, a neon top-down arena, a WW2 town square, a pixel-art canyon, an ASCII terminal and a manga street duel. Each one shows its controls on arrival.
 - Nothing differs from the classic game before the first kill, so it works as a surprise.
-- The owner's menu: tap the small red **REC** light in the corner of the briefing map (on narrow screens, the red dot beside `v1.0`). Tick which worlds and transitions the mode may use when you host or play solo, or press ▶ to play one world on its own against the AI or preview a transition. The light is not shown on an invite link.
+- The owner's menu: tap the small red **REC** light in the corner of the briefing map (on narrow screens, the red dot beside `v1.0`). Tick which worlds and transitions the mode may use when you host or play solo, or press ▶ to play one world on its own against the AI or preview a transition. The light is not shown on an invite link. The first match a device hosts plays the surfing world and then the underwater world straight after the first kill (once both are finished); a tick box in the same menu re-arms that for the next hosted match.
 - Open the page with `?lab` to get a **Lab** button that opens the same menu and also lists worlds still being built.
 - The code lives in `src/multiverse/` (`contract.js` documents how worlds and transitions plug in; `tools/mv-test.mjs` plays them headlessly; `tools/multiverse-briefs/` holds the design briefs).
 
@@ -368,12 +418,23 @@ Matchmaking uses the free public PeerJS broker only to exchange connection detai
 
 **Testing on one machine:** add `?local=1` to the URL and open two tabs. The tabs then talk over `BroadcastChannel` instead of WebRTC.
 
+## Radio voice lines
+
+`audio/vo/` holds the NightWatch radio lines, rendered with [Kokoro](https://github.com/thewh1teagle/kokoro-onnx) (Apache-2.0) and processed with ffmpeg. The script list is `tools/vo/lines.py`; to add or change a line, edit it there (keep the text identical to the game's), then run:
+
+```
+pip install kokoro-onnx soundfile        # plus ffmpeg
+python3 tools/vo/generate.py kokoro-v1.0.int8.onnx voices-v1.0.bin
+```
+
+The two model files are on the kokoro-onnx releases page. Existing clips are kept; only new lines are rendered.
+
 ## Graphics presets
 
-**Auto** picks a preset based on the GPU:
+**Auto** picks a preset based on the GPU (iPads get Medium, with the render resolution capped on touch devices):
 
-- **High**: Apple Silicon and discrete GPUs. Shadows, MSAA, bloom, ink outlines and the full grade.
-- **Medium**: phones and mid-range GPUs.
+- **High**: Apple Silicon Macs and discrete GPUs. Shadows, MSAA, bloom, ink outlines and the full grade.
+- **Medium**: phones, iPads and mid-range GPUs.
 - **Low**: older integrated GPUs such as Intel HD 4000. No post-processing, fewer trees, no grass.
 
 Resolution also scales dynamically to hold the frame rate. You can override the preset under Settings in the menu.
@@ -396,4 +457,5 @@ Resolution also scales dynamically to hold the frame rate. You can override the 
 | `src/briefmap.js` | Topographic briefing map drawn from the real terrain |
 | `src/net.js` | PeerJS / BroadcastChannel transport |
 | `src/config.js` | Gameplay tuning |
-| `src/cell/` | NightWatch: Sentinel / Infiltration missions (co-op stealth mode) |
+| `src/cell/` | NightWatch: Sentinel / Infiltration missions (co-op stealth mode; file list under [NightWatch › Code](#code)) |
+| `src/atmofx.js` | Atmospheric particles (motes, mist, fireflies, moths) shared by both modes |
