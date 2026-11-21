@@ -288,8 +288,8 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 - **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER, SYNC and SNIPER POS, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
 - **Radio:** operators and ISR Overwatch talk over a tactical squad net, inspired by close-quarters tactical shooters.
-  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (a low, calm American dispatcher). The pace is natural and unhurried.
-  - The recordings are run through a radio treatment: the Codec2 digital-radio codec blended with some of the plain voice, then a narrow band, presence boost and compression.
+  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (a low, calm American dispatcher). Voices are pitched down with their character preserved, at a natural, unhurried pace.
+  - The recordings get a radio treatment: mostly the natural voice with a lighter Codec2 digital-radio layer, band-limited to radio width (300–3400 Hz), with presence and compression.
   - In the game each line opens with a mic click and a burst of static, sits on a crackling static bed with dropouts, and ends on a squelch tail; Overwatch adds a talk-permit chirp.
   - Every line is **subtitled** as a terminal entry: the callsign, then the line typed out, cleared when it ends. Overwatch opens each op with a short, clipped brief. A line without a recording, or the offline single-file build, falls back to the browser's own voice.
 - **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
@@ -347,7 +347,7 @@ The lone operative carries both kits. Shift+E plants C4.
   - Outdoors: wind that gusts and settles, trees stirring with it, insects chirping around you, and now and then a distant owl, dog or high aircraft.
   - Indoors: the outside fades to quiet air handling, with more airflow in the rack rooms.
 - **Drones:** patrol drones and your quad make a soft rotor whoosh. Only the two nearest drones are audible.
-- **Radio discipline:** optional chatter (contact callouts, "X-ray down", "Going dark") is rate-limited and skipped while the radio is busy. Guards' radio squelches are sparse and close-range.
+- **Radio discipline:** about half of kills get an "X-ray down" (at most one every 10 s). Contact callouts, routine ping voices, Overwatch's spotted and clear calls and "Going dark" are occasional and rate-limited. Guards' radio squelches are sparse and close-range.
 
 ### Code
 

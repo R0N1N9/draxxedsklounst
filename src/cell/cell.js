@@ -1346,12 +1346,16 @@ export class CellGame {
   }
 
   _killFeed(e, how, by, head, dist) {
-    // Dropping something your partner pinged: call it, now and then.
+    // Kill calls: about half of kills (yours, your partner's, AI Ra's) get a radio call, at
+    // most one every 10 s, and only when nobody else is talking. Dropping an enemy your
+    // partner pinged gets "your mark is down".
     const killer = by === 'ai' ? 'shooter' : by;
-    if (e.tagBy && e.tagBy !== killer && (!this.solo || by === 'ai') && this.t - (this._xrayT || -99) > 20 && Math.random() < 0.45) {
+    if (how !== 'takedown' && this.t - (this._xrayT || -99) > 10 && Math.random() < 0.55) {
       this._xrayT = this.t;
-      const line = ['X-ray down.', 'Tango down.', 'Your mark is down.', 'Got him. X-ray down.'][Math.floor(Math.random() * 4)];
-      setTimeout(() => this._radio(killer, line, true), 700);
+      const pinged = e.tagBy && e.tagBy !== killer;
+      const lines = pinged ? ['Your mark is down.', 'Got him. X-ray down.', 'X-ray down.'] : ['X-ray down.', 'Tango down.', 'Target down.', "He's down.", 'X-ray down. Confirmed.'];
+      const line = lines[Math.floor(Math.random() * lines.length)];
+      setTimeout(() => this._radio(killer, line), 600);
     }
     const name = by === this.role ? this.name : by === 'ai' ? this.partnerName : this.partnerName;
     const what = how === 'takedown' ? 'TAKEDOWN' : head ? 'HEADSHOT' : e.incap ? 'DOWN' : 'KILL';
@@ -2650,8 +2654,10 @@ class CellHud {
     const H = g._huntInfo(g.role);
     const hs = H ? H.state : 'hidden';
     if (hs !== this._hs) {
-      if (this._hs === 'hunted' && hs === 'hidden') { this.flash('CONTACT BROKEN', 'cyan', 2); g._voice('isr', 'You\u2019re clear. They\u2019ve lost you.'); }
-      if (hs === 'detected' && this._hs !== 'detected') g._voice('isr', 'You\u2019ve been spotted. Break line of sight.');
+      // Overwatch only calls these now and then (the HUD always shows them).
+      const now = performance.now(), say = (k) => { if (now - (this['_isr' + k] || -1e9) > 60000 && Math.random() < 0.5) { this['_isr' + k] = now; return true; } return false; };
+      if (this._hs === 'hunted' && hs === 'hidden') { this.flash('CONTACT BROKEN', 'cyan', 2); if (say('Clear')) g._voice('isr', 'You\u2019re clear. They\u2019ve lost you.'); }
+      if (hs === 'detected' && this._hs !== 'detected' && say('Spot')) g._voice('isr', 'You\u2019ve been spotted. Break line of sight.');
       this._hs = hs;
     }
     this.el.hunt.className = 'c-hunt ' + hs;

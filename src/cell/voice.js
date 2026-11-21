@@ -76,6 +76,9 @@ export class Radio {
 
   // keep: a line that must not be dropped (e.g. the opening brief), however long it waits.
   // Free for optional chatter: nothing playing or queued, and none in the last few seconds.
+  idle() {
+    return !this.busy && !this.q.length;
+  }
   free() {
     return !this.busy && !this.q.length && performance.now() - (this._lastLow || -1e9) > 6000;
   }
