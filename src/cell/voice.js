@@ -1,7 +1,7 @@
 // Sniper Cell — tactical radio. Every line (operators, ISR Overwatch, cut-scenes, callouts)
 // goes out over a squad net that sounds the part:
 //   key-up      a mic click and a short "kssh" of static before the voice
-//   the line    clipped male voices (browser speech synthesis: the deepest, most natural
+//   the line    clipped male voices (recordings in audio/vo; otherwise the deepest, most natural
 //               male voices the device has, a different one per speaker where possible)
 //               over a band-limited static bed with crackle pops and brief dropouts;
 //               Overwatch is a longer-range link, so its bed is heavier
@@ -66,6 +66,9 @@ export class Radio {
     const V = this.voices.filter((v) => !FEMALE.test(v.name));
     const ranked = [];
     for (const re of MALE) for (const v of V) if (re.test(v.name) && !ranked.includes(v)) ranked.push(v);
+    // American English first (US radio dispatch), keeping the quality order within each group.
+    const us = (v) => (/en[-_]US/i.test(v.lang) ? 0 : 1);
+    ranked.sort((a, b) => us(a) - us(b));
     const pool = ranked.length ? ranked : V.length ? V : this.voices;
     this._cast = { shooter: pool[0] || null, spotter: pool[1] || pool[0] || null, isr: pool[2] || pool[0] || null };
     return this._cast;

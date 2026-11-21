@@ -288,7 +288,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 - **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER, SYNC and SNIPER POS, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
 - **Radio:** operators and ISR Overwatch talk over a tactical squad net, inspired by close-quarters tactical shooters.
-  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (British, the calm command voice).
+  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (an American dispatcher).
   - The recordings are run through a radio treatment: narrow band, presence boost, hard compression and grit.
   - In the game each line opens with a mic click and a burst of static, sits on a crackling static bed with dropouts, and ends on a squelch tail; Overwatch adds a talk-permit chirp.
   - Every line is **subtitled**. A line without a recording, or the offline single-file build, falls back to the browser's own voice.

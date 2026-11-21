@@ -13,7 +13,7 @@ OUT = os.path.join(ROOT, 'audio', 'vo')
 CAST = {  # speaker -> (voice, lang, speed)
     'shooter': ('am_fenrir', 'en-us', 1.08),
     'spotter': ('am_michael', 'en-us', 1.1),
-    'isr': ('bm_george', 'en-gb', 1.04),
+    'isr': ('am_puck', 'en-us', 1.08),  # American dispatch: steady and quick
 }
 # The radio, modelled on digital (P25-style) scanner audio rather than hiss: the voice is
 # levelled, squeezed into the narrow voice band and pushed through Codec2 at 3200 bit/s (an
