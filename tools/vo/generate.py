@@ -20,15 +20,19 @@ CAST = {  # speaker -> (voice, lang, speed)
 # open digital-radio vocoder), which gives the warbly, compressed character of a trunked
 # radio net. Then a final band-limit, a touch of presence and level. Squelch clicks, tails
 # and a light static bed are added in the game.
-CHAIN = 'codec2-3200-v1'
+CHAIN = 'codec2-3200-v2'
+# Per-speaker pitch: Ra's voice drops about three semitones (deeper, heavier).
+PITCH = {'shooter': 0.84}
 PRE = 'highpass=f=250,lowpass=f=3600,acompressor=threshold=-22dB:ratio=4:attack=5:release=100:makeup=4'
 POST = ('highpass=f=300,lowpass=f=3000,equalizer=f=1500:t=q:w=1:g=3,'
         'acompressor=threshold=-18dB:ratio=3:makeup=3,volume=1.2')
 
-def radio(src_wav, dst_mp3):
+def radio(src_wav, dst_mp3, who=None):
+    p = PITCH.get(who)
+    pre = (f'asetrate=24000*{p},aresample=24000,atempo={1 / p:.4f},' if p else '') + PRE
     with tempfile.TemporaryDirectory() as d:
         c2 = os.path.join(d, 'v.c2')
-        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', src_wav, '-af', PRE, '-ar', '8000', '-ac', '1', '-c:a', 'libcodec2', '-mode', '3200', c2], check=True)
+        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', src_wav, '-af', pre, '-ar', '8000', '-ac', '1', '-c:a', 'libcodec2', '-mode', '3200', c2], check=True)
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', c2, '-af', POST, '-ar', '22050', '-ac', '1', '-b:a', '40k', dst_mp3], check=True)
 
 def norm(t):
@@ -57,7 +61,7 @@ def main(model, voices, cache=None):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         clean = os.path.join(cache, f'{who}_{fid}.wav')
         if os.path.exists(clean):
-            radio(clean, dst)
+            radio(clean, dst, who)
             continue
         voice, lang, speed = CAST[who]
         # Long lines go sentence by sentence (the model caps its input), joined with short gaps.
@@ -67,7 +71,7 @@ def main(model, voices, cache=None):
             a, sr = k.create(p, voice=voice, speed=speed, lang=lang)
             audio += [a, np.zeros(int(sr * 0.12), dtype=a.dtype)]
         sf.write(clean, np.concatenate(audio), sr)
-        radio(clean, dst)
+        radio(clean, dst, who)
         if i % 20 == 0:
             print(f'{i + 1}/{len(jobs)} {who}: {text[:60]}', flush=True)
             json.dump(manifest, open(path, 'w'), indent=0, sort_keys=True)

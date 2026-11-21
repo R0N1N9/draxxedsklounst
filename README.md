@@ -288,7 +288,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 - **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER, SYNC and SNIPER POS, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
 - **Radio:** operators and ISR Overwatch talk over a tactical squad net, inspired by close-quarters tactical shooters.
-  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (an American dispatcher).
+  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American, pitched down), Rōnin (American) and Overwatch (an American dispatcher).
   - The recordings are run through a radio treatment: narrow band, presence boost, hard compression and grit.
   - In the game each line opens with a mic click and a burst of static, sits on a crackling static bed with dropouts, and ends on a squelch tail; Overwatch adds a talk-permit chirp.
   - Every line is **subtitled** as a terminal entry: the callsign, then the line typed out, cleared when it ends. Overwatch opens each op with a short, clipped brief. A line without a recording, or the offline single-file build, falls back to the browser's own voice.
@@ -340,7 +340,12 @@ The lone operative carries both kits. Shift+E plants C4.
 
 ### Atmosphere
 
-Dust motes, low mist, fireflies and moths around the lamps, here and in the valley duel (`src/atmofx.js`).
+- **Visuals:** dust motes, low mist, fireflies and moths around the lamps, here and in the valley duel (`src/atmofx.js`).
+- **Night soundscape** (`src/cell/ambient.js`): no constant hum or tones.
+  - Outdoors: wind that gusts and settles, trees stirring with it, insects chirping around you, and now and then a distant owl, dog or high aircraft.
+  - Indoors: the outside fades to quiet air handling, with more airflow in the rack rooms.
+- **Drones:** patrol drones and your quad make a soft rotor whoosh. Only the two nearest drones are audible.
+- **Radio discipline:** optional chatter (contact callouts, "X-ray down", "Going dark") is rate-limited and skipped while the radio is busy. Guards' radio squelches are sparse and close-range.
 
 ### Code
 
@@ -364,6 +369,7 @@ The code is in `src/cell/`:
 | `neuro.js` | The recon quad's neurolink marking |
 | `nvg.js` | The night-vision gesture and warm-up |
 | `spatial.js` | Positional audio cues |
+| `ambient.js` | The night soundscape |
 | `phone.js` | Quickhacks (TAB hold) |
 | `van.js`, `wheel.js`, `sfx.js` | The van, the ping wheel and synthesized sounds |
 | `cell.js` | Game loop, roles, netcode, objectives and HUD |

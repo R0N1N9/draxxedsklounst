@@ -39,6 +39,7 @@ import { installKit2 } from './kit2.js';
 import { installIce } from './ice.js';
 import { installNeuro } from './neuro.js';
 import { installNVG } from './nvg.js';
+import { Ambience } from './ambient.js';
 import { installSpatial } from './spatial.js';
 import { installPhone } from './phone.js';
 import { wallBlock } from './sentinel.js';
@@ -400,7 +401,8 @@ export class CellGame {
     this.comms(this.operative ? 'Lone operative: rifle, camo and the CYBER OPS tablet are all yours (TAB).' : this.role === 'shooter' ? 'Ra in position. Kestrel Ridge below \u2014 lights in the yard, towers manned.' : 'R\u014dnin on the wire. CYBER OPS console synced (TAB).', ROLES[this.role].color, this.name);
     this.comms(this.operative ? 'Hold V for the ping wheel; payloads run straight from your tablet.' : this.aiPartner ? (this.role === 'shooter' ? 'R\u014dnin (AI) runs the console. Hold V for pings and requests.' : 'Ra (AI) holds the cliff. Tag targets (F) or ping TAKE SHOT and Ra fires.') : `${this.partnerName} is the ${ROLES[this.partnerRole].name.toLowerCase()}. Hold V for pings and requests.`, 'dim');
     if (this.mission === 'nightwatch') this.comms('Officers spook when they\u2019re alone. Juggernauts\u2019 shells break \u2014 then they charge. Bulwarks: shoot the port in the wall.', 'dim');
-    this.sfx.ambience();
+    // The night soundscape (wind, insects, distant sounds; air handling indoors). No hum.
+    this.ambient = new Ambience(this.audio);
     this.chat = new Chat(this);
     this.cine = new Cinema(this);
     // Opening cut-scene (skippable); ?nocine skips it for testing.
@@ -1345,10 +1347,10 @@ export class CellGame {
   _killFeed(e, how, by, head, dist) {
     // Dropping something your partner pinged: call it, now and then.
     const killer = by === 'ai' ? 'shooter' : by;
-    if (e.tagBy && e.tagBy !== killer && (!this.solo || by === 'ai') && this.t - (this._xrayT || -99) > 6 && Math.random() < 0.7) {
+    if (e.tagBy && e.tagBy !== killer && (!this.solo || by === 'ai') && this.t - (this._xrayT || -99) > 20 && Math.random() < 0.45) {
       this._xrayT = this.t;
       const line = ['X-ray down.', 'Tango down.', 'Your mark is down.', 'Got him. X-ray down.'][Math.floor(Math.random() * 4)];
-      setTimeout(() => this._radio(killer, line), 700);
+      setTimeout(() => this._radio(killer, line, true), 700);
     }
     const name = by === this.role ? this.name : by === 'ai' ? this.partnerName : this.partnerName;
     const what = how === 'takedown' ? 'TAKEDOWN' : head ? 'HEADSHOT' : e.incap ? 'DOWN' : 'KILL';
@@ -1547,7 +1549,7 @@ export class CellGame {
     if (this.tablet.visible) this.tablet.close();
     if (this.isr.active) this.isr.exit();
     this.quad = { active: true, parked: false, x: P.pos.x, y: P.pos.y + 2.2, z: P.pos.z, yaw: P.yaw, pitch: -0.2, bat: this.quadBat ?? QUAD_BAT, hp: 30, vy: 0 };
-    this.audio.startLoop('quad', this.camera.position, 'drone', 0.25);
+    this.audio.startLoop('quad', this.camera.position, 'rotor', 0.22);
     this.comms('Quad up. Look at enemies to neurolink them. Q park \u00B7 hold Q recall \u00B7 SPACE/C climb.', 'cyan', this.name);
   }
   _quadOut() {
@@ -2217,6 +2219,11 @@ export class CellGame {
     this._neuroTick(dt);
     this._nvgTick(dt);
     this._spatialTick(dt);
+    if (this.ambient) {
+      if (!this.ambient.on) this.ambient.start();
+      const pp = this.player.pos, rm = this.fac.roomAt(pp.x, pp.z, pp.y);
+      this.ambient.update(dt, pp, this.fac.insideBuilding(pp.x, pp.z, pp.y), !!(rm && rm.racks));
+    }
     this._c4Visuals(dt);
     this.fac.syncStations(this.obj, this.t);
     this._vanVisual(dt);
@@ -2261,7 +2268,7 @@ export class CellGame {
       this.heli.userData.rotor2.rotation.y += dt * 25;
       this.heli.userData.light.visible = Math.sin(this.t * 6) > 0;
       this.fac.lzRing.material.opacity = 0.35 + Math.sin(this.t * 4) * 0.2;
-      if (!this._heliLoop) { this._heliLoop = true; this.audio.startLoop('heli', this.heli.position, 'drone', 0.5); }
+      if (!this._heliLoop) { this._heliLoop = true; this.audio.startLoop('heli', this.heli.position, 'rotor', 0.5); }
       this.audio.updateLoop('heli', this.heli.position);
     }
     // Light toggles drive the point lights too.

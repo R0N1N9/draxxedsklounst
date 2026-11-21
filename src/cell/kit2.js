@@ -148,13 +148,13 @@ export const Kit2 = {
 
   // ---- radio voices ------------------------------------------------------------------
   // who: 'shooter' | 'spotter' | 'isr' (or 'partner' / 'me'). Plays locally.
-  _voice(who, text, keep = false) {
+  _voice(who, text, keep = false, low = false) {
     if (!this.radio) return;
     if (who === 'me') who = this.role;
     if (who === 'partner') who = this.partnerRole;
     // Subtitles carry the operators' callsigns.
     this.radio.names = { [this.role]: this.name, [this.partnerRole]: this.partnerName, isr: 'OVERWATCH' };
-    this.radio.say(who, text, false, keep);
+    this.radio.say(who, text, false, keep, low);
   },
 
   // ---- SYNC shots -----------------------------------------------------------------------
@@ -185,7 +185,7 @@ export const Kit2 = {
       if (K.t <= 0) {
         this._syncKill = null;
         const g = S.byId(K.id);
-        if (g && g.state === 'dead') this._radio('me', ['X-ray down.', 'Tango down.', 'Target down.', 'He\'s down.'][Math.floor(Math.random() * 4)]);
+        if (g && g.state === 'dead') this._radio('me', ['X-ray down.', 'Tango down.', 'Target down.', 'He\'s down.'][Math.floor(Math.random() * 4)], true);
       }
     }
     if (!marks) { this.syncAim = 0; this.syncPartner = 0; this._syncT = 0; this._syncSaid = false; return; }
@@ -237,9 +237,11 @@ export const Kit2 = {
     this.hud.flash('SYNC TARGET MARKED', 'cyan');
   },
   // A radio line heard by both operators.
-  _radio(who, text) {
+  // low: optional chatter (callouts), skipped when the net is busy.
+  _radio(who, text, low = false) {
     if (who === 'me') who = this.role;
-    this._voice(who, text);
+    if (low && !this.radio.free()) return;
+    this._voice(who, text, false, low);
     this.comms(text, who === 'shooter' ? '#ffb040' : '#40d0ff', who === this.role ? this.name : this.partnerName);
     this._broadcast({ k: 'radio', who, text });
   },
@@ -305,7 +307,8 @@ export const Kit2 = {
     if (!fresh.length) return;
     for (const f of fresh) this._called.add(f.g.id);
     if (this._ctCd > 0) return;
-    this._ctCd = 14;
+    if (Math.random() < 0.5) return;
+    this._ctCd = 40;
     fresh.sort((a, b) => a.d - b.d);
     const f = fresh[0];
     const ang = Math.atan2(f.g.x - P.pos.x, -(f.g.z - P.pos.z));
@@ -318,7 +321,7 @@ export const Kit2 = {
     const lines = n > 1
       ? [`Multiple contacts, ${comp}, ${band}.`]
       : [`Contact, ${comp}, ${band}.`, `Eyes on ${what}, ${comp}.`, 'Contact.'];
-    this._radio('me', lines[Math.floor(Math.random() * lines.length)]);
+    this._radio('me', lines[Math.floor(Math.random() * lines.length)], true);
   },
 };
 

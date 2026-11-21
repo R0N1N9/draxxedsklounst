@@ -434,6 +434,33 @@ export class Audio {
     if (this.loops[key]) return;
     const ctx = this.ctx;
     const p = this._panner(pos, 12);
+    // 'rotor': a soft quadcopter whoosh (filtered air with a gentle blade pulse, no tones).
+    if (type === 'rotor') {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 520;
+      bp.Q.value = 0.55;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1400;
+      const trem = ctx.createGain();
+      trem.gain.value = 0.75;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 17 + Math.random() * 4;
+      const lg = ctx.createGain();
+      lg.gain.value = 0.2;
+      lfo.connect(lg).connect(trem.gain);
+      const g = ctx.createGain();
+      g.gain.value = gain;
+      src.connect(bp).connect(lp).connect(trem).connect(g).connect(p);
+      src.start(0, Math.random());
+      lfo.start();
+      this.loops[key] = { p, oscs: [src], lfo, g };
+      return;
+    }
     const g = ctx.createGain();
     g.gain.value = gain;
     const f = ctx.createBiquadFilter();
