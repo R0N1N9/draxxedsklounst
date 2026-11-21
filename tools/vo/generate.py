@@ -20,16 +20,21 @@ CAST = {  # speaker -> (voice, lang, speed)
 # open digital-radio vocoder), which gives the warbly, compressed character of a trunked
 # radio net. Then a final band-limit, a touch of presence and level. Squelch clicks, tails
 # and a light static bed are added in the game.
-CHAIN = 'rb-codec2-blend-v4'
+CHAIN = 'rb-codec2-cyber-v5'
 # Per-speaker pitch, with formants preserved (Rubber Band), so voices get deeper without the
 # slowed-tape sound: Ra ~3.5 semitones down, Overwatch ~2.5, Ronin ~2. Pace relaxed a touch.
 PITCH = {'shooter': 0.815, 'spotter': 0.89, 'isr': 0.865}
 TEMPO = {'shooter': 0.95, 'spotter': 0.93, 'isr': 0.95}
 # Mostly the natural voice with a lighter Codec2 digital-radio layer on top.
-BLEND = (0.45, 0.55)
+BLEND = (0.55, 0.45)
+# How some words should be said (the subtitle keeps the real spelling).
+SAY_AS = [(r'\bcamo', 'cammo'), (r'\bNODs\b', 'nods')]
 PRE = 'equalizer=f=180:t=q:w=1:g=2.5,highpass=f=200,lowpass=f=3800,acompressor=threshold=-22dB:ratio=4:attack=5:release=100:makeup=4'
-POST = ('highpass=f=300,lowpass=f=3400,equalizer=f=1500:t=q:w=1:g=2.5,'
-        'acompressor=threshold=-18dB:ratio=3:makeup=3,volume=1.2')
+# Muffled and a little cyberpunk: band rolled off at ~2.8 kHz, a soft mid presence, a faint
+# chorus shimmer (a synthetic edge on the link), then compression.
+POST = ('highpass=f=320,lowpass=f=2800,equalizer=f=1200:t=q:w=1:g=2,'
+        'chorus=0.8:0.9:18:0.25:0.3:2.2,'
+        'acompressor=threshold=-18dB:ratio=3:makeup=3,volume=1.25')
 
 def radio(src_wav, dst_mp3, who=None):
     p, tempo = PITCH.get(who, 1.0), TEMPO.get(who, 1.0)
@@ -38,7 +43,7 @@ def radio(src_wav, dst_mp3, who=None):
         pre, c2 = os.path.join(d, 'pre.wav'), os.path.join(d, 'v.c2')
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', src_wav, '-af', shape, pre], check=True)
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', pre, '-ar', '8000', '-ac', '1', '-c:a', 'libcodec2', '-mode', '3200', c2], check=True)
-        mix = (f'[0:a]aresample=22050[a];[1:a]aresample=22050,highpass=f=300,lowpass=f=3400[b];'
+        mix = (f'[0:a]aresample=22050[a];[1:a]aresample=22050,highpass=f=300,lowpass=f=3000[b];'
                f'[a][b]amix=inputs=2:weights={BLEND[0]} {BLEND[1]}:normalize=0,{POST}')
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-i', c2, '-i', pre, '-filter_complex', mix, '-ac', '1', '-b:a', '40k', dst_mp3], check=True)
 
@@ -75,6 +80,7 @@ def main(model, voices, cache=None):
         parts = re.split(r'(?<=[.!?])\s+', text) if len(text) > 180 else [text]
         audio = []
         for p in parts:
+            for pat, say in SAY_AS: p = re.sub(pat, say, p, flags=re.I)
             a, sr = k.create(p, voice=voice, speed=speed, lang=lang)
             audio += [a, np.zeros(int(sr * 0.12), dtype=a.dtype)]
         sf.write(clean, np.concatenate(audio), sr)

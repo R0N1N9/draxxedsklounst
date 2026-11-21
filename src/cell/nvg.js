@@ -101,7 +101,7 @@ export const NVG = {
       this.nv = A.to;
       if (A.to) this.nvgIris = 1;
       if (this.audio.nvg) this.audio.nvg(A.to);
-      if (A.to && this.t - (this._darkT || -99) > 90 && Math.random() < 0.35) { this._darkT = this.t; this._radio('me', ['Going dark.', 'NODs on. Going dark.'][Math.floor(Math.random() * 2)], true); }
+      if (A.to && this.t - (this._darkT || -99) > 90 && Math.random() < 0.35) { this._darkT = this.t; this._radio('me', 'Going dark.', true); }
     }
     if (t >= DUR) { this.nvgAnim = null; this.nvgHand.visible = false; this.nvgPivot.visible = false; }
   },

@@ -44,7 +44,7 @@ import { installSpatial } from './spatial.js';
 import { installPhone } from './phone.js';
 import { wallBlock } from './sentinel.js';
 import { Cinema } from './cinema.js';
-import { Radio } from './voice.js';
+import { Radio, setVoiceSetting } from './voice.js';
 import { Minigame } from './minigame.js';
 import { SMG, MAGNUM, P9, buildSMG, buildMagnum, buildKnife, normLoadout } from './arms.js';
 import { ISR } from './isr.js';
@@ -84,19 +84,19 @@ const BLEED = 30;
 const BRIEF = {
   nightwatch: [
     'Sniper Cell, Overwatch. ISR on station.',
-    'Target is the archive server, Kestrel Ridge data center. Two floors, six rack rooms.',
-    'Relay goes in the electrical room. Keycards are in the office drawers. The Overseer carries a master.',
+    'Target: archive server. Two floors, six rack rooms.',
+    'Relay in electrical. Keycards in the office drawers.',
     'Find the amber beacon. Upload clean, pull the drive.',
-    'Botch the upload and ICE puts the garrison on the walls.',
-    'Night shift is augmented. Watch the towers.',
+    'Botch it and ICE puts them on the walls.',
+    "Night shift's augmented. Watch the towers.",
     'Exfil by van, east track. Overwatch out.',
   ],
   infiltration: [
     'Sniper Cell, Overwatch. ISR on station.',
-    'Target is the archive server, Kestrel Ridge data center. Two floors, six rack rooms.',
-    'Relay goes in the electrical room. Keycards are in the office drawers. The Site Chief carries a master.',
+    'Target: archive server. Two floors, six rack rooms.',
+    'Relay in electrical. Keycards in the office drawers.',
     'Find the amber beacon. Upload clean, pull the drive.',
-    'Botch the upload and ICE puts the garrison on the walls.',
+    'Botch it and ICE puts them on the walls.',
     'Exfil by van, east track. Overwatch out.',
   ],
 };
@@ -1039,18 +1039,15 @@ export class CellGame {
     if (this.role === 'shooter' && (I.pressed('KeyG') || I.pressed('cell-ability')) && !this.downed) this._toggleCloak();
     // Recon quad: tap Q = launch / park it (it keeps marking) / take it back; hold Q (or RECALL)
     // = quick calldown, straight back to you.
-    // With your sights on an enemy, holding Q (or SYNC) marks it as a sync target instead.
+    // Recon quad (spotter / lone operative): tap Q = launch / park / take it back; hold Q (or
+    // RECALL) = quick calldown. Q does nothing else.
     {
       const canQ = this.role === 'spotter' || this.operative;
       const qa = this.operative ? 'cell-quad' : 'cell-ability';
-      const syncHeld = I.held('T:cell-sync');
-      const qHeld = (I.held('KeyQ') || (canQ && I.held('T:' + qa)) || syncHeld) && !tab;
-      const aimE = !quad && P.scopeT > 0.3 && !this.downed ? this._crosshairEnemy() : null;
+      const qHeld = canQ && (I.held('KeyQ') || I.held('T:' + qa)) && !tab;
       if (qHeld) {
         this._qT = (this._qT || 0) + dt;
-        if (!this._qDone && this._qT > 0.3 && aimE && aimE.kind === 'g') { this._qDone = true; this._syncMark(aimE); }
-        else if (!this._qDone && syncHeld && this._qT > 0.3) { this._qDone = true; this.hud.flash('SYNC: aim at an enemy', 'red'); }
-        else if (canQ && !syncHeld && this._qT > 0.45 && !this._qDone && this._quadOut()) { this._qDone = true; this._recallQuad(); }
+        if (this._qT > 0.45 && !this._qDone && this._quadOut()) { this._qDone = true; this._recallQuad(); }
       } else {
         if (canQ && this._qT > 0 && !this._qDone) {
           if (quad) this._parkQuad();
@@ -1061,7 +1058,23 @@ export class CellGame {
       }
       if (I.pressed('cell-recall') && this._quadOut()) this._recallQuad();
     }
-    if (I.pressed('KeyF') || I.pressed('cell-tag')) this._tagAtCrosshair();
+    // F: tap = tag what's under the crosshair; hold on an enemy (or SYNC) = mark it as your
+    // teammate's sync target.
+    {
+      const fHeld = (I.held('KeyF') || I.held('T:cell-tag')) && !tab && !this.downed;
+      const mark = () => { const e = this._crosshairEnemy(); if (e && e.kind === 'g') this._syncMark(e); else this.hud.flash('SYNC: look at an enemy', 'red'); };
+      if (I.pressed('cell-sync') && !quad && !tab && !this.downed) mark();
+      if (fHeld) {
+        this._fT = (this._fT || 0) + dt;
+        if (!this._fDone && this._fT > 0.35 && !quad) {
+          this._fDone = true;
+          mark();
+        }
+      } else {
+        if (this._fT > 0 && !this._fDone) this._tagAtCrosshair();
+        this._fT = 0; this._fDone = false;
+      }
+    }
     this._eHeld = (I.held('KeyE') || I.held('T:cell-use')) && !tab && !this.mini.open;
     const isr = this.isr.active;
     if (this.ops) this.ops.update(dt);
@@ -1353,7 +1366,7 @@ export class CellGame {
     if (how !== 'takedown' && this.t - (this._xrayT || -99) > 10 && Math.random() < 0.55) {
       this._xrayT = this.t;
       const pinged = e.tagBy && e.tagBy !== killer;
-      const lines = pinged ? ['Your mark is down.', 'Got him. X-ray down.', 'X-ray down.'] : ['X-ray down.', 'Tango down.', 'Target down.', "He's down.", 'X-ray down. Confirmed.'];
+      const lines = pinged ? ['Your mark is down.', 'X-ray down.'] : ['X-ray down.', 'Tango down.', 'Target down.', "He's down."];
       const line = lines[Math.floor(Math.random() * lines.length)];
       setTimeout(() => this._radio(killer, line), 600);
     }
@@ -1477,7 +1490,7 @@ export class CellGame {
     const r = Math.max(18, Math.min(45, I.slant() * Math.tan((I.fov * Math.PI) / 360) * 0.8));
     I.sweepFx = { x: I.spi.x, z: I.spi.z, r, t: 0 };
     this.sfx.ui(true);
-    this._voice('isr', 'Sweep running on your cross.');
+    this._voice('isr', 'Sweep running.');
     this.payload('isrsweep', { x: I.spi.x, z: I.spi.z, r });
   }
 
@@ -1792,7 +1805,7 @@ export class CellGame {
       ob.access = 3;
       const room = ROOMS.find((r) => r.id === T.room);
       this._toast(`Archive server found — ${room ? room.name : 'rack room'}${T.floor ? ' (upper floor)' : ''}.`, 'cyan');
-      this._voice(a.role, a.role === 'spotter' ? 'Found it. Amber beacon, this rack. Jacking in.' : 'Got the beacon. Spotter, on me.');
+      this._voice(a.role, a.role === 'spotter' ? 'Found it. Jacking in.' : 'Got the beacon. On me.');
       break;
     }
     // Upload runs while someone allowed stays at the rack after the signal lock.
@@ -1954,7 +1967,7 @@ export class CellGame {
             ob.cards.push(q.card);
             const cd = CARDS[q.card], rn = (ROOMS.find((r) => r.id === q.card) || {}).name;
             this._toast(`${who} found the ${cd.name} keycard — ${rn}${/^(dhb|srv|arch)$/.test(q.card) ? ' (upper floor)' : ''}.`, 'amber');
-            this._voice(role, `Got a keycard. ${cd.name.toLowerCase()} tag, ${rn.toLowerCase()}.`);
+            this._voice(role, `${cd.name.charAt(0) + cd.name.slice(1).toLowerCase()} keycard.`);
           } else this._toast(['Drawer: pens, a stale protein bar.', 'Drawer: cable ties and a dead vape.', 'Drawer: shift rota. No card.', 'Drawer: empty.'][ob.searched.length % 4], 'dim');
         });
         return;
@@ -1972,7 +1985,7 @@ export class CellGame {
           ob.commsDown = true;
           this.sentinel.cutComms();
           this._toast('Comms rack hacked: SENTINEL\u2019s radio net is down. Guards can\u2019t call for backup.', 'cyan');
-          this._voice(role, 'Their radios are dead. Nobody\'s calling for help now.');
+          this._voice(role, 'Comms are down.');
         });
         return;
       // Barracks: the spotter hacks the door shut for a while; the shooter can C4 it for good.
@@ -1990,8 +2003,8 @@ export class CellGame {
           if (site === 'bay' && st === 'hacked') return opt('bayx', 'Drone bay grounded \u2014 no more launches', 0, null);
           if (site === 'barracks' && ob.barracksT > 0) return opt('barx', `Barracks locked down \u2014 ${Math.ceil(ob.barracksT)} s`, 0, null);
           opt(site, site === 'bay' ? 'Hold E \u2014 hack the drone bay controls (ground it for good)' : 'Hold E \u2014 hack the barracks door (lock them in for 90 s)', site === 'bay' ? 3.5 : 3, () => {
-            if (site === 'bay') { ob.bay = 'hacked'; this._toast('Drone bay hacked: no more drone launches.', 'cyan'); this._radio(role, 'Drone bay is grounded. No more birds.'); }
-            else { ob.barracksT = 90; this._toast('Barracks door hacked shut: no reinforcements for 90 s.', 'cyan'); this._radio(role, 'Barracks door is locked. That buys us a minute and a half.'); }
+            if (site === 'bay') { ob.bay = 'hacked'; this._toast('Drone bay hacked: no more drone launches.', 'cyan'); this._radio(role, "Drone bay's down."); }
+            else { ob.barracksT = 90; this._toast('Barracks door hacked shut: no reinforcements for 90 s.', 'cyan'); this._radio(role, 'Barracks locked.'); }
           });
         }
         return;
@@ -2002,7 +2015,7 @@ export class CellGame {
           ob.cctv = true;
           this.sentinel.cutCctv();
           this._toast('CCTV hacked: every camera is looped for SENTINEL and feeding the console.', 'cyan');
-          this._voice(role, 'Cameras are ours. They can see us all day and nobody will hear about it.');
+          this._voice(role, 'Cameras are ours.');
         });
         return;
     }
@@ -2016,7 +2029,7 @@ export class CellGame {
     S.raise(1, null);
     for (const g of S.guards) if (g.state !== 'dead' && g.state !== 'flee' && !g.tower) S._alert(g, null, { x: q.x, z: q.z, y: 0 });
     this._toast(`C4 planted on the ${site === 'bay' ? 'drone bay' : 'barracks'} \u2014 6 s. Every guard is coming.`, 'red');
-    this._radio(role, 'Charge set! Six seconds, get clear!');
+    this._radio(role, 'Charge set! Get clear!');
   }
   _c4Tick(dt) {
     const ob = this.obj, S = this.sentinel;
@@ -2089,7 +2102,7 @@ export class CellGame {
     const kind = key === 'jack' ? 'upload' : 'extract';
     this.input.keys.clear();
     document.exitPointerLock && document.exitPointerLock();
-    this._voice(this.role, kind === 'upload' ? 'Jacking in. Cover me.' : this.obj.quiet ? 'Pulling the drive. Nice and quiet.' : 'Pulling the drive. Watch the doors.');
+    this._voice(this.role, kind === 'upload' ? 'Jacking in. Cover me.' : this.obj.quiet ? 'Pulling the drive.' : 'Pulling the drive.');
     this.mini.start(kind, (ok) => {
       this.input.requestLock();
       if (!ok) return;
@@ -2109,7 +2122,7 @@ export class CellGame {
         ob.quiet = true;
         ob.trace = 0;
         this._toast('Signal locked clean. Upload running silent — hold the rack.', 'cyan');
-        this._voice('isr', 'Clean lock. You\'re invisible to SENTINEL. Hold the rack.');
+        this._voice('isr', 'Clean lock. Hold the rack.');
       } else {
         // Botched: ICE. The upload still forces through, but the garrison rings the building.
         ob.quiet = false;
@@ -2119,13 +2132,13 @@ export class CellGame {
         this.hud.flash('ICE ALERT', 'red');
         this._broadcast({ k: 'ice' });
         this._toast('Upload forced through, but SENTINEL\u2019s ICE tripped. Guards are ringing the building — sneak out or go loud.', 'red');
-        this._voice('isr', 'ICE alert. They\'re putting guards on the walls. Finish the upload, then pick your way out, or fight it.');
+        this._voice('isr', 'ICE alert. Guards to the walls.');
       }
     }
     if (m.k === 'extracted' && ob.upload >= 1 && !ob.drive) {
       ob.drive = m.role;
       this.fac.driveMesh.visible = false;
-      if (ob.quiet) { this._toast('Drive out. Nobody knows you were here — walk it to the van.', 'cyan'); this._voice('isr', 'Intel is out, quiet as you like. Get to the van.'); }
+      if (ob.quiet) { this._toast('Drive out. Nobody knows you were here — walk it to the van.', 'cyan'); this._voice('isr', "Intel's out. Get to the van."); }
       else this._toast('Drive out. The ring is still on the walls — slip through it or punch a hole. Van on the east track.', 'amber');
     }
   }
@@ -2432,7 +2445,7 @@ class CellHud {
       <div class="c-kit"></div>
       <div class="c-req"><span class="c-req-t"></span><button class="c-req-y">\u2713 <small>Y</small></button><button class="c-req-n">\u2715 <small>U</small></button></div>
       <div class="c-intro"><div class="c-intro-k">KESTREL RIDGE // DC-3</div><h1></h1><p class="c-intro-l"></p><p class="c-intro-r"></p></div>
-      <div class="c-pause"><div class="c-card"><h2>PAUSED</h2><p class="c-pnote"></p><button class="primary c-resume">Resume</button><button class="ghost c-exit">Exit to main menu</button></div></div>
+      <div class="c-pause"><div class="c-card"><h2>PAUSED</h2><p class="c-pnote"></p><button class="primary c-resume">Resume</button><button class="c-voice">Radio voices: ON</button><button class="ghost c-exit">Exit to main menu</button></div></div>
       <div class="c-debrief"></div>`;
     document.body.appendChild(root);
     document.body.classList.add('cell-mode', 'cell-' + game.role);
@@ -2451,8 +2464,8 @@ class CellHud {
     this.ctx = this.el.overlay.getContext('2d');
     this.el.camoBox.style.display = game.role === 'shooter' ? '' : 'none';
     const K = (k, l) => `<b>${k}</b> ${l}`;
-    const shooterKeys = [K('Esc', 'pause'), K('G', 'camo'), K('H', 'deadeye'), K('X', 'lure'), K('T', 'execute'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('1/2', 'rifle/pistol'), K('B', 'suppressor'), K('N', 'NV'), K('TAB', game.operative ? 'tablet (hold: quickhack)' : 'map')];
-    const spotterKeys = [K('Esc', 'pause'), K('TAB', 'tablet · ISR (hold: quickhack)'), K('Q', 'quad'), K('F', 'tag'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('Y/U', 'approve/deny'), K('B', 'suppressor'), K('N', 'NV')];
+    const shooterKeys = [K('Esc', 'pause'), K('G', 'camo'), K('H', 'deadeye'), K('X', 'lure'), K('T', 'execute'), K('F', 'tag (hold: sync)'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('1/2', 'rifle/pistol'), K('B', 'suppressor'), K('N', 'NV'), K('TAB', game.operative ? 'tablet (hold: quickhack)' : 'map')];
+    const spotterKeys = [K('Esc', 'pause'), K('TAB', 'tablet · ISR (hold: quickhack)'), K('Q', 'quad'), K('F', 'tag (hold: sync)'), K('E', 'use'), K('V', 'ping (hold: wheel)'), K('Y/U', 'approve/deny'), K('B', 'suppressor'), K('N', 'NV')];
     shooterKeys.push(K('L', 'light'), K('\u21B5', 'chat'));
     spotterKeys.push(K('L', 'light'), K('I', 'ISR'));
     spotterKeys.push(K('\u21B5', 'chat'));
@@ -2481,6 +2494,10 @@ class CellHud {
     });
     $('.c-resume').onclick = () => { this.setPause(false); game.input.requestLock(); };
     $('.c-exit').onclick = () => game.exit();
+    const voiceBtn = $('.c-voice');
+    const voiceLabel = () => { voiceBtn.textContent = `Radio voices: ${game.radio.voiceOn ? 'ON' : 'OFF (text only)'}`; };
+    voiceLabel();
+    voiceBtn.onclick = () => { game.radio.voiceOn = !game.radio.voiceOn; setVoiceSetting(game.radio.voiceOn); voiceLabel(); };
     $('.c-pnote').textContent = game.solo ? 'Solo: the mission is paused.' : 'Co-op: the mission keeps running while you are in this menu \u2014 find cover first.';
     this._touch();
   }
@@ -2656,8 +2673,8 @@ class CellHud {
     if (hs !== this._hs) {
       // Overwatch only calls these now and then (the HUD always shows them).
       const now = performance.now(), say = (k) => { if (now - (this['_isr' + k] || -1e9) > 60000 && Math.random() < 0.5) { this['_isr' + k] = now; return true; } return false; };
-      if (this._hs === 'hunted' && hs === 'hidden') { this.flash('CONTACT BROKEN', 'cyan', 2); if (say('Clear')) g._voice('isr', 'You\u2019re clear. They\u2019ve lost you.'); }
-      if (hs === 'detected' && this._hs !== 'detected' && say('Spot')) g._voice('isr', 'You\u2019ve been spotted. Break line of sight.');
+      if (this._hs === 'hunted' && hs === 'hidden') { this.flash('CONTACT BROKEN', 'cyan', 2); if (say('Clear')) g._voice('isr', 'You\u2019re clear.'); }
+      if (hs === 'detected' && this._hs !== 'detected' && say('Spot')) g._voice('isr', 'You\u2019re spotted. Break contact.');
       this._hs = hs;
     }
     this.el.hunt.className = 'c-hunt ' + hs;

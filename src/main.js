@@ -656,6 +656,14 @@ document.querySelectorAll('#cell-diff button').forEach((b) => (b.onclick = () =>
 document.querySelectorAll('#cell-mission button').forEach((b) => (b.onclick = () => { cellSet.mission = b.dataset.m; store.set('cellMission', cellSet.mission); syncCell(); }));
 $('in-cell-name').oninput = (e) => { cellSet.names[cellSet.role] = e.target.value; store.set('cellNames', cellSet.names); };
 $('btn-cell-stage').onclick = () => { renderStaging(); showPanel('panel-staging'); };
+// Radio voices on / off (off: the radio lines still show as subtitles).
+{
+  const key = 'draxxed.cellVoice';
+  const get = () => { try { return localStorage.getItem(key) !== 'off'; } catch { return true; } };
+  const label = () => { $('btn-cell-voice').innerHTML = `Radio voices: <em class="cur">${get() ? 'ON' : 'OFF \u00B7 text only'}</em>`; };
+  label();
+  $('btn-cell-voice').onclick = () => { try { localStorage.setItem(key, get() ? 'off' : 'on'); } catch {} label(); };
+}
 $('btn-stage-done').onclick = () => showPanel('panel-cell');
 $('btn-cell').onclick = () => { $('panel-cell').classList.remove('hosting'); syncCell(); showPanel('panel-cell'); };
 syncCell();
