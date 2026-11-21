@@ -4,7 +4,7 @@ import { randomCode } from './util.js';
 import { PALETTES } from './atmosphere.js';
 import { drawMap } from './briefmap.js';
 import { renderLoadout } from './loadout.js';
-import { PRESETS, RULES, applyRules, normalizeRules, rulesLabel } from './rules.js';
+import { PRESETS, RULES, LOOKS, applyRules, normalizeRules, rulesLabel } from './rules.js';
 import { RANGES } from './range.js';
 
 const $ = (id) => document.getElementById(id);
@@ -127,7 +127,7 @@ function primeGyro() {
 }
 settings.saveLoadout = (lo) => { settings.loadout = lo; store.set('loadout', lo && lo.skin === 'pollo' ? { ...lo, skin: 'std' } : lo); updateTitle(); };
 
-// Easter egg: with the Pollo Hermano skin selected, the main menu becomes The Reckoning.
+// Easter egg: with the Pollo Hermano skin selected, the main menu takes the game's old name, Draxxed Sklounst.
 // (Main menu only, and only for your own Pollo Hermano skin.)
 function polloOn() {
   const lo = settings.loadout || {};
@@ -135,9 +135,10 @@ function polloOn() {
 }
 function updateTitle() {
   const on = polloOn();
-  $('title').innerHTML = on ? 'DRAXXED<br />SKLOUNST<span class="reckon">: THE RECKONING</span>' : 'SNIPER<br />CELL';
+  // The game is Sniper Cell; in the Pollo Hermano suit the menu wears its old name.
+  $('title').innerHTML = on ? 'DRAXXED<br />SKLOUNST' : 'SNIPER<br />CELL';
   $('tagline').textContent = on ? 'One pollo. Two hermanos. Eight hundred sauce packets.' : 'One valley. Two rifles. Eight hundred metres.';
-  document.title = on ? 'Draxxed Sklounst: The Reckoning' : 'Sniper Cell: NightWatch';
+  document.title = on ? 'Draxxed Sklounst' : 'Sniper Cell';
   document.body.classList.toggle('reckoning', on);
   $('in-name').placeholder = on ? 'Pollo' : 'Ghost';
 }
@@ -187,17 +188,25 @@ function renderStyle() {
   // Same order as the styles above, so each distance sits under the style it suits (AUTO under CUSTOM).
   $('style-range').innerHTML = [...['close', 'medium', 'long', 'extreme'].map((k) => `<button class="${sel === k ? 'on' : ''}" data-range="${k}"><b>${RANGES[k].name.toUpperCase()}</b><i>${RANGES[k].dist}</i></button>`),
     `<button class="${sel === 'auto' ? 'on' : ''}" data-range="auto"><b>AUTO</b><i>${RANGES[def].name}</i></button>`].join('');
+  // Graphics look bar.
+  $('style-look').innerHTML = Object.entries(LOOKS).map(([k, l]) => `<button class="${r.look === k ? 'on' : ''}" data-look="${k}"><b>${l.name.toUpperCase()}</b><i>${l.sub}</i></button>`).join('');
+  $('look-desc').textContent = LOOKS[r.look].desc;
+  if ($('in-look')) $('in-look').value = r.look;
   $('range-desc').textContent = sel === 'auto' ? `Follows the style: ${RANGES[def].name} (${RANGES[def].dist}, like ${GAME[def]}). ${RANGES[def].desc}` : `Like ${GAME[sel]} (${RANGES[sel].dist}). ${RANGES[sel].desc}`;
 }
 $('style-presets').onclick = (e) => {
   const b = e.target.closest('[data-preset]');
   if (!b) return;
   const k = b.dataset.preset;
-  saveRules(k === 'custom' ? { ...settings.rules, preset: 'custom', zooms: null } : { preset: k, autoZero: settings.rules.autoZero, range: settings.rules.range });
+  saveRules(k === 'custom' ? { ...settings.rules, preset: 'custom', zooms: null } : { preset: k, autoZero: settings.rules.autoZero, range: settings.rules.range, look: settings.rules.look });
 };
 $('style-range').onclick = (e) => {
   const b = e.target.closest('[data-range]');
   if (b) saveRules({ ...settings.rules, range: b.dataset.range });
+};
+$('style-look').onclick = (e) => {
+  const b = e.target.closest('[data-look]');
+  if (b) saveRules({ ...settings.rules, look: b.dataset.look });
 };
 document.querySelectorAll('[data-sr]').forEach((el) => el.addEventListener('input', () => {
   saveRules({ ...settings.rules, preset: 'custom', [el.dataset.sr]: +el.value });
@@ -218,6 +227,9 @@ $('in-toggle').checked = settings.scopeToggle;
 $('in-name').oninput = (e) => store.set('name', (settings.name = e.target.value.trim()));
 $('in-pal').onchange = (e) => store.set('pal', (settings.pal = e.target.value));
 $('in-quality').onchange = (e) => store.set('quality', (settings.quality = e.target.value));
+// Graphics style (Inked / OG): one setting, also on the Sniping style panel and the NightWatch panel.
+$('in-look').value = settings.rules.look;
+$('in-look').onchange = (e) => saveRules({ ...settings.rules, look: e.target.value });
 $('in-sens').oninput = (e) => {
   settings.sensitivity = +e.target.value;
   $('sens-val').textContent = settings.sensitivity.toFixed(2);
@@ -547,10 +559,10 @@ function inviteLink() {
 
 $('btn-share').onclick = async () => {
   const link = inviteLink();
-  if (FILE_MODE && !navigator.share) return copy(`Join my Draxxed Sklounst match — code ${hostCode}`);
+  if (FILE_MODE && !navigator.share) return copy(`Join my Sniper Cell match — code ${hostCode}`);
   if (navigator.share) {
-    const text = `Join my Draxxed Sklounst match — code ${hostCode}`;
-    try { await navigator.share(FILE_MODE ? { title: 'Draxxed Sklounst', text } : { title: 'Draxxed Sklounst', text, url: link }); return; } catch {}
+    const text = `Join my Sniper Cell match — code ${hostCode}`;
+    try { await navigator.share(FILE_MODE ? { title: 'Sniper Cell', text } : { title: 'Sniper Cell', text, url: link }); return; } catch {}
   }
   copy(link);
 };
@@ -612,7 +624,7 @@ $('btn-join').onclick = async () => {
   }
 };
 
-// ---- Sniper Cell (co-op stealth) ----
+// ---- NightWatch (co-op stealth; code in src/cell/) ----
 // iOS lets speech start only from a tap: say nothing once on the way in.
 function primeTalk() { try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch {} }
 const CELL_CALL = { shooter: 'Ra', spotter: 'R\u014dnin' };
@@ -641,12 +653,13 @@ $('panel-staging').addEventListener('click', (e) => {
   renderStaging();
 });
 const cellSet = { role: store.get('cellRole', 'shooter'), diff: store.get('cellDiff', 'operative'), names: store.get('cellNames', {}), mission: store.get('cellMission', 'nightwatch') };
-const MISSION_DESC = { nightwatch: 'NightWatch: SENTINEL\u2019s augmented night garrison \u2014 cowardly officers, shielded juggernauts with energy blades, bulwarks behind hard-light walls, beam-rifle snipers on the towers.', infiltration: 'Infiltration: the original op against a crew of human security guards.' };
+const MISSION_DESC = { nightwatch: 'Sentinel: SENTINEL\u2019s augmented night garrison \u2014 cowardly officers, shielded juggernauts with energy blades, bulwarks behind hard-light walls, beam-rifle snipers on the towers.', infiltration: 'Infiltration: the original op against a crew of human security guards.' };
 const cellName = (role) => ((cellSet.names[role] || '').trim() || CELL_CALL[role]).replace(/[<>&"]/g, '').slice(0, 16);
 function syncCell() {
   document.querySelectorAll('#panel-cell .cell-role').forEach((b) => b.classList.toggle('on', b.dataset.role === cellSet.role));
   document.querySelectorAll('#cell-diff button').forEach((b) => b.classList.toggle('on', b.dataset.d === cellSet.diff));
   document.querySelectorAll('#cell-mission button').forEach((b) => b.classList.toggle('on', b.dataset.m === cellSet.mission));
+  document.querySelectorAll('#cell-look button').forEach((b) => b.classList.toggle('on', b.dataset.look === settings.rules.look));
   $('cell-mission-desc').textContent = MISSION_DESC[cellSet.mission];
   $('in-cell-name').value = cellSet.names[cellSet.role] || '';
   $('in-cell-name').placeholder = CELL_CALL[cellSet.role];
@@ -654,6 +667,8 @@ function syncCell() {
 document.querySelectorAll('#panel-cell .cell-role').forEach((b) => (b.onclick = () => { cellSet.role = b.dataset.role; store.set('cellRole', cellSet.role); syncCell(); }));
 document.querySelectorAll('#cell-diff button').forEach((b) => (b.onclick = () => { cellSet.diff = b.dataset.d; store.set('cellDiff', cellSet.diff); syncCell(); }));
 document.querySelectorAll('#cell-mission button').forEach((b) => (b.onclick = () => { cellSet.mission = b.dataset.m; store.set('cellMission', cellSet.mission); syncCell(); }));
+// Graphics look: the same setting as the Sniping style panel's Graphics row (host decides).
+document.querySelectorAll('#cell-look button').forEach((b) => (b.onclick = () => { saveRules({ ...settings.rules, look: b.dataset.look }); syncCell(); }));
 $('in-cell-name').oninput = (e) => { cellSet.names[cellSet.role] = e.target.value; store.set('cellNames', cellSet.names); };
 $('btn-cell-stage').onclick = () => { renderStaging(); showPanel('panel-staging'); };
 // Radio voices on / off (off: the radio lines still show as subtitles).
@@ -678,7 +693,7 @@ async function startCell(mode, opts = {}) {
   const c = opts.cell || { role: cellSet.role, diff: cellSet.diff, mission: cellSet.mission, seed: (Math.random() * 1e6) | 0 };
   // The guest plays whichever role the host didn't take.
   const role = mode === 'operative' ? 'shooter' : mode === 'guest' ? (c.role === 'shooter' ? 'spotter' : 'shooter') : c.role;
-  game = new CellGame({ mode, net: opts.net || null, role, diff: c.diff, seed: c.seed, mission: c.mission || 'nightwatch', quality, settings: { ...settings, cellLoadout }, audio, name: cellName(role), partnerName: opts.partnerName || CELL_CALL[role === 'shooter' ? 'spotter' : 'shooter'] });
+  game = new CellGame({ mode, net: opts.net || null, role, diff: c.diff, seed: c.seed, mission: c.mission || 'nightwatch', look: c.look === 'og' || c.look === 'inked' ? c.look : settings.rules.look, quality, settings: { ...settings, cellLoadout }, audio, name: cellName(role), partnerName: opts.partnerName || CELL_CALL[role === 'shooter' ? 'spotter' : 'shooter'] });
   if (opts.hello) game.hello = opts.hello;
   window.__game = game;
   document.body.classList.toggle('touch', game.input.touch);
@@ -710,7 +725,7 @@ $('btn-cell-host').onclick = async () => {
   }
   const other = cellSet.role === 'shooter' ? 'spotter' : 'shooter';
   $('cell-status').textContent = `Waiting for your ${other}\u2026 You are the ${cellSet.role}.`;
-  const cell = { role: cellSet.role, diff: cellSet.diff, mission: cellSet.mission, seed: (Math.random() * 1e6) | 0 };
+  const cell = { role: cellSet.role, diff: cellSet.diff, mission: cellSet.mission, seed: (Math.random() * 1e6) | 0, look: settings.rules.look };
   const hello = { t: 'hello', name: cellName(cellSet.role), cell };
   net.on('hello', () => net.send(hello));
   net.on('open', () => {
@@ -723,8 +738,8 @@ $('btn-cell-host').onclick = async () => {
 };
 $('btn-cell-share').onclick = async () => {
   const link = inviteLink();
-  const text = `Join my Sniper Cell op in Draxxed Sklounst \u2014 code ${hostCode}`;
-  if (navigator.share) { try { await navigator.share(FILE_MODE ? { title: 'Sniper Cell', text } : { title: 'Sniper Cell', text, url: link }); return; } catch {} }
+  const text = `Join my NightWatch op in Sniper Cell \u2014 code ${hostCode}`;
+  if (navigator.share) { try { await navigator.share(FILE_MODE ? { title: 'NightWatch', text } : { title: 'NightWatch', text, url: link }); return; } catch {} }
   (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? text : link) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied to clipboard!'), () => prompt('Copy this link:', link));
 };
 $('btn-cell-copy').onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(FILE_MODE ? hostCode : inviteLink()) : Promise.reject()).then(() => ($('cell-status').textContent = 'Copied!'), () => prompt('Copy:', FILE_MODE ? hostCode : inviteLink()));
