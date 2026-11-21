@@ -232,7 +232,7 @@ The garrison is kept lean, about 34 in NightWatch and 28 in Infiltration, and sp
   - **N** to reach up and pull the goggles down: your hand comes up, the goggles flip down with a click and a tube whine, and the picture irises open as the tubes warm.
   - The goggles and scope are smooth, near-white phosphor with a slight blue cast.
   - Bright lights, including a weapon light in your face, wash it out.
-  - **IR strobes** on both operators' helmets and shoulders, and **IR lasers** from both weapons, show only in night vision and the ISR IR view.
+  - **IR strobes** on both operators' helmets and shoulders flash about once a second, and **IR lasers** come from both weapons. They show only in night vision (goggles, the NV scope, the recon quad) and the ISR's IR view. The strobes keep a minimum size on screen, so you can pick out your partner across the compound and the ISR sees both operators from altitude.
 - **Weapon lights (L):** a weapon light makes you easy to see. Guards also walk over to wherever the beam lands, so it works as a distraction.
 - **Sync shots:**
   1. Look at an enemy and **hold F** (or tap SYNC on touch) to mark it for your teammate: a pulsing circle sits over its head. The wheel's SYNC option works too.
