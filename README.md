@@ -120,7 +120,7 @@ Pick **NIGHTWATCH** (the cyan button) on the main menu, then a mission, the **st
 ### Missions
 
 - **NightWatch** (default): SENTINEL's augmented night garrison.
-  - **Officers:** cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
+  - **Officers:** human-sized and cowardly. They flee when they're alone, when shot at, or when they lose their pack leader.
   - **Juggernauts:** a recharging energy shell. When it breaks, they berserk with an energy blade.
   - **Bulwarks:** behind a hard-light wall. Snipe through its sight-port, or catch them when they lower it to fire. Tower bulwarks carry beam rifles and you see a red laser before they fire.
   - **Titans:** heavy armour. Body hits do half damage, and a helmet eats the first headshot; the follow-up kills.
@@ -288,13 +288,13 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
 
 - **Pings and requests:** tap V or PING for a quick ping. Hold for the wheel: LOOK, ENEMY, MOVE, HOLD, ON ME, COVER, SYNC and SNIPER POS, plus SUPPLY, SCAN, EMP, DECOY, LIGHTS and DRONE requests. The spotter approves with Y / SEND.
 - **Radio:** operators and ISR Overwatch talk over a tactical squad net, inspired by close-quarters tactical shooters.
-  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American, pitched down), Rōnin (American) and Overwatch (an American dispatcher).
-  - The recordings are run through a radio treatment: narrow band, presence boost, hard compression and grit.
+  - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (a low, calm American dispatcher). The pace is natural and unhurried.
+  - The recordings are run through a radio treatment: the Codec2 digital-radio codec blended with some of the plain voice, then a narrow band, presence boost and compression.
   - In the game each line opens with a mic click and a burst of static, sits on a crackling static bed with dropouts, and ends on a squelch tail; Overwatch adds a talk-permit chirp.
   - Every line is **subtitled** as a terminal entry: the callsign, then the line typed out, cleared when it ends. Overwatch opens each op with a short, clipped brief. A line without a recording, or the offline single-file build, falls back to the browser's own voice.
 - **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
 - **Cut-scenes:**
-  - Opening: drive in, gear up, walk out.
+  - Opening: drive in, gear up, walk out. The van has its own sound: tyre and gravel roar, a quiet electric whine, a brake creak, door latches and slams, and the rustle of kit going on.
   - Ending: a sunrise on an open road under a striped, retro sun.
   - The title reads SNIPER in white, CELL in red and NIGHTWATCH in cyan.
 
@@ -332,9 +332,11 @@ Play with headphones. Every sound is positioned in 3D (HRTF panning):
 
 The lone operative carries both kits. Shift+E plants C4.
 
+**Esc pauses** (❚❚ on touch). Resume, or **Exit to main menu**. In solo play the mission freezes while paused; in co-op it keeps running.
+
 **On an iPad or a phone:**
 
-- On-screen buttons cover every action, including TABLET, HACK, ISR, SWEEP, QUAD, RECALL, SYNC, HELP, LIGHT, DROP, PING, TAG, USE, SUPP, NV and CHAT.
+- The action buttons sit in a strip along the bottom centre, like the desktop key hints, between the move stick and the fire buttons. They cover every action, including TABLET, HACK, ISR, SWEEP, QUAD, RECALL, SYNC, HELP, LIGHT, DROP, PING, TAG, USE, SUPP, NV and CHAT.
 - The Auto preset gives iPads Medium, with a capped render resolution.
 - For better radio voices, install enhanced male voices: Settings → Accessibility → Spoken Content → Voices → English, then Aaron, Arthur or Evan (Enhanced).
 
