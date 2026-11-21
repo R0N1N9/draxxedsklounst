@@ -79,6 +79,26 @@ export const OBJECTIVES = [
 ];
 
 const BLEED = 30;
+// Overwatch's opening brief, line by line (each line is a recorded clip; see tools/vo/lines.py).
+const BRIEF = {
+  nightwatch: [
+    'Sniper Cell, Overwatch. ISR on station.',
+    'Target is the archive server, Kestrel Ridge data center. Two floors, six rack rooms.',
+    'Relay goes in the electrical room. Keycards are in the office drawers. The Overseer carries a master.',
+    'Find the amber beacon. Upload clean, pull the drive.',
+    'Botch the upload and ICE puts the garrison on the walls.',
+    'Night shift is augmented. Watch the towers.',
+    'Exfil by van, east track. Overwatch out.',
+  ],
+  infiltration: [
+    'Sniper Cell, Overwatch. ISR on station.',
+    'Target is the archive server, Kestrel Ridge data center. Two floors, six rack rooms.',
+    'Relay goes in the electrical room. Keycards are in the office drawers. The Site Chief carries a master.',
+    'Find the amber beacon. Upload clean, pull the drive.',
+    'Botch the upload and ICE puts the garrison on the walls.',
+    'Exfil by van, east track. Overwatch out.',
+  ],
+};
 const TOUCH = typeof navigator !== 'undefined' && (navigator.maxTouchPoints > 1 || /iPad|iPhone|Android/.test(navigator.userAgent)) && matchMedia('(pointer: coarse)').matches;
 const QUAD_BAT = 300; // seconds of flight (half rate while flying, quarter while parked)
 
@@ -907,10 +927,8 @@ export class CellGame {
   }
   _afterIntro() {
     this.comms('Weapons free on your call. Stay in the dark.', 'dim');
-    const chief = this.mission === 'nightwatch' ? 'the Overseer' : 'the Site Chief';
-    const brief = `Overwatch to Sniper Cell, ISR is on station. Your objective is the archive server inside the Kestrel Ridge data center. Two floors, six rack rooms behind keycard doors, and we don't know which one. Plant the relay in the electrical room. Each rack room takes its own colour-tagged keycard: search the office drawers, or take ${chief}'s master badge. Find the rack with the amber beacon and upload. A clean upload and nobody ever knows. Botch it and SENTINEL's ICE puts the garrison on the walls. Then pull the drive and get to the van. The comms room and the CCTV desk can be hacked in person, and there's food and ammo upstairs. ${this.mission === 'nightwatch' ? 'SENTINEL\'s night shift is augmented. Watch the towers.' : ''} Good hunting.`;
-    this._voice('isr', brief);
-    this.comms('ISR: objective \u2014 archive server, one of six rack rooms (both floors). Relay \u2192 keycards (office drawers) \u2192 find the amber beacon \u2192 upload \u2192 drive \u2192 van.', 'cyan', 'ISR');
+    // Overwatch's briefing: short, clipped radio lines, each typed out as its own subtitle.
+    for (const line of BRIEF[this.mission === 'nightwatch' ? 'nightwatch' : 'infiltration']) this._voice('isr', line, true);
     this.input.requestLock();
   }
 

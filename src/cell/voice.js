@@ -74,11 +74,13 @@ export class Radio {
     return this._cast;
   }
 
-  say(who, text, prio = false) {
+  // keep: a line that must not be dropped (e.g. the opening brief), however long it waits.
+  say(who, text, prio = false, keep = false) {
     if (!this.enabled || !text) return;
-    if (prio) this.q.unshift({ who, text, t: performance.now() });
-    else this.q.push({ who, text, t: performance.now() });
-    while (this.q.length > 4) this.q.splice(prio ? 1 : 0, 1);
+    const item = { who, text, t: performance.now(), keep };
+    if (prio) this.q.unshift(item); else this.q.push(item);
+    // Too much chatter queued: drop the oldest throwaway line.
+    while (this.q.filter((q) => !q.keep).length > 4) this.q.splice(this.q.findIndex((q) => !q.keep), 1);
     if (!this.busy) this._next();
   }
 
@@ -92,7 +94,7 @@ export class Radio {
 
   _next() {
     // Drop lines that went stale waiting (> 6 s).
-    while (this.q.length && performance.now() - this.q[0].t > 6000) this.q.shift();
+    while (this.q.length && !this.q[0].keep && performance.now() - this.q[0].t > 6000) this.q.shift();
     const item = this.q.shift();
     if (!item) { this.busy = false; return; }
     this.busy = true;
@@ -101,14 +103,19 @@ export class Radio {
     this._bed(true, item.who);
     this._subtitle(item);
     let done = false, guard = 0;
+    // Each entry stays up long enough to type out and be read, even if the audio is quicker
+    // (or speech isn't available at all).
+    const minEnd = performance.now() + Math.min(7000, 1300 + item.text.length * 32);
     const finish = () => {
       if (done) return;
+      const wait = minEnd - performance.now();
+      if (wait > 30) { clearTimeout(guard); guard = setTimeout(finish, wait); return; }
       done = true;
       clearTimeout(guard);
       this._bed(false);
       this._keyDown(item.who);
       clearTimeout(this._subT);
-      this._subT = setTimeout(() => this._subtitle(null), 1600);
+      this._subT = setTimeout(() => this._subtitle(null), 900);
       setTimeout(() => this._next(), 260);
     };
     const rec = this._recorded(item);
@@ -174,8 +181,18 @@ export class Radio {
     clearTimeout(this._subT);
     const S = SPEAKERS[item.who] || SPEAKERS.shooter;
     const name = (this.names[item.who] || item.who).toUpperCase();
-    el.innerHTML = `<b style="color:${S.color}">${esc(name)}</b> ${esc(item.text)}`;
+    // Terminal entry: a prompt and the callsign, then the line typed out with a cursor.
+    el.innerHTML = `<b style="color:${S.color}">&gt; ${esc(name)}</b><span class="tx"></span><i class="cur"></i>`;
+    el.style.setProperty('--c', S.color);
     el.classList.add('on');
+    const tx = el.querySelector('.tx'), text = item.text;
+    let n = 0;
+    clearInterval(this._typeT);
+    this._typeT = setInterval(() => {
+      n = Math.min(text.length, n + 2);
+      tx.textContent = text.slice(0, n);
+      if (n >= text.length) clearInterval(this._typeT);
+    }, 40);
   }
 
   // Key-up: mic click and a short burst of static.

@@ -46,15 +46,16 @@ OP = [
     *[f'Eyes on {w}, {d}.' for w in WHAT for d in DIRS],
 ]
 
-BRIEF = ("Overwatch to Sniper Cell, ISR is on station. Your objective is the archive server inside the Kestrel Ridge data center. "
-         "Two floors, six rack rooms behind keycard doors, and we don't know which one. Plant the relay in the electrical room. "
-         "Each rack room takes its own colour-tagged keycard: search the office drawers, or take {chief}'s master badge. "
-         "Find the rack with the amber beacon and upload. A clean upload and nobody ever knows. "
-         "Botch it and SENTINEL's ICE puts the garrison on the walls. Then pull the drive and get to the van. "
-         "The comms room and the CCTV desk can be hacked in person, and there's food and ammo upstairs. {extra} Good hunting.")
 ISR = [
-    BRIEF.format(chief='the Overseer', extra="SENTINEL's night shift is augmented. Watch the towers."),
-    BRIEF.format(chief='the Site Chief', extra=''),
+    # Opening brief (short radio lines).
+    'Sniper Cell, Overwatch. ISR on station.',
+    'Target is the archive server, Kestrel Ridge data center. Two floors, six rack rooms.',
+    'Relay goes in the electrical room. Keycards are in the office drawers. The Overseer carries a master.',
+    'Relay goes in the electrical room. Keycards are in the office drawers. The Site Chief carries a master.',
+    'Find the amber beacon. Upload clean, pull the drive.',
+    'Botch the upload and ICE puts the garrison on the walls.',
+    'Night shift is augmented. Watch the towers.',
+    'Exfil by van, east track. Overwatch out.',
     'Sweep running on your cross.', 'Upload complete. Pull the drive.', "Clean lock. You're invisible to SENTINEL. Hold the rack.",
     "ICE alert. They're putting guards on the walls. Finish the upload, then pick your way out, or fight it.",
     'Intel is out, quiet as you like. Get to the van.', "You're clear. They've lost you.", "You've been spotted. Break line of sight.",

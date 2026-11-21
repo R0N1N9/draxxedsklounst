@@ -291,7 +291,7 @@ The data center has **two storeys** with two stairwells. Guards, cameras and pat
   - Every scripted line is pre-recorded with neural male voices, one per speaker: Ra (deep American), Rōnin (American) and Overwatch (an American dispatcher).
   - The recordings are run through a radio treatment: narrow band, presence boost, hard compression and grit.
   - In the game each line opens with a mic click and a burst of static, sits on a crackling static bed with dropouts, and ends on a squelch tail; Overwatch adds a talk-permit chirp.
-  - Every line is **subtitled**. A line without a recording, or the offline single-file build, falls back to the browser's own voice.
+  - Every line is **subtitled** as a terminal entry: the callsign, then the line typed out, cleared when it ends. Overwatch opens each op with a short, clipped brief. A line without a recording, or the offline single-file build, falls back to the browser's own voice.
 - **Chat:** text chat on Enter. Voice chat (M / K) works in online co-op.
 - **Cut-scenes:**
   - Opening: drive in, gear up, walk out.

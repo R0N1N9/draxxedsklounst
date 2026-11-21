@@ -316,7 +316,10 @@ body.cell-cine #cell-hud .c-debrief { background: rgba(0, 0, 0, 0.25); }
 #cell-hud.qh .c-obj, #cell-hud.qh .c-ammo, #cell-hud.qh .c-keys, #cell-hud.qh .c-kit, #cell-hud.qh .c-pip, #cell-hud.qh .c-vis { opacity: 0.25; transition: opacity 0.2s; }
 
 /* Radio subtitles */
-#cell-subs { position: fixed; left: 50%; bottom: 128px; transform: translateX(-50%); z-index: 30; max-width: min(760px, calc(100vw - 32px)); padding: 6px 12px; background: rgba(0, 0, 0, 0.55); color: #f2f4f6; font: 600 16px/1.35 var(--sans, system-ui, sans-serif); text-align: center; text-shadow: 0 1px 2px #000; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+/* Radio subtitles: one terminal entry at a time, typed out, then cleared. */
+#cell-subs { position: fixed; left: 50%; bottom: 128px; transform: translateX(-50%); z-index: 30; width: min(620px, calc(100vw - 32px)); padding: 5px 10px; background: rgba(2, 8, 10, 0.62); border-left: 2px solid var(--c, #8dff9e); color: #dff7ee; font: 500 13px/1.45 var(--mono, ui-monospace, monospace); text-align: left; text-shadow: 0 0 6px rgba(0, 0, 0, 0.9); opacity: 0; transition: opacity 0.35s; pointer-events: none; }
 #cell-subs.on { opacity: 1; }
-#cell-subs b { letter-spacing: 0.08em; margin-right: 6px; font-family: var(--mono, monospace); font-size: 13px; }
-@media (pointer: coarse) { #cell-subs { bottom: 170px; font-size: 14px; } }
+#cell-subs b { letter-spacing: 0.08em; margin-right: 8px; font-weight: 700; }
+#cell-subs .cur { display: inline-block; width: 7px; height: 12px; margin-left: 2px; vertical-align: -1px; background: var(--c, #8dff9e); animation: subs-blink 0.8s steps(1) infinite; }
+@keyframes subs-blink { 50% { opacity: 0; } }
+@media (pointer: coarse) { #cell-subs { bottom: 170px; font-size: 12px; } }
