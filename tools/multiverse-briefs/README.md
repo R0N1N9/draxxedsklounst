@@ -28,7 +28,7 @@ build, so unfinished work can sit in the tree safely.
 
 ## Status
 
-Work was paused on 20 November 2026 to fit a usage limit. In matches now: twelve worlds
+Work was paused on 20 November 2026 to fit a usage limit. In matches now: eleven worlds
 and five transitions, plus the plunge that links surf to the underwater world.
 
 | Module | Kind | State |
