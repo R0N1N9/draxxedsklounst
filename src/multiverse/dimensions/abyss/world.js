@@ -108,6 +108,8 @@ export function buildWorld(rng) {
 
   // ---- coral heads, boulders, wall outcrops
   const clearOfArches = (x, z, pad) => arches.every((a) => Math.hypot(x - a.x, z - a.z) > a.span * 0.5 + pad);
+  // the lane between the two spawns stays open water: rock may frame it, never close it
+  const clearOfLane = (x, y, z, r) => Math.abs(z) > SPAWN[1].z + 2 || Math.hypot(x - SPAWN[0].x, y - SPAWN[0].y) > r + 2.2;
   for (let i = 0; i < 15; i++) {
     const x = R(-32, -1.5), z = R(3, 44), r = R(0.8, 2.1), kind = R(0, 1);
     if (!clearOfArches(x, z, 2)) continue;
@@ -135,7 +137,7 @@ export function buildWorld(rng) {
     if (!clearOfArches(x, z, r + 1)) continue;
     mirrored((m) => {
       const y = heightAt(x, z * m);
-      if (y < -36) return;
+      if (y < -36 || !clearOfLane(x, y + r * 0.25, z, r)) return;
       decor.boulder.push({ x, y: y + r * 0.25, z: z * m, r, rot: R(0, 6.28) });
       spheres.push({ x, y: y + r * 0.25, z: z * m, r: r * 0.92, surf: 'rock' });
     });
@@ -148,6 +150,7 @@ export function buildWorld(rng) {
       // find the wall's x at this depth
       let x = -2;
       for (let k = 0; k < 40 && heightAt(x, zz) > depth; k++) x += 0.6;
+      if (!clearOfLane(x - r * 0.3, depth, z, r)) return;
       decor.outcrop.push({ x: x - r * 0.3, y: depth, z: zz, r, rot: R(0, 6.28) });
       spheres.push({ x: x - r * 0.3, y: depth, z: zz, r: r * 0.9, surf: 'rock' });
     });
