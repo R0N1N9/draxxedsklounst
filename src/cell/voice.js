@@ -13,9 +13,9 @@
 // anything else falls back to the browser's speech synthesis. See tools/vo/.
 // Lines queue so nobody talks over anybody, and stale chatter is dropped.
 const SPEAKERS = {
-  shooter: { pitch: 0.62, rate: 1.06, color: '#ffb040', bed: 0.045 },
-  spotter: { pitch: 0.82, rate: 1.1, color: '#4fd8ff', bed: 0.045 },
-  isr: { pitch: 0.72, rate: 1.02, color: '#8dff9e', bed: 0.075 },
+  shooter: { pitch: 0.62, rate: 1.06, color: '#ffb040', bed: 0.012 },
+  spotter: { pitch: 0.82, rate: 1.1, color: '#4fd8ff', bed: 0.012 },
+  isr: { pitch: 0.72, rate: 1.02, color: '#8dff9e', bed: 0.02 },
 };
 // Male voices, best first (natural / enhanced voices on Edge, macOS / iPadOS, Chrome, Windows).
 const MALE = [
@@ -181,7 +181,7 @@ export class Radio {
     if (!A || !A.ctx) return;
     const t = A.now;
     this._click(t, 1700, 0.07);
-    A._noiseBurst(A.master, t + 0.01, 0.12, 'bandpass', 2200, 1.4, 0.32, 0.09);
+    A._noiseBurst(A.master, t + 0.01, 0.09, 'bandpass', 2200, 1.4, 0.14, 0.07);
   }
 
   // Key-down: a falling squelch tail ("pssht"); Overwatch adds a two-tone talk-permit chirp.
@@ -198,7 +198,7 @@ export class Radio {
     f.frequency.exponentialRampToValueAtTime(700, t + 0.2);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.3, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.16, t + 0.015);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
     src.connect(f).connect(g).connect(A.master);
     src.start(t, Math.random());
@@ -230,8 +230,9 @@ export class Radio {
     o.stop(t + dur + 0.02);
   }
 
-  // The static bed under a transmission: band-limited hiss with flutter, crackle pops and
-  // the odd dropout. Overwatch's long-range link is noisier.
+  // The static bed under a transmission: quiet band-limited hiss with a little flutter and
+  // the occasional pop. Overwatch's long-range link is a touch noisier. Kept low: the voice
+  // itself carries the radio character (Codec2 in the recordings).
   _bed(on, who) {
     const A = this.a;
     if (!A || !A.ctx || !A.noise) return;
@@ -261,8 +262,8 @@ export class Radio {
       const tick = () => {
         if (!this.bed || this.bed.src !== src) return;
         const t = ctx.currentTime;
-        if (Math.random() < 0.55) A._noiseBurst(A.master, t, 0.012 + Math.random() * 0.02, 'bandpass', 1500 + Math.random() * 2500, 2, S.bed * (2 + Math.random() * 3), 0.012);
-        if (Math.random() < (who === 'isr' ? 0.12 : 0.05)) { g.gain.setValueAtTime(S.bed * 0.15, t); g.gain.setValueAtTime(S.bed, t + 0.05 + Math.random() * 0.08); }
+        if (Math.random() < 0.12) A._noiseBurst(A.master, t, 0.01 + Math.random() * 0.015, 'bandpass', 1500 + Math.random() * 2500, 2, S.bed * (1.5 + Math.random() * 2), 0.01);
+        if (who === 'isr' && Math.random() < 0.03) { g.gain.setValueAtTime(S.bed * 0.15, t); g.gain.setValueAtTime(S.bed, t + 0.05 + Math.random() * 0.08); }
         this.bed.timer = setTimeout(tick, 40 + Math.random() * 160);
       };
       this.bed = { src, lfo, g, timer: setTimeout(tick, 60) };
