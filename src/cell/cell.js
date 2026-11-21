@@ -50,11 +50,12 @@ import { SMG, MAGNUM, P9, buildSMG, buildMagnum, buildKnife, normLoadout } from 
 import { ISR, ISR_FOV } from './isr.js';
 import { addStrobes, blinkStrobes, IRLaser, ghostAvatar, tickGhosts, IR_LAYER } from './irfx.js';
 import { AtmosFX } from '../atmofx.js';
+import { applyLook } from '../look.js';
 import { Chat } from './chat.js';
 
 export const MISSIONS = {
-  nightwatch: { name: 'NIGHTWATCH', title: 'SNIPER CELL: NIGHTWATCH', line: 'Kestrel Ridge \u00B7 0217 hrs \u00B7 SENTINEL\u2019s augmented garrison is on the night shift.' },
-  infiltration: { name: 'INFILTRATION', title: 'SNIPER CELL: INFILTRATION', line: 'Kestrel Ridge \u00B7 0140 hrs \u00B7 a skeleton crew of security guards.' },
+  nightwatch: { name: 'SENTINEL', title: 'NIGHTWATCH: SENTINEL', line: 'Kestrel Ridge \u00B7 0217 hrs \u00B7 SENTINEL\u2019s augmented garrison is on the night shift.' },
+  infiltration: { name: 'INFILTRATION', title: 'NIGHTWATCH: INFILTRATION', line: 'Kestrel Ridge \u00B7 0140 hrs \u00B7 a skeleton crew of security guards.' },
 };
 
 export const ROLES = {
@@ -106,23 +107,38 @@ const TOUCH = typeof navigator !== 'undefined' && (navigator.maxTouchPoints > 1 
 const QUAD_BAT = 300; // seconds of flight (half rate while flying, quarter while parked)
 
 // ---------------------------------------------------------------------------
-// Post: night vision (goggles / scope / quad feed), active-camo shimmer, damage, grain.
+// Post: ink lines (Inked look), night vision (goggles / scope / quad feed), active-camo shimmer,
+// damage, grain. The ink is the valley's (game.js GradeShader): the Laplacian of 1/z.
 // ---------------------------------------------------------------------------
 const CellShader = {
   uniforms: {
     tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) },
     uNV: { value: 0 }, uMode: { value: 0 }, uWash: { value: 0 }, uCloak: { value: 0 }, uDamage: { value: 0 }, uDown: { value: 0 }, uStatic: { value: 0 },
+    tDepth: { value: null }, uNear: { value: 0.05 }, uFar: { value: 4000 }, uInked: { value: 1 },
   },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float uTime, uNV, uMode, uCloak, uDamage, uDown, uStatic, uWash; uniform vec2 uRes; varying vec2 vUv;
+    uniform sampler2D tDepth; uniform float uNear, uFar, uInked;
     float hash(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233))) * 43758.5453); }
+    float lin(vec2 uv){ float z = texture2D(tDepth, uv).x * 2.0 - 1.0; return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear)); }
+    float inkAt(vec2 uv){
+      vec2 o = 1.6 / uRes;
+      float d0 = lin(uv), wc = 1.0 / d0;
+      float wl = 1.0 / lin(uv - vec2(o.x, 0.0)), wr = 1.0 / lin(uv + vec2(o.x, 0.0));
+      float wu = 1.0 / lin(uv + vec2(0.0, o.y)), wd = 1.0 / lin(uv - vec2(0.0, o.y));
+      float lap = abs(wl + wr - 2.0 * wc) + abs(wu + wd - 2.0 * wc);
+      float ref = max(wc, max(max(wl, wr), max(wu, wd)));
+      return smoothstep(0.012, 0.03, lap / ref) * (1.0 - step(uFar * 0.97, d0)) * (1.0 - 0.7 * smoothstep(120.0, 900.0, d0));
+    }
     void main(){
       vec2 uv = vUv;
       vec2 d = uv - 0.5; d.x *= uRes.x / uRes.y; float r = length(d);
       // Active camo: the edges of your view ripple like heat over glass.
       if (uCloak > 0.0) uv += vec2(sin(uv.y * 40.0 + uTime * 6.0), cos(uv.x * 36.0 + uTime * 5.0)) * 0.0022 * uCloak * smoothstep(0.25, 0.75, r);
       vec3 c = texture2D(tDiffuse, uv).rgb;
+      // Inked look: black ink on silhouettes and folds (before night vision, so goggles show it too).
+      if (uInked > 0.5) c = mix(c, vec3(0.0045, 0.0045, 0.006), inkAt(uv) * 0.92);
       float g = hash(uv * uRes + fract(uTime) * 91.7) - 0.5;
       if (uNV > 0.0) {
         float l = dot(c, vec3(0.3, 0.59, 0.11));
@@ -310,7 +326,7 @@ function buildSky(scene) {
 
 // ---------------------------------------------------------------------------
 export class CellGame {
-  constructor({ mode, net, role, diff = 'operative', seed = 7, quality = 'medium', settings, audio, name, partnerName, mission = 'nightwatch' }) {
+  constructor({ mode, net, role, diff = 'operative', seed = 7, quality = 'medium', settings, audio, name, partnerName, mission = 'nightwatch', look = 'inked' }) {
     // 'solo' (AI partner) | 'operative' (one operator, both roles) | 'host' | 'guest'
     this.mode = mode;
     this.isHost = mode !== 'guest';
@@ -334,8 +350,10 @@ export class CellGame {
     this.ended = null;
 
     if (this.mission === 'nightwatch') Object.assign(OBJECTIVES[2], { hint: 'Search the office desk drawers (E). Each rack-room door takes its own colour-tagged keycard. The Overseer (violet juggernaut) carries a master badge.' });
-    // Halo-style ballistics for this mode: instant, straight, no sway.
-    applyRules({ preset: 'halo' });
+    // Halo-style ballistics for this mode: instant, straight, no sway. The graphics look is the
+    // host's (it rides in the cell hello), as in the valley.
+    this.look = look === 'og' ? 'og' : 'inked';
+    applyRules({ preset: 'halo', look: this.look });
     RULES.zooms = null;
     RULES.hitbox = 1.15;
 
@@ -455,8 +473,10 @@ export class CellGame {
 
   _initComposer() {
     if (this.composer) return;
-    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: this.quality === 'high' ? 4 : 0 });
+    const rt = new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: this.quality === 'high' ? 4 : 0, depthTexture: new THREE.DepthTexture(innerWidth, innerHeight) });
     this.composer = new EffectComposer(this.renderer, rt);
+    // The ping-pong buffer must not share the depth texture the post pass samples for ink.
+    this.composer.renderTarget2.depthTexture = new THREE.DepthTexture(innerWidth, innerHeight);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     if (this.quality !== 'low') this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.7, 0.5, 0.85));
     this.post = new ShaderPass(CellShader);
@@ -934,7 +954,7 @@ export class CellGame {
   }
   // Title with the colour split: SNIPER (white) CELL (red) : MISSION (cyan).
   get titleHTML() {
-    return `<span class="t-w">SNIPER</span> <span class="t-r">CELL</span><span class="t-w">:</span> <span class="t-c">${MISSIONS[this.mission].name}</span>`;
+    return `<span class="t-w">NIGHT</span><span class="t-r">WATCH</span><span class="t-w">:</span> <span class="t-c">${MISSIONS[this.mission].name}</span>`;
   }
   get missionLine() {
     return MISSIONS[this.mission].line;
@@ -2405,6 +2425,13 @@ export class CellGame {
   _render(dt) {
     const u = this.post.uniforms;
     u.uTime.value = this.t;
+    u.uInked.value = this.look === 'og' ? 0 : 1;
+    u.tDepth.value = this.composer.readBuffer.depthTexture;
+    u.uNear.value = this.camera.near;
+    u.uFar.value = this.camera.far;
+    // Cel shading for the Inked look; re-swept now and then for meshes added since (drops, bodies).
+    this._lookSweep = (this._lookSweep || 0) - dt;
+    if (this._lookSweep <= 0) { this._lookSweep = 1; applyLook(this.scene, this.look); }
     const P = this.player;
     const quad = this.quad && this.quad.active;
     const isr = this.isr.active;
